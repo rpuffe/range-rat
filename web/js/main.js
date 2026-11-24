@@ -21,9 +21,12 @@ import { createMower } from './mower.js';
 import { menuFor, GARY_LINE } from './menu.js';
 import { setupRound2 } from './round2.js';
 import { createScuba } from './scuba.js';
-let r2 = null;            // round-2 features, set up at the end of this file
+import { diveTiers, eyeY, bedAt, TREASURE_BY_ID, atTube, hasTube, PUMP } from './dive.js';
+let r2 = null;           // round-2 features, set up at the end of this file
 import { buildPerson, animatePerson, personAddress, SWING_IMPACT, SWING_SECS } from './people.js';
 import { createCrowd } from './crowd.js';
+import { createTerrain } from './terrain.js';
+import { wadeFactor, stepDrift } from './map.js';
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
@@ -43,18 +46,16 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), lambert(0x5f8f3
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
 scene.add(ground);
 
-// Mowing stripes and yardage flags so distance reads on a flat field.
-for (let i = 0; i < 12; i++) {
-  const s = new THREE.Mesh(new THREE.PlaneGeometry(80, 12), lambert(i % 2 ? 0x679a40 : 0x5a8836));
+// Mowing stripes so distance reads (the flags are Dimple Creek's, in terrain.js).
+for (let i = 0; i < 16; i++) {
+  const s = new THREE.Mesh(new THREE.PlaneGeometry(128, 12), lambert(i % 2 ? 0x679a40 : 0x5a8836));
   s.rotation.x = -Math.PI / 2; s.position.set(0, 0.005, -8 - i * 12); s.receiveShadow = true;
   scene.add(s);
 }
-for (const [z, col] of [[-50, 0xd94a3a], [-90, 0xf2c94c], [-130, 0x3a7bd9]]) {
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.4), lambert(0xeeeeee));
-  pole.position.set(0, 1.2, z); scene.add(pole);
-  const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.5), new THREE.MeshLambertMaterial({ color: col, side: THREE.DoubleSide }));
-  flag.position.set(0.4, 2.15, z); scene.add(flag);
-}
+// Dimple Creek: the creek, its crossings, the flags, Dimples Rock, the Old Tractor (map.js rules).
+const terrain = createTerrain({ scene });
+let terrainVenue = -1;
+const world = () => ({ venue: crew?.venue ?? 0 });
 
 // The mats. Customers (crowd.js) walk in at the gate, grab a bucket at the
 // stand, hit it from a mat, and walk out. A filthy mat gets refused.
@@ -149,8 +150,9 @@ const diveLight = new THREE.SpotLight(0xd8ffe8, 0, 10, 0.5, 0.5, 1);
 camera.add(diveLight); camera.add(diveLight.target); diveLight.target.position.set(0, 0, -3);
 const surfaceFog = { color: new THREE.Color(), near: 0, far: 0 };
 // The underwater world: caustics, light shafts, kelp, fish, a catfish, lost-and-found junk, bubbles.
-const scuba = createScuba(scene, camera, POND);
+const scuba = createScuba(scene, camera, POND, { onPing: ({ pan }) => SFX.glint?.(pan) });
 pondMeshes.push(scuba.group); scuba.group.visible = false;
+let treasureShown = null, lostFoundKey = '';   // what scuba.js is showing: the sunk treasure and the glass case
 
 // The snack shed: a little hut with a counter, a sack of potatoes, and a fryer.
 const shedSign = (() => {
@@ -473,18 +475,38 @@ function onEvent(e) {
     case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, kind: e.kind, curve: e.curve ?? 0 }); customerSwing(e.x, e.z); break;
     case 'sink': {
       let b = balls.get(e.id);
-      if (!b) { addBall({ id: e.id, x: e.x, y: POND.BOTTOM, z: e.z, vx: 0, vy: 0, vz: 0, rest: true, kind: e.kind }); b = balls.get(e.id); }
-      Object.assign(b, { x: e.x, z: e.z, y: POND.BOTTOM, vx: 0, vy: 0, vz: 0, rest: true, sunk: true });
+      if (!b) { addBall({ id: e.id, x: e.x, y: bedAt(e.x, e.z), z: e.z, vx: 0, vy: 0, vz: 0, rest: true, kind: e.kind }); b = balls.get(e.id); }
+      Object.assign(b, { x: e.x, z: e.z, y: bedAt(e.x, e.z), vx: 0, vy: 0, vz: 0, rest: true, sunk: true, drifting: false, drift: null });
       break;
     }
-    case 'dive':
+    case 'dive': {
       if (e.id === me.id) toast(e.on ? 'Under the pond. Grab balls before your air runs out.' : 'Surfaced. Bank what you found.', 2);
+      const who = e.id === me.id ? me : crew.players.find(p => p.id === e.id);
+      if (who && crew.pond?.unlocked) e.on ? scuba.plunge(who.x, who.z, e.id === me.id) : scuba.surface(who.x, who.z, { mine: e.id === me.id, bag: e.bag ?? 0 });
+      break;
+    }
+    case 'sent': e.id === me.id ? toast(`Sent up: ${e.n}.`, 1.6) : feed(`${nameOf(e.id)} sent up ${e.n}`); SFX.scoop(); break;
+    case 'hauled': e.id === me.id ? toast(`Hauled up: ${e.n}. Bank them at the stand.`, 2) : feed(`${nameOf(e.id)} hauled up ${e.n}`); SFX.scoop(); break;
+    case 'thunk': SFX.bonk(); break;
+    case 'treasure':
+      if (e.phase === 'carried') (e.by === me.id ? toast : feed)(`${e.by === me.id ? 'You have' : nameOf(e.by) + ' has'} ${TREASURE_BY_ID[e.id]?.name ?? 'something'}. Take it to the stand.`, 3);
+      if (e.phase === 'sunk') feed(`Something glints in the Deep End: ${TREASURE_BY_ID[e.id]?.name ?? 'an item'}`);
+      if (e.phase === 'banked') {
+        SFX.jackpot();
+        const t = TREASURE_BY_ID[e.id];
+        toast(`Recovered: ${t?.name ?? 'an item'}. ${t?.blurb ?? ''} Finder's fee ${money(e.fee ?? 0)}, as a gesture.`, 6);
+      }
       break;
     case 'gasp':
       SFX.bonk();
       e.id === me.id ? toast('Out of air! You popped up coughing, and your bag spilled.', 3) : feed(`${nameOf(e.id)} ran out of air`);
       break;
-    case 'rest': { const b = balls.get(e.id); if (b) { b.x = e.x; b.z = e.z; b.y = SIM.BALL_R; b.vx = b.vy = b.vz = 0; b.rest = true; } break; }
+    case 'rest': { const b = balls.get(e.id); if (b) { b.x = e.x; b.z = e.z; b.y = SIM.BALL_R; b.vx = b.vy = b.vz = 0; b.rest = true; b.drifting = false; b.drift = null; } break; }
+    case 'drift': {   // the server's word on a ball floating down the creek
+      const b = balls.get(e.id);
+      if (b) Object.assign(b, { drifting: true, rest: false, vx: 0, vy: 0, vz: 0, y: SIM.BALL_R, drift: { branch: e.branch, s0: e.s0, v: e.v, s: Math.max(e.s0, b.drift?.s ?? e.s0) } });
+      break;
+    }
     case 'mower':
       if (e.phase === 'warn') { SFX.bonk(); toast(`MOW-E is mowing lane z ${e.lane} in 12 s. Get out of the lane (or grab what you can).`, 4); }
       break;
@@ -593,7 +615,10 @@ function floatPay(e) {
   board.floatText(at2.x, 2.4, at2.z, `+${money(e.cash)} · ${e.n} × ${money(e.per ?? e.cash / e.n)}`, who?.color ?? '#ffd54a');
 }
 let memoT = 0;
+// Memos queue: a ball debut never knocks the morning memo (and its target) off the screen.
+const memoQ = [];
 function showMemo(text, target, secs = 9) {
+  if (memoT > 0) { memoQ.push([text, target, secs]); return; }
   $('memo-text').textContent = text;
   $('memo-target').textContent = target ? `TARGET  ${money(target)}` : '';
   $('memo').classList.remove('hidden'); memoT = secs;
@@ -608,7 +633,13 @@ function applySnapshot(s) {
   const mine = s.players.find(p => p.id === me.id);
   if (mine && !me.placed) { me.x = mine.x; me.z = mine.z; me.yaw = mine.yaw; me.pitch = 0; me.placed = true; }   // clocked in at the yard
   me.gear = mine?.gear ?? 0; me.wand = !!mine?.wand;
-  me.diving = !!mine?.diving; me.air = mine?.air ?? POND.AIR; me.bag = mine?.bag ?? 0;
+  me.diving = !!mine?.diving; me.dive = mine?.dive ?? 0; me.air = mine?.air ?? diveTiers(me.dive).air; me.bag = mine?.bag ?? 0; me.treasure = mine?.treasure ?? null;
+  { // the Lost & Found case and the treasure glinting in the Deep End
+    const lf = s.pond?.lostFound ?? [], lk = lf.join(',');
+    if (lk !== lostFoundKey) { lostFoundKey = lk; scuba.setFound(lf); }
+    const t = s.pond?.treasure, tk = t ? `${t.id}@${t.x.toFixed(2)},${t.z.toFixed(2)}` : '';
+    if (tk !== treasureShown) { treasureShown = tk; t ? scuba.setTreasure(t.id, t.x, t.z) : scuba.setTreasure(null); }
+  }
   me.grime = mine?.grime ?? 0; me.one = !!mine?.one;
   shedSign.boards.visible = !s.fries?.open;
   shedSign.fries.scale.y = Math.max(0.05, (s.fries?.stock ?? 0) / FRIES.MAX);
@@ -671,7 +702,7 @@ function applyCart(c) {
 let shopKey = '';
 function renderShop() {
   const size = crew.players.length;
-  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase, me.gear, crew.venue]);
+  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase, me.gear, me.dive, crew.venue]);
   if (key === shopKey) return;
   shopKey = key;
   const focused = document.activeElement?.dataset?.buy;
@@ -679,8 +710,9 @@ function renderShop() {
   const html = `<h3>${crew.phase === 'report' ? 'Overnight shop' : 'Shop'} <span>${money(crew.cash)} to spend</span></h3>
     ${size > 1 ? `<p class="note">Prices are ×${scale.toFixed(1)} for a crew of ${size}.</p>` : ''}
     <ul>${SHOP.map(item => {
-      const lvl = item.personal ? me.gear ?? 0 : crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
-      const price = nextPrice(item.id, crew.up, size, me.gear ?? 0, crew.venue ?? 0);
+      const mineLvl = item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0;
+      const lvl = item.personal ? mineLvl : crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
+      const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0);
       return `<li>
         <div><b>${item.title}</b>: ${now.name}${next ? `<small>Next: <i>${next.name}</i>. ${next.desc}</small>` : `<small>${now.desc} (maxed out)</small>`}</div>
         ${!next ? '<span class="max">✓</span>' : price == null ? '<span class="max">🔒 next venue</span>' : `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>$${price}</button>`}
@@ -725,7 +757,10 @@ function interact(only = null) {
     if (nearCart()) { link.act({ t: 'board' }); return; }
   }
   if (only === 'cart') return;
-  if (atStand(me) && (carrying() > 0 || me.one)) { link.act({ t: 'deposit' }); return; }   // Ball No. 1 rides outside the pocket
+  if (me.diving) { if (me.bag > 0) link.act({ t: 'send' }); return; }                      // clip the bag to the line
+  if (dockOpen(me) && (crew.pond?.line ?? 0) > 0) { r2?.haulBegin(); return; }            // hold to haul the bag up
+  if (crew.pond?.unlocked && hasTube(crew.up) && atTube(me) && (carrying() > 0 || me.treasure)) { link.act({ t: 'feed' }); return; }
+  if (atStand(me) && (carrying() > 0 || me.one || me.treasure)) { link.act({ t: 'deposit' }); return; }   // Ball No. 1 rides outside the pocket
   if (me.wand || nearStation()) link.act({ t: 'wand' });
 }
 // The pond is drained (and its dock closed) until the Club turns the water on.
@@ -734,7 +769,9 @@ const nearStation = () => Math.hypot(me.x - WASH.STATION.x, me.z - WASH.STATION.
 function act() {
   if (!playing() || me.down > 0 || driving()) return;
   if (me.diving) {
-    if (me.bag + pending.size >= POND.BAG) { toast('Your bag is full: surface!'); return; }
+    const tr = crew.pond?.treasure;
+    if (tr && !me.treasure && Math.hypot(tr.x - me.x, tr.z - me.z) <= POND.REACH + 0.5) { link.act({ t: 'treasure' }); return; }
+    if (me.bag + pending.size >= diveTiers(me.dive).bag) { toast('Your bag is full: send it up (E) or surface!'); return; }
     const b = nearestBall(POND.REACH);
     if (b) grab(b);
     return;
@@ -778,7 +815,7 @@ let pumping = false;
 function pressAct() {
   SFX.unlock();
   if (playing() && crew.fries?.open && atShed(me) && !me.wand) { openKitchen(); return; }
-  if (playing() && dockOpen(me) && !me.diving && crew.players.some(p => p.diving && p.id !== me.id)) { pumping = true; link.act({ t: 'pump', on: true }); return; }
+  if (playing() && dockOpen(me) && !me.diving && crew.players.some(p => p.diving && p.id !== me.id)) { pumping = true; r2?.pumpBegin(); return; }   // round2.js cranks (mouse or right stick) and sends {t:'pump', turns}
   if (me.wand && playing() && me.down <= 0) { spraying = true; return; }
   if (playing() && r2?.press()) return;                  // the ball washer crank
   if (playing() && me.down <= 0 && canSwing()) return;   // the swing module handles the bay
@@ -787,15 +824,16 @@ function pressAct() {
 function releaseAct() {
   spraying = false;
   r2?.release();
-  if (pumping) { pumping = false; link.act({ t: 'pump', on: false }); }
+  if (pumping) { pumping = false; r2?.pumpEnd(); }
 }
+function releaseBucket() { r2?.haulEnd(); }
 
 // ---- driving -----------------------------------------------------------------
 function driveCart(dt, px, py, lt, rt) {
   const throttle = Math.max(-1, Math.min(1, (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) + rt - lt - py));
   const steer = Math.max(-1, Math.min(1, (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + px));
   const vmax = my.cartSpeed * ((crew.cart?.boost ?? 0) > 0 ? CART.BOOST : 1);
-  stepCart(cartPose, throttle, steer, dt, vmax);
+  stepCart(cartPose, throttle, steer, dt, vmax, world());
   me.x = cartPose.x; me.z = cartPose.z;
   // The gang reels scoop whatever they roll over.
   const room = my.cartCap - (crew.cart?.load ?? 0) - pendingCart.size;
@@ -928,7 +966,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Tab' && link) { e.preventDefault(); toggleStore(); }
   if (e.code === 'KeyC' && !e.repeat && link && !r2?.cctvOn) r2?.toggleCCTV();   // Corporate CCTV (from the Club)
 });
-addEventListener('keyup', e => { if (kitchen.isOpen) { kitchen.handleKey('up', e); return; } keys.delete(e.code); if (e.code === 'Space') releaseAct(); });
+addEventListener('keyup', e => { if (kitchen.isOpen) { kitchen.handleKey('up', e); return; } keys.delete(e.code); if (e.code === 'Space') releaseAct(); if (e.code === 'KeyE') releaseBucket(); });
 addEventListener('blur', () => keys.clear());
 addEventListener('pointerdown', () => SFX.unlock());
 // Pointer lock can be refused (embedded views, no user gesture): swallow that
@@ -1005,6 +1043,7 @@ function pollPad(dt) {
   if (pad.pressed.some(Boolean)) SFX.unlock();
   if (pad.pressed[BTN.A]) pressAct();
   if (pad.released[BTN.A]) releaseAct();
+  if (pad.released[BTN.X]) releaseBucket();
   if (pad.pressed[BTN.X]) interact('bucket');
   if (pad.pressed[BTN.Y]) interact('cart');
   if (pad.pressed[BTN.MENU]) pause(true);
@@ -1064,8 +1103,10 @@ function hud() {
     : me.down > 0 ? 'Seeing stars…'
     : me.one ? 'Ball No. 1: carry it to the stand. Everyone to the stand.'
     : r2?.prompt(btn) ? r2.prompt(btn)
-    : me.diving ? `${nearestBall(POND.REACH) ? `${btn}  Grab` : 'Feel around for balls'} · bag ${me.bag}/${POND.BAG} · air ${Math.ceil(me.air ?? 0)}s`
-    : dockOpen(me) && crew.players.some(p => p.diving && p.id !== me.id) ? `Hold ${btn} to pump air to your diver`
+    : me.diving ? `${crew.pond?.treasure && !me.treasure && Math.hypot(crew.pond.treasure.x - me.x, crew.pond.treasure.z - me.z) <= POND.REACH + 0.5 ? `${btn}  Take the ${TREASURE_BY_ID[crew.pond.treasure.id]?.name ?? 'treasure'}` : nearestBall(POND.REACH) ? `${btn}  Grab` : 'Feel around for balls'}${me.bag > 0 ? `  ·  ${ibtn}  Send the bag up (${me.bag})` : ''} · bag ${me.bag}/${diveTiers(me.dive).bag} · air ${Math.ceil(me.air ?? 0)}s`
+    : dockOpen(me) && (crew.pond?.line ?? 0) > 0 ? `Hold ${ibtn}  Haul up the bag (${crew.pond.line})`
+    : dockOpen(me) && crew.players.some(p => p.diving && p.id !== me.id) ? `Hold ${btn} and circle the ${pad ? 'right stick' : 'mouse'} to pump air to your diver`
+    : crew.pond?.unlocked && hasTube(crew.up) && atTube(me) && (carrying() > 0 || me.treasure) ? `${ibtn}  Feed the tube${crew.pond.tube ? ` (${crew.pond.tube} in flight)` : ''}`
     : dockOpen(me) ? 'Walk into the pond to dive for sunk balls'
     : atShed(me) && crew.fries?.open ? `${btn}  Cook fries: peel, slice, fry, serve · fries ${crew.fries.stock}/${crew.fries.max}`
     : atShed(me) ? 'The snack shed is boarded up (Tab: the shop can reopen it)'
@@ -1079,7 +1120,7 @@ function hud() {
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up`
     : n >= cap ? 'Full: head to the bucket stand' : '';
   $('air').classList.toggle('hidden', !me.diving);
-  $('air').firstElementChild.style.width = `${((me.air ?? POND.AIR) / POND.AIR) * 100}%`;
+  $('air').firstElementChild.style.width = `${((me.air ?? POND.AIR) / diveTiers(me.dive).air) * 100}%`;
   const maxStam = sprintSecs(crew.up?.shoes);
   $('stamina').classList.toggle('hidden', stamina >= maxStam - 0.01 || driving());
   $('stamina').firstElementChild.style.width = `${(stamina / maxStam) * 100}%`;
@@ -1162,7 +1203,7 @@ function frame(now) {
     if (wantSprint && stamina > 0) { stamina = Math.max(0, stamina - dt); restT = 0; if (!stamina) padSprint = false; }
     else if ((restT += dt) > SPRINT.REGEN_DELAY) stamina = Math.min(maxStam, stamina + dt * maxStam / 3);
     sprinting = wantSprint && stamina > 0;
-    const speed = my.walk * (sprinting ? SPRINT.SPEED : 1) * (wetPond(me) ? POND.SWIM : 1);
+    const speed = my.walk * (sprinting ? SPRINT.SPEED : 1) * (wetPond(me) ? diveTiers(me.dive).swim : wadeFactor(me.x, me.z, world()));
     me.x += (fx * cy + fz * sy) * speed * dt;
     me.z += (-fx * sy + fz * cy) * speed * dt;
     if (m > 0.05) { const drum = myGear.getObjectByName('drum'); if (drum) drum.rotation.x -= m * my.walk * dt / 0.28; }
@@ -1173,13 +1214,15 @@ function frame(now) {
   if (link && me.placed) link.move(me.x, me.z, me.yaw, drivingNow ? cartPose : null);
   if (crew.phase === 'shift') crew.shiftT += dt;        // smooth between server ticks
 
-  for (const b of balls.values()) advanceBall(b, dt);
+  for (const b of balls.values()) { if (b.drifting) stepDrift(b, dt); else advanceBall(b, dt, world()); }
+  if (terrainVenue !== (crew.venue ?? 0) && !r2?.revealing) { terrainVenue = crew.venue ?? 0; terrain.setVenue(terrainVenue); }
+  terrain.tick(dt, sceneT);
   scoop();
   drawBalls();
   // My own gear: hand-held things hang below the view, the picker rolls ahead.
   myGear.position.set(me.x, 0, me.z);
   myGear.rotation.set(0, me.yaw, 0);
-  myGear.visible = fpGear.visible = me.down <= 0 && !drivingNow && !r2?.cctvOn && !r2?.revealing;
+  myGear.visible = fpGear.visible = me.down <= 0 && !drivingNow && !r2?.cctvOn && !r2?.revealing && !me.diving;
   if (!sprayHiss && me.wand) sprayHiss = SFX.sprayLoop?.() ?? null;
   updateSpray(dt, now);
 
@@ -1230,7 +1273,7 @@ function frame(now) {
     camera.lookAt(cartPose.x + fx * 6, 0.8, cartPose.z + fz * 6);
   } else {
     const under = wetPond(me) && !drivingNow;
-    camera.position.set(me.x, under ? POND.BOTTOM + 0.75 : EYE - fall * (EYE - 0.25), me.z);
+    camera.position.set(me.x, under ? eyeY(me.x, me.z) : EYE - fall * (EYE - 0.25), me.z);   // eyeY follows the bed down into the Deep End
     if (under !== !!scene.userData.under) {    // murky green, a flashlight, the surface overhead
       scene.userData.under = under;
       if (under) { surfaceFog.color.copy(scene.fog.color); scene.fog.color.set(0x1f4a3a); }
@@ -1242,7 +1285,11 @@ function frame(now) {
     camera.rotation.set(me.pitch + fall * 1.1, me.yaw, fall * 0.6, 'YXZ');
   }
 
-  if (scuba.group.visible) scuba.tick(dt, now / 1000, { air01: (me.air ?? POND.AIR) / POND.AIR, pumping: crew.players?.some(p => p.pumping) });
+  if (scuba.group.visible) {
+    const tier = diveTiers(me.dive);
+    scuba.tick(dt, now / 1000, { air01: (me.air ?? tier.air) / tier.air, pumping: crew.players?.some(p => p.pumping),
+      pumpRate: r2?.pumpRate?.() ?? 0.6, clarity: crew.pond?.clarity ?? 1, glintR: tier.glintR, light: tier.light });
+  }
   r2?.tick(dt, now);       // after the camera: CCTV and the venue reveal drive it when active
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
   board.tick(dt);
@@ -1263,14 +1310,14 @@ function frame(now) {
     let dy = garyView.to.yaw - garyPose.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); garyPose.yaw += dy * kg;
     garyView.g.position.set(garyPose.x, 0, garyPose.z); garyView.g.rotation.y = garyPose.yaw;
   }
-  if (memoT > 0 && (memoT -= dt) <= 0) $('memo').classList.add('hidden');
+  if (memoT > 0 && (memoT -= dt) <= 0) { $('memo').classList.add('hidden'); if (memoQ.length) showMemo(...memoQ.shift()); }
   if (link) hud();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 // Round-2 features (round2.js) get the things main.js owns.
 r2 = setupRound2({
-  scene, camera, $, toast, board, SFX, nameOf, me, keys, floods, showMemo, pondMeshes,
+  scene, camera, $, toast, board, SFX, nameOf, me, keys, floods, showMemo, pondMeshes, terrain,
   get sign() { return signRef; },
   link: () => link, crew: () => crew, report: () => report, driving, pad: () => pad, balls: () => balls,
 });

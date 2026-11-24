@@ -1,6 +1,10 @@
 // The shared simulation: plain numbers, no THREE, no DOM. The server runs it
 // as the one true copy of the range; browsers run the same ball physics so
 // flights look smooth between server ticks (the server's word wins at rest).
+// The map (Dimple Creek: the creek, its crossings, the nets, the landmarks)
+// lives in map.js; world-dependent physics takes `world` ({venue}) as an argument.
+import { groundContact, ballFeatures, startDrift, cartBlocked, keepInField } from './map.js';
+import { DIVE_ROW, POND_ROW } from './dive.js';
 
 export const SIM = {
   G: 9.81,
@@ -13,7 +17,7 @@ export const SIM = {
   STAND_REACH: 3,
   BALL_PRICE: 1,       // $ per ball dropped in the bucket stand
   WALK: 4.2,           // m/s
-  FIELD: { xMin: -150, xMax: 150, zMin: -290, zMax: 9 },
+  FIELD: { xMin: -64, xMax: 64, zMin: -189, zMax: 9 },   // Dimple Creek's netted field (map.js MAP.FIELD)
   MAX_PLAYERS: 6,
   MAX_BALLS: 800,      // when the field is this full, customers wait for a clean mat
   HELPER_WALK: 3.4,    // m/s, hired help is in no hurry
@@ -74,7 +78,8 @@ export function ballHitsCart(x0, y0, z0, b, cart) {
 }
 
 // The cart's driving model, shared so the server can sanity-check the driver.
-export function stepCart(c, throttle, steer, dt, vmax) {
+export function stepCart(c, throttle, steer, dt, vmax, world) {
+  const ox = c.x, oz = c.z;
   const accel = throttle > 0 ? 5 : throttle < 0 ? (c.v > 0.3 ? 12 : 3) : 0;
   c.v += throttle * accel * dt;
   if (!throttle) c.v -= Math.sign(c.v) * Math.min(Math.abs(c.v), 3.5 * dt);   // rolls to a stop
@@ -82,8 +87,9 @@ export function stepCart(c, throttle, steer, dt, vmax) {
   c.yaw -= steer * Math.max(-1, Math.min(1, c.v / 3)) * 1.25 * dt;
   c.x += -Math.sin(c.yaw) * c.v * dt;
   c.z += -Math.cos(c.yaw) * c.v * dt;
-  const x = Math.max(SIM.FIELD.xMin, Math.min(SIM.FIELD.xMax, c.x)), z = Math.max(SIM.FIELD.zMin, Math.min(SIM.FIELD.zMax + 6, c.z));
-  if (x !== c.x || z !== c.z) { c.x = x; c.z = z; c.v *= 0.3; }
+  if (keepInField(c, 6)) c.v *= 0.3;
+  // The creek, the pond, the rock and the tractor stop the cart: only the Cart Bridge crosses.
+  if (cartBlocked(c.x, c.z, world)) { c.x = ox; c.z = oz; c.v *= -0.2; }
 }
 
 // Ten mats along z = 0, everyone hitting toward -z.
@@ -132,37 +138,34 @@ export const KIND_PHYS = {
   square: { bounce: 0, stick: true },
   bouncy: { bounce: 0.78, keep: 0.92, roll: 1.2 },
 };
-function stepOnce(b) {
+function stepOnce(b, world) {
   const dt = SIM.STEP, R = SIM.BALL_R, k = KIND_PHYS[b.kind];
   b.vy -= SIM.G * dt;
-  if (k?.drift && b.y > R) { b.vx += k.drift * dt; b.vx -= b.vx * k.drag * dt; b.vz -= b.vz * k.drag * dt; }
   if (b.curve && b.y > 0.12) {   // hook or slice from a crew swing: sideways push, perpendicular to travel
     const h = Math.hypot(b.vx, b.vz);
     if (h > 1) { const a = 6 * b.curve * dt / h, vx = b.vx; b.vx -= b.vz * a; b.vz += vx * a; }
   }
   b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
+  ballFeatures(b);                         // the nets, Dimples Rock, the Old Tractor
   if (b.y < R) {
-    b.y = R;
-    if (k?.stick) { b.vx = b.vy = b.vz = 0; b.rest = true; return true; }
-    if (b.vy < -1) { const e = k?.bounce ?? 0.35, keep = k?.keep ?? 0.7; b.vy *= -e; b.vx *= keep; b.vz *= keep; }
-    else {
-      b.vy = 0;
-      const s = Math.hypot(b.vx, b.vz), ns = Math.max(0, s - SIM.ROLL_DECEL * (k?.roll ?? 1) * dt);
-      if (ns === 0) { b.vx = 0; b.vz = 0; b.rest = true; return true; }
-      b.vx *= ns / s; b.vz *= ns / s;
-    }
+    const r = groundContact(b, world, k);  // fairway, gravel, mud, or the creek's water
+    if (r === 'rest') return true;
+    if (r === 'drift') return 'drift';
   }
   return false;
 }
 
 // Advance a ball by dt seconds of fixed steps (the remainder carries over in
-// b.acc). Returns true if it came to rest during this call.
-export function advanceBall(b, dt) {
-  if (b.rest) return false;
+// b.acc). Returns true if it came to rest during this call, or 'drift' if it
+// landed in the running creek (b.drift is set; step it with stepDrift).
+export function advanceBall(b, dt, world) {
+  if (b.rest || b.drifting) return false;
   b.acc = (b.acc ?? 0) + dt;
   while (b.acc >= SIM.STEP) {
     b.acc -= SIM.STEP;
-    if (stepOnce(b)) { b.acc = 0; return true; }
+    const r = stepOnce(b, world);
+    if (r === 'drift') { b.acc = 0; startDrift(b, world); return 'drift'; }
+    if (r) { b.acc = 0; return true; }
   }
   return false;
 }
@@ -220,6 +223,8 @@ export const SHOP = [
     { name: 'Turbo nozzle', cost: 3000, desc: 'The pressure washer cleans twice as fast and reaches 9 m. Corporate approved this nozzle after a brief incident.' },
     { name: 'Covered bays', cost: 8000, desc: 'Mats get no morning mud and scuff half as fast. The members do not like to see dirt. Or you.' },
   ] },
+  DIVE_ROW,    // personal: the dive gear ladder (Scuba v2), kept by name as diveByName
+  POND_ROW,    // crew: the pneumatic ball tube and the pond pump
   { id: 'ads', title: 'Advertising', tiers: [
     { name: 'Word of mouth', desc: 'Customers trickle in.' },
     { name: 'A sign by the road', cost: 30, desc: 'Customers hit 25% more balls.' },

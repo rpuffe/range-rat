@@ -5,9 +5,9 @@
 // main.js hands over a context of the things it owns and calls these hooks.
 
 import * as THREE from 'three';
-import { WASHER_HANDLES, atHandle, WASH, VENUE_RULES, gearGrimeFactor, money, FIXTURES, SIM } from './sim.js';
+import { WASHER_HANDLES, atHandle, WASH, VENUE_RULES, gearGrimeFactor, money, FIXTURES, SIM, POND } from './sim.js';
 import { createPA } from './pa.js';
-import { createWasher } from './washer.js';
+import { createWasher, createCrank } from './washer.js';
 import { createVenues, paintSign } from './venues.js';
 import { createEnding } from './ending.js';
 import { createCCTV } from './cctv.js';
@@ -16,6 +16,7 @@ export function setupRound2(ctx) {
   const { scene, camera, $, toast, board, SFX, nameOf, me } = ctx;
   const link = () => ctx.link();
   const crew = () => ctx.crew();
+  const onDockNow = () => !!crew().pond?.unlocked && Math.hypot(me.x - POND.DOCK.x, me.z - POND.DOCK.z) < POND.DOCK_R;
 
   const pa = createPA({ root: document.body, audio: () => SFX.audioHandle?.() ?? null });
   const washer = createWasher(scene, { onTick: () => SFX.scoop() });
@@ -25,6 +26,9 @@ export function setupRound2(ctx) {
 
   let venueShown = -1, endlessShown = false;
   let cranking = null, crankTurns = 0, crankSent = 0;
+  // Buddy Air v2: the same crank helper pumps air on the dock; Ⓧ held there hauls the bag line up.
+  const pumpCrank = createCrank();
+  let pumpOn = false, pumpTurns = 0, pumpSent = 0, pumpRateNow = 0, haulOn = false, haulSecs = 0, haulSent = 0;
   let reveal = null;                // { t, venue, from: {pos, quat}, memo, title }
   let mouse = { dx: 0, dy: 0, wheel: 0, down: false, click: false };
   let oneId = null, endingCard = null, ledgerKey = '';
@@ -109,8 +113,21 @@ export function setupRound2(ctx) {
   function release() {
     if (cranking) { washer.crank.end(); cranking = null; }
   }
-  const capturing = () => !!cranking || cctv.isOn || !!reveal;
-  function mouseMove(e) { mouse.dx += e.movementX ?? 0; mouse.dy += e.movementY ?? 0; if (cranking) washer.crank.feedMouse(e.movementX ?? 0, e.movementY ?? 0); }
+  const capturing = () => !!cranking || pumpOn || cctv.isOn || !!reveal;
+  function mouseMove(e) {
+    mouse.dx += e.movementX ?? 0; mouse.dy += e.movementY ?? 0;
+    if (cranking) washer.crank.feedMouse(e.movementX ?? 0, e.movementY ?? 0);
+    if (pumpOn) pumpCrank.feedMouse(e.movementX ?? 0, e.movementY ?? 0);
+  }
+  function pumpBegin() { pumpOn = true; pumpCrank.begin('L'); pumpTurns = 0; pumpSent = 0; }
+  function pumpEnd() {
+    if (!pumpOn) return;
+    pumpOn = false; pumpCrank.end(); pumpRateNow = 0;
+    link()?.act({ t: 'pump', turns: +pumpTurns.toFixed(3), held: false });
+    pumpTurns = 0;
+  }
+  function haulBegin() { haulOn = true; haulSecs = 0; haulSent = 0; }
+  function haulEnd() { if (haulOn) { haulOn = false; haulSecs = 0; link()?.act({ t: 'haul', held: false }); } }
   function wheel(e) { mouse.wheel += Math.sign(e.deltaY); }
   function toggleCCTV() {
     const c = crew();
@@ -135,6 +152,7 @@ export function setupRound2(ctx) {
     const w = k * (1 - back);
     camera.position.copy(r.from.pos).lerp(REVEAL_POS, w);
     camera.quaternion.copy(r.from.quat).slerp(tmpQ, w);
+    if (!r.waterOn && r.t > 1.5) { r.waterOn = true; ctx.terrain?.setVenue(r.venue === 6 ? 5 : r.venue); }   // the water comes back on
     if (!r.flipped && r.t > 1) { r.flipped = true; const c = crew(); venues.setVenue(r.venue === 6 ? 5 : r.venue, r.venue === 6 || !!c.endless); repaintSign(r.venue); SFX.cash(10); }
     if (r.t > 3 && !r.memoShown) { r.memoShown = true; ctx.showMemo(r.memo, null); }
     if (r.t >= 6) {
@@ -195,6 +213,25 @@ export function setupRound2(ctx) {
         crankTurns += washer.crank.step(dt);
       }
     }
+    // Pumping: 1 turn = 1.5 s of air, capped at 2.5 turns/s. Holding without rotating (the crank helper's slow 1 turn/s) is the trickle path.
+    if (pumpOn) {
+      if (!onDockNow() || me.diving || c.phase !== 'shift') pumpEnd();
+      else {
+        const pad = ctx.pad();
+        if (pad) pumpCrank.feedStick(pad.rx, pad.ry);
+        const t = pumpCrank.step(dt), slow = Math.abs(t - dt) < 1e-6;
+        pumpRateNow = slow ? 0.2 : Math.min(1, t / Math.max(dt, 1e-3) / 2.5);
+        if (!slow) pumpTurns += t;
+        if (now - pumpSent > 120) { link()?.act({ t: 'pump', turns: +pumpTurns.toFixed(3), held: true }); pumpTurns = 0; pumpSent = now; }
+      }
+    }
+    if (haulOn) {
+      if (!onDockNow() || me.diving || (c.pond?.line ?? 0) <= 0) haulOn = false;
+      else {
+        haulSecs += dt;
+        if (now - haulSent > 120) { link()?.act({ t: 'haul', secs: +haulSecs.toFixed(2) }); haulSent = now; }
+      }
+    }
     if (crankTurns > 0 && now - crankSent > 250) { link()?.act({ t: 'crank', side: cranking ?? 'L', turns: +crankTurns.toFixed(3) }); crankTurns = 0; crankSent = now; }
     // Ball No. 1: drawn here, big and gold, not by the instanced balls.
     const one = [...ctx.balls().values()].find(b => b.kind === 'one');
@@ -218,6 +255,8 @@ export function setupRound2(ctx) {
   }
   function prompt(btn) {
     const c = crew();
+    if (pumpOn) return 'Pumping: circle the ' + (ctx.pad() ? 'right stick' : 'mouse') + ' to send air down (1 turn = 1.5 s)';
+    if (haulOn) return 'Hauling up the bag… ' + Math.min(100, Math.round(haulSecs / 1.5 * 100)) + '%';
     const owed = c.washer?.credit ?? 0, n = c.washer?.n ?? 0;
     if (c.up?.washer && c.phase === 'shift') for (const side of ['L', 'R']) if (atHandle(me, side)) return cranking ? 'Cranking… circle the right stick or the mouse · ' + money(owed) + ' left in the washer'
       : n ? 'Hold ' + btn + ' to crank ' + money(owed) + ' out of the washer (' + n + ' balls)' : 'The ball washer is empty. Bank some balls.';
@@ -226,6 +265,7 @@ export function setupRound2(ctx) {
 
   return {
     onEvent, onSnapshot, press, release, capturing, mouseMove, wheel, toggleCCTV, tick, hudLine, prompt,
+    pumpBegin, pumpEnd, haulBegin, haulEnd, pumpRate: () => (pumpOn ? pumpRateNow : 0.6),
     get cctvOn() { return cctv.isOn; }, get revealing() { return !!reveal; },
     setMouseDown(v) { mouse.down = v; if (v) mouse.click = true; },
   };

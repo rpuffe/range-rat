@@ -8,7 +8,7 @@ import * as THREE from 'three';
 export const FEEDS = [
   { name: 'STAND MAST', pos: [26, 18, 14],   look: [8, 0, -110] },
   { name: 'POND',       pos: [-30, 10, -58], look: [-12, 0, -78] },
-  { name: 'FAR FIELD',  pos: [0, 22, -265],  look: [0, 0, 0] },
+  { name: 'FAR FIELD',  pos: [0, 22, -188],  look: [0, 0, 0] },
 ];
 const FOV_WIDE = 60, FOV_TIGHT = 25;
 const YAW_MAX = 35 * Math.PI / 180, PITCH_MAX = 15 * Math.PI / 180;

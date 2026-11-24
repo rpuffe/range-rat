@@ -3,7 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { POND, inPond } from '../web/js/sim.js';
+import { POND, inPond, SIM, SHOP_BY_ID, nextPrice } from '../web/js/sim.js';
+import { Crew } from '../server/crew.mjs';
+import { gearGrimeFactor } from '../web/js/sim.js';
 import {
   PD_POND, POND_DEEP, deepDist, inDeepEnd, inDeepCore, deepness, bedAt, eyeY, seeded, sinksDeep, deepEndSpot, sinkSpot,
   DIVE_ROW, POND_ROW, diveTiers, MAX_DIVE_LEVEL, PUMP, HAUL, pumpGain, drainMult, airStep,
@@ -213,4 +215,264 @@ test('water clarity: teal at 1, brown-green at 0, fog 6 + 8 x clarity, halved in
   assert.equal(waterLook(1, -15, -83).far, 7, 'the floor of the Deep End');
   assert.equal(waterLook(2).far, 14); assert.equal(waterLook(-1).far, 6); assert.equal(waterLook(undefined).far, 14);
   assert.ok(waterLook(1, -15, -81).far < 14 && waterLook(1, -15, -81).far > 7, 'it darkens down the wall');
+});
+
+// ---- the crew-level rules (server/crew.mjs) ------------------------------------------------
+function makeCrew(save = { venue: 1, day: 3 }, seed = 11) {
+  const clock = { t: 1_000_000 };
+  const crew = new Crew('DIVE', save, { shiftSecs: 600, seed, now: () => clock.t });
+  const step = (dt = 0.05) => { clock.t += dt * 1000; crew.tick(dt); };
+  const run = secs => { for (let i = 0; i < Math.round(secs * 20); i++) step(); };
+  return { crew, clock, run, step };
+}
+function openShift(crew) {
+  crew.startShift();
+  for (const m of crew.mats) m.next = 1e9;
+  for (const k of Object.keys(crew.fixtures)) crew.fixtures[k] = 0;
+  crew.flush();
+}
+function addPlayer(crew, name, x, z) { const p = crew.join(name); crew.connect(p); p.x = x; p.z = z; return p; }
+const act = (crew, p, ...a) => crew.input(p, { a });
+const DOCK = POND.DOCK, DEEP = POND_DEEP;
+const evs = crew => crew.flush().ev;
+const sunkBall = (crew, kind = 'range', x = POND.x, z = POND.z) => {
+  const b = crew.addBall({ x, y: POND.BOTTOM, z, vx: 0, vy: 0, vz: 0, kind }); b.sunk = true; b.rest = true; return b;
+};
+
+test('pump turns feed air: a cranking buddy beats the drain, holding alone does not, nobody pumping drains', () => {
+  const airAfter = (turnsPerTick, held) => {
+    const { crew, step } = makeCrew(); openShift(crew);
+    const diver = addPlayer(crew, 'D', POND.x, POND.z), pumper = addPlayer(crew, 'P', DOCK.x, DOCK.z + 1);
+    step(); diver.air = 10;
+    for (let i = 0; i < 20; i++) { act(crew, pumper, { t: 'pump', turns: turnsPerTick, held }); step(); }
+    return diver.air;
+  };
+  const none = airAfter(0, false), held = airAfter(0, true), crank = airAfter(0.125, false);
+  assert.ok(Math.abs(none - 9) < 0.01, `drains 1 a second (${none})`);
+  assert.ok(held < 10 && held > none, `held-only trickle is +0.5 a second against -1 (${held})`);
+  assert.ok(crank > 10, `a full crank (2.5 turns a second) wins (${crank})`);
+  assert.ok(crank <= diveTiers(0).air);
+});
+
+test('the old {t:"pump", on:true} still pumps; a pumper off the dock does nothing', () => {
+  const { crew, step } = makeCrew(); openShift(crew);
+  const diver = addPlayer(crew, 'D', POND.x, POND.z), pumper = addPlayer(crew, 'P', DOCK.x, DOCK.z + 1);
+  step(); diver.air = 10;
+  act(crew, pumper, { t: 'pump', on: true });
+  for (let i = 0; i < 20; i++) step();
+  assert.ok(pumper.pumping && diver.air > 9.3, `${diver.air}`);
+  const far = addPlayer(crew, 'F', 0, 0);
+  act(crew, far, { t: 'pump', turns: 1, on: true });
+  assert.equal(far.pumping, false);
+});
+
+test('twin tanks: 70 s of air, and no x2 drain in the Deep End', () => {
+  const { crew, step } = makeCrew({ venue: 1, day: 3, diveByName: { Tw: 2 } }); openShift(crew);
+  const tw = addPlayer(crew, 'Tw', DEEP.x, DEEP.z), mask = addPlayer(crew, 'Mk', DEEP.x + 0.5, DEEP.z);
+  assert.equal(tw.dive, 2); assert.equal(tw.air, 70); assert.equal(mask.air, 20);
+  step();
+  for (let i = 0; i < 20; i++) step();
+  assert.ok(Math.abs(tw.air - 68.95) < 0.2, `x1 (${tw.air})`);
+  assert.ok(Math.abs(mask.air - 17.9) < 0.2, `x2 (${mask.air})`);
+});
+
+test('the bag follows the tier: mask 10, tank 15', () => {
+  const { crew } = makeCrew({ venue: 1, day: 3, diveByName: { Tk: 1 } }); openShift(crew);
+  const mask = addPlayer(crew, 'Mk', POND.x, POND.z), tank = addPlayer(crew, 'Tk', POND.x, POND.z);
+  crew.tick(0.05);
+  const balls = Array.from({ length: 20 }, () => sunkBall(crew));
+  for (const b of balls) { act(crew, mask, { t: 'pickup', ball: b.id, pond: true }); }
+  assert.equal(mask.bag, 10);
+  for (const b of balls) { act(crew, tank, { t: 'pickup', ball: b.id, pond: true }); }
+  assert.equal(tank.bag, 10, 'only 10 were left');
+  const more = Array.from({ length: 10 }, () => sunkBall(crew));
+  for (const b of more) act(crew, tank, { t: 'pickup', ball: b.id, pond: true });
+  assert.equal(tank.bag, 15);
+});
+
+test('send and haul: the diver keeps diving, the buddy lands the bag, it ignores pocket capacity', () => {
+  const { crew, step } = makeCrew(); openShift(crew);
+  const diver = addPlayer(crew, 'D', POND.x, POND.z), hauler = addPlayer(crew, 'H', DOCK.x, DOCK.z + 1);
+  step();
+  diver.bag = 7; diver.bagW = 9; diver.bagKinds = Array(7).fill('range');
+  act(crew, diver, { t: 'send' });
+  assert.equal(diver.bag, 0); assert.equal(crew.line.n, 7);
+  assert.deepEqual(evs(crew).filter(e => e.t === 'sent').map(e => e.n), [7]);
+  act(crew, diver, { t: 'send' });                       // an empty bag sends nothing
+  assert.equal(crew.line.n, 7);
+  // holding for 1.5 s lands it; a short tap does not
+  act(crew, hauler, { t: 'haul' }); for (let i = 0; i < 10; i++) { step(0.1); act(crew, hauler, { t: 'haul' }); }
+  assert.equal(hauler.pocket, 0, '1 s is not enough');
+  act(crew, hauler, { t: 'haul', held: false });
+  assert.equal(hauler.haulHeld, 0);
+  act(crew, hauler, { t: 'haul' });
+  for (let i = 0; i < 17; i++) { step(0.1); act(crew, hauler, { t: 'haul' }); }
+  assert.equal(hauler.pocket, 7); assert.equal(hauler.pocketW, 9); assert.equal(crew.line.n, 0);
+  assert.ok(evs(crew).some(e => e.t === 'hauled' && e.n === 7));
+  // a hauler can't haul from the water
+  crew.line.n = 3; act(crew, diver, { t: 'haul' }); assert.equal(diver.pocket, 0);
+});
+
+test('a gasp spills the bag in the diver\'s hands but a bag already on the line is safe', () => {
+  const { crew, step } = makeCrew(); openShift(crew);
+  const d = addPlayer(crew, 'D', POND.x, POND.z); step();
+  d.bag = 4; d.bagW = 4; d.bagKinds = Array(4).fill('range');
+  act(crew, d, { t: 'send' });
+  d.bag = 2; d.bagW = 2; d.bagKinds = ['range', 'range'];
+  d.air = 0.01; step();
+  assert.ok(evs(crew).some(e => e.t === 'gasp'));
+  assert.equal(crew.line.n, 4, 'the line is safe');
+  assert.equal(crew.sunkCount(), 2, 'the carried bag spilled back');
+});
+
+test('unhauled bags bank at half pay at the bell', () => {
+  const cashAfterBell = w => { const { crew } = makeCrew(); openShift(crew); crew.line.n = w; crew.line.w = w; crew.endShift(); assert.equal(crew.line.n, 0); return crew.cash; };
+  const base = cashAfterBell(0), ten = cashAfterBell(10) - base, twenty = cashAfterBell(20) - base;
+  assert.ok(ten > 0 && Math.abs(twenty - 2 * ten) < 0.05, `${ten} vs ${twenty}`);
+  // half pay: what the night crew banks is 10 balls' weight x 0.5, at the value the bell sees
+  const { crew } = makeCrew(); openShift(crew);
+  const real = crew.bank.bind(crew); let seen = null;
+  crew.bank = (n, by, kind, w, g) => { if (by === 'night') seen = { n, w, v: crew.valueNow() }; return real(n, by, kind, w, g); };
+  crew.line.n = 10; crew.line.w = 10; crew.endShift();
+  assert.deepEqual([seen.n, seen.w], [10, 5], 'ten balls, half the weight');
+});
+
+test('lead and gold roll into the Deep End', () => {
+  const { crew } = makeCrew(); openShift(crew);
+  for (const kind of ['lead', 'gold', 'lead']) crew.sinkNew(kind);
+  const b = crew.addBall({ x: POND.x + 3, y: 0.05, z: POND.z + 2, vx: 0, vy: 0, vz: 0, kind: 'lead' });
+  crew.sink(b);
+  const g = crew.addBall({ x: POND.x - 2, y: 0.05, z: POND.z - 1, vx: 0, vy: 0, vz: 0, kind: 'gold' });
+  crew.sink(g);
+  const range = crew.addBall({ x: POND.x + 3, y: 0.05, z: POND.z + 2, vx: 0, vy: 0, vz: 0, kind: 'range' });
+  crew.sink(range);
+  const sunk = [...crew.balls.values()].filter(x => x.sunk);
+  assert.equal(sunk.length, 6);
+  for (const x of sunk) {
+    if (x.kind === 'range') { assert.equal(x.x, POND.x + 3); assert.equal(x.y, POND.BOTTOM); continue; }
+    assert.ok(inDeepEnd(x) && inPond(x), `${x.kind} at ${x.x},${x.z}`);
+    assert.ok(Math.abs(x.y - bedAt(x.x, x.z)) < 1e-9);
+  }
+});
+
+test('treasure: a morning roll, one per shift, in order, from the Club on', () => {
+  let ever = 0;
+  for (let seed = 1; seed <= 12; seed++) {
+    const { crew } = makeCrew({ venue: 1, day: 3 }, seed); openShift(crew);
+    if (crew.treasure) { ever++; assert.equal(crew.treasure.id, 'keys'); assert.ok(inDeepEnd(crew.treasure)); assert.ok(inPond(crew.treasure)); }
+    // a second morning can't stack another on top of one that is still down there
+    const before = crew.treasure;
+    crew.phase = 'report'; crew.startShift();
+    if (before) assert.equal(crew.treasure.id, 'keys', 'still the same one');
+  }
+  assert.ok(ever > 2 && ever < 11, `about half the mornings (${ever}/12)`);
+  const muni = makeCrew({ venue: 0, day: 3 }).crew; openShift(muni);
+  assert.equal(muni.treasure, null);
+});
+
+test('treasure: pick it up in the Deep End, bank it at the stand for 200 x BV, lostFound round-trips the save', () => {
+  const { crew, step } = makeCrew({ venue: 1, day: 3, lostFound: ['keys'] }); openShift(crew);
+  assert.deepEqual(crew.lostFound, ['keys']);
+  crew.treasure = { id: 'trophy', x: DEEP.x, z: DEEP.z };
+  const d = addPlayer(crew, 'D', DEEP.x, DEEP.z), other = addPlayer(crew, 'O', POND.x + 4, POND.z); step();
+  act(crew, other, { t: 'treasure' });
+  assert.equal(other.treasure, null, 'too far away');
+  act(crew, d, { t: 'treasure' });
+  assert.equal(d.treasure, 'trophy'); assert.equal(crew.treasure, null);
+  assert.equal(crew.snapshot().players.find(p => p.id === d.id).treasure, 'trophy');
+  d.x = POND.DOCK.x; d.z = POND.DOCK.z + 4; step();               // surfaced with it
+  assert.equal(d.treasure, 'trophy');
+  d.x = SIM.STAND.x; d.z = SIM.STAND.z; step(); crew.flush();
+  const bv = crew.valueNow().bv, cash0 = crew.cash;
+  crew.paShift = 0; crew.paAt = 0;
+  act(crew, d, { t: 'deposit' });
+  assert.equal(d.treasure, null);
+  assert.deepEqual(crew.lostFound, ['keys', 'trophy']);
+  assert.ok(Math.abs(crew.cash - cash0 - 200 * bv) < 0.01, `fee ${crew.cash - cash0} vs ${200 * bv}`);
+  const e = evs(crew);
+  assert.ok(e.some(x => x.t === 'treasure' && x.phase === 'banked' && x.id === 'trophy' && x.fee > 0));
+  assert.ok(e.some(x => x.t === 'pa' && x.id === 'treasure'), 'the first-treasure PA line');
+  assert.deepEqual(crew.snapshot().pond.lostFound, ['keys', 'trophy']);
+  const save = JSON.parse(JSON.stringify(crew.toSave()));
+  assert.equal(save.v, 3); assert.deepEqual(save.lostFound, ['keys', 'trophy']);
+  const back = new Crew('DIVE', save, { shiftSecs: 600, seed: 3 });
+  assert.deepEqual(back.lostFound, ['keys', 'trophy']);
+});
+
+test('treasure: a knockdown drops it at your feet, a gasp sends it back to the Deep End, one carrier at a time', () => {
+  const { crew, step } = makeCrew(); openShift(crew);
+  crew.treasure = { id: 'duck', x: DEEP.x, z: DEEP.z };
+  const d = addPlayer(crew, 'D', DEEP.x, DEEP.z), o = addPlayer(crew, 'O', DEEP.x + 0.4, DEEP.z); step();
+  act(crew, d, { t: 'treasure' });
+  act(crew, o, { t: 'treasure' });
+  assert.equal(d.treasure, 'duck'); assert.equal(o.treasure, null);
+  d.x = POND.x + 2; d.z = POND.z; d.down = 1; step();
+  assert.equal(d.treasure, null);
+  assert.equal(crew.treasure.id, 'duck'); assert.ok(Math.hypot(crew.treasure.x - (POND.x + 2), crew.treasure.z - POND.z) < 0.5, 'at their feet');
+  d.down = 0; d.x = crew.treasure.x; d.z = crew.treasure.z; act(crew, d, { t: 'treasure' });
+  assert.equal(d.treasure, 'duck');
+  d.air = 0.01; step();
+  assert.equal(d.treasure, null);
+  assert.ok(inDeepEnd(crew.treasure), 'back in the Deep End');
+});
+
+test('the dive gear row is bought from the crew wallet at catalog price, kept by name', () => {
+  const { crew } = makeCrew({ venue: 1, day: 3 }); openShift(crew);
+  const a = addPlayer(crew, 'Ann', 20, 5), b = addPlayer(crew, 'Bob', 20, 5);
+  crew.cash = 100_000;
+  assert.equal(nextPrice('dive', {}, 2, a.dive, 1), 1200, 'not price-scaled by crew size');
+  assert.equal(crew.buy(a, 'dive'), true); assert.equal(a.dive, 1); assert.equal(crew.cash, 98_800);
+  assert.equal(crew.buy(a, 'dive'), true); assert.equal(crew.cash, 93_800);
+  assert.equal(crew.buy(a, 'dive'), false, 'the scooter is a County purchase');
+  assert.equal(b.dive, 0); assert.equal(a.gear, crew.gearByName.Ann ?? a.gear, 'carrying gear untouched');
+  assert.deepEqual(crew.toSave().diveByName, { Ann: 2 });
+  const back = new Crew('DIVE', JSON.parse(JSON.stringify(crew.toSave())), { shiftSecs: 600, seed: 5 });
+  const again = back.join('Ann'); assert.equal(again.dive, 2); assert.equal(again.air, 70);
+  crew.venue = 2; assert.equal(crew.buy(a, 'dive'), true); assert.equal(a.dive, 3);
+  const muni = makeCrew({ venue: 0, day: 3 }).crew; const m = addPlayer(muni, 'M', 20, 5); muni.cash = 99_999;
+  assert.equal(muni.buy(m, 'dive'), false, 'no pond before the Club');
+  assert.ok(SHOP_BY_ID.dive && SHOP_BY_ID.pond);
+});
+
+test('saves from before v3 load with empty dive gear and an empty case', () => {
+  const old = { v: 2, code: 'OLD', day: 5, cash: 10, venue: 1, gear: { Ann: 2 } };
+  const crew = new Crew('OLD', old, { shiftSecs: 600, seed: 1 });
+  assert.deepEqual(crew.diveByName, {}); assert.deepEqual(crew.lostFound, []);
+  assert.equal(crew.join('Ann').dive, 0);
+  const junk = new Crew('JNK', { diveByName: { A: 9, B: -1, C: 'x', D: 2 }, lostFound: ['keys', 'keys', 'nope', 5] }, { shiftSecs: 600, seed: 1 });
+  assert.deepEqual(junk.diveByName, { A: 3, D: 2 }); assert.deepEqual(junk.lostFound, ['keys']);
+  assert.equal(crew.toSave().v, 3);
+});
+
+test('the pneumatic tube: feed it by the dock, balls bank at the stand 6 s later at the gear factor you fed with', () => {
+  const { crew, step, run } = makeCrew({ venue: 1, day: 3, up: { pond: 1 } }); openShift(crew);
+  const p = addPlayer(crew, 'T', TUBE.BOX.x, TUBE.BOX.z + 0.5); step();
+  p.pocket = 6; p.pocketW = 6;
+  const bv = crew.valueNow(), cash0 = crew.cash;
+  act(crew, p, { t: 'feed' });
+  assert.equal(p.pocket, 0);
+  assert.equal(crew.snapshot().pond.tube, 6);
+  run(5.5); assert.equal(crew.cash, cash0, 'still in the tube');
+  run(1);
+  assert.ok(crew.cash > cash0 && Math.abs(crew.cash - cash0 - 6 * bv.bv * bv.hustle * gearGrimeFactor(p.grime)) < 0.02);
+  assert.ok(evs(crew).some(e => e.t === 'thunk' && e.n === 6));
+  const noTube = makeCrew(); openShift(noTube.crew);
+  const q = addPlayer(noTube.crew, 'Q', TUBE.BOX.x, TUBE.BOX.z + 0.5); q.pocket = 3;
+  act(noTube.crew, q, { t: 'feed' });
+  assert.equal(q.pocket, 3, 'no tube bought yet');
+});
+
+test('the pond pump clears one sunk ball every 8 s through the tube', () => {
+  const { crew, run } = makeCrew({ venue: 1, day: 3, up: { pond: 2 } }); openShift(crew);
+  const before = crew.sunkCount();
+  for (let i = 0; i < 6; i++) sunkBall(crew);
+  run(16.5);
+  assert.equal(crew.sunkCount(), before + 6 - 2);
+  const cash0 = crew.cash; run(6); assert.ok(crew.cash > cash0, 'banked by the tube');
+});
+
+test('the pond row is a crew row: priced by crew size, Club and up', () => {
+  assert.equal(nextPrice('pond', {}, 1, 0, 1), 4000);
+  assert.equal(nextPrice('pond', {}, 4, 0, 1), 8800);
+  assert.equal(nextPrice('pond', {}, 1, 0, 0), null);
 });

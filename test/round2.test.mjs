@@ -1491,7 +1491,7 @@ test('save v2: venue, venueDay, outstanding, pendingReveal, endless, records and
     records: { cash: 99.5, banked: 40, day: 12 }, voiced: ['welcome', 'cart'], debuts: ['gold'], day: 20 };
   const crew = makeCrew(save).crew;
   const back = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.equal(back.v, 2);
+  assert.equal(back.v, 3, 'v3 adds diveByName and lostFound');
   assert.equal(back.venue, 3);
   assert.equal(back.venueDay, 4);
   assert.equal(back.outstanding, 123456);
@@ -1600,7 +1600,7 @@ test('a diver surfacing with a bag keeps the kinds\' weights', () => {
   crew.sinkNew('lead', a); crew.sinkNew('gold', a);
   const ids = [...crew.balls.values()].filter(b => b.sunk).map(b => b.id);
   const sunkBefore = ids.length;
-  for (const id of ids) a.x = POND.x, a.z = POND.z, act(crew, a, { t: 'pickup', ball: id, pond: true });
+  for (const id of ids) { const b = crew.balls.get(id); a.x = b.x; a.z = b.z; act(crew, a, { t: 'pickup', ball: id, pond: true }); }   // lead and gold roll into the Deep End
   assert.equal(a.bag, sunkBefore);
   assert.deepEqual(a.bagKinds.slice().sort(), ['gold', 'lead']);
   a.x = POND.DOCK.x; a.z = POND.DOCK.z + 4;
@@ -1617,7 +1617,7 @@ test('a gasping diver\'s bag re-sinks with its original kinds', () => {
   const a = addPlayer(crew, 'A', POND.x, POND.z);
   run(0.1);
   crew.sinkNew('lead', a); crew.sinkNew('gold', a); crew.sinkNew('lead', a);
-  for (const b of [...crew.balls.values()].filter(b => b.sunk)) act(crew, a, { t: 'pickup', ball: b.id, pond: true });
+  for (const b of [...crew.balls.values()].filter(b => b.sunk)) { a.x = b.x; a.z = b.z; act(crew, a, { t: 'pickup', ball: b.id, pond: true }); }
   assert.equal(a.bag, 3);
   assert.deepEqual(a.bagKinds.slice().sort(), ['gold', 'lead', 'lead']);
   assert.equal(crew.sunkCount(), 0);

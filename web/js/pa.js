@@ -11,6 +11,7 @@ export const PA_LINES = {
   bouncy: 'The members have requested a livelier ball. Please do not chase it. It can tell.',
   gary: 'Gary from Regional is on site. Look busy. Then be busy.',
   mower: 'Corporate has deployed an autonomous mower. It has been trained on your movements.',
+  treasure: 'An item has been recovered from the pond. Corporate will be keeping it in a glass case. Corporate keeps everything in a glass case.',
   huddle: 'Gary from Regional is satisfied. Gary has never been satisfied.',
   cart: 'Corporate has issued you a vehicle. Corporate has not issued you a license.',
   jackpot: 'A jackpot has occurred. Please do not get used to this.',

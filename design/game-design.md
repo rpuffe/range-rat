@@ -246,3 +246,38 @@ Three only, and each player picks their own:
   quota with clean fixtures and fries; diving is a bonus, not a tax.
 - **The pond waits for the Range Club** (owner's call): no pond, no lead balls and
   no Pond Clarity dial at the Muni.
+
+## Council round 3 (2026-11-24): the cuts, Dimple Creek, the Deep End
+
+Source: `design/council-round3.md`. What changed in the build:
+
+- **Cut:** the foam ball, the spigot (look down with the wand to hose your own
+  boots), hold-to-peel, the old hold-to-swing meter, grime from every 4 loads
+  (grime now comes only from knockdowns), other Rats' cash/board/fries toasts.
+  Other Rats' news goes to a quiet 3-line feed on the left.
+- **Fixes:** the pressure washer works without a cart (wash the sign and mats on
+  day 1); the drained pond at the Muni is dry ground, not water.
+- **HUD:** one line, `BV · target · gear`. The KPIs live on the Board.
+- **Pacing:** day 1 is 4 minutes, day 2 is 6, then 7. Day 1 is a beginners'
+  clinic (carries ×0.7). Every shift starts with the crew clocked in at the yard.
+  The square ball debuts on day 5. A one-time nudge points at the shop at $20.
+- **Customers** walk in at the gate, grab a bucket at the stand, hit it from a
+  mat (30 balls, 50 at the Club and up), and walk out. A mat at mud ≥ 0.9 is
+  refused: the customer sulks and leaves, and the mat stays empty for 30 s.
+- **MOW-E** (Club and up, from its second day): at 25% of the shift a mower
+  warns for 12 s, then drives one lane, raking balls into a tidy row 2.4 m
+  behind and flattening any Rat in the way. Award: *Mown Down (Twice)*.
+- **The kitchen menu grows by venue:** fries at the Muni, hot dogs at the Club,
+  beer at Tiered. Serve a hot dog while Gary is on site and his kitchen check
+  passes. Beers served are still counted for the Tiered overserving penalty.
+- **Gold balls** get a beacon. Hitting Gary's cart rings it: *Gary has noted
+  your enthusiasm.*
+- **The map is Dimple Creek** (`web/js/map.js` rules, `web/js/terrain.js` view):
+  a netted field x ±64, z to −190; a diagonal creek through the pond, crossed by
+  the Plank, the Cart Bridge (the only cart crossing) and the Stones; dry gravel
+  that traps balls at the Muni, running water from the Club that floats balls to
+  the Delta (into the pond) or the Grate; landmarks for callouts (Red, Yellow and
+  Blue flags, Dimples Rock, the Old Tractor).
+- **Scuba v2** (`web/js/dive.js`): the Deep End where lead and gold sink, a
+  personal dive-gear ladder, crank-to-pump air from the dock, send the bag up the
+  line and haul it, 12 treasures for the Lost & Found case, the ball tube.

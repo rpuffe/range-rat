@@ -104,9 +104,9 @@ void main(){
   vec2 w = vec2(sin(p.y * 1.3 + t) * 0.25, sin(p.y * 0.9 - t) * 0.2);
   float a = cell(p + w, t, uPer);
   float b = cell(p * 2.0 + vec2(7.0, 3.0) + w, t * 1.3 + 2.0, uPer * 2.0);
-  float la = 1.0 - smoothstep(0.0, 0.16, a);
-  float lb = 1.0 - smoothstep(0.0, 0.2, b);
-  float c = pow(la, 1.6) + 0.6 * pow(lb, 1.6);
+  float la = 1.0 - smoothstep(0.0, 0.07, a);
+  float lb = 1.0 - smoothstep(0.0, 0.09, b);
+  float c = pow(la, 1.8) + 0.45 * pow(lb, 1.8);
   gl_FragColor = vec4(uColor * c * uAmt * fade * mood, 1.0);
 }`;
 
@@ -300,7 +300,7 @@ export function createScuba(scene, camera, POND, opts = {}) {
   // --- caustics (bed: always, faint from above; wall: only underwater) ---
   const causticMat = (wall) => keep(new THREE.ShaderMaterial({
     uniforms: {
-      uTime: U.uTime, uAmt: { value: wall ? 0.7 : 0.22 }, uColor: { value: new THREE.Color(0.45, 0.95, 0.8) },
+      uTime: U.uTime, uAmt: { value: wall ? 0.28 : 0.18 }, uColor: { value: new THREE.Color(0.45, 0.95, 0.8) },
       uC: { value: new THREE.Vector2(POND.x, POND.z) }, uPer: { value: wall ? 40 : 0 },
     },
     defines: wall ? { WALL: 1 } : {},
@@ -1151,7 +1151,7 @@ export function createScuba(scene, camera, POND, opts = {}) {
 
   // --- pond clarity: the water, the underside, the fog and the light all follow one number ---
   let clarTgt = 1, clarCur = 1, clarSet = false;
-  function refreshAmt() { bedMat.uniforms.uAmt.value = (under ? 1.0 : 0.22) * (0.4 + 0.6 * clarCur); }
+  function refreshAmt() { bedMat.uniforms.uAmt.value = (under ? 0.38 : 0.18) * (0.4 + 0.6 * clarCur); }
   function setClarity(c, snap = false) {
     clarTgt = Math.max(0, Math.min(1, c));
     if (snap || !clarSet) { clarCur = clarTgt; clarSet = true; }

@@ -2,6 +2,7 @@
 // parking lot and entrance arch, a clubhouse backdrop, and small props.
 // Everything happens inside createScenery(); this module has no side effects.
 import * as THREE from 'three';
+import { MAP, creekProject } from './map.js';
 
 // Key coordinates for the customer-arrival feature (metres, world space).
 // path runs from a parked car, across the lot, through the gate, to the stand.
@@ -100,25 +101,18 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     // subtle decals on the field: target greens and dark tufts (flat, y <= 0.02)
     const greens = [];
     const flagSpots = [];
-    for (const [x, z, r] of [[-30, -70, 7], [34, -110, 8], [-6, -136, 7], [26, -160, 8]]) {
+    for (const { x, z, r } of MAP.FLAGS.map((f, i) => ({ ...f, r: [6, 7, 7][i] ?? 6 }))) {
       greens.push({ p: [x, 0.016, z], s: [r * 1.22, 1, r * 1.22], c: 0x5a9044 });   // fringe
       greens.push({ p: [x, 0.018, z], s: [r, 1, r], c: 0x6aa352 });
       greens.push({ p: [x, 0.02, z], s: [r * 0.45, 1, r * 0.45], c: 0x7db85c });
       flagSpots.push({ x, z, ph: R(0, 6) });
     }
     inst(flatCircle(28), lambert(0xffffff, decalOpts(4)), greens);
-    // flag sticks: thin poles with a small pennant (the only things standing on the field)
-    inst(new THREE.CylinderGeometry(0.025, 0.03, 2.4, 5).translate(0, 1.2, 0), lambert(0xf2efe6),
-      flagSpots.map(f => ({ p: [f.x, 0, f.z] })));
-    const flagGeo = new THREE.BufferGeometry();
-    flagGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 2.35, 0, 0, 1.95, 0, 0.8, 2.15, 0], 3));
-    flagGeo.computeVertexNormals();
-    flags.items = flagSpots.map(f => ({ p: [f.x, 0, f.z], ph: f.ph }));
-    flags.mesh = inst(flagGeo, new THREE.MeshLambertMaterial({ color: 0xe0452f, side: THREE.DoubleSide, emissive: 0x401008 }), flags.items.map(f => ({ p: f.p })));
+    flags.items = []; flags.mesh = null;   // the flags themselves are terrain.js's (Dimple Creek)
     const tufts = [];
     for (let i = 0; i < (lowDetail ? 14 : 28); i++) {
-      const x = R(-56, 56), z = R(-145, -12);
-      if (Math.hypot(x + 12, z + 78) < 12 || Math.hypot(x, ((z + 50) % 40)) < 0) continue;
+      const x = R(-56, 56), z = R(-180, -12);
+      if (Math.hypot(x + 12, z + 78) < 12 || creekProject(x, z).d < MAP.CREEK.HW + 1.5) continue;   // not in the pond or the creek
       tufts.push({ p: [x, 0.017, z], s: [R(0.5, 1.2), 1, R(0.4, 0.9)], ry: R(0, 3) });
     }
     inst(flatCircle(10), lambert(0x4e7c2e, decalOpts(4)), tufts);
@@ -143,13 +137,13 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * len / 2.5, uv.getY(i) * h / 2.5);
       return g;
     };
-    const sideGeo = netGeo(215, 12).rotateY(Math.PI / 2);
-    for (const sx of [-65, 65]) mesh(sideGeo, netMat, sx, 8, -112.5);
-    mesh(netGeo(130, 12), netMat, 0, 8, -220);
+    const sideGeo = netGeo(185, 12).rotateY(Math.PI / 2);
+    for (const sx of [-MAP.NETS.side, MAP.NETS.side]) mesh(sideGeo, netMat, sx, 8, -97.5);
+    mesh(netGeo(130, 12), netMat, 0, 8, MAP.NETS.back);
 
     const poles = [];
-    for (const sx of [-65, 65]) for (let z = -5; z >= -220.1; z -= 14.4) poles.push({ p: [sx, 8, z] });
-    for (let x = -65; x <= 65.1; x += 14.4) poles.push({ p: [x, 8, -220] });
+    for (const sx of [-MAP.NETS.side, MAP.NETS.side]) for (let z = -5; z >= MAP.NETS.back - 0.1; z -= 14.7) poles.push({ p: [sx, 8, z] });
+    for (let x = -MAP.NETS.side; x <= MAP.NETS.side + 0.1; x += 12.9) poles.push({ p: [x, 8, MAP.NETS.back] });
     inst(new THREE.CylinderGeometry(0.12, 0.16, 16, 6), lambert(0x6e747a), poles);
 
     // fence posts along z 9.5 with gaps for the entrance (-8..2) and cart (28..34.5)
@@ -600,7 +594,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
         dummy.scale.set(1, 1, 1 + Math.sin(t * 3 + f.ph) * 0.12);
         dummy.updateMatrix(); flags.mesh.setMatrixAt(i, dummy.matrix);
       }
-      flags.mesh.instanceMatrix.needsUpdate = true;
+      if (flags.mesh) flags.mesh.instanceMatrix.needsUpdate = true;
       // evening mood: haze warms, lamp glow swells, fireflies appear after 0.75
       hazeCol.copy(hazeA).lerp(hazeB, timeOfDay01);
       haze.mat.opacity = 0.55 + 0.45 * timeOfDay01;

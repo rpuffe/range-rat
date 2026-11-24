@@ -16,7 +16,7 @@ const TAU = Math.PI * 2;
 const lambert = (color, extra) => new THREE.MeshLambertMaterial({ color, ...(extra || {}) });
 
 // ---------------------------------------------------------------- crank input helper (pure logic)
-function createCrank(onTick) {
+export function createCrank(onTick) {
   const MAX_TPS = 2.5, SLOW_TPS = 1, MOUSE_R = 60, MOUSE_MIN = 20, STICK_MIN = 0.5;
   const wrap = a => { while (a > Math.PI) a -= TAU; while (a < -Math.PI) a += TAU; return a; };
   let stickAng = null, mx = 0, my = 0, mouseAng = null;

@@ -13,9 +13,13 @@ import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall
   gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT, FIXTURES, FIXTURE_BY_ID, KIND_W, BALLS_OUTSTANDING, payFor,
   upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed, pickKind,
   VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor } from '../web/js/sim.js';
+import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor } from '../web/js/map.js';
 import { newMat, openShift as openMats, stepMat, matReady, shoot, matWire } from '../web/js/customers.js';
 import { mowerDue, newMower, stepMower, mowerSnap } from '../web/js/mowe.js';
 import { menuFor, yieldFor, garyEats } from '../web/js/menu.js';
+import { diveTiers, MAX_DIVE_LEVEL, PUMP, pumpGain, airStep, newLine, canSend, sendBag, haulReady, takeLine, nightCrew,
+  newTube, tubeFeed, tubeArrivals, hasTube, hasPondPump, atTube, pondPumpStep, sinksDeep, deepEndSpot, bedAt,
+  cleanLostFound, rollTreasure, treasureSpot, finderFee, TREASURE_BY_ID } from '../web/js/dive.js';
 
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: codes get read aloud
 export const CODE_LEN = 4;
@@ -68,6 +72,16 @@ function cleanGear(g) {
   return out;
 }
 
+// Dive gear by name (Scuba v2): same idea as cleanGear, levels 1..MAX_DIVE_LEVEL.
+function cleanDive(g) {
+  const out = {};
+  for (const [name, lvl] of Object.entries(g && typeof g === 'object' ? g : {})) {
+    const n = Math.floor(Number(lvl) || 0);
+    if (n > 0 && typeof name === 'string' && name.length <= 16) out[name] = Math.min(n, MAX_DIVE_LEVEL);
+  }
+  return out;
+}
+
 export class Crew {
   constructor(code, save = null, { shiftSecs = null, now = Date.now, seed } = {}) {
     this.code = code;
@@ -83,6 +97,12 @@ export class Crew {
     this.totals = { ...freshStats(), stamps: 0, ...(save?.totals ?? {}) };
     this.up = cleanUpgrades(save?.up);
     this.gearByName = cleanGear(save?.gear);
+    this.diveByName = cleanDive(save?.diveByName);         // save v3
+    this.lostFound = cleanLostFound(save?.lostFound);      // save v3: the treasure ids in the glass case
+    this.treasure = null;            // the one lying in the Deep End now: { id, x, z }
+    this.treasureSeed = (seed ?? 1) | 0;
+    this.line = newLine();           // the bag line: sent by divers, hauled up from the dock
+    this.tube = newTube(); this.tubeClock = 0;
     this.commendations = int(save?.commendations, 0, 10);
     this.venue = int(save?.venue, 0, 5);
     this.venueDay = int(save?.venueDay, 0, 10_000);
@@ -138,8 +158,11 @@ export class Crew {
       x: SIM.STAND.x - 3 - this.players.size * 1.2, z: SIM.STAND.z - 4, yaw: Math.PI / 2,
       pocket: 0, pocketW: 0, down: 0, online: 0, seenAt: this.now(), movedAt: this.now(), swungAt: 0,
       gear: 0, wand: false, washAt: 0, diving: false, air: POND.AIR, bag: 0, bagW: 0, bagKinds: [], pumping: false,
+      dive: 0, treasure: null, pumpTurns: 0, pumpHeld: false, pumpAt: 0, haulHeld: 0, haulAt: 0,
       grime: 0, hoseAcc: 0, rinseAcc: 0, crankAt: 0, one: false, shift: freshShift(),
     };
+    if (Object.hasOwn(this.diveByName, p.name)) p.dive = this.diveByName[p.name];
+    p.air = diveTiers(p.dive).air;
     if (Object.hasOwn(this.gearByName, p.name)) p.gear = this.gearByName[p.name];
     else if (this.day > 1) {         // the New Hire Kit (council round 2, §4.5)
       p.gear = this.gearByName[p.name] = this.venue >= 1 ? 2 : 1;
@@ -161,6 +184,7 @@ export class Crew {
   disconnect(p) { p.online = Math.max(0, p.online - 1); p.seenAt = this.now(); }
   onlineCount() { let n = 0; for (const p of this.players.values()) if (p.online > 0) n++; return n; }
   online() { return [...this.players.values()].filter(p => p.online > 0); }
+  world() { return { venue: this.venue }; }   // what the map's rules depend on (Dimple Creek: dry or running)
   driving(p) { return !!this.cart && this.cart.driver === p.id; }
   pondOpen() { return this.venue >= POND.FROM_VENUE; }
 
@@ -197,11 +221,11 @@ export class Crew {
   // pays for its cleanliness, a Rat for theirs (grime), helpers never.
   // With a ball washer, the muddy price is paid now and the washer's share waits
   // in the hopper as credit, paid out as balls are washed (council round 2, §4.4).
-  bank(n, by, kind = null, w = n) {
+  bank(n, by, kind = null, w = n, gearOv = null) {
     if (n <= 0) return;
     const v = this.valueNow();
     const who = kind == null ? this.players.get(by) : null;
-    const gear = kind === 'cart' ? v.cartGear : who ? gearGrimeFactor(who.grime) : 1;
+    const gear = gearOv ?? (kind === 'cart' ? v.cartGear : who ? gearGrimeFactor(who.grime) : 1);
     const full = payFor(w, v, gear);
     const muddy = this.perks.washer ? cents(full / this.perks.price) : full;
     const credit = cents(full - muddy);
@@ -268,7 +292,11 @@ export class Crew {
     if (p.wand && Math.hypot(p.x - WASH.STATION.x, p.z - WASH.STATION.z) > WASH.HOSE) p.wand = false;   // out of hose
     for (const a of Array.isArray(msg.a) ? msg.a.slice(0, 8) : []) {
       if (a?.t === 'pickup') { if (!(a.cart ? this.cartPickup(p, a.ball) : a.pond ? this.pondPickup(p, a.ball) : this.pickup(p, a.ball))) denied.push(a.ball); }
-      else if (a?.t === 'pump') p.pumping = !!a.on && onDock(p) && !p.diving;
+      else if (a?.t === 'pump') this.pumpInput(p, a);
+      else if (a?.t === 'send') this.sendBagUp(p);
+      else if (a?.t === 'haul') this.haulInput(p, a);
+      else if (a?.t === 'feed') this.feedTube(p);
+      else if (a?.t === 'treasure') this.treasurePickup(p);
       else if (a?.t === 'serve') this.serve(p, a);
       else if (a?.t === 'deposit') this.deposit(p);
       else if (a?.t === 'start') this.readyUp(p);
@@ -290,7 +318,7 @@ export class Crew {
     const b = this.balls.get(id);
     const g = gearPerks(p.gear);
     if (!b || p.down > 0 || this.driving(p) || this.phase === 'lobby') return false;
-    if (b.y > 0.4 || b.sunk) return false;                 // still in the air, or at the bottom of the pond
+    if (b.y > 0.4 || b.sunk || b.drifting) return false;   // in the air, at the bottom of the pond, or floating down the creek
     if (Math.hypot(b.x - p.x, b.z - p.z) > g.reach + 1) return false;  // slack for a rolling ball
     if (b.kind === 'one') {                                // Ball No. 1 rides in your hands, outside the pocket
       if (p.one || p.diving) return false;
@@ -309,6 +337,7 @@ export class Crew {
 
   deposit(p) {
     if (p.down > 0 || !atStand(p)) return;
+    if (p.treasure) this.bankTreasure(p);
     if (p.one) return this.depositOne(p);
     if (p.pocket <= 0) return;
     const n = p.pocket, w = p.pocketW ?? n;
@@ -320,11 +349,12 @@ export class Crew {
   buy(p, id) {
     const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
     if (!item) return false;
-    const price = nextPrice(id, this.up, this.onlineCount(), p.gear, this.venue);
+    const price = nextPrice(id, this.up, this.onlineCount(), id === 'dive' ? p.dive : p.gear, this.venue);
     if (price === null || price > this.cash) return false;
     this.cash = cents(this.cash - price);
     let level;
-    if (item.personal) { level = ++p.gear; this.gearByName[p.name] = p.gear; }
+    if (id === 'dive') { level = ++p.dive; this.diveByName[p.name] = p.dive; }
+    else if (item.personal) { level = ++p.gear; this.gearByName[p.name] = p.gear; }
     else { level = this.up[id] = (this.up[id] ?? 0) + 1; this.applyUpgrades(); }
     this.dirty = true;
     this.events.push({ t: 'buy', by: p.id, id, level, price, personal: !!item.personal });
@@ -424,9 +454,15 @@ export class Crew {
     let dx = pose.x - c.x, dz = pose.z - c.z;
     const d = Math.hypot(dx, dz);
     if (d > max) { dx *= max / d; dz *= max / d; }
-    c.x += dx; c.z += dz;
-    c.x = Math.max(SIM.FIELD.xMin, Math.min(SIM.FIELD.xMax, c.x));
-    c.z = Math.max(SIM.FIELD.zMin, Math.min(SIM.FIELD.zMax + 6, c.z));
+    // Sweep the move in half-metre steps: the creek, the pond, the rock and the tractor stop the cart
+    // (only the Cart Bridge crosses), and a laggy jump can't hop the creek.
+    const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.5)), w = this.world();
+    for (let i = 0; i < n; i++) {
+      const nx = c.x + dx / n, nz = c.z + dz / n;
+      if (cartBlocked(nx, nz, w)) break;
+      c.x = nx; c.z = nz;
+    }
+    keepInField(c, 6);
     if (Number.isFinite(pose.yaw)) c.yaw = pose.yaw;
     c.v = Math.min(d, max) / dt;
     c.mud = Math.min(1, c.mud + Math.min(d, max) * WASH.MUD_PER_M);   // the field is wet
@@ -447,7 +483,7 @@ export class Crew {
   cartPickup(p, id) {
     const c = this.cart, b = this.balls.get(id);
     if (!b || !c || c.driver !== p.id || c.load >= this.perks.cartCap || this.phase === 'lobby') return false;
-    if (b.y > 0.4 || b.kind === 'one') return false;
+    if (b.y > 0.4 || b.kind === 'one' || b.drifting || b.sunk) return false;
     const rx = c.x - Math.sin(c.yaw) * CART.REEL_AHEAD, rz = c.z - Math.cos(c.yaw) * CART.REEL_AHEAD;
     if (Math.hypot(b.x - rx, b.z - rz) > this.perks.cartReel / 2 + 1.5) return false;   // slack for lag
     this.balls.delete(id);
@@ -640,7 +676,7 @@ export class Crew {
         this.events.push({ t: 'gone', id: goal.id, by: h.id });
         continue;
       }
-      const step = Math.min(d, SIM.HELPER_WALK * dt);
+      const step = Math.min(d, SIM.HELPER_WALK * wadeFactor(h.x, h.z, this.world()) * dt);
       h.x += dx / d * step; h.z += dz / d * step;
       h.yaw = Math.atan2(-dx, -dz);
     }
@@ -674,6 +710,7 @@ export class Crew {
     if (this.cart) { this.cart.boostT = 0; if (!this.cart.driver) Object.assign(this.cart, CART.PARK, { v: 0 }); }
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
     openMats(this.mats, { now: this.custT, rng: this.rng, venue: this.venue, nOpen: activeMats(this.onlineCount()), nextCust: () => ++this.nextCust });
+    this.rollTreasureToday();
     this.revealT = 0;
     if (this.pendingReveal) {        // a promotion: the next morning plays the reveal
       const v = this.pendingReveal;
@@ -737,7 +774,8 @@ export class Crew {
 
   sink(b) {
     if (this.sunkCount() >= POND.MAX_SUNK) { this.balls.delete(b.id); this.events.push({ t: 'gone', id: b.id }); return; }
-    b.sunk = true; b.rest = true; b.vx = b.vy = b.vz = 0; b.y = POND.BOTTOM;
+    b.sunk = true; b.rest = true; b.vx = b.vy = b.vz = 0; b.y = bedAt(b.x, b.z);
+    if (sinksDeep(b.kind)) { const s = deepEndSpot(this.rng); b.x = s.x; b.z = s.z; b.y = s.y; }   // lead and gold roll into the Deep End
     this.events.push({ t: 'sink', id: b.id, x: b.x, z: b.z, kind: b.kind });
   }
 
@@ -745,15 +783,17 @@ export class Crew {
   sinkNew(kind, near = null) {
     const a = this.rng() * Math.PI * 2, r = Math.sqrt(this.rng()) * (near ? 1.5 : POND.r - 0.8);
     const cx = near?.x ?? POND.x, cz = near?.z ?? POND.z;
-    const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
-    if (!inPond({ x, z })) return this.sinkNew(kind);
-    const b = this.addBall({ x, y: POND.BOTTOM, z, vx: 0, vy: 0, vz: 0, kind });
+    let x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r, y;
+    if (sinksDeep(kind)) { const s = deepEndSpot(this.rng); x = s.x; z = s.z; y = s.y; }
+    else if (!inPond({ x, z })) return this.sinkNew(kind);
+    else y = bedAt(x, z);
+    const b = this.addBall({ x, y, z, vx: 0, vy: 0, vz: 0, kind });
     if (b) { b.sunk = true; b.rest = true; this.events.push({ t: 'sink', id: b.id, x, z, kind }); }
   }
 
   pondPickup(p, id) {
     const b = this.balls.get(id);
-    if (!b || !b.sunk || !p.diving || p.down > 0 || p.bag >= POND.BAG) return false;
+    if (!b || !b.sunk || !p.diving || p.down > 0 || p.bag >= diveTiers(p.dive).bag) return false;
     if (Math.hypot(b.x - p.x, b.z - p.z) > POND.REACH + 1) return false;
     this.balls.delete(id);
     const k = this.loadOf(b);
@@ -765,26 +805,152 @@ export class Crew {
 
   stepPond(dt) {
     if (!this.pondOpen()) { for (const p of this.players.values()) p.diving = false; return; }
-    const pumping = [...this.players.values()].some(p => p.pumping && p.online > 0 && onDock(p));
+    // Buddy Air v2: air comes from cranking. Every pumper on the dock adds their turns (or the held-button trickle);
+    // the sum goes to every diver, capped at two pumpers' worth.
+    const nowMs = this.now();
+    let gain = 0;
+    for (const p of this.players.values()) {
+      const live = p.online > 0 && onDock(p) && !p.diving;
+      const turns = live ? Math.min(p.pumpTurns, PUMP.MAX_TPS * dt) : 0;
+      p.pumpTurns = live ? Math.max(0, p.pumpTurns - turns) : 0;
+      const held = live && p.pumpHeld;
+      p.pumping = live && (held || nowMs - p.pumpAt < 400);
+      if (live) gain += pumpGain({ turns, held: held && turns === 0, dt });
+    }
+    gain = Math.min(gain, PUMP.MAX_TPS * PUMP.SECS_PER_TURN * 2 * dt);
+    this.tubeClock += dt;
     for (const p of this.players.values()) {
       const wet = inPond(p) && !this.driving(p) && !p.one;
       if (wet !== p.diving) {
         p.diving = wet;
+        const up = p.bag;
         if (!wet && p.bag > 0) {   // surfaced with the bag: it's yours to bank
           p.pocket += p.bag; p.pocketW = (p.pocketW ?? 0) + p.bagW; p.bag = 0; p.bagW = 0; p.bagKinds = [];
         }
-        this.events.push({ t: 'dive', id: p.id, on: wet });
+        this.events.push({ t: 'dive', id: p.id, on: wet, bag: wet ? 0 : up });
       }
+      const tier = diveTiers(p.dive);
+      if (p.treasure && p.down > 0) this.dropTreasure(p);      // a knockdown drops it at your feet
       if (p.diving) {
-        p.air = Math.min(POND.AIR, p.air - dt + (pumping ? POND.PUMP * dt : 0));
-        if (p.air <= 0) {          // out of air: pop up coughing on the dock, the bag spills back down (kinds kept)
+        const st = airStep({ air: p.air, dt, tier, x: p.x, z: p.z, gain });
+        p.air = st.air;
+        if (st.gasp) {             // out of air: pop up coughing on the dock, the bag spills back down (kinds kept); a bag on the line is safe
           for (const k of p.bagKinds) this.sinkNew(k, p);
-          p.bag = 0; p.bagW = 0; p.bagKinds = []; p.air = POND.AIR * 0.5; p.diving = false;
+          if (p.treasure) { this.dropTreasure(p, true); }
+          p.bag = 0; p.bagW = 0; p.bagKinds = []; p.air = tier.air * 0.5; p.diving = false;
           p.x = POND.DOCK.x; p.z = POND.DOCK.z + 1.5; p.movedAt = this.now();
           this.events.push({ t: 'gasp', id: p.id }, { t: 'dive', id: p.id, on: false });
         }
-      } else p.air = Math.min(POND.AIR, p.air + POND.AIR_REFILL * dt);
+      } else p.air = Math.min(tier.air, p.air + POND.AIR_REFILL * dt * Math.max(1, tier.air / POND.AIR));
     }
+    // The pneumatic tube: balls fed in arrive at the stand 6 s later, at the gear factor they were fed with.
+    for (const e of tubeArrivals(this.tube, this.tubeClock)) {
+      this.bank(e.n, e.by, null, e.w, e.factor);
+      this.events.push({ t: 'thunk', n: e.n, by: e.by });
+    }
+    // The pond pump (crew row, tier 2): clears one sunk ball into the tube every 8 s, all shift.
+    if (this.phase === 'shift' && hasPondPump(this.up)) {
+      for (let k = pondPumpStep(this.tube, dt); k > 0; k--) {
+        const b = [...this.balls.values()].find(o => o.sunk && o.kind !== 'one');
+        if (!b) break;
+        this.balls.delete(b.id); this.events.push({ t: 'gone', id: b.id });
+        const w = KIND_W[b.kind] ?? 1;
+        tubeFeed(this.tube, this.tubeClock, { n: 1, w, factor: 1 });
+        this.tube.q.at(-1).by = 'pump';
+        this.stats.picked++; this.dirty = true;
+      }
+    }
+  }
+
+  // {t:'pump', turns, held} (or the old {on}): turns are crank turns since the last message.
+  pumpInput(p, a) {
+    if (!onDock(p) || p.diving) { p.pumping = false; p.pumpHeld = false; p.pumpTurns = 0; return; }
+    const turns = Number(a.turns);
+    if (Number.isFinite(turns) && turns > 0) { p.pumpTurns = Math.min(1, p.pumpTurns + Math.min(turns, 1)); p.pumpAt = this.now(); }
+    p.pumpHeld = !!(a.held || a.on);
+    p.pumping = p.pumpHeld || this.now() - p.pumpAt < 400;
+  }
+
+  // Ⓧ underwater: clip the bag to the line.
+  sendBagUp(p) {
+    if (!canSend(p)) return false;
+    const n = sendBag(p, this.line);
+    this.events.push({ t: 'sent', id: p.id, n }); this.dirty = true;
+    return true;
+  }
+
+  // Ⓧ held on the dock: land the whole line into your pocket (capacity ignored, like surfacing).
+  haulInput(p, a) {
+    if (p.down > 0 || p.diving || !onDock(p) || this.line.n <= 0 || a.held === false) { p.haulHeld = 0; return false; }
+    const now = this.now();
+    // `secs` is how long the client has held the button; the server also caps it by its own clock.
+    const own = p.haulAt && now - p.haulAt < 1000 ? p.haulHeld + (now - p.haulAt) / 1000 : 0;
+    p.haulAt = now;
+    p.haulHeld = Math.min(Number.isFinite(+a.secs) ? +a.secs : own, own + 0.3);
+    if (!haulReady(p.haulHeld)) return false;
+    const got = takeLine(this.line);
+    p.pocket += got.n; p.pocketW = (p.pocketW ?? 0) + got.w; p.haulHeld = 0; p.haulAt = 0; this.dirty = true;
+    this.events.push({ t: 'hauled', id: p.id, n: got.n });
+    return true;
+  }
+
+  // Ⓧ at the red box on the dock: your carried balls (and any treasure) go in the tube.
+  feedTube(p) {
+    if (p.down > 0 || p.diving || !hasTube(this.up) || !atTube(p)) return false;
+    if (p.treasure) this.bankTreasure(p);
+    if (p.pocket <= 0) return true;
+    tubeFeed(this.tube, this.tubeClock, { n: p.pocket, w: p.pocketW ?? p.pocket, factor: gearGrimeFactor(p.grime) });
+    this.tube.q.at(-1).by = p.id;
+    p.pocket = 0; p.pocketW = 0; this.dirty = true;
+    this.events.push({ t: 'tube', id: p.id });
+    return true;
+  }
+
+  // ---- treasure (Lost & Found) ----
+  // Mornings: at most one treasure a shift, a 50% roll, from the Club on.
+  rollTreasureToday() {
+    for (const p of this.players.values()) if (p.treasure) this.dropTreasure(p, true);   // anything still carried goes back down
+    if (this.treasure || !this.pondOpen()) return;
+    const t = rollTreasure(this.lostFound, this.venue, this.rng);
+    if (!t) return;
+    const s = treasureSpot(this.treasureSeed + this.lostFound.length, t.id);
+    this.treasure = { id: t.id, x: s.x, z: s.z };
+    this.events.push({ t: 'treasure', id: t.id, phase: 'sunk' });
+  }
+
+  treasurePickup(p) {
+    const t = this.treasure;
+    if (!t || !p.diving || p.down > 0 || p.treasure || p.one) return false;
+    if (Math.hypot(t.x - p.x, t.z - p.z) > POND.REACH + 1) return false;
+    p.treasure = t.id; this.treasure = null; this.dirty = true;
+    this.events.push({ t: 'treasure', id: t.id, phase: 'carried', by: p.id });
+    return true;
+  }
+
+  // Put a carried treasure back: at the carrier's feet (knockdown) or in the Deep End (gasp / the bell).
+  dropTreasure(p, deep = false) {
+    if (!p.treasure) return;
+    const id = p.treasure; p.treasure = null;
+    if (this.treasure) return;       // (only one lies down there at a time)
+    let x, z;
+    if (!deep && inPond(p)) { x = p.x; z = p.z; }
+    else { const s = treasureSpot(this.treasureSeed + this.lostFound.length, id); x = s.x; z = s.z; }
+    this.treasure = { id, x, z }; this.dirty = true;
+    this.events.push({ t: 'treasure', id, phase: 'sunk' });
+  }
+
+  // At the stand (or the tube): the finder's fee, 200 x BV, "as a gesture", and the case gets the item.
+  bankTreasure(p) {
+    const id = p.treasure;
+    if (!id || !TREASURE_BY_ID[id]) return false;
+    p.treasure = null;
+    if (!this.lostFound.includes(id)) this.lostFound.push(id);
+    const fee = cents(finderFee(id, this.valueNow().bv));
+    this.cash = cents(this.cash + fee); this.stats.cash = cents(this.stats.cash + fee); this.dirty = true;
+    p.shift.cash = cents(p.shift.cash + fee);
+    this.events.push({ t: 'treasure', id, phase: 'banked', by: p.id, fee });
+    this.pa('treasure', { once: true });
+    return true;
   }
 
   // ---- Gary from Regional --------------------------------------------------------
@@ -1012,7 +1178,8 @@ export class Crew {
     for (const b of this.balls.values()) {
       if (b.rest) continue;
       const x0 = b.x, y0 = b.y, z0 = b.z;
-      const stopped = advanceBall(b, dt);
+      const stopped = advanceBall(b, dt, this.world());
+      if (stopped === 'drift') { this.events.push(driftEvent(b)); continue; }   // into the running creek
       if (c && b.kind !== 'one' && !b.pinged && ballHitsCart(x0, y0, z0, b, c)) { this.ping(b); continue; }
       // Gary's cart rings too, but it isn't a PING. Gary has noted your enthusiasm.
       if (this.gary?.phase === 'drive' && b.kind !== 'one' && !b.pinged && ballHitsCart(x0, y0, z0, b, this.gary)) {
@@ -1030,6 +1197,13 @@ export class Crew {
       }
       if (this.pondOpen() && b.kind !== 'one' && b.y <= SIM.BALL_R + 0.05 && inPond(b)) { this.sink(b); continue; }
       if (stopped) this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z, ...(b.kind === 'one' ? { one: true } : {}) });
+    }
+    // The creek carries balls: inflow to the Delta (they sink: the diver's pile), outflow to the Grate (the cart's pile).
+    for (const b of this.balls.values()) {
+      if (!b.drifting) continue;
+      const end = stepDrift(b, dt);
+      if (end === 'sink') this.sink(b);
+      else if (end === 'rest') this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z });
     }
 
     if (c) {
@@ -1085,6 +1259,9 @@ export class Crew {
     this.phase = 'report';
     // Closing time: hired help and the cart turn in what they're carrying, so it counts today.
     for (const h of this.helpers) { this.bank(h.pocket, h.id, 'helper', h.pocketW ?? h.pocket); h.pocket = 0; h.pocketW = 0; h.target = null; }
+    // The night crew takes the pond's line at half pay, and the tube delivers what is still in it.
+    if (this.line.n > 0) { const nc = nightCrew(this.line); this.line = newLine(); this.bank(nc.n, 'night', 'helper', nc.w * nc.mult); }
+    for (const e of tubeArrivals(this.tube, Infinity)) this.bank(e.n, e.by, null, e.w, e.factor);
     if (this.cart) { this.bank(this.cart.load, this.cart.driver ?? 'cart', 'cart', this.cart.loadW ?? this.cart.load); this.cart.load = 0; this.cart.loadW = 0; this.cart.boostT = 0; }
     // The ball washer at the bell: the night crew washes half of what's left at half pay; the rest goes dirty.
     if (this.hopper.n > 0) {
@@ -1146,7 +1323,7 @@ export class Crew {
       players: [...this.players.values()].map(p => ({
         id: p.id, name: p.name, color: p.color, x: +p.x.toFixed(2), z: +p.z.toFixed(2), yaw: +p.yaw.toFixed(3),
         pocket: p.pocket, down: +p.down.toFixed(2), online: p.online > 0, gear: p.gear, wand: p.wand,
-        diving: p.diving, air: +p.air.toFixed(1), bag: p.bag, pumping: p.pumping, grime: p.grime, one: p.one,
+        diving: p.diving, air: +p.air.toFixed(1), bag: p.bag, pumping: p.pumping, dive: p.dive, treasure: p.treasure, grime: p.grime, one: p.one,
         ready: this.ready.has(p.id), signed: this.signed.has(p.id),
       })),
       value: this.valueNow(),
@@ -1162,7 +1339,8 @@ export class Crew {
       mower: mowerSnap(this.mower),
       ct: +this.custT.toFixed(2), mats: this.mats.map(matWire),
       gary: this.gary && { phase: this.gary.phase, t: +this.gary.t.toFixed(1), x: +this.gary.x.toFixed(2), z: +this.gary.z.toFixed(2), yaw: +this.gary.yaw.toFixed(3) },
-      pond: { sunk: this.sunkCount(), unlocked: this.pondOpen() },
+      pond: { sunk: this.sunkCount(), unlocked: this.pondOpen(), lostFound: this.lostFound, treasure: this.treasure,
+        line: this.line.n, tube: this.tube.q.reduce((s, e) => s + e.n, 0), clarity: this.pondOpen() ? pondClarity(this.sunkCount()) : null },
       fries: { stock: this.fries, max: FRIES.MAX, open: !!this.perks.shed },
       fixtures: Object.fromEntries(Object.entries(this.fixtures).map(([k, v]) => [k, +v.toFixed(2)])),
       helpers: this.helpers.map(h => ({ id: h.id, name: h.name, x: +h.x.toFixed(2), z: +h.z.toFixed(2), yaw: +h.yaw.toFixed(3), pocket: h.pocket, down: +h.down.toFixed(2) })),
@@ -1189,7 +1367,8 @@ export class Crew {
   toSave() {
     // `day` is the next day to play: a finished shift has been banked.
     const day = this.phase === 'report' ? this.day + 1 : this.day;
-    return { v: 2, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, gear: this.gearByName,
+    return { v: 3, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, gear: this.gearByName,
+      diveByName: this.diveByName, lostFound: this.lostFound,
       commendations: this.commendations, stamps: this.stamps, pondSunk: this.sunkCount(), fries: this.fries,
       venue: this.venue, venueDay: this.venueDay, outstanding: this.outstanding, pendingReveal: this.pendingReveal,
       endless: this.endless, records: this.records, voiced: [...this.voiced], debuts: [...this.debuts],
