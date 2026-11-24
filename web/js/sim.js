@@ -50,7 +50,7 @@ export const atBay = p => BAYS.some(b => Math.hypot(p.x - b.x, p.z - b.z) < BAY_
 
 // A crew swing: aim with your view, power from how long you held the button.
 export function swingLaunch(bay, yaw, pitch, power) {
-  const speed = 12 + 43 * Math.max(0, Math.min(1, power));
+  const speed = 12 + 43 * Math.max(0, Math.min(1.15, power));
   const loft = Math.max(0.03, Math.min(1.0, 0.12 + pitch));
   const h = speed * Math.cos(loft);
   return { x: bay.x, y: 0.1, z: bay.z - 0.4, vx: -Math.sin(yaw) * h, vy: speed * Math.sin(loft), vz: -Math.cos(yaw) * h };
@@ -122,16 +122,30 @@ export function spill(x, z, n, rng) {
 }
 
 // One fixed physics step. Returns true on the step the ball comes to rest.
+// How each ball type flies and lands (same on server and client).
+//   square: stops dead where it lands.  foam: light, drifts in the breeze.
+//   bouncy: springy and rolls on and on.
+export const KIND_PHYS = {
+  square: { bounce: 0, stick: true },
+  foam: { bounce: 0.2, drift: 1.6, drag: 0.35 },
+  bouncy: { bounce: 0.78, keep: 0.92, roll: 1.2 },
+};
 function stepOnce(b) {
-  const dt = SIM.STEP, R = SIM.BALL_R;
+  const dt = SIM.STEP, R = SIM.BALL_R, k = KIND_PHYS[b.kind];
   b.vy -= SIM.G * dt;
+  if (k?.drift && b.y > R) { b.vx += k.drift * dt; b.vx -= b.vx * k.drag * dt; b.vz -= b.vz * k.drag * dt; }
+  if (b.curve && b.y > 0.12) {   // hook or slice from a crew swing: sideways push, perpendicular to travel
+    const h = Math.hypot(b.vx, b.vz);
+    if (h > 1) { const a = 6 * b.curve * dt / h, vx = b.vx; b.vx -= b.vz * a; b.vz += vx * a; }
+  }
   b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
   if (b.y < R) {
     b.y = R;
-    if (b.vy < -1) { b.vy *= -0.35; b.vx *= 0.7; b.vz *= 0.7; }
+    if (k?.stick) { b.vx = b.vy = b.vz = 0; b.rest = true; return true; }
+    if (b.vy < -1) { const e = k?.bounce ?? 0.35, keep = k?.keep ?? 0.7; b.vy *= -e; b.vx *= keep; b.vz *= keep; }
     else {
       b.vy = 0;
-      const s = Math.hypot(b.vx, b.vz), ns = Math.max(0, s - SIM.ROLL_DECEL * dt);
+      const s = Math.hypot(b.vx, b.vz), ns = Math.max(0, s - SIM.ROLL_DECEL * (k?.roll ?? 1) * dt);
       if (ns === 0) { b.vx = 0; b.vz = 0; b.rest = true; return true; }
       b.vx *= ns / s; b.vz *= ns / s;
     }
@@ -283,7 +297,31 @@ export const WASH = {
 //   Gear   = the cart: 1 + 0.25 × cleanliness; people ×1 (gear grime comes later)
 export const VENUES = [{ name: 'Muni Range', rate: 1 }, { name: 'Range Club', rate: 5 }, { name: 'Tiered Entertainment Range', rate: 25 },
   { name: 'Stadium Range', rate: 100 }, { name: 'County Range', rate: 500 }, { name: 'Orbital Range', rate: 2500 }];
-export const KIND_W = { range: 1, glow: 2, lead: 3 };
+export const KIND_W = { range: 1, glow: 2, lead: 3, square: 1, gold: 10, foam: 0.5, splitter: 1, bouncy: 1.5 };
+
+// Which kind a customer's next ball is (lead and glow are chosen elsewhere).
+// Debuts by day, per council round 1: square and gold day 3, foam day 6,
+// splitter day 7, bouncy at the Club (venue 1+).
+export const KIND_DEBUT = { glow: 2, square: 3, gold: 3, lead: 4, foam: 6, splitter: 7 };
+export function pickKind(day, venue, rng) {
+  const r = rng();
+  if (day >= 3 && r < 0.005) return 'gold';
+  if (day >= 7 && r < 0.045) return 'splitter';
+  if (venue >= 1 && r < 0.10) return 'bouncy';
+  if (day >= 6 && r < 0.18) return 'foam';
+  if (day >= 3 && r < 0.28) return 'square';
+  return 'range';
+}
+export const KIND_NAMES = { range: 'range ball', glow: 'glow ball', lead: 'lead ball', square: 'square ball', gold: 'GOLD BALL', foam: 'foam ball', splitter: 'splitter', bouncy: 'super-bouncy ball' };
+export const KIND_BLURB = {
+  square: "It doesn't roll. Corporate calls this \"efficiency\".",
+  gold: 'Worth ×10. Dimples is watching you pick it up.',
+  lead: 'Worth ×3. It always ends up in the pond.',
+  foam: 'Worth ×0.5. It drifts. It has no respect for anyone.',
+  splitter: 'Pick one up and it becomes three.',
+  bouncy: 'Worth ×1.5. It does not want to be picked up.',
+  glow: 'Worth ×2. Only at Last Call.',
+};
 export const BALLS_OUTSTANDING = 4_213_377_019;   // down to Ball No. 1, hit into orbit by the founder in 1958
 const clamp01 = v => Math.max(0, Math.min(1, v ?? 0));
 const c2 = v => Math.round(v * 100) / 100;

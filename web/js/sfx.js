@@ -237,3 +237,6 @@ export function sprayLoop() {
     },
   };
 }
+
+// Hand the live context and master to other audio modules (ambience.js).
+export function audioHandle() { return ctx && master ? { ctx, master, isMuted } : null; }

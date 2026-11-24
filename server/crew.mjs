@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall, ballHitsPlayer, atStand, clampToField,
   SHOP_BY_ID, nextPrice, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
   gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT, FIXTURES, FIXTURE_BY_ID, KIND_W, BALLS_OUTSTANDING, payFor,
-  upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed } from '../web/js/sim.js';
+  upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed, pickKind } from '../web/js/sim.js';
 
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: codes get read aloud
 export const CODE_LEN = 4;
@@ -65,6 +65,8 @@ export class Crew {
     this.up = cleanUpgrades(save?.up);
     this.gearByName = cleanGear(save?.gear);
     this.commendations = Math.max(0, Math.min(10, Math.floor(Number(save?.commendations) || 0)));
+    this.venue = Math.max(0, Math.min(5, Math.floor(Number(save?.venue) || 0)));
+    this.debuts = new Set(Array.isArray(save?.debuts) ? save.debuts.filter(k => typeof k === 'string').slice(0, 20) : []);
     this.stamps = Math.max(0, Math.floor(Number(save?.stamps) || 0));
     this.quota = null;               // { q, target } once a shift sets it
     this.fries = Math.max(0, Math.min(FRIES.MAX, Number(save?.fries) || 0));   // baskets in stock
@@ -197,6 +199,7 @@ export class Crew {
     this.balls.delete(id);
     p.pocket++; p.pocketW = (p.pocketW ?? 0) + (KIND_W[b.kind] ?? 1); this.stats.picked++; this.dirty = true;
     this.events.push({ t: 'gone', id, by: p.id });
+    if (b.kind === 'splitter') for (const s of spill(b.x, b.z, 2, this.rng)) this.addBall({ ...s, y: 0.3, vy: 2.5, kind: 'range' });
     return true;
   }
 
@@ -334,7 +337,8 @@ export class Crew {
     if (!bay || ![a.yaw, a.pitch, a.power].every(Number.isFinite)) return false;
     p.pocket--; p.swungAt = now;
     this.stats.swings++;
-    const b = this.addBall(swingLaunch(bay, a.yaw, a.pitch, a.power));
+    const curve = Number.isFinite(a.curve) ? Math.max(-1, Math.min(1, a.curve)) : 0;
+    const b = this.addBall({ ...swingLaunch(bay, a.yaw, a.pitch, a.power), curve });
     if (b) b.by = p.id;
     return true;
   }
@@ -436,6 +440,21 @@ export class Crew {
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'shift', day: this.day });
+  }
+
+  // Super-bouncy balls don't want to be picked up: get close and they hop away.
+  stepBouncy() {
+    for (const b of this.balls.values()) {
+      if (b.kind !== 'bouncy' || !b.rest || b.sunk || (b.hops ?? 0) >= 4) continue;
+      for (const p of this.players.values()) {
+        const dx = b.x - p.x, dz = b.z - p.z, d = Math.hypot(dx, dz);
+        if (d > 2.6 || d < 0.01 || this.driving(p)) continue;
+        b.rest = false; b.acc = 0; b.hops = (b.hops ?? 0) + 1;
+        b.vx = dx / d * 3.5; b.vz = dz / d * 3.5; b.vy = 3;
+        this.events.push({ t: 'kick', id: b.id, x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, vz: b.vz });
+        break;
+      }
+    }
   }
 
   // ---- the snack shed ------------------------------------------------------------
@@ -578,7 +597,7 @@ export class Crew {
     if (this.balls.size >= SIM.MAX_BALLS) return null;
     const b = { id: this.nextBall++, ...s, rest: false, acc: 0 };
     this.balls.set(b.id, b);
-    this.events.push({ t: 'spawn', id: b.id, x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, vz: b.vz, kind: b.kind });
+    this.events.push({ t: 'spawn', id: b.id, x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, vz: b.vz, kind: b.kind, curve: b.curve || undefined });
     return b;
   }
 
@@ -595,7 +614,9 @@ export class Crew {
         const m = this.mats[i];
         if ((m.next -= dt) <= 0 && this.balls.size < SIM.MAX_BALLS) {
           const lead = !lastCall && this.day >= POND.FROM_DAY && this.rng() < POND.LEAD_CHANCE;
-          const b = this.addBall(lead ? { ...leadLaunch(m, this.rng), kind: 'lead' } : { ...launch(m, this.rng), kind: lastCall ? 'glow' : 'range' });
+          const kind = lead ? 'lead' : lastCall ? 'glow' : pickKind(this.day, this.venue, this.rng);
+          const b = this.addBall(lead ? { ...leadLaunch(m, this.rng), kind } : { ...launch(m, this.rng), kind });
+          if (b && kind !== 'range' && !this.debuts.has(kind)) { this.debuts.add(kind); this.dirty = true; this.events.push({ t: 'debut', kind }); }
           m.next = swingGap(this.rng) * this.perks.swingGapMult / (lastCall ? LAST_CALL.SWING : 1);
           if (this.perks.shed && --this.swingsToEat <= 0) { this.swingsToEat = FRIES.EAT_EVERY; this.fries = Math.max(0, this.fries - 1); }
           const id = 'mat' + m.i;
@@ -607,6 +628,7 @@ export class Crew {
     this.stepHelpers(dt);
     this.stepGary(dt);
     this.stepPond(dt);
+    this.stepBouncy();
     if (this.phase === 'shift' && this.perks.autoFry && (this.autoFryT += dt) >= this.perks.autoFry) { this.autoFryT = 0; this.addFries(1, 'machine'); }
 
     const c = this.cart;
@@ -730,7 +752,7 @@ export class Crew {
   toSave() {
     // `day` is the next day to play: a finished shift has been banked.
     const day = this.phase === 'report' ? this.day + 1 : this.day;
-    return { v: 1, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, gear: this.gearByName, commendations: this.commendations, stamps: this.stamps, pondSunk: this.sunkCount(), fries: this.fries, savedAt: new Date(this.now()).toISOString() };
+    return { v: 1, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, gear: this.gearByName, commendations: this.commendations, stamps: this.stamps, pondSunk: this.sunkCount(), fries: this.fries, venue: this.venue, debuts: [...this.debuts], savedAt: new Date(this.now()).toISOString() };
   }
 }
 

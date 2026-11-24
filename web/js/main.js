@@ -9,10 +9,13 @@ import * as THREE from 'three';
 import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
 import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, priceScale, perks,
-  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed } from './sim.js';
+  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB } from './sim.js';
 import * as NET from './net.js';
 import * as SFX from './sfx.js';
 import { createBoard } from './board.js';
+import * as AMB from './ambience.js';
+import { createSwing, strikeToLaunch } from './swing.js';
+import { createScenery } from './scenery.js';
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
@@ -62,6 +65,10 @@ const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.25, 0.45, 16, 1
 bucket.position.set(0, 1.22, 0); stand.add(bucket);
 stand.position.set(SIM.STAND.x, 0, SIM.STAND.z);
 scene.add(stand);
+
+// Scenery: nets, trees, hills, the parking lot and entrance, the clubhouse, props.
+const scenery = createScenery(scene, { lowDetail: /Xbox/i.test(navigator.userAgent) });
+let sceneT = 0;
 
 // The Board (Ball Value, KPIs, quota, Balls Outstanding) and the ball silo, on the stand.
 const board = createBoard(scene, { x: SIM.STAND.x, z: SIM.STAND.z + 1.2 });
@@ -277,10 +284,15 @@ let engine = null;
 
 // ---------------------------------------------------------------- balls
 // Every ball on the field is one instance of one mesh: hundreds of balls, one draw call.
-const ballMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(SIM.BALL_R, 12, 8), lambert(0xf4f1e8), SIM.MAX_BALLS + 64);
+const ballMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(SIM.BALL_R, 12, 8), lambert(0xffffff), SIM.MAX_BALLS + 64);   // tinted per instance by kind
+ballMesh.setColorAt(0, new THREE.Color(0xf4f1e8));   // allocate instance colours up front
 const glowMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(SIM.BALL_R, 12, 8),
   new THREE.MeshBasicMaterial({ color: 0x9dff6a }), SIM.MAX_BALLS + 64);   // glow balls (Last Call): worth ×2
 glowMesh.frustumCulled = false; glowMesh.count = 0; scene.add(glowMesh);
+const squareMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(SIM.BALL_R * 1.7, SIM.BALL_R * 1.7, SIM.BALL_R * 1.7), lambert(0xffffff), 400);
+squareMesh.frustumCulled = false; squareMesh.count = 0; scene.add(squareMesh);
+const KIND_COLOR = { range: 0xf4f1e8, lead: 0x7d8790, gold: 0xffc928, foam: 0xff8fb8, splitter: 0x8fd3ff, bouncy: 0xb36bff, square: 0xf4f1e8 };
+const kindColor = {}; for (const [k, c] of Object.entries(KIND_COLOR)) kindColor[k] = new THREE.Color(c);
 ballMesh.castShadow = true;
 ballMesh.frustumCulled = false;
 ballMesh.count = 0;
@@ -298,15 +310,19 @@ function removeBall(id) {
 }
 const ballM = new THREE.Matrix4(), ballQ = new THREE.Quaternion(), ballP = new THREE.Vector3(), ballS = new THREE.Vector3();
 function drawBalls() {
-  let i = 0, g = 0;
+  let i = 0, g = 0, q = 0;
   for (const b of balls.values()) {
     if (b.hidden || i >= ballMesh.instanceMatrix.count) continue;
     // A real ball is sub-pixel past ~40 m; grow far ones so the field reads as dots.
     const s = Math.max(1, Math.hypot(b.x - me.x, b.z - me.z) / 25) * (b.kind === 'glow' ? 1.3 : 1);
     ballM.compose(ballP.set(b.x, b.y, b.z), ballQ, ballS.set(s, s, s));
-    if (b.kind === 'glow') glowMesh.setMatrixAt(g++, ballM); else ballMesh.setMatrixAt(i++, ballM);
+    if (b.kind === 'glow') glowMesh.setMatrixAt(g++, ballM);
+    else if (b.kind === 'square') { if (q < squareMesh.instanceMatrix.count) squareMesh.setMatrixAt(q++, ballM); }
+    else { ballMesh.setColorAt(i, kindColor[b.kind] ?? kindColor.range); ballMesh.setMatrixAt(i++, ballM); }
   }
   glowMesh.count = g; glowMesh.instanceMatrix.needsUpdate = true;
+  squareMesh.count = q; squareMesh.instanceMatrix.needsUpdate = true;
+  if (ballMesh.instanceColor) ballMesh.instanceColor.needsUpdate = true;
   ballMesh.count = i;
   ballMesh.instanceMatrix.needsUpdate = true;
 }
@@ -423,7 +439,7 @@ function onMsg(m) {
 
 function onEvent(e) {
   switch (e.t) {
-    case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, kind: e.kind }); break;
+    case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, kind: e.kind, curve: e.curve ?? 0 }); break;
     case 'sink': {
       let b = balls.get(e.id);
       if (!b) { addBall({ id: e.id, x: e.x, y: POND.BOTTOM, z: e.z, vx: 0, vy: 0, vz: 0, rest: true, kind: e.kind }); b = balls.get(e.id); }
@@ -478,6 +494,11 @@ function onEvent(e) {
     case 'fries':
       if (e.by === me.id) { SFX.scoop(); toast(`A basket of fries (${e.stock}/${FRIES.MAX})`, 1); }
       break;
+    case 'debut':
+      SFX.jackpot();
+      showMemo(`NEW: the ${KIND_NAMES[e.kind] ?? e.kind}. ${KIND_BLURB[e.kind] ?? ''}`, null);
+      break;
+    case 'kick': { const b = balls.get(e.id); if (b) Object.assign(b, { x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, acc: 0 }); break; }
     case 'memo':
       showMemo(e.text, e.target);
       break;
@@ -677,13 +698,21 @@ function act() {
 const SWING_FULL = 1.0;
 let charging = null;                 // performance.now() when the wind-up started
 let spraying = false, washSecs = 0, washSent = 0;
+// A real golf swing at the crew bays (swing.js): drag down and flick up, or
+// pull the right stick back and push it through. Tempo and drift matter.
+const swing = createSwing({ canvas, onStrike(strike) {
+  if (!canSwing()) return;
+  const l = strikeToLaunch(strike, me.yaw, me.pitch);
+  link.act({ t: 'swing', yaw: +l.yaw.toFixed(3), pitch: +l.pitch.toFixed(3), power: +l.power.toFixed(3), curve: +(strike.drift ?? 0).toFixed(3) });
+  SFX.swing(Math.min(1, l.power));
+} });
 let pumping = false, peeling = false, peelSecs = 0, peelSent = 0;
 function pressAct() {
   SFX.unlock();
   if (playing() && crew.fries?.open && atShed(me) && !me.wand) { peeling = true; return; }
   if (playing() && onDock(me) && !me.diving && crew.players.some(p => p.diving && p.id !== me.id)) { pumping = true; link.act({ t: 'pump', on: true }); return; }
   if (me.wand && playing() && me.down <= 0) { spraying = true; return; }
-  if (playing() && me.down <= 0 && canSwing()) { charging = performance.now(); return; }
+  if (playing() && me.down <= 0 && canSwing()) return;   // the swing module handles the bay
   act();
 }
 function releaseAct() {
@@ -839,6 +868,9 @@ addEventListener('pointerdown', () => SFX.unlock());
 // Pointer lock can be refused (embedded views, no user gesture): swallow that
 // and fall back to the arrow keys for looking.
 function lockMouse() { try { canvas.requestPointerLock?.()?.catch?.(() => {}); } catch {} }
+canvas.addEventListener('pointerdown', e => { if (playing()) swing.pointerDown(e); });
+addEventListener('pointermove', e => { if (swing.enabled) swing.pointerMove(e); });
+addEventListener('pointerup', e => { if (swing.enabled) swing.pointerUp(e); });
 canvas.addEventListener('mousedown', e => {
   if (e.button !== 0 || !playing()) return;
   if (document.pointerLockElement !== canvas) lockMouse();
@@ -846,7 +878,7 @@ canvas.addEventListener('mousedown', e => {
 });
 addEventListener('mouseup', e => { if (e.button === 0) releaseAct(); });
 addEventListener('mousemove', e => {
-  if (document.pointerLockElement !== canvas || driving()) return;
+  if (document.pointerLockElement !== canvas || driving() || swing.dragging) return;
   me.yaw -= e.movementX * 0.0025;
   me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch - e.movementY * 0.0025));
 });
@@ -906,7 +938,8 @@ function pollPad(dt) {
   if (pad.pressed[BTN.MENU]) pause(true);
   if (pad.pressed[BTN.UP] || pad.pressed[BTN.VIEW]) toggleStore(true);
   if (pad.pressed[BTN.RS]) padSprint = true;
-  if (!driving()) {
+  if (swing.enabled) swing.stepPad(pad, dt, performance.now());
+  else if (!driving()) {
     me.yaw -= pad.rx * 2.6 * dt;
     me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch - pad.ry * 1.8 * dt));
   }
@@ -953,7 +986,7 @@ function hud() {
     : nearStation() ? `${ibtn}  Grab the pressure washer${(crew.cart?.mud ?? 0) > 0.05 ? ' (the cart is muddy)' : ''}`
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up${nearCart() ? `   ·   ${cbtn}  Drive the cart` : ''}`
     : nearCart() ? `${cbtn}  Drive the cart`
-    : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `Hold ${btn} to swing, aim at the cart (${me.pocket} to hit)` : 'Bring balls to hit them')
+    : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `${pad ? 'Pull the right stick back, push it through' : 'Drag down, flick up'} to swing · aim at the cart (${me.pocket} to hit)` : 'Bring balls to hit them')
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up`
     : n >= cap ? 'Full: head to the bucket stand' : '';
   $('air').classList.toggle('hidden', !me.diving);
@@ -961,6 +994,8 @@ function hud() {
   const maxStam = sprintSecs(crew.up?.shoes);
   $('stamina').classList.toggle('hidden', stamina >= maxStam - 0.01 || driving());
   $('stamina').firstElementChild.style.width = `${(stamina / maxStam) * 100}%`;
+  swing.setEnabled(playing() && canSwing() && me.down <= 0);
+  swing.render($('swinghud'));
   const meter = $('meter');
   meter.classList.toggle('hidden', charging === null);
   if (charging !== null) meter.firstElementChild.style.width = `${Math.min(1, (performance.now() - charging) / 1000 / SWING_FULL) * 100}%`;
@@ -1018,6 +1053,7 @@ function resize() {
 addEventListener('resize', resize); resize();
 
 let last = performance.now(), fall = 0;
+let ambOn = false, ambT = 0;
 let stamina = sprintSecs(0), restT = 0, sprinting = false, padSprint = false;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
@@ -1118,6 +1154,14 @@ function frame(now) {
 
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
   board.tick(dt);
+  scenery.tick(dt, sceneT += dt);
+  // Ambience: birds by morning, crickets at dusk, distant thwacks, the floodlight hum, muffled underwater.
+  if (!ambOn) { const h = SFX.audioHandle(); if (h) { AMB.attach(h.ctx, h.master, h.isMuted); AMB.startAmbience(); ambOn = true; } }
+  if (ambOn && (ambT -= dt) <= 0) {
+    ambT = 0.3;
+    AMB.setAmbience({ timeOfDay01: crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0.1, lastCall: !!crew.lastCall,
+      underwater: !!scene.userData.under, nearField: me.z < -5 ? 1 : 0, crowd: crew.phase === 'shift' ? 0.6 : 0 });
+  }
   if (garyView?.g.visible && garyView.to) {
     const kg = 1 - Math.exp(-dt * 8);
     garyPose.x += (garyView.to.x - garyPose.x) * kg; garyPose.z += (garyView.to.z - garyPose.z) * kg;
