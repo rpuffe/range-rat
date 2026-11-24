@@ -139,7 +139,7 @@ export function createEnding({ scene, root, camera }) {
         // One text at a time (playtest 2): the PA card speaks the final line; no memo on top of it.
         void txt; void tgt;
         after(6000, () => {
-          if (memo) memo.classList.add('hidden');
+          void memo;   // the say() queue owns #memo (round 7): never hide it from here
           if (flashEl) flashEl.classList.add('hidden');
           resolve();
         });

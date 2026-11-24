@@ -65,14 +65,17 @@ export default {
     };
     draw();
 
+    let warn = false;                     // round 7 #7: the Two-Minute Warning is up (the server's mods.stadium.w)
     return {
+      banner: () => (warn ? { text: 'TWO-MINUTE WARNING', bg: '#d98a12', fg: '#1a1203' } : null),   // the Board, T-120 to Last Call
       show(on) {
         group.visible = on;
         if (!on && ctx.venues) ctx.venues.crowdBob = 0.15;
       },
       onSnapshot(_snap, mine) {
+        warn = !!mine?.w;
         if (!mine) return;
-        s = mine.s; laps = mine.laps; knocks = mine.knocks;
+        s = mine.s; laps = mine.laps; knocks = mine.knocks;   // the jumbotron keeps the live mood (the Board grades k)
         if (bored(s) && !boredSaid) { boredSaid = true; ctx.toast?.('THE CROWD IS BORED', 3); }
         else if (s > 0.4) boredSaid = false;
       },

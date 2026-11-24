@@ -1160,10 +1160,12 @@ test('a record shift from day 3 sets report.record, saves records (no PA: it lan
   crew.bank(10, 'x');
   run(6);
   assert.deepEqual(crew.report.record, { cash: 15, was: 0 });
-  assert.deepEqual(crew.records, { cash: 15, banked: 10, day: 3 });
+  const { curve, ...rec } = crew.records;   // round 7 #9: the record keeps its own 14-point pace curve
+  assert.deepEqual(rec, { cash: 15, banked: 10, day: 3 });
+  assert.equal(curve.length, 14); assert.equal(curve[13], 15);
   assert.ok(!events(crew).find(e => e.t === 'pa' && e.id === 'record'), 'the report line says it, not a PA over the stamp');
   const save = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.deepEqual(save.records, { cash: 15, banked: 10, day: 3 });
+  assert.deepEqual(save.records, { cash: 15, banked: 10, day: 3, curve });
   assert.deepEqual(makeCrew(save).crew.records, save.records);
   assert.deepEqual(crew.snapshot().records, save.records);
 });
@@ -1182,6 +1184,17 @@ test('records: a better shift beats it, a worse one does not, days 1 and 2 never
   assert.deepEqual(crew.report.record, { cash: 30, was: 15 });
   assert.equal(crew.records.banked, 20);
   assert.equal(crew.records.day, 4);
+});
+
+test('the record PA (round 7 #3): none on a review day, one in endless', () => {
+  const review = makeCrew({ day: 4, voiced: ['welcome', 'gary'] }, 5);
+  openShift(review.crew); review.crew.bank(10, 'x'); review.run(6);
+  assert.ok(review.crew.report.record, 'a record shift');
+  assert.ok(!events(review.crew).find(e => e.t === 'pa' && e.id === 'record'), 'no PA over the stamp on a review day');
+  const endless = makeCrew({ day: 9, venue: 5, endless: true, outstanding: 1, voiced: ['welcome', 'gary', 'endless'] }, 5);
+  openShift(endless.crew); endless.crew.bank(10, 'x'); endless.run(6);
+  assert.ok(endless.crew.report.record, 'a record shift');
+  assert.equal(events(endless.crew).filter(e => e.t === 'pa' && e.id === 'record').length, 1, 'endless: the record is the game');
 });
 
 test('records: junk in a save is cleaned', () => {
@@ -1361,7 +1374,7 @@ test('Last Bucket: banking it needs every online Rat within 8 m of the stand', (
   act(crew, a, { t: 'pickup', ball: ball.id });
   crew.join('Ghost');                                   // offline Rats never block
   a.x = STAND.x; a.z = STAND.z;
-  b.x = 80; b.z = 6;
+  b.x = 80; b.z = 6; b.movedAt = crew.now();          // (moving: an idle Rat counts as present after 20 s, round 7 #10.2)
   crew.flush();
   const cash = crew.cash;
   act(crew, a, { t: 'deposit' });
@@ -1373,10 +1386,10 @@ test('Last Bucket: banking it needs every online Rat within 8 m of the stand', (
   assert.equal(crew.endless, false);
   assert.equal(crew.phase, 'shift');
 
-  b.x = STAND.x + 8.5;
+  b.x = STAND.x + 8.5; b.movedAt = crew.now();
   act(crew, a, { t: 'hold', on: true }); act(crew, b, { t: 'hold', on: true }); m.run(3.2);   // the huddle (round 6 #5)
   assert.equal(a.one, true, '8.5 m is too far');
-  b.x = STAND.x + 7.9;
+  b.x = STAND.x + 7.9; b.movedAt = crew.now();
   const bv = crew.valueNow().bv;
   m.run(3.2);                                     // both still holding: the sweep fills
   assert.equal(a.one, false);

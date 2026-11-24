@@ -10,9 +10,12 @@ export const DECK = {
   TAB: 5,                       // a non-burnt beer pays a bar tab of 5 x BV in cash
   ORDER_SECS: 30,               // council round 6 #6: a lounger orders every 30 s of working shift time...
   ORDER_LOUD_SECS: 20,          // ...every 20 s once the deck is amber (Drinks >= WARN)
-  ORDER_OPEN: 20,               // an order stays open 20 s, then expires quietly (no penalty)
+  ORDER_OPEN: 30,               // an order stays open 30 s (council round 7 #8: was 20), then expires quietly
   ORDER_TAB: 10,                // a good beer while an order is open pays 10 x BV
-  FINE: 100,                    // the Liability fine: 100 x BV
+  // Rounds (council round 7 #8): from ROUND_FROM Drinks, every ROUND_EVERY-th order is a ROUND. One good pour fills
+  // it: +ROUND_DRINKS Drinks and a ROUND_TAB x BV tab. At 4 Drinks a filled round IS a fall (the overserving joke).
+  ROUND_EVERY: 3, ROUND_FROM: 3, ROUND_TAB: 25, ROUND_DRINKS: 2,
+  FINE: 50,                     // the Liability fine: 50 x BV (council round 7 #8: was 100)
   RESET_TO: 2,                  // drinks after an incident
   FALL_R: 1.5,                  // a Rat this close to the landing spot is knocked flat
   SEATS: [-14, -6, 6, 14],      // lounger x at the rail
@@ -28,8 +31,10 @@ export const DECK = {
 const clampDrinks = n => Math.max(0, Math.min(DECK.MAX, n));
 
 // The deck's state: Drinks 0..6, the next seat (round robin), the sober-up timer, and the loungers' order (council
-// round 6 #6): one open order at a time, { seat, left } or null, raised every orderEvery() seconds by the next seat.
-export const newDeck = () => ({ drinks: 0, seat: 0, soberT: 0, orderT: 0, oseat: 0, order: null });
+// round 6 #6): one open order at a time, { seat, left, round? } or null, raised every orderEvery() seconds by the next
+// seat; norders counts the orders raised this shift (every ROUND_EVERY-th from ROUND_FROM Drinks is a round).
+export const newDeck = () => ({ drinks: 0, seat: 0, soberT: 0, orderT: 0, oseat: 0, order: null, norders: 0 });
+export const isRoundOrder = (n, drinks) => (n | 0) > 0 && (n | 0) % DECK.ROUND_EVERY === 0 && drinks >= DECK.ROUND_FROM;
 
 // Seconds between orders: 30, or 20 once the deck is amber ("they're getting loud").
 export const orderEvery = drinks => drinks >= DECK.WARN ? DECK.ORDER_LOUD_SECS : DECK.ORDER_SECS;
@@ -53,7 +58,8 @@ export function stepDeck(d, dt) {
     d.orderT = 0;
     const seat = (d.oseat ?? 0) % DECK.SEATS.length;
     d.oseat = (seat + 1) % DECK.SEATS.length;
-    d.order = { seat, left: DECK.ORDER_OPEN };
+    d.norders = (d.norders ?? 0) + 1;
+    d.order = { seat, left: DECK.ORDER_OPEN, ...(isRoundOrder(d.norders, d.drinks) ? { round: true } : {}) };
     out.order = true;
   }
   return out;
@@ -67,7 +73,8 @@ export function serveEffect(item, quality) {
 }
 // Does this serve pay the deck's bar tab?
 export const paysTab = (item, quality) => item === 'beer' && (quality === 'perfect' || quality === 'good');
-export const tabFor = (bv, ordered = false) => (ordered ? DECK.ORDER_TAB : DECK.TAB) * Math.max(0, bv);
+// ordered: false (an unordered beer), true or an order (a filled order), or an order with round: true (a round).
+export const tabFor = (bv, ordered = false) => (ordered?.round ? DECK.ROUND_TAB : ordered ? DECK.ORDER_TAB : DECK.TAB) * Math.max(0, bv);
 // A paying beer fills the open order, if there is one. Returns the filled order (or null) and closes it.
 export function fillOrder(d, item, quality) {
   if (!d.order || !paysTab(item, quality)) return null;
@@ -77,8 +84,9 @@ export function fillOrder(d, item, quality) {
 export const fineFor = bv => DECK.FINE * Math.max(0, bv);
 
 // Apply a serve. Returns { delta, incident }; on an incident the caller pays the fine, then calls afterIncident.
-export function applyServe(d, item, quality) {
-  const delta = serveEffect(item, quality);
+// filled: the order this serve filled (fillOrder), if any; a round is ROUND_DRINKS drinks, not 1.
+export function applyServe(d, item, quality, filled = null) {
+  const delta = filled?.round && serveEffect(item, quality) > 0 ? DECK.ROUND_DRINKS : serveEffect(item, quality);
   d.drinks = clampDrinks(d.drinks + delta);
   return { delta, incident: d.drinks >= DECK.MAX };
 }

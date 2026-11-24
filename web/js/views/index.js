@@ -28,7 +28,7 @@
 //     },
 //   };
 //
-// ctx (built in main.js): { scene, camera, me, crew(), balls(), act(msg), toast(text, secs), feed(text),
+// ctx (built in main.js): { scene, camera, me, crew(), balls(), act(msg), toast(text, secs), say(kind, text, opts) (say.js: the one centre slot; toast is say('TOAST')), feed(text),
 //   showMemo(text, target, secs), board, SFX, nameOf(id), pad(), keys, world(), playing(), driving(),
 //   cartPose, cartViews, terrain, sky, rightNet, rightPoles, venues (venues.js parts: deck, stands, crowd, crowdBob, jumbo, car, carY) }.
 // Full contract: design/game-design.md, "Round 4 venue seam".
@@ -45,6 +45,8 @@ import stadium from './stadium.js';
 import county from './county.js';
 //
 import orbit from './orbit.js';
+//
+import owner from './owner.js';   // endless (round 7 #9): crew colours and the statue
 
 export const VIEWS = [
   tiered,
@@ -56,6 +58,8 @@ export const VIEWS = [
   county,
   //
   orbit,
+  //
+  owner,
 ];
 
 // main.js: createViews(ctx) runs the list above (views/registry.js has the runner; tests use it directly).

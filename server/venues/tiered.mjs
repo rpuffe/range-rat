@@ -1,9 +1,11 @@
 // Tiered Entertainment Range (venue 2), server side: the Target Greens (council-round4.md §3.1, build item 4).
 // A ball that comes to rest inside a bowl rolls into its cup; a CREW ball in a bowl is a TARGET (flushes the cup to
-// the shooter, Hustle +0.25); the gutters drain 1 ball a second from each cup. The Upper Deck is another module.
+// the shooter, Hustle +0.25). Council round 7 (#1): at Tiered the gutters are linked (a TARGET drains all three cups);
+// from the Stadium on they drain 1 ball a second from each cup. The Upper Deck is another module.
 import { KIND_W, CART } from '../../web/js/sim.js';
 import { MAP } from '../../web/js/map.js';
-import { inBowl, cupSpot, bayUtil, TARGET, GUTTERS, hasGutters } from '../../web/js/tiered.js';
+import { inBowl, cupSpot, bayUtil, TARGET, GUTTERS, drainsAll, guttersDrain } from '../../web/js/tiered.js';
+import { maxMult } from '../../web/js/owner.js';   // round 7 #9: the Owner's Hustle (x3 in endless)
 
 const ballWeight = b => (KIND_W[b.kind] ?? 1) * (b.kind === 'splitter' ? 3 : 1);
 const ballCount = b => (b.kind === 'splitter' ? 3 : 1);
@@ -38,7 +40,7 @@ export default {
 
   tick(crew, st, dt) {
     if ((st.rc += dt) >= 0.25) { st.rc = 0; recount(crew, st); }      // balls are picked up elsewhere: recount
-    if (!crew.working() || !hasGutters(crew.up)) return;
+    if (!crew.working() || !guttersDrain(crew.up, crew.venue)) return;
     MAP.BOWLS.forEach((bowl, i) => {
       st.gt[i] = Math.min(st.gt[i] + dt * GUTTERS.PER_SEC, 1 + 1e-9);
       while (st.gt[i] >= 1) {
@@ -62,16 +64,17 @@ export default {
     const bowl = inBowl(b.x, b.z, MAP.BOWLS, target ? TARGET.LIP : 0);
     if (!bowl) return;
     if (target) {
-      // TARGET! Flush the cup (and this ball) to the shooter at gear x1.
-      const cup = cupBalls(crew, bowl.id);
+      // TARGET! Flush the cup (and this ball) to the shooter at gear x1; with linked gutters, every cup.
+      const all = drainsAll(crew.up, crew.venue);
+      const cup = all ? MAP.BOWLS.flatMap(w => cupBalls(crew, w.id)) : cupBalls(crew, bowl.id);
       let n = ballCount(b), w = ballWeight(b);
       for (const o of cup) { n += ballCount(o); w += ballWeight(o); remove(crew, o, shooter.id); }
       remove(crew, b, shooter.id);
       crew.bank(n, shooter.id, null, w, TARGET.GEAR);
-      crew.mult = Math.min(CART.MAX_MULT, crew.mult + TARGET.HUSTLE);
+      crew.mult = Math.min(maxMult(crew.up, crew.endless, CART.MAX_MULT), crew.mult + TARGET.HUSTLE);
       crew.stats.targets = (crew.stats.targets ?? 0) + 1;
       shooter.shift.targets = (shooter.shift.targets ?? 0) + 1;
-      crew.events.push({ t: 'target', by: shooter.id, bowl: bowl.id, n, x: bowl.x, z: bowl.z, mult: crew.mult });
+      crew.events.push({ t: 'target', by: shooter.id, bowl: bowl.id, n, x: bowl.x, z: bowl.z, mult: crew.mult, ...(all ? { all: true } : {}) });
       crew.mods.signal('target', { by: shooter.id, bowl: bowl.id, n });
       recount(crew, st);
       return;

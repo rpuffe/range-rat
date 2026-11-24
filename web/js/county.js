@@ -8,7 +8,8 @@ import { MAP } from './map.js';
 // "Customers at the County fade the ball. Corporate does not use the word 'slice'."
 // 40% of customer shots get a curve in [MIN, MAX): the crew swing's own curve physics, bending right (+x).
 // Tuned: the doc's 0.6-1.4 puts only ~6% of shots in the Yards; 1.0-2.0 gives ~12% (the 10-15% target, pinned by test).
-export const SLICE = { CHANCE: 0.4, MIN: 1.0, MAX: 2.0 };
+// Round 7 #6: 0.40 -> 0.15, so ~4-5% land in the Yards (the teenagers no longer clear them: one Rat's errand, or drones).
+export const SLICE = { CHANCE: 0.15, MIN: 1.0, MAX: 2.0 };
 
 // Zoning Compliance = 1 - strays / STRAY_CAP. A stray is a resting ball past the kerb (x > KERB_X).
 export const ZONING = { STRAY_CAP: 30, EVERY: 0.5 };

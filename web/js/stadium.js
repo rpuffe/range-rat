@@ -10,6 +10,7 @@ export const CROWD = {
   KNOCK_CAP: 10,         // knockdowns that count per shift
   LAP_SECS: 25,          // all four gates, in order, within this
   GATE_PAD: 1.5,         // how far off the painted edge still counts as being on the Track
+  WINDOW: 120,           // round 7 #7: the graded gauge is the mean of the last 120 s of live sentiment, 1 sample a second
 };
 const clamp01 = v => Math.max(0, Math.min(1, v));
 
@@ -38,6 +39,16 @@ export function stepLap(lap, g, t) {
   if (lap.n >= 5) { lap.n = 1; lap.t0 = t; lap.dir = 0; return true; }
   return false;
 }
+
+// Round 7 #7, the crowd remembers: a ring of up to CROWD.WINDOW once-a-second samples. pushSample mutates and returns
+// the buffer ({ a: [], i: 0 }); windowMean is the mean so far (null before the first sample).
+export const newWindow = () => ({ a: [], i: 0 });
+export function pushSample(buf, s) {
+  if (buf.a.length < CROWD.WINDOW) buf.a.push(s);
+  else { buf.a[buf.i] = s; buf.i = (buf.i + 1) % CROWD.WINDOW; }
+  return buf;
+}
+export const windowMean = buf => (buf?.a?.length ? buf.a.reduce((x, y) => x + y, 0) / buf.a.length : null);
 
 // Decay by dt, clamped 0..1.
 export const stepSentiment = (s, dt) => clamp01(s - CROWD.DECAY * dt);

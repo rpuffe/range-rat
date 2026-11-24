@@ -3,7 +3,7 @@
 // depends on what the crew owns; it goes once you've done it, or after 45 s. No roles: nothing rewards it.
 // Pure (no THREE, no DOM): server/venues/nudge.mjs deals and clears it, main.js shows it in the checklist's slot.
 import { MAP } from './map.js';
-import { SIM, WASHER_HANDLES, WASH, MATS } from './sim.js';
+import { SIM, WASHER_HANDLES, WASH, MATS, FIXTURE_BY_ID, FRIES } from './sim.js';
 
 export const NUDGE = {
   SECS: 45,          // the line goes after 45 s of working time...
@@ -53,10 +53,50 @@ export function dealFor(i, p, up) {
 
 // Where the yellow arrow goes (client). wand: does this Rat hold the wand; at: where they stand (the nearest mat).
 // null = no place (the shop is a menu).
-export function nudgeTarget(id, wand = false, at = { x: 0, z: 0 }) {
+export function nudgeTarget(id, wand = false, at = { x: 0, z: 0 }, { cart = null } = {}) {
+  if (id === 'mats3' || id === 'gary:mats') return nudgeTarget('hose', wand, at);   // the wash station, then the nearest mat
+  if (id === 'gary:sign') return wand ? { x: FIXTURE_BY_ID.sign.x, z: FIXTURE_BY_ID.sign.z, y: 3.4, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
+  if (id === 'gary:stand') return wand ? { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
+  if (id === 'gary:cart') return wand && cart ? { x: cart.x, z: cart.z, y: 2.2, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
+  if (id === 'gary:kitchen') return { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6, s: 1 };
   if (id === 'hose') return wand ? { x: MATS.reduce((b, m) => Math.abs(m.x - at.x) < Math.abs(b.x - at.x) ? m : b).x, z: 0, y: 2.2, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
   if (id === 'far') { const f = MAP.FLAGS.find(g => g.id === 'yellow'); return { x: f.x, z: f.z, y: 3, s: 1 }; }
   if (id === 'stand') return { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6, s: 1 };
   if (id === 'washer') return { x: (WASHER_HANDLES.L.x + WASHER_HANDLES.R.x) / 2, z: WASHER_HANDLES.L.z, y: 2.4, s: 1 };
   return null;
+}
+
+// ---- Round 7 #4: Gary's warning, dealt. When his 45 s warning starts (day 4+, every venue), each online Rat's nudge
+// slot gets one FAILING stop, nearest first; extra Rats double up on the mats. A stop that passes clears its line, and
+// every line clears when he reaches his first stop. Day 3 at the Muni: one rhythm line at half-shift. No roles: nothing
+// checks or rewards who did what. Nudge ids: 'gary:<stop>' and 'mats3'.
+export const GARY_TEXT = {
+  sign: 'Gary checks the sign. Hose it!',
+  mats: 'Gary checks the mats. Hose them!',
+  stand: 'Gary checks the stand. Hose it!',
+  cart: 'Gary checks the cart. Hose it!',
+  kitchen: "Gary's hungry. Serve a hot dog!",
+};
+export const DAY3 = { DAY: 3, VENUE: 0, AT: 0.5, MUD: 0.3, TEXT: 'Keep the mats clean.' };
+
+// The line for any nudge id (day 2, Gary's, day 3).
+export const nudgeLine = id => NUDGE_TEXT[id] ?? (id === 'mats3' ? DAY3.TEXT : id?.startsWith('gary:') ? GARY_TEXT[id.slice(5)] : null) ?? null;
+
+// stops: Gary's failing stops [{ id, x, z }] (route order); rats: [{ id, x, z }]. Returns { [ratId]: stopId }.
+// Nearest first: the closest (Rat, stop) pair is dealt, then the next closest among the rest, until every failing
+// stop has a Rat; extra Rats go to the mats when they fail, else to their nearest failing stop.
+export function dealGary(stops, rats) {
+  const out = {};
+  if (!stops.length) return out;
+  const d = (r, s) => Math.hypot(r.x - s.x, r.z - s.z);
+  const openStops = [...stops], left = [...rats];
+  while (openStops.length && left.length) {
+    let best = null;
+    for (const r of left) for (const s of openStops) if (!best || d(r, s) < best.d) best = { r, s, d: d(r, s) };
+    out[best.r.id] = best.s.id;
+    left.splice(left.indexOf(best.r), 1); openStops.splice(openStops.indexOf(best.s), 1);
+  }
+  const mats = stops.find(s => s.id === 'mats');
+  for (const r of left) out[r.id] = (mats ?? stops.reduce((a, s) => (d(r, s) < d(r, a) ? s : a))).id;
+  return out;
 }

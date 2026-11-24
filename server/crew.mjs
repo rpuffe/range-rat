@@ -15,7 +15,11 @@ import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall
   VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor, cartGearOf } from '../web/js/sim.js';
 import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor, cartSpeedAt } from '../web/js/map.js';
 import { VenueHooks, MODULES } from './venues/index.mjs';
-import { shortfall, gaugeOk as gaugeHolds, GAUGE_MISS, RALLY_LINES, RALLY_MARGIN, RALLY_RECHECK } from '../web/js/rally.js';
+import { debrisLeft } from './venues/orbit.mjs';
+import { ORBIT } from '../web/js/orbit.js';
+import { isStray } from '../web/js/county.js';
+import { shortfall, shortfalls, dealJobs, gaugeOk as gaugeHolds, GAUGE_MISS, RALLY_LINES, RALLY_MARGIN, RALLY_RECHECK, rallyAt } from '../web/js/rally.js';
+import { maxMult, curveStep, finishCurve, cleanCurve, paceAt, OWNER } from '../web/js/owner.js';   // round 7 #9: endless
 import { QUOTA_KPI } from '../web/js/sim.js';
 import { newMat, openShift as openMats, stepMat, matReady, shoot, matWire } from '../web/js/customers.js';
 import { mowerDue, newMower, stepMower, mowerSnap } from '../web/js/mowe.js';
@@ -34,7 +38,8 @@ const READY_SECS = 20;            // Ready Up: the next shift starts this long a
 const READY_HOLD_SECS = 120;      // ...held (for signatures) at most this long when a promotion is ready
 const REVEAL_SECS = 6;            // a venue reveal holds the clock this long
 const PA_CAP = 3, PA_GAP_MS = 20_000;
-const HUDDLE_R = 8, HUDDLE_IDLE_MS = 60_000, HUDDLE_HOLD = 3.0;   // the huddle beat: everyone holds Use this long (round 6 #5)
+// Round 7 #10.2: an idle Rat counts as present (and holding) in the huddle and Gary's ring after 20 s, not GRACE_MS.
+const HUDDLE_R = 8, HUDDLE_IDLE_MS = 20_000, HUDDLE_HOLD = 3.0;   // the huddle beat: everyone holds Use this long (round 6 #5)
 
 // What a ping on the cage pays out, and how often.
 export const PING_PRIZES = [['jackpot', 0.4], ['boost', 0.3], ['mult', 0.3]];
@@ -116,6 +121,7 @@ export class Crew {
     this.voiced = new Set(Array.isArray(save?.voiced) ? save.voiced.filter(k => typeof k === 'string').slice(0, 40) : []);
     this.stamps = int(save?.stamps, 0, 100);
     this.records = { cash: Number(save?.records?.cash) || 0, banked: int(save?.records?.banked, 0, 1e9), day: int(save?.records?.day, 0, 1e6) };
+    { const c = cleanCurve(save?.records?.curve); if (c) this.records.curve = c; }   // round 7 #9: the record's own pace
     // Balls Outstanding is a stored count (write-offs live here). Old saves derive it.
     this.outstanding = Number.isFinite(save?.outstanding) ? Math.max(0, Math.floor(save.outstanding)) : BALLS_OUTSTANDING - (this.totals.deposited ?? 0);
     const pr = Math.floor(Number(save?.pendingReveal));
@@ -381,7 +387,7 @@ export class Crew {
   buy(p, id) {
     const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
     if (!item) return false;
-    const price = nextPrice(id, this.up, this.onlineCount(), id === 'dive' ? p.dive : p.gear, this.venue, shopDay(this.phase, this.day));
+    const price = nextPrice(id, this.up, this.onlineCount(), id === 'dive' ? p.dive : p.gear, this.venue, shopDay(this.phase, this.day), this.endless);
     if (price === null || price > this.cash) return false;
     if (this.todo) this.todo.buy = true;
     this.cash = cents(this.cash - price);
@@ -393,6 +399,7 @@ export class Crew {
     this.events.push({ t: 'buy', by: p.id, id, level, price, personal: !!item.personal });
     if (id === 'cart' && level === 1) this.pa('cart', { once: true });
     if (id === 'cart' && level === 3) this.pa('fleet', { once: true });
+    if (id === 'owner' && level === OWNER.STATUE) this.pa('statue', { once: true, big: true });   // round 7 #9: once ever
     return true;
   }
 
@@ -668,7 +675,7 @@ export class Crew {
       }
       if (!this.jackpotSaid) { this.jackpotSaid = this.pa('jackpot', { chance: 0.25 }); }
     } else if (prize === 'boost') c.boostT = CART.BOOST_SECS;
-    else this.mult = Math.min(CART.MAX_MULT, this.mult + CART.MULT_STEP);
+    else this.mult = Math.min(maxMult(this.up, this.endless, CART.MAX_MULT), this.mult + CART.MULT_STEP);   // round 7 #9: x3 with the Owner's Hustle
     this.events.push({ t: 'ping', by: b.by, prize, n, mult: this.mult, cart: c.i });
     this.mods.call('ping', b, { prize, n, cart: c });
   }
@@ -698,6 +705,7 @@ export class Crew {
   stepHelpers(dt) {
     const claimed = new Set(this.helpers.map(h => h.target).filter(Boolean));
     const cap = HELPER_POCKET;
+    const lawns = this.venue >= 4;     // round 7 #6: from the County, teenagers stay off the lawns (strays are the drones' and the Rats')
     for (const h of this.helpers) {
       if (h.down > 0) continue;
       const working = this.phase === 'shift' && !this.paused();
@@ -710,7 +718,7 @@ export class Crew {
           h.target = null; b = null;
           let bd = Infinity;
           for (const c of this.balls.values()) {
-            if (!c.rest || c.sunk || c.kind === 'one' || claimed.has(c.id)) continue;
+            if (!c.rest || c.sunk || c.kind === 'one' || claimed.has(c.id) || (lawns && isStray(c))) continue;
             const d = Math.hypot(c.x - h.x, c.z - h.z);
             if (d < bd) { bd = d; b = c; }
           }
@@ -747,7 +755,7 @@ export class Crew {
     // Ball No. 1 is never swept: losing it would hold the clock for ever.
     for (const [id, b] of this.balls) if (!b.sunk && b.kind !== 'one') { this.balls.delete(id); this.events.push({ t: 'gone', id }); }
     this.shiftSecs = this.shiftOverride ?? (this.endless || this.venue > 0 ? SIM.SHIFT_SECS : shiftSecsFor(this.day));
-    this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false; this.reRallied = false; this.gaugeWas = null;
+    this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false; this.reRallied = false; this.gaugeWas = null; this.warned = false;
     this.gary = null; this.mower = null; this.paShift = 0; this.jackpotSaid = false;
     this.ready.clear(); this.readyAt = 0; this.signed.clear();
     this.hopper = { n: 0, credit: 0, frac: 0 };
@@ -773,13 +781,13 @@ export class Crew {
     }
     this.mods.call('startShift');      // venue modules' mornings: after the reset, before the quota is set
     // Corporate's memo and today's quota. Judged on Upkeep, so a mid-shift purchase can't buy it.
-    if (this.endless) this.quota = null;
+    if (this.endless || this.venue === 5) this.quota = null;   // round 7 #5: no review at the Orbital, only Ball No. 1
     else if (this.venue === 0) { const q = quotaQ(this.day, this.ceiling()); this.quota = q == null ? null : { q }; }
     // The target climbs with the stamps earned, not just the days served (playtest: a crew that kept missing
     // got targets it could never reach). Once promoted-ready it climbs with the days again.
     else this.quota = { q: (this.ceiling() - 1) * venueQuotaF(this.stamps < PROMO_STAMPS ? Math.min(this.venueDay, this.stamps + 1) : this.venueDay) };
     // Day 1 at the Muni is quiet (the checklist teaches it): the memo still fires, flagged `quiet`, and the client skips the card.
-    this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaTarget() : null, text: memoText(this.day, this.quota && this.quotaTarget(), this.endless, this.rng),
+    this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaTarget() : null, text: this.venue === 5 && !this.endless ? orbitMemo(this.outstanding) : memoText(this.day, this.quota && this.quotaTarget(), this.endless, this.rng),
       flavor: memoFlavor(this.day, this.venue, this.endless, this.rng), quiet: this.day === 1 && !!this.todo });
     for (const c of this.carts) { c.boostT = 0; if (!c.driver) Object.assign(c, c.i ? CART.PARK2 : CART.PARK, { v: 0 }); }
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
@@ -795,7 +803,9 @@ export class Crew {
       this.pa(VENUE_RULES[v].pa);
     }
     if (this.endlessFresh) { this.endlessFresh = false; this.events.push({ t: 'reveal', venue: 6, memo: 'Under New Management.', title: 'Owner' }); }
-    // The Last Bucket that came due at the bell (or a reload saved at 1) begins this morning.
+    // The Last Bucket that came due at the bell (or a reload saved at 1) begins this morning. A sky that wasn't
+    // cleared by the bell (round 7 #5) reopens its gate: the debris was saved.
+    if (this.lastBucket?.phase === 'sky') this.lastBucket = null;
     if (this.venue === 5 && !this.endless && this.outstanding <= 1 && !this.lastBucket) { this.outstanding = 1; this.beginLastBucket(); }
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'shift', day: this.day });
@@ -804,15 +814,24 @@ export class Crew {
 
   quotaTarget() { return this.quota ? cents(this.valueNow().rate * (1 + this.quota.q)) : null; }
   // The Closing Bell (round 6 #3): the single biggest shortfall at Last Call, as one line (null when endless).
-  rallyNeed() {
-    const value = this.valueNow(), kpi = this.mods.kpi();
+  rallyNeed(kpi = this.mods.kpi()) {
+    const value = this.valueNow();
     // Forecast the rush (playtest 2: "On target", then DENIED): Last Call swings x1.5, so read the gauge with a margin.
     const ahead = kpi == null ? null : kpi - (RALLY_MARGIN[this.venue] ?? 0.1);
     return shortfall({ value, quota: this.quota, kpi: ahead, fixtures: this.fixtures, venue: this.venue, endless: this.endless });
   }
+  // Round 7 #4: the rally dealt round the crew. { need: the top line (solo, old clients), needs: { ratId: line } }.
+  rallyNeeds(kpi = this.mods.kpi()) {
+    const need = this.rallyNeed(kpi);
+    if (need == null) return { need };
+    const ahead = kpi == null ? null : kpi - (RALLY_MARGIN[this.venue] ?? 0.1);
+    const jobs = shortfalls({ value: this.valueNow(), quota: this.quota, kpi: ahead, fixtures: this.fixtures, venue: this.venue, endless: this.endless, cups: this.mods.state('tiered')?.cups });
+    return { need, needs: dealJobs(jobs, this.online().map(p => ({ id: p.id, x: p.x, z: p.z }))) };
+  }
 
   // The clock holds for venue reveals and for the Last Bucket's moment.
-  paused() { return this.revealT > 0 || (this.lastBucket && this.lastBucket.phase !== 'done'); }
+  // Round 7 #5: while the crew clears the sky ('sky') the clock runs, so the Lift and the tether work.
+  paused() { return this.revealT > 0 || (this.lastBucket && this.lastBucket.phase !== 'done' && this.lastBucket.phase !== 'sky'); }
 
   // Super-bouncy balls don't want to be picked up: get close and they hop away.
   stepBouncy() {
@@ -1117,7 +1136,8 @@ export class Crew {
     if (stop.id === 'stand') {
       const fails = g.fails + (ok ? 0 : 1);
       const online = this.online();
-      const huddle = online.length > 0 && online.every(p => Math.hypot(p.x - 26, p.z - 6) < GARY.HUDDLE_R);
+      const now = this.now();
+      const huddle = online.length > 0 && online.every(p => Math.hypot(p.x - 26, p.z - 6) < GARY.HUDDLE_R || now - (p.movedAt ?? now) > HUDDLE_IDLE_MS);
       const gained = fails <= 1 ? Math.min(10 - this.commendations, huddle ? 2 : 1) : 0;
       this.commendations += gained;
       g.phase = 'done';
@@ -1179,18 +1199,44 @@ export class Crew {
   lastCall() {
     return this.phase === 'shift' && this.day >= LAST_CALL.FROM_DAY && this.shiftT >= this.shiftSecs - LAST_CALL.SECS;
   }
+  // Round 7 #7: a rally earlier than Last Call (rally.js RALLY_AT: the Stadium's T-120), from that venue's day 2.
+  warnDue() {
+    const at = rallyAt(this.venue);
+    return at > LAST_CALL.SECS && !this.endless && this.phase === 'shift' && this.venueDay >= 2 && this.day >= LAST_CALL.FROM_DAY
+      && this.shiftT >= this.shiftSecs - at;
+  }
 
   // ---- the Last Bucket (council round 2, §4.8) -------------------------------------------
+  // Round 7 #5, the sky gate: at the Orbital Ball No. 1 won't fall through more than ORBIT.SKY_CLEAR pieces of
+  // debris. Until the crew (or the tether) clears it, the phase is 'sky': the clock runs, orbit shots stop.
   beginLastBucket() {
+    if (this.skyBlocked()) {
+      this.lastBucket = { phase: 'sky' };
+      this.events.push({ t: 'lastbucket', phase: 'sky', debris: this.skyDebris() });
+      this.dirty = true;
+      return;
+    }
     this.lastBucket = { phase: 'falling', t: 3 };
     this.events.push({ t: 'lastbucket', phase: 'falling' });
     this.pa('one', { once: true });
     this.dirty = true;
   }
 
+  skyDebris() { return debrisLeft(this.mods.state('orbit')); }
+  skyBlocked() { return this.venue === 5 && !this.endless && this.skyDebris() > ORBIT.SKY_CLEAR; }
+
   stepLastBucket(dt) {
     let lb = this.lastBucket;
     if (!lb || this.phase !== 'shift') return;
+    if (lb.phase === 'sky') {        // round 7 #5: the sky is clear enough: Ball No. 1 falls
+      if (this.skyBlocked()) return;
+      this.beginLastBucket();
+      return;
+    }
+    // Round 7 #10.2: a carrier offline for DRIVER_GRACE_MS drops Ball No. 1 where they stood, so anyone can carry it.
+    const now = this.now();
+    for (const p of this.players.values()) if (p.one && p.online === 0 && now - p.seenAt > DRIVER_GRACE_MS) this.dropOne(p);
+    lb = this.lastBucket;
     // Self-healing: if Ball No. 1 is neither on the field nor in anyone's hands, find it or send it again.
     if ((lb.phase === 'down' || lb.phase === 'carried' || lb.phase === 'huddle') && !this.balls.has(lb.id) && ![...this.players.values()].some(p => p.one)) {
       const b = [...this.balls.values()].find(o => o.kind === 'one');
@@ -1275,7 +1321,13 @@ export class Crew {
     this.stepLastBucket(dt);
     const paused = this.paused();
     const lastCall = this.lastCall();
-    if (lastCall && !this.lastCallRung) { this.lastCallRung = true; this.gaugeWas = this.mods.kpi(); this.events.push({ t: 'lastcall', need: this.rallyNeed() }); }
+    // Round 7 #7: the Stadium's Two-Minute Warning (from its day 2): the horn and the rally at T-RALLY_AT, read off the
+    // LIVE crowd (the graded gauge is a 2-minute mean and lags). Last Call at T-60 then rings with no second line.
+    if (!this.warned && this.warnDue()) {
+      this.warned = true;
+      this.events.push({ t: 'lastcall', ...this.rallyNeeds(this.mods.state('stadium')?.s ?? this.mods.kpi()), warning: true });
+    }
+    if (lastCall && !this.lastCallRung) { this.lastCallRung = true; this.gaugeWas = this.mods.kpi(); if (!this.warned) this.events.push({ t: 'lastcall', ...this.rallyNeeds() }); }
     if (lastCall && this.lastCallRung && !this.reRallied && !this.endless) {   // the gauge slipped under the tick mid-rush: say it once
       const k = this.mods.kpi();
       if (k != null && this.gaugeWas != null && this.gaugeWas >= QUOTA_KPI && k < QUOTA_KPI) { this.reRallied = true; this.events.push({ t: 'rally', need: RALLY_LINES.gauge[this.venue] ?? null }); }
@@ -1283,8 +1335,8 @@ export class Crew {
       // Playtest round 2 #1: a second look ~30 s into Last Call. Still short: one more line, on the same 'rally' event.
       if (!this.reRallied && this.shiftT >= this.shiftSecs - LAST_CALL.SECS + Math.min(RALLY_RECHECK, LAST_CALL.SECS / 2)) {
         this.reRallied = true;
-        const need = this.rallyNeed();
-        if (need && need !== RALLY_LINES.onTarget) this.events.push({ t: 'rally', need });
+        const r = this.rallyNeeds();   // round 7 #4: the re-check re-deals
+        if (r.need && r.need !== RALLY_LINES.onTarget) this.events.push({ t: 'rally', ...r });
       }
     }
     // Customers: arrive at the gate, grab a bucket, hit it, walk out. A filthy mat is refused.
@@ -1299,6 +1351,8 @@ export class Crew {
     });
     if (this.phase === 'shift' && !paused) {
       this.shiftT += dt;
+      if (this.curveDay !== this.day) { this.curveDay = this.day; this.curve = []; }   // round 7 #9: cash at every 14th of the shift
+      curveStep(this.curve, this.shiftT, this.shiftSecs, this.stats.cash);
       this.fixtures.sign = Math.min(1, this.fixtures.sign + dt * 0.0008);    // dust off the road
       this.fixtures.stand = Math.min(1, this.fixtures.stand + dt * 0.0006);
       const n = activeMats(this.onlineCount());
@@ -1477,8 +1531,10 @@ export class Crew {
     const dayCash = cents(this.stats.cash - onePay);
     if (this.day >= 3 && dayCash > this.records.cash) {
       record = { cash: dayCash, was: this.records.cash };
-      this.records = { cash: dayCash, banked: this.stats.deposited - (onePay ? 1 : 0), day: this.day };
-      // No PA here (playtest round 2 #4): it landed on the bell's stamp. The report's "Crew record!" line says it.
+      this.records = { cash: dayCash, banked: this.stats.deposited - (onePay ? 1 : 0), day: this.day, curve: finishCurve(this.curveDay === this.day ? this.curve : [], dayCash) };
+      // Round 7 #3: the record PA plays only in endless, where the record is the game (no stamp to land on). On review
+      // days the report card's "Record shift!" line says it (playtest round 2 #4: a record PA over DENIED).
+      if (this.endless) this.pa('record', { big: true });
     }
     for (const k of Object.keys(this.stats)) this.totals[k] = (this.totals[k] ?? 0) + this.stats[k];
     this.report = { day: this.day, ...this.stats, left: this.balls.size, bank: this.cash, quota, record,
@@ -1538,9 +1594,9 @@ export class Crew {
       quota: this.quota && { q: +this.quota.q.toFixed(4), target: this.quotaTarget() },
       stamps: this.stamps, title: this.title(), commendations: this.commendations,
       outstanding: this.outstanding, records: this.records,
-      // Endless target: today's cash against the record's pace (record x shiftT / shiftSecs).
+      // Endless target: today's cash against the record's pace (round 7 #9: the record shift's own curve; linear for an old record).
       pace: this.endless && this.records.cash > 0 && this.phase === 'shift' && this.shiftSecs > 0
-        ? { record: this.records.cash, now: cents(this.records.cash * Math.min(1, this.shiftT / this.shiftSecs)), cash: this.stats.cash } : null,
+        ? { record: this.records.cash, now: cents(paceAt(this.records, this.shiftT, this.shiftSecs)), cash: this.stats.cash } : null,
       silo: this.stats.deposited, lastCall: this.lastCall(),
       promo: this.promoInfo(), revealT: +this.revealT.toFixed(1),
       promotedTo: this.phase === 'report' && this.pendingReveal ? VENUE_RULES[this.pendingReveal]?.name ?? null : null,   // the report says so (playtest)
@@ -1548,6 +1604,7 @@ export class Crew {
       readyIn: this.phase === 'report' && this.readyAt && !this.awaitingSignatures() ? Math.max(0, Math.ceil(READY_SECS - (now - this.readyAt) / 1000)) : null,
       sigWait: this.phase === 'report' && this.readyAt ? this.awaitingSignatures() : null,
       lastBucket: this.lastBucket && { phase: this.lastBucket.phase, by: this.lastBucket.by ?? null,
+        ...(this.lastBucket.phase === 'sky' ? { debris: this.skyDebris() } : {}),
         ...(this.lastBucket.phase === 'huddle' ? { sweep: +this.lastBucket.sweep.toFixed(2), slots: this.lastBucket.slots ?? [], in: this.lastBucket.in ?? [], held: this.lastBucket.held ?? [] } : {}) },
       washer: this.perks.washer ? { n: this.hopper.n, credit: this.hopper.credit, auto: this.perks.washAuto,
         L: cr.L && now - cr.L.at < 400 ? cr.L.id : null, R: cr.R && now - cr.R.at < 400 ? cr.R.id : null, rateL: rateOf('L'), rateR: rateOf('R') } : null,
@@ -1608,6 +1665,8 @@ const MEMOS = [
 const TODO_PICK = 1, TODO_BANK = 3;   // the day-1 checklist: one ball, then a pocketful banked
 const RAT_MEMOS = ["Today's target: whatever. — the Rats", 'Reminder: we are Corporate now. Please do not tell us.', 'Fries are free. For us. — the Rats'];
 // The memo is one short line (the owner: less text at once); the joke rides along as `flavor`, in small type.
+// The Orbital's memo (round 7 #5): no review there, only the countdown.
+const orbitMemo = n => 'Today: bring them home. ' + Math.max(0, n | 0).toLocaleString('en-US') + ' to go.';
 function memoText(day, target, endless, rng) {
   if (endless) return RAT_MEMOS[Math.floor(rng() * RAT_MEMOS.length)];
   if (target == null) return day === 1 ? 'Welcome to the Muni Range. Pick up balls.' : 'Pick up balls. Bank them. Corporate pays per ball.';

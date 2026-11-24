@@ -27,7 +27,7 @@ test('the module is registered, well-formed, and wired into the views', () => {
   assert.ok(SHOP.some(i => i.id === 'drones'), 'DRONES_ROW is in the shop');
 });
 
-test('2,000 seeded customer shots: 8-18% end in the Yards at the County, and venues 0-3 never slice', () => {
+test('2,000 seeded customer shots: 3-7% end in the Yards at the County (round 7 #6), and venues 0-3 never slice', () => {
   const shots = venue => {
     const crew = crewAt(venue, {}, [county]).crew;
     const rng = mulberry32(2026), world = { venue };
@@ -45,8 +45,9 @@ test('2,000 seeded customer shots: 8-18% end in the Yards at the County, and ven
     return { yards: yards / N, curved: curved / N };
   };
   const c = shots(4);
-  assert.ok(c.yards >= 0.08 && c.yards <= 0.18, `yards share ${c.yards}`);
-  assert.ok(Math.abs(c.curved - 0.4) < 0.04, `slice share ${c.curved}`);
+  assert.ok(c.yards >= 0.03 && c.yards <= 0.07, `yards share ${c.yards}`);
+  assert.equal(SLICE.CHANCE, 0.15);
+  assert.ok(Math.abs(c.curved - 0.15) < 0.03, `slice share ${c.curved}`);
   for (const v of [0, 1, 2, 3]) assert.equal(shots(v).curved, 0, `venue ${v} has no slice`);
 });
 
@@ -126,4 +127,49 @@ test('the view file declares id county at venue 4 and the registry runs a view l
   const v = createViews({}, [{ id: 'county', venue: 4, create() { made++; return {}; } }]);
   v.onSnapshot({ venue: 3 }); assert.equal(made, 0);
   v.onSnapshot({ venue: 4 }); assert.equal(made, 1);
+});
+
+// ---- round 7 #6: teenagers stay off the lawns -------------------------------------------------------------------------
+test('round 7 #6: a teenager with only a stray in range leaves it; a drone takes it; before the County they still do lawns', () => {
+  const { crew, run } = crewAt(4, { up: { shed: 1, helpers: 1 } });
+  const p = crew.join('Pat'); crew.connect(p); p.x = 0; p.z = 30;
+  crew.startShift(); crew.revealT = 0;
+  for (const b of [...crew.balls.values()]) crew.balls.delete(b.id);
+  const stray = rest(crew, { x: 80, z: -60 });
+  const h = crew.helpers[0]; h.x = 70; h.z = -60;
+  crew.stepHelpers(0.05);
+  assert.equal(h.target, null, 'the teenager won\'t go past the kerb');
+  run(5);
+  assert.ok(crew.balls.has(stray.id), 'the stray is still there');
+  const st = crew.mods.state('county');
+  assert.equal(st.drones.length, 0);
+  // a drone does take it
+  const d = crewAt(4, { up: { shed: 1, drones: 1 } }).crew;
+  const q = d.join('Q'); d.connect(q); d.startShift();
+  for (const b of [...d.balls.values()]) d.balls.delete(b.id);
+  const s2 = rest(d, { x: 80, z: -60 });
+  d.mods.call('tick', 0.05);
+  assert.ok(d.mods.state('county').drones.some(x => x.target === s2.id));
+  // the Stadium (venue 3) has no kerb rule: a teenager still takes a ball out there
+  const s = crewAt(3, { up: { shed: 1, helpers: 1 } }).crew;
+  const r = s.join('R'); s.connect(r); s.startShift(); s.revealT = 0;
+  for (const b of [...s.balls.values()]) s.balls.delete(b.id);
+  const far = rest(s, { x: 80, z: -60 });
+  s.helpers[0].x = 70; s.helpers[0].z = -60;
+  s.stepHelpers(0.05);
+  assert.equal(s.helpers[0].target, far.id);
+});
+
+test('round 7 #6: a seeded 4P County shift with four teenagers and no Yards visit ends with 16 or more strays', () => {
+  const clock = { t: 1_000_000 };
+  const crew = new Crew('CNT4', { day: 27, venue: 4, venueDay: 2, stamps: 1, up: { shed: 3, washer: 3, cart: 2, helpers: 4, ads: 3, amen: 2 } }, { seed: 2, now: () => clock.t });
+  for (let i = 0; i < 4; i++) { const p = crew.join('R' + i); crew.connect(p); p.x = 27 + i; p.z = 9; }
+  crew.startShift();
+  while (crew.phase === 'shift' && crew.shiftT < crew.shiftSecs - 0.1) {
+    clock.t += 50;
+    for (const p of crew.players.values()) { p.seenAt = clock.t; p.movedAt = clock.t; }
+    crew.tick(0.05);
+  }
+  const strays = crew.mods.state('county').strays;
+  assert.ok(strays >= 16, `strays at the bell ${strays}`);
 });

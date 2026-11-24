@@ -39,11 +39,16 @@ import { createPace } from './pace.js'; const pace = createPace({ search: locati
 import { setHeavyRate } from './venues.js';
 import { createProps } from './props.js';
 import { PAYFLOAT, payRoute, createRoller } from './payfloat.js';   // council round 6 #7: only your own cash floats over you
-import { NUDGE_TEXT, nudgeTarget } from './nudge.js';   // council round 6 #10: the day-2 suggestion line
+import { nudgeLine, nudgeTarget } from './nudge.js';    // council round 6 #10 / round 7 #4: day 2, Gary's dealt stops, day 3
+import { createSay } from './say.js';                     // council round 7 #3: the one centre-text queue
 import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';   // sign facings (test/signs.test.mjs; ?signs checks the meshes)
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
+// The one centre-text queue (council round 7 #3): every centre string goes through say(kind, text, opts), one at a time.
+// ?debug warns on lines over 8 words; window.rr.say shows the queue and its dropped count.
+const sayer = createSay({ $, dev: new URLSearchParams(location.search).has('debug') });
+const say = sayer.say;
 
 // ---------------------------------------------------------------- scene
 const canvas = $('c');
@@ -499,6 +504,7 @@ function onMsg(m) {
     const mine = m.s.players.find(p => p.id === me.id);
     if (mine && !me.placed) { me.x = mine.x; me.z = mine.z; me.yaw = mine.yaw; me.placed = true; }
     $('code').textContent = m.code;
+    if (crew.phase !== 'report') sayer.open();   // a rejoin: nothing replays (the PA card never re-queues), nothing stays locked
     showPhase();
   } else if (m.k === 'tick') {
     for (const e of m.ev) onEvent(e);
@@ -554,7 +560,7 @@ function onEvent(e) {
       break;
     }
     case 'mower':
-      if (e.phase === 'warn') { SFX.horn('mower'); toast(`MOW-E is mowing by ${laneName(e.lane)} in 12 s. Get out of the lane (or grab what you can).`, 4); }
+      if (e.phase === 'warn') { SFX.horn('mower'); say('ALERT', `MOW-E mows ${laneName(e.lane)} in 12 s. Move!`); }
       break;
     case 'rake':
       for (const m of e.moves ?? []) { const b = balls.get(m.id); if (b) { b.x = m.x; b.z = m.z; b.y = SIM.BALL_R; b.vx = b.vy = b.vz = 0; b.rest = true; } }
@@ -570,7 +576,7 @@ function onEvent(e) {
       break;
     case 'cash':
       floatPay(e);
-      if (e.by === me.id) { toast(e.kind === 'cart' ? `Cart unloaded: +${money(e.cash)}` : `+${money(e.cash)}`); SFX.cash(e.n); }
+      if (e.by === me.id) { toast(e.kind === 'cart' ? `Cart unloaded: +${money(e.cash)}` : `+${money(e.cash)}`, undefined, 'cash'); SFX.cash(e.n); }
       break;
     case 'enthusiasm':
       SFX.ping();
@@ -589,8 +595,8 @@ function onEvent(e) {
     }
     case 'board': break;
     case 'gary':
-      if (e.phase === 'warn') { SFX.horn('gary'); toastQuiet('Gary in 45 s: clean up, then huddle', 4); }
-      else toast('Gary is inspecting. Stay out of his way.', 3);
+      if (e.phase === 'warn') { SFX.horn('gary'); say('ALERT', 'Gary in 45 s: clean up, then huddle', { key: 'gary' }); }
+      else say('ALERT', 'Gary is inspecting. Stay out of his way.', { key: 'gary' });
       break;
     case 'check': {
       const names = { sign: 'Sign', mats: 'Mats', cart: 'Cart', stand: 'Stand', kitchen: 'Kitchen' };
@@ -601,16 +607,16 @@ function onEvent(e) {
     case 'verdict':
       if (e.gained) SFX.jackpot();
       if (e.huddle && garyView) garyView.salute = 1;   // round 6 #5: hat up, arm up (round2.js adds the confetti puff)
-      toast(e.gained   // playtest round 2 #11: 8 words or fewer
+      say('ALERT', e.gained   // playtest round 2 #11: 8 words or fewer
         ? `Gary approves. +${e.gained} commendation${e.gained > 1 ? 's' : ''}.`
-        : `Gary found ${e.fails} problems. No commendation.`, 5);
+        : `Gary found ${e.fails} problems. No commendation.`, { key: 'gary', secs: 4 });
       break;
     case 'served':
       if (e.item === 'beer' && e.quality !== 'burnt') beersPoured++;
       if (e.by === me.id && e.n) toast(`+${e.n} for Fry Satisfaction`, 1.5);
       break;
     case 'fries':
-      if (e.by === me.id) { SFX.scoop(); toast(`A basket of fries (${e.stock}/${FRIES.MAX})`, 1); }
+      if (e.by === me.id) { SFX.scoop(); toast(`A basket of fries (${e.stock}/${FRIES.MAX})`, 1.2, 'fries'); }
       break;
     case 'debut':
       SFX.jackpot();
@@ -618,13 +624,12 @@ function onEvent(e) {
       break;
     case 'kick': { const b = balls.get(e.id); if (b) Object.assign(b, { x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, acc: 0 }); break; }
     case 'memo':
-      if (!e.quiet) { memoQ.push([e.text, e.target, 7, e.flavor]); memoHold = 0.6; }   // settles so a PA line in the same tick goes first
+      if (!e.quiet) showMemo(e.text, e.target, 7, e.flavor);   // a PA line in the same tick still goes first (PA outranks MEMO)
       break;
-    case 'rally': { const again = () => (crew.phase !== 'shift' ? null : textBusy() ? setTimeout(again, 400) : toast(e.need, 3)); if (e.need) again(); break; }   // the gauge slipped, or the 30 s re-check (dropped after the bell)
+    case 'rally': rallyLine(e); break;   // the gauge slipped, or the 30 s re-check (the bell lock drops it after the bell)
     case 'lastcall': {   // the Closing Bell (round 6 #3): the horn, then the server's one-line rally (null when endless)
       SFX.horn();
-      const rally = () => (crew.phase !== 'shift' ? null : textBusy() ? setTimeout(rally, 400) : toast(e.need, 3));   // waits for a PA card or a memo; never after the bell
-      if (e.need) rally();
+      rallyLine(e);   // an ALERT: waits behind a PA card or a memo (15 s at most); never after the bell
       break;
     }
     case 'quota':   // the bell's verdict: one short line (the stamp's slot); the report card waits 2 s and carries the numbers
@@ -632,10 +637,10 @@ function onEvent(e) {
       // The bell, then the stamp (board.js): the one centre element, so any toast clears. APPROVED: jackpot + confetti;
       // DENIED: the trombone, with the reason (<= 8 words) under it.
       SFX.bell?.();
-      toastT = 0; $('toast').classList.remove('show');
+      sayer.bell();   // the bell lock: queued toasts drop, PA cards and memos wait for the report to close
       setTimeout(() => {
-        board.stamp({ ...e, why: e.why ?? (e.idle ? 'Missed: nothing was banked today.' : 'Missed: Upkeep under the target.') }, { low: perf.low });
-        (e.hit ? SFX.jackpot : SFX.trombone)?.();
+        const st = { ...e, why: e.why ?? (e.idle ? 'Missed: nothing was banked today.' : 'Missed: Upkeep under the target.') };
+        say('STAMP', e.hit ? 'APPROVED' : `DENIED. ${st.why}`, { data: { show: () => { board.stamp(st, { low: perf.low }); (e.hit ? SFX.jackpot : SFX.trombone)?.(); } } });
       }, 450);
       break;
     case 'spotless':
@@ -663,9 +668,16 @@ function onEvent(e) {
       if (e.phase === 'report') pace.record(report, { venueName: VENUE_RULES[report?.venue ?? 0]?.name, value: crew.value, debris: crew.mods?.orbit?.d?.length });
       if (e.phase === 'shift') me.placed = false;   // no 'range is open' toast: the PA line and the memo say it (one thing at a time)
       crew.phase = e.phase;
+      if (e.phase !== 'report') sayer.open();   // the report closed: held PA cards and memos go
       showPhase();
       break;
   }
+}
+
+// The Last Call rally line (round 6 #3; dealt per Rat in round 7 #4): one ALERT, keyed so a re-check updates it.
+function rallyLine(e) {
+  const line = e.needs?.[me.id] ?? e.need;
+  if (line && crew.phase === 'shift') say('ALERT', line, { key: 'rally' });
 }
 
 // "+$32.50 · 8 × $4.06" over you, for your own banks only (council round 6 #7). Helpers, drones, gutters, the tether
@@ -678,15 +690,9 @@ function floatPay(e) {
   const at = e.kind === 'cart' ? cartViews[e.cart ?? 0]?.pose ?? cartPose : me;
   board.floatText(at.x, 2.4, at.z, `+${money(e.cash)} · ${e.n} × ${money(e.per ?? e.cash / e.n)}`, crew.players.find(p => p.id === me.id)?.color ?? '#ffd54a');
 }
-let memoT = 0, memoHold = 0, paOffT = 0;
-// Memos queue: a ball debut never knocks the morning memo (and its target) off the screen.
-const memoQ = [];
-function showMemo(text, target, secs = 9, flavor = '') {
-  if (memoT > 0 || paOn() || toastT > 0) { memoQ.push([text, target, secs, flavor]); return; }   // the memo waits for the PA card and a toast
-  $('memo-text').textContent = text;
-  $('memo-flavor').textContent = flavor ?? '';
-  $('memo-target').textContent = target && !text.includes(money(target)) ? `TARGET  ${money(target)}` : '';
-  $('memo').classList.remove('hidden'); memoT = secs;
+// Memos (the morning memo, ball debuts, reveal cards) are MEMO items in the queue: they wait their turn, never knock.
+function showMemo(text, target, secs = 7, flavor = '') {
+  say('MEMO', text, { secs, data: { flavor: flavor ?? '', target: target && !text.includes(money(target)) ? `TARGET  ${money(target)}` : '' } });
 }
 
 let wandAt = 0;                     // when I grabbed the wand (playtest round 2 #10: the full prompt for 3 s, then "Click spray")
@@ -787,10 +793,10 @@ function renderShop() {
   const scale = priceScale(size);
   const html = `<h3>${crew.phase === 'report' ? 'Overnight shop' : 'Shop'} <span>${money(crew.cash)} to spend</span></h3>
     ${size > 1 ? `<p class="note">Prices are ×${scale.toFixed(1)} for a crew of ${size}.</p>` : ''}
-    <ul>${SHOP.filter(item => shopShows(item, crew.venue ?? 0, day)).map(item => {
+    <ul>${SHOP.filter(item => shopShows(item, crew.venue ?? 0, day, crew.endless)).map(item => {
       const mineLvl = item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0;
       const lvl = item.personal ? mineLvl : crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
-      const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0, day);
+      const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0, day, crew.endless);
       return `<li>
         <div><b>${item.title}</b>: ${now.name}${next ? `<small>Next: <i>${next.name}</i><span class="desc">. ${next.desc}</span></small>` : `<small>${now.desc} (maxed out)</small>`}</div>
         ${!next ? '<span class="max">✓</span>' : price == null ? `<span class="max">🔒 ${VENUE_RULES[next.minVenue ?? item.minVenue ?? 0]?.name ?? 'later'}</span>` : `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>${money(price)}</button>`}
@@ -1043,6 +1049,7 @@ function showPhase() {
     const left = Math.max(0, crew.shiftSecs - crew.shiftT);
     if (crew.shiftT > 3 && left > 5) toast(`Joined day ${crew.day}, ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')} left. Pick up balls.`, 4);
   }
+  if (crew.phase === 'report' && !$('report').classList.contains('hidden')) sayer.report();   // the card is open: feedback may show again
   if (crew.phase === 'report' && report) {
     $('report-body').innerHTML = `<h2>Day ${report.day} is done</h2>
       <p class="big-stat">+${money(report.cash)} <small>${report.deposited} balls banked</small></p>
@@ -1144,12 +1151,9 @@ SET.onChange(s => {
   perf.setGraphics(s.graphics);
 });
 const hinter = SET.createHinter();
-// First-time hints get their own chip (not the toast), so a hint and a cash toast never overwrite each other.
-let hintT = 0, beersPoured = 0;
-function showHint(msg) {
-  const el = $('hint'); el.textContent = msg; el.classList.add('show');
-  clearTimeout(hintT); hintT = setTimeout(() => el.classList.remove('show'), 7000);
-}
+// First-time hints are TIP items: the lowest kind, shown only after 2 s of quiet, dropped after 60 s in the queue.
+let beersPoured = 0;
+function showHint(msg) { say('TIP', msg); }
 function pause(on) {
   if (!link) return;
   if (!on) $('settings').classList.add('hidden');
@@ -1211,17 +1215,10 @@ function pollPad(dt) {
 }
 
 // ---------------------------------------------------------------- HUD
-let toastT = 0;
-let toastTimer = 0;
-function toast(msg, secs = 1.6) {
-  $('toast').textContent = msg; $('toast').classList.add('show'); toastT = Math.min(4, secs);
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastT = 0; $('toast').classList.remove('show'); }, toastT * 1000);   // real time: a background tab pauses rAF
-}
-// A toast that waits for the PA card to finish (one text at a time).
-function toastQuiet(msg, secs) { const go = () => (paOn() ? setTimeout(go, 400) : toast(msg, secs)); go(); }
-// One text element at a time (owner playtest): while the memo or the PA card is up, the checklist and hints wait.
-const paOn = () => !!document.getElementById('pa-card')?.classList.contains('on');
-const textBusy = () => !$('memo').classList.contains('hidden') || paOn() || memoQ.length > 0;
+// Your own feedback: a TOAST in the queue (3 s to live: stale feedback is dropped, never shown late). `key` updates in place.
+function toast(msg, secs = 2.5, key) { say('TOAST', msg, { secs: Math.min(4, secs ?? 2.5), key }); }
+// The checklist and the nudge slot step aside while the PA card, a memo or the stamp holds the centre (owner playtest).
+const textBusy = () => sayer.busy('PA', 'MEMO', 'STAMP');
 // Other Rats' news: a quiet 3-line feed on the left, 3 s a line (council round 3).
 function feed(msg, color) {
   const el = $('feed'); if (!el) return;
@@ -1242,7 +1239,7 @@ const TODO_TEXT = {
 function cheapest() {
   const size = Math.max(1, crew.players.filter(p => p.online).length), day = shopDay(crew.phase, crew.day ?? 1);
   let best = Infinity;
-  for (const item of SHOP) if (shopShows(item, crew.venue ?? 0, day)) { const p = nextPrice(item.id, crew.up, size, item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0, crew.venue ?? 0, day); if (p != null && p < best) best = p; }
+  for (const item of SHOP) if (shopShows(item, crew.venue ?? 0, day, crew.endless)) { const p = nextPrice(item.id, crew.up, size, item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0, crew.venue ?? 0, day, crew.endless); if (p != null && p < best) best = p; }
   return Number.isFinite(best) ? best : 15;
 }
 const TODO_DONE = { pick: 'Picked up!', bank: 'Banked!', sign: 'Spotless!', buy: 'Bought!' };
@@ -1280,7 +1277,7 @@ function renderTodo(dt) {
   // Day 2's one-line suggestion (council round 6 #10) uses this slot and arrow, only once the checklist is gone.
   const nudge = !list || todoDoneT >= 3 ? crew.mods?.nudge?.[me.id] ?? null : null;
   const show = (!!list && todoDoneT < 3 || !!nudge) && playing() && !textBusy();
-  const tg = show && nudge ? nudgeTarget(nudge, me.wand, me) : show && cur ? todoTarget(cur.id) : null;
+  const tg = show && nudge ? nudgeTarget(nudge, me.wand, me, { cart: crewCarts().reduce((m, c) => (!m || (c.mud ?? 0) > (m.mud ?? 0) ? c : m), null) }) : show && cur ? todoTarget(cur.id) : null;
   todoArrow.g.visible = todoArrow.ring.visible = !!tg;
   if (tg) {
     const bob = Math.sin(todoT * 4) * 0.2;
@@ -1296,7 +1293,7 @@ function renderTodo(dt) {
   const key = show ? JSON.stringify([nudge, cur?.id, cur?.n, pad, me.wand, crew.cash >= cheapest(), cur?.id === 'buy' ? crew.cash : 0, todoDoneT > 0, !!tg]) : '';
   if (key === todoKey) return;
   todoKey = key;
-  el.innerHTML = !show ? '' : nudge ? `<b>${tg ? '<span id="todo-dir">↑</span> ' : ''}${NUDGE_TEXT[nudge]}${nudge === 'shop' ? ` · ${k.shop}` : ''}</b>`
+  el.innerHTML = !show ? '' : nudge ? `<b>${tg ? '<span id="todo-dir">↑</span> ' : ''}${nudgeLine(nudge) ?? ''}${nudge === 'shop' ? ` · ${k.shop}` : ''}</b>`
     : todoDoneT > 0 || !cur ? '<b>You know the job. Go.</b>'
     : `<b>${todoTarget(cur.id) ? '<span id="todo-dir">↑</span> ' : ''}${TODO_TEXT[cur.id](cur, k)}</b><span class="dots">${list.map(t => t.done ? '●' : '○').join(' ')}</span>`;
 }
@@ -1330,7 +1327,7 @@ function hud(dt = 0) {
   const left = Math.max(0, crew.shiftSecs - crew.shiftT);
   $('clock').textContent = crew.phase === 'shift' ? `Day ${crew.day} · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : `Day ${crew.day}`;
   const load = (mc?.load ?? 0) + pendingCart.size;
-  $('prompt').textContent = !playing() || r2?.cctvOn || paOn() ? ''   // one text at a time: the PA card wins
+  $('prompt').textContent = !playing() || r2?.cctvOn || sayer.busy() ? ''   // ambient: it hides while any centre item shows (round 7 #3)
     : me.down > 0 ? 'Seeing stars…'
     : crew.lastBucket?.phase === 'huddle' ? ''          // round 6 #5: the banner says HOLD Ⓐ TOGETHER (one text)
     : me.one ? ''   // the Last Bucket banner says it
@@ -1534,8 +1531,7 @@ function frame(now) {
   views?.aim(aimInput());   // round 6 #4: the landing ring at a crew bay
   views?.camera(camera, dt);
   r2?.tick(dt, now);       // after the camera: CCTV and the venue reveal drive it when active
-  if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
-  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen() && !crew.todo && !crew.mods?.nudge?.[me.id] && !textBusy() && toastT <= 0 && !crew.mods?.orbit?.r?.[me.id],   // no ball-washer tips at 120 m venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: showHint,
+  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen() && !crew.todo && !crew.mods?.nudge?.[me.id] && !crew.mods?.orbit?.r?.[me.id],   // no ball-washer tips at 120 m venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: showHint,
     day: crew.day, cash: crew.cash, signMud: crew.fixtures?.sign ?? 0, pocketFull: gp.pocket > 0 && carrying() >= gp.pocket, washerCash: crew.washer?.credit ?? 0, onDock: dockOpen(me), beers: beersPoured, deckOrder: !!crew.mods?.deck?.order });
   board.tick(dt);
   confetti.tick(dt);        // the shared confetti pool (round 6: the bell's stamp, the huddle)
@@ -1563,10 +1559,6 @@ function frame(now) {
       if (garyView.salute <= 0 && garyView.to.phase !== 'drive') garyView.g.visible = false;
     }
   }
-  if (memoT > 0 && (memoT -= dt) <= 0) $('memo').classList.add('hidden');
-  paOffT = paOn() ? 0 : paOffT + dt;
-  if (memoHold > 0) memoHold -= dt;
-  else if (memoT <= 0 && memoQ.length && paOffT > 1) showMemo(...memoQ.shift());   // a beat after the PA card (it can chain lines)
   if (link) hud(dt);
   props.tick(dt, sceneT, crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);   // station details (props.js)
   perf.tick(now);
@@ -1575,7 +1567,7 @@ function frame(now) {
 }
 // Round-2 features (round2.js) get the things main.js owns.
 r2 = setupRound2({
-  scene, camera, $, toast, board, SFX, nameOf, me, keys, floods, showMemo, pondMeshes, terrain,
+  scene, camera, $, toast, say, board, SFX, nameOf, me, keys, floods, showMemo, pondMeshes, terrain,
   get sign() { return signRef; },
   link: () => link, crew: () => crew, report: () => report, driving, pad: () => pad, balls: () => balls,
   views: () => views,
@@ -1583,7 +1575,7 @@ r2 = setupRound2({
 });
 // Round 4: the venue views (views/index.js). Everything a view may touch comes in through this ctx.
 views = createViews({
-  scene, camera, me, board, SFX, keys, terrain, sky, rightNet, rightPoles, cartPose, cartViews, world, nameOf, toast, feed, showMemo,
+  scene, camera, me, board, SFX, keys, terrain, sky, rightNet, rightPoles, cartPose, cartViews, world, nameOf, toast, say, feed, showMemo,
   perf,                      // round 6: views read perf.low (the Tiered flags drop to 32 px, the ring re-aims at 5 Hz)
   venues: r2.venueParts,     // venues.js parts: the deck, both stands and crowds (crowdBob), the jumbotron, the Lift car (carY)
   crew: () => crew, balls: () => balls, pad: () => pad, act: msg => link?.act(msg),
@@ -1597,6 +1589,6 @@ SET.set({});   // re-apply saved settings now the PA exists
 requestAnimationFrame(frame);
 
 // Dev hook: /?debug exposes live state for poking at from the console.
-if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats, todoArrow };
+if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats, todoArrow, say: sayer };
 // ?signs: draw each sign's facing and log any mesh whose world normal disagrees with signs.js (loaded only then).
 if (new URLSearchParams(location.search).has('signs')) import('./signsdebug.js').then(m => m.installSignDebug({ scene, venue: () => crew ? (crew.endless ? 6 : crew.venue ?? 0) : 0 }));

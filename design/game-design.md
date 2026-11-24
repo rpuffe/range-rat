@@ -766,3 +766,102 @@ dealt in Last Call. The report says "Run over", the verdict toast is "Gary appro
 fixture clean credits `hosed` in the ledger, and with all stamps but short cash the promotion panel says "Fee: $X
 short". The report card pads for its pinned bar and hides the crew list; the wand prompt shows in full for 3 s, then
 "Click spray"; the day-1 lobby says "Pick up balls. Bank them." Tests: test/playtest2a.test.mjs.
+
+## Council round 7 build
+
+**#1 Linked gutters (builder 2).** At Tiered the gutters no longer drain on their own: with them bought, a crew
+TARGET drains all three cups to the shooter at gear x1 (still one TARGET: Hustle +0.25, one `stats.targets`, one
+`'target'` signal; the event carries `all: true` and the total `n`). Without gutters a TARGET flushes its own cup.
+From the Stadium on (venue > `GUTTERS.LINKED_VENUE` 2) they drain 1 ball/s a cup as before. Pure rules
+`drainsAll(up, venue)` / `guttersDrain(up, venue)` in web/js/tiered.js; the row reads "Linked pipes under every
+green. A TARGET drains all three cups." The view THUNKs the glass A, B, C 0.15 s apart, counts every flag down to 0,
+and the shooter's toast is "TARGET! Every cup drained." Re-run (4P idle, real rule): nobody shoots 0.00 at the bell;
+one TARGET at 380 s 0.63-0.87; no gutters 0.00-0.47.
+
+**#2 The landing marker (builder 2).** Round 6's 1.2 m ground ring is now a camera-facing disc sprite, 28 px on a
+1080-line screen whatever the distance (`sizeAttenuation: false`, `markerScale(fov)`), drawn on top with a 3 px dark
+outline in your colour, plus a 6 m additive beam (0.12 m, 40%) through it; inside a bowl's lip both take the flag's
+colour and pulse 1.0-1.25 at 2 Hz. Pure `markerState()` in web/js/aim.js decides: visible while winding up (power >
+0.05), for 1.5 s after release, then at the bay at your last power; never before your first swing at this venue. The
+view reads a release from your pocket dropping at a bay (main.js is untouched). Low tier: the disc only.
+
+**#8 The Upper Deck's rounds (builder 2).** Orders stay open 30 s (was 20), so with orders 30 s apart the next seat
+orders as one lapses. From 3 Drinks every third order of the shift is a ROUND (`order.round`): one good pour fills it
+for +2 Drinks and a 25 x BV tab, so at 4 Drinks a filled round is a fall. An ignored round lapses quietly. The fine is
+50 x BV (was 100). The kitchen's BEER card adds "ROUND x2" in gold under the timer ring; two loungers raise their mugs
+with a double WOOO. The hint is "Fill their orders. Rounds count double." Re-run (4P idle, pour 24 s, real rule):
+careless (fills all, rounds too, no food) 14/14 filled, 3 rounds, 2 incidents, tab 34-38% and fines 21-23% of an idle
+shift; careful (hot dog at amber) 12/14, 0 incidents, tab 30-33%; waving rounds off with no food: 0 incidents, 23-25%.
+
+**#10.1 The fee line leads (builder 4).** With every stamp in and the fee unpaid, the report opens with
+`feeHeadline` (promopanel.js): "3 stamps. $895 short." (4 words), a gold line above the report's columns (round2.js
+puts it in its own `#fee-head` element, since main.js owns `#report-body`). Nothing at 0-2 stamps, when the fee is
+covered, or once the crew is ready to sign (the button leads then). The panel's "Fee: $X short" note stays.
+
+**#9 Endless: the Owner's projects (builder 4).** `web/js/owner.js` (pure; no sim.js import, the GUTTERS_ROW rule) holds
+`OWNER_ROW`, a crew row with `endless: true`: `shopShows`/`nextPrice` take an `endless` argument and hide such a row
+everywhere else. Tiers at base (x2.2 at 4P): Crew colours $25M, the Owner's Hustle $60M, the statue $150M. Crew
+colours: `views/owner.js` paints a striped band (one stripe a Rat, join order, vertex colour, one merged mesh) round the
+stand, under the Board (and tints its frame and posts) and round every cart. The Owner's Hustle: `maxMult(up, endless)`
+is the Hustle cap for pings (crew.mjs) and TARGETs (tiered.mjs): x3 in endless with tier 2, x2 everywhere else. The
+statue: a bronze Rat holding Ball No. 1 east of the stand (one merged mesh, ~1.9k triangles) and a name plate (off on the
+low tier), with a once-ever PA ("A statue. Of you. Reluctantly."). The Board (C4): in endless it shows TODAY at 64 px
+in whole dollars, the RECORD on the right, and a bar from $0 to the record with a pale tick at the record's own pace;
+the bar turns green and flashes (the round 6 crossing flash) when today passes the tick. The pace reads
+`records.curve`: the record shift's cumulative cash at 14 checkpoints (every 30 s; crew.mjs samples every shift,
+`finishCurve` ends it on the day's cash), interpolated by `paceAt`; a record without a valid curve falls back to
+linear. Re-run (council7/endless2.mjs, 4P, everything bought, idle): $22.4M a shift, so the tiers take 2.5, 5.9 and
+14.8 idle shifts (23 cumulative; ~0.85 / 2 / 5 at the active $65M the spec assumed). The idle record curve sits far
+below linear early ($0.5M vs $3.2M at 60 s, $3.7M vs $6.4M at 120 s), which is the lie C4 named. A Hustle held at the
+cap all shift: x2 $41.4M, x3 $62.1M (+50%), the ceiling on what the Owner's Hustle adds.
+
+**#5 Clear the sky (builder 1).** No review at the Orbital: `startShift` sets no quota at venue 5, and the memo is the
+countdown ("Today: bring them home. 1,123 to go."); the reveal's how-to is "The Lift is open. Keep the sky clear."
+When Balls Outstanding reaches 1, `beginLastBucket` checks Orbital Debris: over `ORBIT.SKY_CLEAR` (15) the phase is
+`'sky'`. `paused()` treats `'sky'` as live (the clock, the Lift and the tether run), `launchMod` sends no orbit shots
+while a Last Bucket is on, and the riders-home rule skips `'sky'`; at 15 or fewer `stepLastBucket` drops the ball and
+anyone still up rides down. The bell during `'sky'` is a plain report; the next morning reopens the gate. The banner
+(Last Bucket line and the Board, via the newest venue view's `banner()`) reads "CLEAR THE SKY · 23 UP" (pieces above
+15), and Ball No. 1 glints gold over the Lift (one additive mesh). The Last Call line at venue 5 without a quota is the
+debris line or nothing. Re-run (council7/orbit7real.mjs, ideal bots, debris 58): two riders on twin tanks 16 s in
+`'sky'`, one scooter 23 s, solo on a mask 62 s, solo + tether 47 s; a tether crew at 7 never sees the gate; nobody
+riding holds it to the bell (no softlock: anyone can ride).
+
+**#6 The County (builder 1).** From venue 4, teenagers skip strays in `stepHelpers` (drones, carts and Rats still take
+them); the tier-1 helpers line gains "They don't do lawns. There's a dog." `SLICE.CHANCE` 0.40 → 0.15: 4.5% of 2,000
+seeded shots land in the Yards. Re-run (council7/county2.mjs 0.15, 4P, four teenagers): a tidy crew that never visits
+the Yards ends at 30–43 strays (0.00, fail); one push-picker run at Last Call 4–7 (0.77–0.87); two drones 0–3
+(0.90–1.00).
+
+**#7 The Two-Minute Warning (builder 1).** The Stadium's graded gauge (the Board, Upkeep, the bell) is the mean of the
+last 120 s of live sentiment, sampled once a second (`pushSample` / `windowMean`, the mean so far before 120 s); the
+jumbotron, bob and ambience keep the live `s`, and the snapshot carries both `s` and `k`. `RALLY_AT = { 3: 120 }`:
+from the Stadium's day 2 the `lastcall` event (horn + rally, `warning: true`) fires at T−120, read off the live crowd
+minus 0.1; Last Call's rules still start at T−60 with no second line (the 30 s re-check still runs). The Board shows
+TWO-MINUTE WARNING (snapshot `mods.stadium.w`) until LAST CALL takes it. Re-run (council7/stadium7real.mjs, 4P):
+no laps 0.25–0.27; 60 s of laps at Last Call 0.37–0.39 (fail); 60 s right after the warning 0.63–0.64 (pass); the
+whole last 2 min 0.74–0.75; a 30 s stint every 2 min 0.88–0.93; a second cart lapping all shift 0.99.
+
+**#10.2 The huddle waits less (builder 1).** `HUDDLE_IDLE_MS` 60 s → 20 s (split from `GRACE_MS`), in the Last Bucket
+huddle and now in Gary's ring too. A carrier offline for `DRIVER_GRACE_MS` (5 s) drops Ball No. 1 where they stood
+(`dropOne`, phase `'down'`), so anyone can carry it; a reconnect inside 5 s keeps it.
+
+**#3 One centre-text queue (builder 3).** New `web/js/say.js`: a pure model (`createSayModel`, node-tested in
+`test/say.test.mjs`) and a DOM adapter. Kinds by priority STAMP > PA > MEMO > ALERT > TOAST > TIP; one item visible,
+≥ 1.2 s each, 0.3 s gaps; TOAST lives 3 s in the queue, ALERT 15 s, TIP 60 s (and only after 2 s of quiet); a MEMO
+settles 0.6 s so a PA a tick later goes first; the same `key` updates in place (fries, cash, rally, Gary). The bell
+lock (`bell()` at `quota`, `report()` when the card opens, `open()` on the next phase) drops alerts/toasts/tips and
+holds PA/MEMO. `textBusy`, `toastQuiet`, the memo queue, the hint chip timer and every 400 ms retry are gone; `toast`
+and `showMemo` are thin `say()` wrappers, and pa.js lost its own queue (its card is a PA item via `enqueue`).
+`PA_LINES` are `{ line, caption }` (captions ≤ 8 words; the voice reads the line). The record PA plays only in endless;
+review days say "Record shift!" on the report. `test/words.test.mjs` scans every `say(` literal. `?debug`:
+`rr.say` (queue, `dropped`), and a console warning for any non-memo line over 8 words.
+
+**#4 Dealt jobs (builder 3).** `rally.js` `shortfalls()` ranks the gauge (when short) then every Upkeep term ≥ 0.01
+(the biggest always, when under target); its head is `shortfall()`. `dealJobs()` gives the biggest job the ⌈N/2⌉
+nearest Rats, then the nearest undealt Rat to each other job, round again. `lastcall`/`rally` carry `needs` (+ `need`);
+the 30 s re-check re-deals. Gary's warning (nudge.mjs, every venue) deals one failing stop per Rat, nearest first,
+extras on the mats; a passing stop clears its line and all clear at his first stop; late joiners get one. Muni day 3:
+"Keep the mats clean." at half-shift to the Rat nearest the mats if their mud > 0.3. Measured (council7/dealt.mjs,
+4P spread, nobody hosing, 5 seeds): Last Call 3 distinct lines at the Muni, Tiered and Stadium; on target (1 line) at
+the Club and County; Gary 3 distinct stops at the Muni, 4 from the Club on.

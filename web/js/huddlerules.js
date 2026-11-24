@@ -2,6 +2,8 @@
 // Last Bucket banner line, and the Board's GARY 3 · 2 · 1. No three, no DOM: unit-tested in test/huddle.test.mjs.
 // The server owns the truth (crew.mjs stepHuddle); this only draws it.
 
+import { skyBanner } from './orbit.js';
+
 export const HUDDLE = {
   R: 8,              // the ring round the stand (crew.mjs HUDDLE_R, GARY.HUDDLE_R)
   HOLD: 3,           // seconds of everyone holding Use (crew.mjs HUDDLE_HOLD)
@@ -50,6 +52,7 @@ export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = { x: 26, z: 6 }) 
   const lb = c?.lastBucket;
   if (!lb || lb.phase === 'done' || c.phase !== 'shift') return '';
   const on = (c.players ?? []).filter(p => p.online);
+  if (lb.phase === 'sky') return skyBanner(lb.debris);            // round 7 #5: the sky gate (debris overhead)
   if (lb.phase === 'huddle') return `HOLD ${glyph} TOGETHER · <b>${(lb.held ?? []).length} / ${(lb.slots ?? []).length}</b>`;
   const carrier = on.find(p => p.one);
   if (carrier) {

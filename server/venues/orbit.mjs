@@ -22,9 +22,10 @@ export default {
   },
   startShift(crew, st) { st.riders.clear(); st.pump.clear(); st.tetherAcc = 0; },
 
-  // 5% of customer shots go straight up. (Lead balls stay in the pond business.)
+  // 5% of customer shots go straight up. (Lead balls stay in the pond business.) None while the Last Bucket is on
+  // (round 7 #5: the crew is clearing the sky for Ball No. 1, and the sky must not refill behind them).
   launchMod(crew, st, shot, { lead }) {
-    if (lead || shot.kind === 'one') return undefined;
+    if (lead || shot.kind === 'one' || (crew.lastBucket && crew.lastBucket.phase !== 'done')) return undefined;
     return crew.rng() < ORBIT.SHOT ? orbitShot(shot) : undefined;
   },
 
@@ -55,8 +56,9 @@ export default {
       if (!p) { st.riders.delete(id); continue; }
       if ((p.online <= 0 || p.down > 0) && r.ph !== 'down') reel(crew, st, p, r);
       // The Last Bucket needs everyone at the stand: the Lift brings every rider home (bag kept, it lands
-      // in the pocket). It keeps running through that pause; only a venue reveal holds it.
-      if (crew.lastBucket && crew.lastBucket.phase !== 'done' && r.ph !== 'down') {
+      // in the pocket). It keeps running through that pause; only a venue reveal holds it. Not while the sky is the
+      // job (round 7 #5, phase 'sky'): once it clears, Ball No. 1 falls and everyone still up rides down.
+      if (crew.lastBucket && crew.lastBucket.phase !== 'done' && crew.lastBucket.phase !== 'sky' && r.ph !== 'down') {
         r.ph = 'down'; r.t = 0; pin(p); crew.events.push({ t: 'lift', id: p.id, dir: 'down' });
       }
       if (crew.paused() && !(crew.lastBucket && crew.lastBucket.phase !== 'done')) continue;
@@ -151,6 +153,9 @@ export default {
   },
   toSave: (crew, st) => (st.next || st.debris.size ? { d: [...st.debris], n: st.next } : undefined),
 };
+
+// Debris still overhead (the sky gate in crew.mjs beginLastBucket / stepLastBucket reads it).
+export const debrisLeft = st => st?.debris?.size ?? 0;
 
 function pin(p) { p.x = LIFT.x; p.z = LIFT.z; }
 

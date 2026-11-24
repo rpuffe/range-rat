@@ -1,6 +1,7 @@
 // The Closing Bell (council round 6, #2 and #3): what the crew is short of at Last Call, and why a review missed on
 // the venue gauge. Pure rules: no THREE, no DOM. The server picks the line; the client only shows it.
-import { QUOTA_KPI } from './sim.js';
+import { QUOTA_KPI, FRIES, POND, FIXTURE_BY_ID } from './sim.js';
+import { MAP } from './map.js';
 
 // Every line is one centre toast: 8 words or fewer.
 export const RALLY_LINES = {
@@ -39,7 +40,10 @@ export const upkeepOk = (value, quota) => !quota || value.bv / value.rate + 1e-9
 //   value: the crew's valueNow() (bv, rate, curb, pond, fries); quota: { q }; kpi: the venue gauge or null;
 //   fixtures: { id: mud 0..1 }; fries / pond: 0..1 or null (locked).
 export function shortfall({ value, quota, kpi = null, fixtures = {}, fries = value?.fries ?? null, pond = value?.pond ?? null, venue = 0, endless = false }) {
-  if (endless || !quota || !value) return null;
+  if (endless || !value) return null;
+  // Round 7 #5: the Orbital has no review, only the sky gate: the line is the debris, or nothing.
+  if (venue === 5 && !quota) return gaugeOk(kpi) ? null : RALLY_LINES.gauge[5];
+  if (!quota) return null;
   if (!gaugeOk(kpi)) return RALLY_LINES.gauge[venue] ?? null;
   if (upkeepOk(value, quota)) return RALLY_LINES.onTarget;
   // Under target: name the term costing the most Upkeep (playtest round 2 #1). Upkeep = 1 + 0.5 × (Curb + pond +
@@ -62,3 +66,73 @@ export const RALLY_MARGIN = Object.freeze({ 2: 0.25, 3: 0.1, 4: 0.1, 5: 0.1 });
 // Playtest round 2 #1: a second look this many seconds into Last Call. If the crew is still short, the server posts
 // one more line (the 'rally' event), at most once a shift.
 export const RALLY_RECHECK = 30;
+
+// Round 7 #7: when the rally fires, in seconds before the bell, by venue (default: Last Call's 60). The Stadium's
+// Two-Minute Warning rallies at T-120; its Last Call rules (x1.5 swings, glow balls) still start at T-60.
+export const RALLY_AT = Object.freeze({ 3: 120 });
+export const rallyAt = venue => RALLY_AT[venue] ?? 60;
+
+// ---- Round 7 #4: dealt jobs. The ranked shortfalls, dealt round the crew by distance: no roles, only nudges. ----------
+// Where each job is. The gauge's place is per venue: the worst bowl (Tiered), the Track (Stadium), Yard 2 (County),
+// the Lift (Orbital).
+export const JOB_AT = Object.freeze({
+  mats: { x: 0, z: 3.5 }, sign: { x: FIXTURE_BY_ID.sign.x, z: FIXTURE_BY_ID.sign.z }, stand: { x: FIXTURE_BY_ID.stand.x, z: FIXTURE_BY_ID.stand.z },
+  fries: { x: FRIES.SHED.x, z: FRIES.SHED.z }, pond: { x: POND.DOCK.x, z: POND.DOCK.z },
+  gauge: {
+    3: { x: MAP.TRACK.x, z: MAP.TRACK.z + MAP.TRACK.b },                    // the Track's near side
+    4: { x: (MAP.YARDS.xMin + MAP.YARDS.xMax) / 2, z: (MAP.YARDS.FENCES[0] + MAP.YARDS.FENCES[1]) / 2 },   // Yard 2
+    5: { x: MAP.LIFT.x, z: MAP.LIFT.z },
+  },
+});
+// Tiered: the fullest cup's bowl (cups: the tiered module's st.cups, in MAP.BOWLS order).
+export function gaugeAt(venue, cups = null) {
+  if (venue === 2) {
+    let i = 0;
+    if (cups) for (let k = 1; k < MAP.BOWLS.length; k++) if ((cups[k] ?? 0) > (cups[i] ?? 0)) i = k;
+    return { x: MAP.BOWLS[i].x, z: MAP.BOWLS[i].z };
+  }
+  return JOB_AT.gauge[venue] ?? JOB_AT.mats;
+}
+
+// Every real shortfall, ranked: the gauge first when it's under, then each Upkeep term costing 0.01 or more, by
+// cost (Upkeep's biggest term always, when Upkeep is under target). [] = on target (or no review). [{ id, line, loss, at }].
+// shortfall() is this list's head (or the on-target line): the solo line and old clients' `need`.
+export const JOB_MIN_LOSS = 0.01;
+export function shortfalls({ value, quota, kpi = null, fixtures = {}, fries = value?.fries ?? null, pond = value?.pond ?? null, venue = 0, endless = false, cups = null }) {
+  if (endless || !value) return [];
+  if (venue === 5 && !quota) return gaugeOk(kpi) ? [] : [{ id: 'gauge', line: RALLY_LINES.gauge[5], loss: 1, at: gaugeAt(5) }];
+  if (!quota) return [];
+  const out = [];
+  if (!gaugeOk(kpi) && RALLY_LINES.gauge[venue]) out.push({ id: 'gauge', line: RALLY_LINES.gauge[venue], loss: 1, at: gaugeAt(venue, cups) });
+  if (!out.length && upkeepOk(value, quota)) return out;   // on target. A short gauge still deals the Upkeep terms to the rest
+  const ids = Object.keys(fixtures), n = ids.length;
+  const share = id => (n ? 0.5 * (fixtures[id] ?? 0) / n : 0);
+  const terms = [{ id: 'mats', loss: n ? ids.filter(id => id.startsWith('mat')).reduce((a, id) => a + share(id), 0) : 0.5 * (1 - (value.curb ?? 1)) }];
+  for (const id of ids) if (!id.startsWith('mat') && RALLY_LINES[id]) terms.push({ id, loss: share(id) });
+  if (fries != null) terms.push({ id: 'fries', loss: 0.5 * (1 - fries) });
+  if (pond != null) terms.push({ id: 'pond', loss: 0.5 * (1 - pond) });
+  terms.sort((a, b) => b.loss - a.loss);   // stable: ties keep the mats first, as shortfall() does
+  const under = !upkeepOk(value, quota);
+  const real = terms.filter((t, i) => (under && i === 0) || t.loss >= JOB_MIN_LOSS);   // under target names at least its biggest term
+  for (const t of real) out.push({ ...t, line: RALLY_LINES[t.id], at: JOB_AT[t.id] });
+  return out;
+}
+
+// Deal the ranked jobs round the crew: the biggest job gets ceil(N/2) Rats (the nearest), then each next job the
+// nearest undealt Rat, round the other jobs again until every Rat has a line. No jobs: everyone gets `none` (the on-target
+// line). rats: [{ id, x, z }]. Returns { [ratId]: line }.
+export function dealJobs(jobs, rats, none = RALLY_LINES.onTarget) {
+  const out = {};
+  if (!rats.length) return out;
+  if (!jobs.length) { for (const r of rats) out[r.id] = none; return out; }
+  const left = [...rats];
+  const take = job => {
+    let bi = 0, bd = Infinity;
+    left.forEach((r, i) => { const d = Math.hypot(r.x - job.at.x, r.z - job.at.z); if (d < bd) { bd = d; bi = i; } });
+    out[left[bi].id] = job.line; left.splice(bi, 1);
+  };
+  for (let k = Math.ceil(rats.length / 2); k > 0 && left.length; k--) take(jobs[0]);
+  const rest = jobs.length > 1 ? jobs.slice(1) : jobs;   // the biggest job keeps its half; the rest go round
+  for (let j = 0; left.length; j = (j + 1) % rest.length) take(rest[j]);
+  return out;
+}

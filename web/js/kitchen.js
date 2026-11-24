@@ -731,7 +731,9 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
     }
   }
   // Council round 6 #6: a lounger's open order (seconds left, counted down locally between snapshots), or null.
+  // Round 7 #8: deckOrderRound() says whether that order is a ROUND (two drinks, a 25 x BV tab).
   let ordSeen = null, ordAt = 0;
+  function deckOrderRound() { try { return !!state?.()?.mods?.deck?.order?.round; } catch { return false; } }
   function deckOrderLeft() {
     let o = null; try { o = state?.()?.mods?.deck?.order ?? null; } catch { o = null; }
     if (!o || !Number.isFinite(o.left)) { ordSeen = null; return null; }
@@ -774,6 +776,11 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
           c.save(); c.shadowColor = '#ffd34a'; c.shadowBlur = 22 + Math.sin(S.t * 6) * 8; c.strokeStyle = '#ffd34a'; c.lineWidth = 6;
           rrect(c, x, CARD.y, CARD.w, CARD.h, 18); c.stroke(); c.restore();
           drawOrderRing(x + CARD.w - 26, CARD.y + 66, 15, left);
+          if (deckOrderRound()) {                                  // round 7 #8: a ROUND, in gold
+            c.save(); c.shadowColor = '#ffd34a'; c.shadowBlur = 8;
+            text(c, 'ROUND ×2', cx, CARD.y + 168, 22, '#ffd34a', 'center', CARD.w - 16);
+            c.restore();
+          }
         }
       }
       c.restore();

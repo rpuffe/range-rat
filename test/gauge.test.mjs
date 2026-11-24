@@ -53,8 +53,8 @@ test('the report and the quota event carry gauge and gaugeOk, and the miss line 
   assert.equal(ok.why, undefined);
 });
 
-test('every gauge venue (2-5) applies the rule, with its own miss line of 8 words or fewer', () => {
-  for (const v of [2, 3, 4, 5]) {
+test('every gauge venue (2-4) applies the rule, with its own miss line of 8 words or fewer', () => {
+  for (const v of [2, 3, 4]) {
     const miss = bell(v, 0.3).report.quota, pass = bell(v, 0.9).report.quota;
     assert.equal(miss.hit, false, `venue ${v} misses on the gauge`);
     assert.equal(miss.why, GAUGE_MISS[v]);
@@ -76,4 +76,34 @@ test('the ending shift has no review', () => {
   const crew = bell(5, 0.1, true);
   assert.equal(crew.report.quota, null);
   assert.equal(crew.flush().ev.filter(e => e.t === 'quota').length, 0);
+});
+
+test('round 7 #5: no review at the Orbital (no quota, no stamp, no quota event); venues 2-4 still review', () => {
+  const crew = bell(5, 0.9);
+  assert.equal(crew.quota, null);
+  assert.equal(crew.report.quota, null);
+  assert.equal(crew.flush().ev.filter(e => e.t === 'quota').length, 0);
+  assert.equal(crew.stamps, 0);
+  for (const v of [2, 3, 4]) assert.ok(bell(v, 0.9).report.quota, `venue ${v} still reviews`);
+});
+
+test('round 7 #5: the Orbital memo is the countdown', () => {
+  const crew = makeCrew({ venue: 5, day: 12, venueDay: 1, outstanding: 1123 });
+  crew.startShift();
+  const memo = crew.flush().ev.find(e => e.t === 'memo');
+  assert.equal(memo.text, 'Today: bring them home. 1,123 to go.');
+  assert.equal(memo.target, null);
+});
+
+test('round 7 #7: the Stadium review reads the 2-minute mean, not the live mood', () => {
+  const crew = makeCrew({ venue: 3, day: 12, venueDay: 1, cash: 0 });
+  crew.startShift();
+  for (const k of Object.keys(crew.fixtures)) crew.fixtures[k] = 0;
+  crew.bank(10, 'x');
+  const st = crew.mods.state('stadium');
+  for (let i = 0; i < 120; i++) st.win.a[i] = 0.3;           // two minutes of a bored crowd
+  st.s = 0.95;                                                // a last-second lap doesn't rescue it
+  crew.endShift();
+  assert.equal(crew.report.quota.gauge, 0.3);
+  assert.equal(crew.report.quota.gaugeOk, false);
 });

@@ -72,7 +72,7 @@ export const HINTS = Object.freeze({
   crank: { kb: 'The ball washer has money in it. Hold the mouse at a handle and circle it.', pad: 'The ball washer has money in it. Tap Ⓐ at a handle and circle a stick.' },
   dive: { kb: 'Walk in to dive. A buddy on the dock can pump your air.', pad: 'Walk in to dive. A buddy on the dock can pump your air.' },
   bv: { kb: 'Ball Value: what Corporate pays per ball. Clean pays more.', pad: 'Ball Value: what Corporate pays per ball. Clean pays more.' },
-  deck: { kb: 'Fill their orders. Six beers: someone falls.', pad: 'Fill their orders. Six beers: someone falls.' },   // council round 6 #6
+  deck: { kb: 'Fill their orders. Rounds count double.', pad: 'Fill their orders. Rounds count double.' },   // council round 7 #8
 });
 // Context-driven hints (council round 4, §4.2): fires when its condition holds, once ever.
 // ctx: { day, playSecs, venue, signMud, pocketFull, washerCash, onDock, beers, deckOrder }

@@ -11,6 +11,12 @@ export const showFee = promo => !!promo && (promo.stamps >= FEE_FROM_STAMPS || !
 // Playtest round 2, idea 5: stamps complete but the wallet isn't: say by how much.
 export const feeShort = (promo, cash = 0) => 'Fee: ' + money(Math.ceil(Math.max(0, promo.fee - cash))) + ' short';
 
+// Council round 7 #10.1 (A5): with every stamp in and the fee unpaid, the report LEADS with the shortfall:
+// "3 stamps. $895 short." (4 words). '' otherwise (fewer stamps, ready to sign, or the fee covered).
+export const feeHeadline = (promo, cash = 0) =>
+  !promo || promo.ready || promo.stamps < promo.need || !(promo.fee > cash) ? ''
+    : promo.stamps + ' stamps. ' + money(Math.ceil(promo.fee - cash)) + ' short.';
+
 // promo: crew.snapshot().promo; cash: the crew's cash; signed: did I sign; signedN / onlineN: the counts on the button.
 export function promoPanelHtml(promo, { cash = 0, signed = false, signedN = 0, onlineN = 1, esc = s => String(s) } = {}) {
   if (!showPromo(promo)) return '';

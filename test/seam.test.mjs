@@ -150,7 +150,8 @@ test('the Crew: a venue KPI lifts the ceiling to 3.0 and the quota scales with i
 test('VENUE_RULES: a KPI label and a how-to card from Tiered on; the reveal shows the how-to second', () => {
   assert.equal(VENUE_RULES[0].kpi, undefined); assert.equal(VENUE_RULES[1].kpi, undefined);
   assert.deepEqual(VENUE_RULES.slice(2).map(r => r.kpi), ['BAY UTILIZATION', 'CROWD SENTIMENT', 'ZONING COMPLIANCE', 'ORBITAL DEBRIS']);
-  for (const r of VENUE_RULES.slice(2)) assert.ok(r.howto?.startsWith('New: '));
+  for (const r of VENUE_RULES.slice(2, 5)) assert.ok(r.howto?.startsWith('New: '));
+  assert.equal(VENUE_RULES[5].howto, 'The Lift is open. Keep the sky clear.');   // round 7 #5: the Orbital's job is the sky
   assert.deepEqual(revealCards(1, 'memo'), ['memo']);
   assert.deepEqual(revealCards(2, 'memo'), ['memo', VENUE_RULES[2].howto]);
   assert.deepEqual(revealCards(6, 'Under New Management.'), ['Under New Management.']);

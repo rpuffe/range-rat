@@ -6,7 +6,7 @@ import { MODULES, checkModule } from '../server/venues/index.mjs';
 import tiered from '../server/venues/tiered.mjs';
 import { readFileSync } from 'node:fs';
 import { MAP } from '../web/js/map.js';
-import { inBowl, cupSpot, bayUtil, CUP_FULL, GUTTERS_ROW, TARGET } from '../web/js/tiered.js';
+import { inBowl, cupSpot, bayUtil, CUP_FULL, GUTTERS_ROW, GUTTERS, TARGET, drainsAll, guttersDrain } from '../web/js/tiered.js';
 import { SHOP, CART, nextPrice } from '../web/js/sim.js';
 
 const [A, B, C] = MAP.BOWLS;
@@ -119,12 +119,12 @@ test('a crew ball in a bowl outside the shift is just a cupped ball (no bank)', 
   assert.equal(b.cup, 'A');
 });
 
-test('the gutters row: $50,000 base (halved by the playtest), a Tiered crew row; it drains 1 a second per cup, banked as kind gutter', () => {
+test('the gutters row: $50,000 base (halved by the playtest), a Tiered crew row; from the Stadium on it drains 1 a second per cup, banked as kind gutter', () => {
   assert.ok(SHOP.includes(GUTTERS_ROW));
   assert.equal(GUTTERS_ROW.minVenue, 2);
   assert.equal(nextPrice('gutters', {}, 1, 0, 1), null, 'not before Tiered');
   assert.equal(nextPrice('gutters', {}, 1, 0, 2), 50000);
-  const { crew, drop, run } = setup({ gutters: 1 });
+  const { crew, drop, run } = setup({ gutters: 1 }, 3);
   for (let i = 0; i < 6; i++) { drop(A.x + 0.2, A.z); drop(B.x, B.z + 0.2); }
   run(0.3);
   const a0 = inCup(crew, 'A').length;
@@ -199,4 +199,63 @@ test('playtest 2: a crew swing sails over the teenagers walking past the bays', 
   const b = crew.addBall({ x: h.x, y: 1, z: h.z + 0.3, vx: 0, vy: 0, vz: -10, kind: 'range' }); b.by = a.id;
   for (let i = 0; i < 10; i++) crew.tick(0.02);
   assert.equal(h.down, 0);
+});
+
+// Council round 7 #1: linked gutters.
+test('round 7 #1: the row text; drainsAll and guttersDrain split at Tiered', () => {
+  assert.equal(GUTTERS.LINKED_VENUE, 2);
+  assert.equal(GUTTERS_ROW.tiers[1].desc, 'Linked pipes under every green. A TARGET drains all three cups.');
+  assert.equal(GUTTERS_ROW.tiers[1].cost, 50000);
+  assert.equal(drainsAll({ gutters: 1 }, 2), true);
+  assert.equal(drainsAll({}, 2), false);
+  assert.equal(guttersDrain({ gutters: 1 }, 2), false);
+  assert.equal(guttersDrain({ gutters: 1 }, 3), true);
+  assert.equal(guttersDrain({}, 3), false);
+});
+
+test('round 7 #1: at Tiered with gutters, cups do not drain on their own over 60 s', () => {
+  const { crew, drop, run } = setup({ gutters: 1 });
+  const mine = [];
+  for (let i = 0; i < 4; i++) mine.push(drop(A.x + 0.2, A.z), drop(C.x, C.z + 0.2));
+  run(60);
+  assert.ok(mine.every(b => crew.balls.has(b.id) && b.cup), 'every cupped ball is still in its cup');
+  assert.ok(!crew.events.some(e => e.t === 'gutter'), 'no gutter drains');
+});
+
+test('round 7 #1: a crew ball in Bowl A with gutters drains A, B and C to the shooter: one TARGET, Hustle once', () => {
+  const { crew, p, drop, run } = setup({ gutters: 1 });
+  for (let i = 0; i < 3; i++) { drop(A.x + 0.2, A.z); drop(B.x, B.z + 0.2); drop(C.x + 0.3, C.z); }
+  drop(C.x, C.z + 0.4);
+  run(0.3);
+  const cash0 = crew.cash, mult0 = crew.mult, v = crew.valueNow();
+  const signals = [];
+  const sig = crew.mods.signal.bind(crew.mods);
+  crew.mods.signal = (k, d) => { signals.push(k); return sig(k, d); };
+  crew.events.length = 0;
+  drop(A.x + 2, A.z + 1, p.id);
+  run(0.3);
+  for (const id of ['A', 'B', 'C']) assert.equal(inCup(crew, id).length, 0, id + ' drained');
+  assert.ok(Math.abs((crew.cash - cash0) - 11 * v.value) < 0.05, '11 balls at gear x1');
+  assert.equal(p.shift.banked, 11);
+  assert.equal(crew.mult, mult0 + TARGET.HUSTLE, 'Hustle once');
+  assert.equal(crew.stats.targets, 1);
+  assert.equal(signals.filter(k => k === 'target').length, 1);
+  const e = crew.events.find(x => x.t === 'target');
+  assert.equal(e.all, true);
+  assert.equal(e.n, 11);
+  assert.equal(e.bowl, 'A');
+});
+
+test('round 7 #1: without gutters a TARGET flushes its own cup only (no all flag)', () => {
+  const { crew, p, drop, run } = setup();
+  for (let i = 0; i < 2; i++) { drop(A.x + 0.2, A.z); drop(B.x, B.z + 0.2); }
+  run(0.3);
+  crew.events.length = 0;
+  drop(A.x + 2, A.z, p.id);
+  run(0.3);
+  assert.equal(inCup(crew, 'A').length, 0);
+  assert.equal(inCup(crew, 'B').length, 2);
+  const e = crew.events.find(x => x.t === 'target');
+  assert.equal(e.all, undefined);
+  assert.equal(e.n, 3);
 });

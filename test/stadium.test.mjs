@@ -108,3 +108,78 @@ test('the module is idle off-shift and below venue 3', () => {
   const { crew } = stadiumCrew(2);
   assert.equal(crew.snapshot().mods.stadium, undefined);
 });
+
+// ---- round 7 #7: the crowd remembers, and the Two-Minute Warning ------------------------------------------------------
+test('windowMean over a partial and a full (wrapped) buffer', async () => {
+  const { newWindow, pushSample, windowMean } = await import('../web/js/stadium.js');
+  assert.equal(CROWD.WINDOW, 120);
+  const w = newWindow();
+  assert.equal(windowMean(w), null);
+  pushSample(w, 0.2); pushSample(w, 0.4);
+  assert.ok(Math.abs(windowMean(w) - 0.3) < 1e-12, 'the mean so far');
+  for (let i = 0; i < 120; i++) pushSample(w, 1);
+  assert.equal(w.a.length, 120);
+  assert.equal(windowMean(w), 1, 'the oldest samples roll off');
+  for (let i = 0; i < 60; i++) pushSample(w, 0);
+  assert.ok(Math.abs(windowMean(w) - 0.5) < 1e-12);
+});
+
+// A 4P Stadium day (420 s), cart 0 driven round the Track during `windows` (seconds of shift).
+function lapShift(windows, seed = 1) {
+  const clock = { t: 1_000_000 };
+  const crew = new Crew('STD7', { day: 24, venue: 3, venueDay: 2, stamps: 1, up: { shed: 3, washer: 3, cart: 2, helpers: 4, ads: 3, amen: 2 } }, { seed, now: () => clock.t });
+  const rats = [0, 1, 2, 3].map(i => { const p = crew.join('R' + i); crew.connect(p); p.x = 27 + i; p.z = 9; return p; });
+  crew.startShift();
+  const c = crew.carts[0], ev = [];
+  let th = 0;
+  while (crew.phase === 'shift' && crew.shiftT < crew.shiftSecs - 0.1) {
+    const t = crew.shiftT, on = windows.some(([a, b]) => t >= a && t < b);
+    if (on) { if (!c.driver) c.driver = rats[0].id; th += 14.3 * 0.05 / 24.2; c.x = T.x + T.a * Math.cos(th); c.z = T.z + T.b * Math.sin(th); c.v = 14.3; }
+    else if (c.driver) { c.driver = null; c.v = 0; }
+    clock.t += 50;
+    for (const p of rats) { p.seenAt = clock.t; p.movedAt = clock.t; }
+    crew.tick(0.05);
+    ev.push(...crew.flush().ev.map(e => ({ ...e, at: crew.shiftT })));
+  }
+  return { crew, ev, kpi: crew.mods.kpi() };
+}
+
+test('a seeded shift: no laps fails; 60 s of laps at Last Call fails; 60 s right after the warning passes', () => {
+  const S = 420;
+  assert.ok(lapShift([]).kpi < 0.3);
+  assert.ok(lapShift([[S - 60, S]]).kpi < 0.5);
+  const { crew, kpi } = lapShift([[S - 120, S - 60]]);
+  assert.ok(kpi >= 0.5, `graded ${kpi}`);
+  const snap = crew.snapshot().mods.stadium;
+  assert.ok(snap.s != null && snap.k != null && snap.s !== snap.k, 'the snapshot carries the live s and the graded k');
+  assert.equal(snap.k, Math.round(kpi * 1000) / 1000);
+});
+
+test('the Two-Minute Warning: one lastcall at T-120 (warning, read off the live crowd), none at T-60, the Board banner flag', () => {
+  const { crew, ev } = lapShift([]);
+  const lc = ev.filter(e => e.t === 'lastcall');
+  assert.equal(lc.length, 1);
+  assert.ok(lc[0].warning);
+  assert.ok(Math.abs(lc[0].at - (crew.shiftSecs - 120)) < 0.2, `at ${lc[0].at}`);
+});
+
+test('the snapshot raises w between the warning and Last Call only', () => {
+  const { crew, run } = stadiumCrew();
+  crew.venueDay = 2; crew.shiftSecs = 300;
+  crew.shiftT = 300 - 121; run(0.5);
+  assert.equal(crew.snapshot().mods.stadium.w, undefined);
+  crew.shiftT = 300 - 119.5; run(0.5);
+  assert.equal(crew.snapshot().mods.stadium.w, 1);
+  crew.shiftT = 300 - 59; run(0.2);
+  assert.equal(crew.snapshot().mods.stadium.w, undefined, 'Last Call takes the Board');
+});
+
+test('the Stadium\'s first day keeps Last Call at T-60', () => {
+  const { crew, run } = stadiumCrew();
+  crew.venueDay = 1;                                 // (startShift counted the morning: this is its first day)
+  crew.shiftSecs = 300; crew.shiftT = 300 - 119; run(1);
+  assert.equal(crew.events.filter(e => e.t === 'lastcall').length, 0);
+  crew.shiftT = 300 - 60; run(0.2);
+  const lc = crew.events.filter(e => e.t === 'lastcall');
+  assert.equal(lc.length, 1); assert.ok(!lc[0].warning);
+});

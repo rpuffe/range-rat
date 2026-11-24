@@ -20,3 +20,16 @@ test('ready: the fee and the sign button', () => {
   const h = promoPanelHtml(promo(3, true), { signedN: 1, onlineN: 2 });
   assert.match(h, /Franchise fee <b>\$6,000<\/b>/); assert.match(h, /Sign the franchise agreement \(1 of 2 signed\)/);
 });
+
+// Council round 7 #10.1 (A5): stamps done, fee unpaid: the report leads with the shortfall.
+import { feeHeadline } from '../web/js/promopanel.js';
+test('the fee headline appears at 3 stamps only, and only while short', () => {
+  const p = { next: 'Range Club', fee: 5500, stamps: 3, need: 3, ready: false, signed: [] };
+  assert.equal(feeHeadline(p, 4605), '3 stamps. $895 short.');
+  assert.ok(feeHeadline(p, 4605).split(' ').length <= 8);
+  assert.equal(feeHeadline({ ...p, stamps: 2 }, 4605), '');
+  assert.equal(feeHeadline({ ...p, stamps: 0 }, 0), '');
+  assert.equal(feeHeadline(p, 5500), '');                    // the fee is covered
+  assert.equal(feeHeadline({ ...p, ready: true }, 100), ''); // ready to sign: the button leads instead
+  assert.equal(feeHeadline(null), '');
+});

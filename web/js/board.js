@@ -112,6 +112,30 @@ export function createBoard(scene, { x, z, onCross = null }) {
     for (let i = 1; i < 10; i++) { const tx = bx + bw * i / 10; g.beginPath(); g.moveTo(tx, by + 2); g.lineTo(tx, by + bh - 2); g.stroke(); }
   }
 
+  // Endless (council round 7 #9, C4): TODAY at 64 px in whole dollars, a bar from $0 to the record under it, and a
+  // pale tick where the record shift itself stood at this point (crew.mjs reads records.curve; owner.js paceAt). The
+  // bar flashes green when today passes the tick (the round 6 #3 crossing flash, fed pace.cash vs pace.now).
+  function drawEndless(pace) {
+    const rec = Math.max(pace.record, 0.0001), dollars = v => '$' + commas(v);
+    g.fillStyle = '#1d2129'; g.fillRect(24, 296, W - 48, 140);
+    g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`;
+    g.fillText('TODAY', 44, 316);
+    g.fillStyle = '#f5e6b8'; g.font = `700 64px ${MONO}`; g.fillText(dollars(pace.cash), 40, 360);
+    g.textAlign = 'right'; g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`;
+    g.fillText('RECORD', W - 44, 316);
+    g.fillStyle = '#e06a5a'; g.font = `700 34px ${MONO}`; g.fillText(dollars(pace.record), W - 44, 356);
+    const bx = 44, bw = W - 88, by = 396, bh = 28;
+    bar(bx, by, bw, bh, pace.cash / rec, pace.cash >= pace.now ? '#6fd36f' : '#e8b04a');
+    const px = bx + 2 + (bw - 4) * clamp01(pace.now / rec);
+    g.fillStyle = '#f5e6b8'; g.fillRect(px - 2, by - 6, 4, bh + 12);           // the record's own pace
+    g.fillStyle = '#e03a3a'; g.fillRect(bx + bw - 5, by - 8, 6, bh + 16);       // the record
+    if (flash.t > 0) {
+      g.globalAlpha = Math.min(1, flash.t / BELL.FLASH_SECS) * 0.85;
+      g.fillStyle = flash.up ? BELL.GREEN : BELL.AMBER; g.fillRect(bx - 6, by - 8, bw + 12, bh + 16);
+      g.globalAlpha = 1;
+    }
+  }
+
   function draw() {
     const st = s; if (!st) return;
     const flipP = 1 - flipT / FLIP_TIME;      // 0 -> 1 across the flip
@@ -178,16 +202,14 @@ export function createBoard(scene, { x, z, onCross = null }) {
     // target
     g.textBaseline = 'middle';
     const pace = st.quota == null ? st.pace : null;         // endless: record pace instead of a target
-    const hasQuota = st.quota != null || pace != null;
-    g.textAlign = 'left'; g.font = `700 ${pace ? 26 : 30}px ${MONO}`;
+    if (pace) drawEndless(pace);                            // round 7 #9 (C4): TODAY big, a bar to the record, the pace tick
+    else {
+    const hasQuota = st.quota != null;
+    g.textAlign = 'left'; g.font = `700 30px ${MONO}`;
     g.fillStyle = hasQuota ? '#f5e6b8' : '#4a4f5a';
-    g.fillText(pace ? 'RECORD PACE ' + money(pace.now) : hasQuota ? show('quota', 'TARGET ' + money(st.quota)) : 'TARGET  --', 24, 322);
+    g.fillText(hasQuota ? show('quota', 'TARGET ' + money(st.quota)) : 'TARGET  --', 24, 322);
     const tx = 360, tw = 640;
-    bar(tx, 308, tw, 28, pace ? pace.cash / Math.max(pace.record, 0.0001) : hasQuota ? st.bv / Math.max(st.quota, 0.0001) : 0, '#e8b04a');
-    if (pace) {                                // the red line is the record; the pale tick is where pace says you should be
-      const px = tx + 4 + (tw - 8) * clamp01(pace.now / Math.max(pace.record, 0.0001));
-      g.fillStyle = '#f5e6b8'; g.fillRect(px - 2, 304, 4, 36);
-    }
+    bar(tx, 308, tw, 28, hasQuota ? st.bv / Math.max(st.quota, 0.0001) : 0, '#e8b04a');
     if (hasQuota) {
       const mx = tx + tw - 4;                 // quota marks the bar's end; the bar is BV / quota
       g.fillStyle = '#e03a3a'; g.fillRect(mx - 3, 300, 6, 44);
@@ -201,10 +223,10 @@ export function createBoard(scene, { x, z, onCross = null }) {
     // outstanding
     g.fillStyle = '#1d2129'; g.fillRect(24, 358, W - 48, 72);
     g.textAlign = 'left'; g.fillStyle = '#7d8594'; g.font = `600 26px ${SANS}`;
-    // endless (council round 6 #7): today's cash against the record instead of the ball count
-    g.fillText(pace ? 'TODAY ' + money(pace.cash) : 'BALLS OUTSTANDING', 44, 394);
-    g.textAlign = 'right'; g.fillStyle = '#f5e6b8'; g.font = `700 ${pace ? 40 : 56}px ${MONO}`;
-    g.fillText(pace ? 'RECORD ' + money(pace.record) : commas(st.outstanding), W - 44, 396);
+    g.fillText('BALLS OUTSTANDING', 44, 394);
+    g.textAlign = 'right'; g.fillStyle = '#f5e6b8'; g.font = `700 56px ${MONO}`;
+    g.fillText(commas(st.outstanding), W - 44, 396);
+    }
 
     // banner
     let banner = '', bcol = '#e8b04a', bg = '#1b1f27', fg = '#8f98a8';
@@ -309,7 +331,9 @@ export function createBoard(scene, { x, z, onCross = null }) {
     if (balls.count !== n) balls.count = n;
 
     // round 6 #3: BV crossing the target flashes the bar (at most once every 3 s); 'up' also rings onCross
-    const cr = crossing(cross, { bv: state.bv, quota: state.quota, live: state.live !== false, t: clock });
+    const endlessPace = state.quota == null && state.pace ? state.pace : null;   // round 7 #9: endless races the record's pace
+    const cr = crossing(cross, endlessPace ? { bv: endlessPace.cash, quota: endlessPace.now, live: state.live !== false, t: clock }
+      : { bv: state.bv, quota: state.quota, live: state.live !== false, t: clock });
     if (cr) { flash.t = BELL.FLASH_SECS; flash.up = cr === 'up'; onCross?.(cr); if (s) draw(); }
 
     // board
@@ -402,5 +426,10 @@ export function createBoard(scene, { x, z, onCross = null }) {
     return st;
   }
 
-  return { update, floatText, tick, stamp };
+  // Round 7 #9 (views/owner.js): the crew's colours on the frame. attach(obj) parents a mesh to the Board (Board-local
+  // coordinates: x across, y up from the ground, +z the stand side); frameColor(hex | null) tints the frame and posts.
+  const frameBase = frameMat.color.getHex();
+  const attach = obj => root.add(obj);
+  const frameColor = hex => frameMat.color.setHex(hex ?? frameBase);
+  return { update, floatText, tick, stamp, attach, frameColor, dims: { BW, BH, BOTTOM } };
 }

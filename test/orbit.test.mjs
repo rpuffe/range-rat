@@ -32,7 +32,7 @@ const at = (p, lx, lz) => { p.x = LIFT.x + lx; p.z = LIFT.z + lz; };
 
 test('the constants are the doc\'s, the module is valid and registered, and debris weighs 3', () => {
   assert.deepEqual({ ...ORBIT, TOP: 0 }, { SHOT: 0.05, VY: 70, LEAVE_Y: 150, CAP: 60, RIDE: 5, R: 11, GRAB: 2.2, GRAB_SLACK: 0.3, TETHER_EVERY: 8,
-    KPI_AT: 30, SWIM_MUL: 1.2, EYE0: 1.7, TOP: 0, BAG_W: 3, PUMP_REACH: 3.4 });
+    KPI_AT: 30, SWIM_MUL: 1.2, EYE0: 1.7, TOP: 0, BAG_W: 3, PUMP_REACH: 3.4, SKY_CLEAR: 15 });
   assert.equal(ORBIT.TOP, 120);
   assert.equal(KIND_W.debris, ORBIT.BAG_W);
   assert.deepEqual(LIFT, { x: MAP.LIFT.x, z: MAP.LIFT.z });
@@ -259,5 +259,16 @@ test('the view and the PA line are wired (three is not loadable here, so read th
   const view = read('../web/js/views/orbit.js');
   assert.ok(view.includes("id: 'orbit',") && view.includes('venue: 5,') && view.includes('createEva'));
   assert.ok(read('../web/js/scuba.js').includes('export function createEva'));
-  assert.ok(read('../web/js/pa.js').includes("eva: 'A Range Rat has left the atmosphere. Corporate will hold their locker.'"));
+  assert.ok(read('../web/js/pa.js').includes("eva: { line: 'A Range Rat has left the atmosphere. Corporate will hold their locker.'"));
+});
+
+test('round 7 #5: no orbit shots while the Last Bucket is on', () => {
+  const { crew, st } = room();
+  const shot = { x: 0, y: 1, z: 0, vx: 0, vy: 10, vz: -30, kind: 'range' };
+  crew.rng = () => 0;                      // would always go up
+  assert.ok(orbit.launchMod(crew, st, shot, { lead: false })?.orbit);
+  crew.lastBucket = { phase: 'sky' };
+  assert.equal(orbit.launchMod(crew, st, shot, { lead: false }), undefined);
+  crew.lastBucket = { phase: 'done' };
+  assert.ok(orbit.launchMod(crew, st, shot, { lead: false })?.orbit);
 });

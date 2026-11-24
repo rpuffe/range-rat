@@ -23,7 +23,11 @@ export const ORBIT = {
   TOP: MAP.LIFT.TOP,   // m: 120
   BAG_W: 3,            // KIND_W.debris (mirrored; test/orbit.test.mjs pins it)
   PUMP_REACH: 3.4,     // m from the car: a buddy this close cranks the O2
+  SKY_CLEAR: 15,       // council round 7 #5: Ball No. 1 falls only through a sky this clear (gauge >= 0.50)
 };
+// The sky gate's banner (the Board and the Last Bucket line): how many pieces still stand between Ball No. 1 and home.
+export const skyToClear = n => Math.max(0, (n | 0) - ORBIT.SKY_CLEAR);
+export const skyBanner = n => `CLEAR THE SKY · ${skyToClear(n)} UP`;
 
 export const LIFT = { x: MAP.LIFT.x, z: MAP.LIFT.z };
 export const TETHER_ROW = {

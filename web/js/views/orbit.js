@@ -9,7 +9,7 @@
 //     (tap Ⓐ / click, or circle the right stick).
 //   * Everyone sees the car go up, and the debris ring (slowly tumbling) above the Lift.
 import * as THREE from 'three';
-import { ORBIT, LIFT, debrisSpot, rideHeight, spaceness, clampDisc, atLift, evaSwim } from '../orbit.js';
+import { ORBIT, LIFT, debrisSpot, rideHeight, spaceness, clampDisc, atLift, evaSwim, skyBanner } from '../orbit.js';
 import { diveTiers } from '../dive.js';
 import { perks } from '../sim.js';
 import { createEva } from '../scuba.js';
@@ -87,6 +87,12 @@ export default {
     const glintPos = new Float32Array(ORBIT.CAP * 3);
     glintPts.geometry.setAttribute('position', new THREE.BufferAttribute(glintPos, 3)); glintPts.geometry.setDrawRange(0, 0); glintPts.frustumCulled = false;
     root.add(glintPts);
+    // Round 7 #5: while the sky gate holds, Ball No. 1 glints gold at the centre of the disc (the gold-ball beacon's
+    // look: one additive mesh, one draw call).
+    const one = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffd54a, transparent: true, opacity: 0.85,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    one.visible = false; one.position.set(LIFT.x, ORBIT.TOP + 2.2, LIFT.z); root.add(one);
+    let sky = null;                        // the debris count while s.lastBucket.phase is 'sky', else null
 
     // ---- the tether: little cylinders strung from the car to your suit
     const tether = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.022, 0.022, 1, 5), new THREE.MeshBasicMaterial({ color: 0xffc058 }), TETHER_SEGS);
@@ -128,6 +134,7 @@ export default {
 
       onSnapshot(s, m) {
         snap = m ?? null;
+        sky = s?.phase === 'shift' && s?.lastBucket?.phase === 'sky' ? s.lastBucket.debris ?? ids.length : null;
         ids = m?.d ?? [];
         const r = m?.r?.[me.id];
         if (r) {
@@ -171,6 +178,7 @@ export default {
       lockLook() { return latched; },                    // the camera stays put while you crank
       capturing() { return mine() || latched; },
       amb() { return mine() ? { underwater: true, crowd: 0, nearField: 0 } : null; },
+      banner: () => (sky == null ? null : { text: skyBanner(sky), bg: '#2a1f05', fg: '#ffd54a' }),   // the Board (round 7 #5)
       reportLines(r) { return r?.debris ? [`Debris retrieved: ${r.debris}`] : []; },
 
       tick(dt, t) {
@@ -246,6 +254,8 @@ export default {
           glintPts.geometry.attributes.position.needsUpdate = true;
         }
         glintPts.geometry.setDrawRange(0, n);
+        one.visible = sky != null;
+        if (one.visible) { one.scale.setScalar(1 + 0.25 * Math.sin(t * 4)); one.material.opacity = 0.6 + 0.3 * Math.sin(t * 2.5); }
         glintPts.material.opacity = 0.55 + 0.25 * Math.sin(t * 3);
 
         // ---- the tether

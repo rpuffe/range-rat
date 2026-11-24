@@ -172,3 +172,15 @@ test('a tampered save cannot give tiers that do not exist', () => {
   assert.deepEqual(crew.up, { washer: 3 }, 'personal gear is not a crew upgrade');
   assert.deepEqual(crew.gearByName, { A: 3 });
 });
+
+// Council round 7 #9: the Owner's projects row is endless-only: it never leaks into venues 0–5.
+test("no endless-only row (the Owner's projects) leaks into venues 0–5", async () => {
+  const { shopShows } = await import('../web/js/sim.js');
+  for (let v = 0; v <= 5; v++) {
+    for (const item of SHOP.filter(i => i.endless)) {
+      assert.equal(shopShows(item, v, 99), false, `${item.id} at venue ${v}`);
+      assert.equal(nextPrice(item.id, {}, 4, 0, v, 99), null);
+    }
+  }
+  assert.ok(SHOP.some(i => i.id === 'owner' && i.endless));
+});

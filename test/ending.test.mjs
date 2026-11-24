@@ -340,3 +340,117 @@ test('huddle: the self-heal still recovers a lost ball', () => {
   assert.ok(one(c), 'it fell again');
   assert.ok(bankOne(c, a, run), 'and the huddle banks it');
 });
+
+// ---- round 7 #5: clear the sky (Ball No. 1 won't fall through more than ORBIT.SKY_CLEAR pieces of debris) ----------
+const ids = n => Array.from({ length: n }, (_, i) => i);
+function skyRoom(debris = 30, extra = {}, players = ['A']) {
+  const r = room({ day: 30, venue: 5, venueDay: 2, outstanding: 1, mods: { orbit: { d: ids(debris), n: debris } }, ...extra }, players);
+  r.c.readyUp(r.ps[0]); r.run(1);
+  return { ...r, st: r.c.mods.state('orbit') };
+}
+const clearTo = (st, n) => { for (const id of [...st.debris].slice(n)) st.debris.delete(id); };
+
+test('sky: at 1 outstanding with 30 debris the phase is sky, the clock runs, no orbit shots, and the tether winches', () => {
+  const { c, run, st } = skyRoom(30, { up: { tether: 1 } });
+  assert.equal(c.lastBucket?.phase, 'sky');
+  assert.equal(c.paused(), false);
+  assert.equal(c.working(), true);
+  assert.equal(c.snapshot().lastBucket.debris, st.debris.size);
+  const t0 = c.shiftT, orbited = c.stats.orbited ?? 0, before = st.debris.size;
+  run(60);
+  assert.ok(c.shiftT > t0 + 50, 'the clock ran');
+  assert.equal(c.stats.orbited ?? 0, orbited, 'no orbit shots while the Last Bucket is on');
+  assert.ok(st.debris.size <= before - 6, 'the tether winched');
+  assert.equal(one(c), undefined, 'Ball No. 1 has not fallen yet');
+});
+
+test('sky: the ball falls once debris is at 15 or fewer (16 holds it)', () => {
+  const { c, run, st, ps: [a] } = skyRoom(30);
+  clearTo(st, 16); run(5);
+  assert.equal(c.lastBucket.phase, 'sky');
+  clearTo(st, 15); run(0.2);
+  assert.equal(c.lastBucket.phase, 'falling');
+  assert.equal(c.paused(), true, 'the clock holds again for the fall');
+  run(20);
+  assert.ok(one(c), 'Ball No. 1 came home');
+  assert.ok(bankOne(c, a, run), 'and the huddle banks it');
+});
+
+test('sky: a clear sky at 1 outstanding drops the ball at once (the tether crew never sees the gate)', () => {
+  const { c } = skyRoom(15);
+  assert.equal(c.lastBucket.phase, 'falling');
+});
+
+test('sky: the bell during sky is a normal report, and the next morning reopens the gate', () => {
+  const { c, run, ps: [a] } = skyRoom(30);
+  c.shiftT = c.shiftSecs - 0.05; run(0.2);
+  assert.equal(c.phase, 'report');
+  assert.equal(c.report.quota, null, 'no review at the Orbital');
+  assert.ok(!c.report.ending);
+  assert.equal(c.outstanding, 1);
+  run(12); c.readyUp(a); run(1);
+  assert.equal(c.phase, 'shift');
+  assert.equal(c.lastBucket?.phase, 'sky', 'the gate reopens (debris is saved)');
+  const save = c.toSave();
+  const c2 = new Crew('END2', save, { now: () => 0, seed: 5 });
+  c2.startShift();
+  assert.equal(c2.lastBucket?.phase, 'sky', 'and from a reload too');
+});
+
+test('sky: a rider aloft is not sent down; when the sky clears they ride down', () => {
+  const { c, run, st, ps: [a] } = skyRoom(30);
+  a.x = LIFT.x + 0.8; a.z = LIFT.z; c.input(a, { a: [{ t: 'lift' }] });   // solo, no gear: the Lift still takes you
+  run(ORBIT.RIDE + 1);
+  assert.equal(st.riders.get(a.id)?.ph, 'out');
+  run(5);
+  assert.equal(st.riders.get(a.id)?.ph, 'out', 'still up during sky');
+  clearTo(st, 15); run(0.2);
+  assert.equal(c.lastBucket.phase, 'falling');
+  assert.equal(st.riders.get(a.id)?.ph, 'down', 'riding down as the ball falls');
+  run(ORBIT.RIDE + 1);
+  assert.equal(st.riders.has(a.id), false);
+});
+
+test('sky: the self-heal never sends Ball No. 1 while the sky holds', () => {
+  const { c, run } = skyRoom(40);
+  run(30);
+  assert.equal(c.lastBucket.phase, 'sky');
+  assert.equal(one(c), undefined);
+});
+
+// ---- round 7 #10.2: the huddle waits less for a missing Rat ----------------------------------------------------------
+test('10.2: an offline carrier drops Ball No. 1 where they stood after 5 s; another Rat picks it up and banks it', () => {
+  const { c, run, ps: [a, b] } = huddleRoom();
+  const at = { x: a.x, z: a.z };
+  c.disconnect(a); run(4.8);
+  assert.ok(a.one, 'still carrying inside the grace');
+  run(0.4);
+  assert.equal(a.one, false, 'dropped after 5 s');
+  assert.equal(c.lastBucket.phase, 'down');
+  const ball = one(c);
+  assert.ok(ball && Math.hypot(ball.x - at.x, ball.z - at.z) < 0.01, 'where they stood');
+  b.x = ball.x; b.z = ball.z; assert.ok(c.pickup(b, ball.id), 'B picks it up');
+  toStand(b); b.movedAt = c.now(); run(0.1);
+  assert.equal(c.lastBucket.phase, 'huddle');
+  hold(c, b); run(3.2);
+  assert.ok(done(c), 'B banks it (A is offline: no slot)');
+});
+
+test('10.2: a reconnect inside 5 s keeps the ball', () => {
+  const { c, run, ps: [a] } = huddleRoom();
+  c.disconnect(a); run(3);
+  c.connect(a); run(5);
+  assert.ok(a.one, 'still carrying');
+  assert.equal(one(c), undefined);
+});
+
+test('10.2: a Rat idle for 20 s counts as present and holding (19 s does not)', () => {
+  const { c, run, ps: [a, b] } = huddleRoom();
+  b.x = -40; b.z = -100; b.movedAt = c.now() - 19_000;
+  hold(c, a); run(0.5);
+  assert.equal(c.snapshot().lastBucket.held.includes(b.id), false);
+  run(1.0);                                           // now 20.5 s idle
+  assert.ok(c.snapshot().lastBucket.held.includes(b.id) || done(c));
+  run(3.1);
+  assert.ok(done(c));
+});

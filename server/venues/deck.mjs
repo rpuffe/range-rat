@@ -32,24 +32,27 @@ export default {
   tick(crew, st, dt) {
     if (!crew.working()) return;
     const r = stepDeck(st.deck, dt);
-    if (r.order) { crew.events.push({ t: 'deckOrder', seat: st.deck.order.seat }); crew.dirty = true; }
+    if (r.order) { crew.events.push({ t: 'deckOrder', seat: st.deck.order.seat, ...(st.deck.order.round ? { round: true } : {}) }); crew.dirty = true; }
     if (r.expired || r.sobered) crew.dirty = true;
   },
 
   serve(crew, st, p, { item, quality }) {
+    let filled = null;
     if (paysTab(item, quality)) {
-      const filled = fillOrder(st.deck, item, quality);            // an open order pays 10 x BV, an unordered beer 5 x BV
-      const tab = crew.payCash(tabFor(crew.valueNow().bv, !!filled), p.id);
+      // An open order pays 10 x BV, a round 25 x BV (and is two drinks), an unordered beer 5 x BV.
+      filled = fillOrder(st.deck, item, quality);
+      const tab = crew.payCash(tabFor(crew.valueNow().bv, filled), p.id);
       if (filled) crew.stats.deckOrders = (crew.stats.deckOrders ?? 0) + 1;
-      if (tab) crew.events.push({ t: 'deckTab', by: p.id, n: tab, ...(filled ? { order: true, seat: filled.seat } : {}) });
+      if (filled?.round) crew.stats.deckRounds = (crew.stats.deckRounds ?? 0) + 1;
+      if (tab) crew.events.push({ t: 'deckTab', by: p.id, n: tab, ...(filled ? { order: true, seat: filled.seat } : {}), ...(filled?.round ? { round: true } : {}) });
     }
-    if (applyServe(st.deck, item, quality).incident) incident(crew, st, p);
+    if (applyServe(st.deck, item, quality, filled).incident) incident(crew, st, p);
   },
 
   inspect(crew, st, stopId) { if (stopId === 'kitchen' && st.garyFail) return false; },   // somebody fell off on his watch
 
   awards: () => [['Last Orders', 'lastOrders']],
   snapshot: (crew, st) => ({ drinks: st.deck.drinks, last: st.last, today: st.today,
-    order: st.deck.order ? { seat: st.deck.order.seat, left: Math.max(0, Math.round(st.deck.order.left * 10) / 10) } : null }),
+    order: st.deck.order ? { seat: st.deck.order.seat, left: Math.max(0, Math.round(st.deck.order.left * 10) / 10), ...(st.deck.order.round ? { round: true } : {}) } : null }),
   toSave: (crew, st) => ({ last: st.last }),
 };

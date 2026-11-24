@@ -73,6 +73,7 @@ export default {
 
     let drinks = 0, shown = true, woooT = DECK.WOOO_SECS, nextWooo = 0, hinted = false;
     let snap = null, orderSeat = -1;   // council round 6 #6: the seat with an open order raises its mug
+    let orderRound = false;            // round 7 #8: a ROUND order: that seat and the next raise their mugs
 
     const place = (s, x, y, z, yaw, spin = 0) => {
       s.pivot.position.set(x, y + 0.9, z); s.pivot.rotation.set(spin, 0, 0); s.person.root.rotation.y = yaw;
@@ -84,7 +85,7 @@ export default {
       show(on) { shown = on; root.visible = on; },
 
       onSnapshot(s, mine) {
-        snap = s; drinks = mine?.drinks ?? 0; orderSeat = mine?.order ? mine.order.seat : -1;
+        snap = s; drinks = mine?.drinks ?? 0; orderSeat = mine?.order ? mine.order.seat : -1; orderRound = !!mine?.order?.round;
         if (s.phase !== 'shift') for (const q of seats) if (q.state !== 'seated') reseat(q);   // the morning: everyone is back
       },
 
@@ -96,18 +97,23 @@ export default {
           // One message: the PA card says it. Others get a short feed line with the fine.
           if (e.by !== ctx.me?.id) ctx.feed?.(`${who} overserved the deck. Fine ${money(e.fine)}.`);
         } else if (e.t === 'deckOrder') {          // a lounger orders: WOOO and a raised mug, no centre text
-          const s = seats[e.seat % seats.length]; orderSeat = e.seat % seats.length;
+          const s = seats[e.seat % seats.length]; orderSeat = e.seat % seats.length; orderRound = !!e.round;
           if (s?.state === 'seated') { s.cheerT = 1.2; s.wooo.userData.t = 1.4; voice(ctx.SFX, 'wooo', 0.08); }
+          const s2 = e.round ? seats[(e.seat + 1) % seats.length] : null;   // a ROUND: a second lounger, a double WOOO
+          if (s2?.state === 'seated') {
+            s2.cheerT = 1.4; s2.wooo.userData.t = 1.4;
+            setTimeout(() => voice(ctx.SFX, 'wooo', 0.09), 350);
+          }
         } else if (e.t === 'deckTab') {
-          if (e.order) orderSeat = -1;
-          if (e.by === ctx.me?.id) ctx.toast?.(`${e.order ? 'Order filled' : 'Bar tab'}: +${money(e.n)}`, 1.4);
+          if (e.order) { orderSeat = -1; orderRound = false; }
+          if (e.by === ctx.me?.id) ctx.toast?.(`${e.round ? 'Round filled' : e.order ? 'Order filled' : 'Bar tab'}: +${money(e.n)}`, 1.4);
         } else if (e.t === 'served') {
           if (e.item === 'beer' && e.by === ctx.me?.id && !hinted) {
             hinted = true;
             // (the first-time hint chip in settings.js owns the "beer pays a tab" tip)
           }
         } else if (e.t === 'knock' && e.by === 'customer' && e.id === ctx.me?.id) {
-          ctx.toast?.('A customer fell on you. Corporate is reviewing the footage.', 3.2);
+          ctx.toast?.('A customer fell on you. Corporate is watching.', 3.2);
         }
       },
 
@@ -129,7 +135,7 @@ export default {
           s.t += dt; if (s.state !== 'seated') s.since += dt; const p = s.person;
           if (s.state === 'seated') {
             s.cheerT = Math.max(0, s.cheerT - dt);
-            const up = seats[orderSeat] === s;                              // the order: mug held high, bobbing
+            const up = seats[orderSeat] === s || (orderRound && orderSeat >= 0 && seats[(orderSeat + 1) % seats.length] === s);   // the order (a round: two)
             s.mug.position.set(-0.3, up ? 0.95 + Math.sin(t * 5) * 0.05 : 0.42, up ? 0.15 : 0.3);
             animatePerson(p, dt, { mode: s.cheerT > 0 ? 'cheer' : 'idle' });
             // sway, amplitude drinks / 6 (a gentle lean from the first drink)

@@ -6,7 +6,7 @@ import tiered from '../server/venues/tiered.mjs';
 import { BAYS } from '../web/js/sim.js';
 import { MAP } from '../web/js/map.js';
 import { CUP_FULL } from '../web/js/tiered.js';
-import { AIM, predictRest, createAimer, ringBowl, cupWarn, KPI_PASS } from '../web/js/aim.js';
+import { AIM, predictRest, createAimer, ringBowl, cupWarn, KPI_PASS, markerState, markerPulse, markerScale } from '../web/js/aim.js';
 
 // Where the server rests a crew ball hit from `bay` with this (pure) launch.
 function serverRest(bay, yaw, pitch, power) {
@@ -76,4 +76,47 @@ test('benchmark: a worst-case predict stays near the 1,500-step budget', () => {
     if (r) worst = Math.max(worst, r.steps);
   }
   assert.ok(worst > 0 && worst <= 1700, `worst ${worst} steps`);
+});
+
+// Council round 7 #2: the landing marker.
+test('round 7 #2: the marker constants', () => {
+  assert.equal(AIM.MARK_PX, 28);
+  assert.equal(AIM.BEAM_H, 6);
+  assert.equal(AIM.AFTER, 1.5);
+  // 28 px of a 1080-line screen whatever the fov: the sprite scale is a fraction of the view height at distance 1.
+  for (const fov of [50, 60, 75]) assert.ok(Math.abs(markerScale(fov) / (2 * Math.tan(fov * Math.PI / 360)) - 28 / 1080) < 1e-12);
+});
+
+test('round 7 #2: markerState: hidden before the first swing at rest, visible while winding up', () => {
+  const rest = { x: 0, z: -60 };
+  assert.equal(markerState({ bay: true, power: 0, swung: false }).visible, false, 'at the bay, not winding, no swing yet');
+  assert.equal(markerState({ bay: true, power: 0, swung: false, lastPower: 0.7, rest }).visible, false, 'not even at a remembered 0.7');
+  const w = markerState({ bay: true, power: 0.4, swung: false });
+  assert.equal(w.visible, true); assert.equal(w.power, 0.4);
+  assert.equal(markerState({ bay: true, power: 0.04 }).visible, false, 'a twitch is not a wind-up');
+});
+
+test('round 7 #2: markerState: 1.5 s after release, then at the last power at the bay', () => {
+  const rest = { x: 0, z: -60 };
+  const off = { bay: false, power: 0, swung: true, lastPower: 0.6, rest };
+  assert.equal(markerState({ ...off, sinceRelease: 1.4 }).visible, true, 'just released, even with no balls left');
+  assert.equal(markerState({ ...off, sinceRelease: 1.4 }).power, 0.6);
+  assert.equal(markerState({ ...off, sinceRelease: 1.6 }).visible, false, 'hidden with no balls / off the bay');
+  const back = markerState({ bay: true, power: 0, swung: true, lastPower: 0.6, sinceRelease: 30, rest });
+  assert.equal(back.visible, true); assert.equal(back.power, 0.6);
+  assert.equal(markerState({ bay: true, power: 0.9, swung: true, lastPower: 0.6, sinceRelease: 30 }).power, 0.9, 'winding beats the last power');
+  assert.equal(markerState({ bay: true, swung: true, lastPower: 0.6, rest: null }).visible, false, 'no rest (the creek): nothing');
+});
+
+test('round 7 #2: markerState: the bowl colour and a 2 Hz pulse inside the lip', () => {
+  const [A] = MAP.BOWLS;
+  const rest = { x: A.x + A.r + 1.4, z: A.z };
+  const m = markerState({ bay: true, swung: true, lastPower: 0.6, rest, bowl: ringBowl(rest) });
+  assert.equal(m.color, A.flag); assert.equal(m.pulse, true);
+  const o = markerState({ bay: true, swung: true, lastPower: 0.6, rest: { x: 0, z: -40 }, bowl: null });
+  assert.equal(o.color, null); assert.equal(o.pulse, false);
+  assert.equal(markerPulse(false, 0.3), 1);
+  assert.equal(markerPulse(true, 0), 1);
+  assert.ok(Math.abs(markerPulse(true, 0.25) - 1.25) < 1e-9, 'peak a quarter-second in: 2 Hz');
+  assert.ok(Math.abs(markerPulse(true, 0.5) - 1) < 1e-9);
 });

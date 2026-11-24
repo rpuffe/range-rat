@@ -79,3 +79,89 @@ test('playtest 2: the Last Call line reads the gauge ahead of the rush at Tiered
   crew.mods.kpi = () => 0.9;
   assert.notEqual(crew.rallyNeed(), L.gauge[2]);
 });
+
+test('round 7 #5: the Orbital has no review, so its line is the debris or nothing', () => {
+  assert.equal(shortfall({ value: val(1), quota: null, kpi: 0.2, fixtures: clean, venue: 5 }), 'Debris overhead. Ride the Lift!');
+  assert.equal(shortfall({ value: val(1), quota: null, kpi: 0.8, fixtures: clean, venue: 5 }), null);
+  assert.equal(shortfall({ value: val(1), quota: null, kpi: 0.2, fixtures: clean, venue: 5, endless: true }), null);
+  assert.equal(shortfall({ value: val(1), quota: null, kpi: 0.2, fixtures: clean, venue: 4 }), null, 'elsewhere no quota still means no line');
+});
+
+test('round 7 #7: the Stadium rallies at T-120 once (from its day 2); other venues at T-60', async () => {
+  const { RALLY_AT, rallyAt } = await import('../web/js/rally.js');
+  assert.deepEqual({ ...RALLY_AT }, { 3: 120 });
+  assert.equal(rallyAt(3), 120); assert.equal(rallyAt(2), 60); assert.equal(rallyAt(4), 60);
+  const at = save => {
+    const clock = { t: 1_000_000 };
+    const crew = new Crew('RAL7', save, { shiftSecs: 200, seed: 9, now: () => clock.t });
+    crew.startShift();
+    const out = [];
+    while (crew.phase === 'shift') { clock.t += 50; crew.tick(0.05); for (const e of crew.flush().ev) if (e.t === 'lastcall') out.push(Math.round(crew.shiftSecs - crew.shiftT)); }
+    return out;
+  };
+  assert.deepEqual(at({ day: 20, venue: 3, venueDay: 2 }), [120]);
+  assert.deepEqual(at({ day: 20, venue: 2, venueDay: 2 }), [60]);
+  assert.deepEqual(at({ day: 20, venue: 4, venueDay: 2 }), [60]);
+});
+
+// ---- Round 7 #4: dealt jobs ---------------------------------------------------------------------------------------
+test('round 7 #4: shortfalls() ranks the gauge first, then each Upkeep term by cost; its head is shortfall()', async () => {
+  const { shortfalls, JOB_AT, gaugeAt } = await import('../web/js/rally.js');
+  const fx = { sign: 0.6, stand: 0.2, mat0: 0.9, mat1: 0.9, mat2: 0.5 };
+  const args = { value: val(1.2, { fries: 0.7, pond: null }), quota: { q: 0.6 }, kpi: 0.3, fixtures: fx, venue: 2, cups: [3, 20, 5] };
+  const list = shortfalls(args);
+  assert.deepEqual(list.map(j => j.id), ['gauge', 'mats', 'fries', 'sign', 'stand']);
+  assert.deepEqual(list[0].at, gaugeAt(2, [3, 20, 5]), 'the worst bowl: B');
+  assert.equal(list[0].at.x, 26);
+  assert.deepEqual(list[1].at, JOB_AT.mats);
+  assert.equal(list[0].line, shortfall(args));
+  // terms under 0.01 are left out
+  const tiny = shortfalls({ value: val(1.2), quota: { q: 0.6 }, fixtures: { sign: 0.01, mat0: 0.5, mat1: 0 } });
+  assert.deepEqual(tiny.map(j => j.id), ['mats']);
+  // a short gauge with Upkeep on target still deals the real Upkeep terms to the rest of the crew
+  assert.deepEqual(shortfalls({ value: val(2.6), quota: { q: 0.5 }, kpi: 0.2, fixtures: { sign: 0.5, mat0: 0, mat1: 0 }, venue: 3 }).map(j => j.id), ['gauge', 'sign']);
+  assert.deepEqual(shortfalls({ value: val(2.6), quota: { q: 0.5 }, kpi: 0.9, fixtures: { sign: 0.5, mat0: 0, mat1: 0 }, venue: 3 }), [], 'both on target: nothing to deal');
+  // the head always matches the single line (500 seeded cases)
+  let s = 7; const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 500; i++) {
+    const a = { value: val(1 + r(), { fries: r() < 0.5 ? null : r(), pond: r() < 0.5 ? null : r() }), quota: { q: r() }, kpi: r(),
+      fixtures: { sign: r(), stand: r(), mat0: r(), mat1: r() }, venue: [2, 3, 4][(r() * 3) | 0] };
+    assert.equal(shortfalls(a)[0]?.line ?? RALLY_LINES.onTarget, shortfall(a), JSON.stringify(a));
+  }
+});
+
+test('round 7 #4: dealJobs: 4 Rats and 2 jobs is 2 + 1 + 1, nearest first; on target, everyone; solo, the top line; 6 Rats', async () => {
+  const { dealJobs } = await import('../web/js/rally.js');
+  const A = { line: 'Hose the mats before the bell!', at: { x: 0, z: 3.5 } }, B = { line: 'The sign is filthy. Hose it!', at: { x: 14, z: 11 } };
+  const rats = [{ id: 'r1', x: 1, z: 3 }, { id: 'r2', x: 13, z: 10 }, { id: 'r3', x: -2, z: 4 }, { id: 'r4', x: 40, z: 0 }];
+  const d = dealJobs([A, B], rats);
+  assert.equal(d.r1, A.line); assert.equal(d.r3, A.line, 'the biggest job: the 2 nearest');
+  assert.equal(d.r2, B.line, 'the next job: the nearest undealt Rat');
+  assert.equal(d.r4, B.line, 'round the other jobs again: the biggest keeps its half');
+  assert.deepEqual(dealJobs([], rats), { r1: RALLY_LINES.onTarget, r2: RALLY_LINES.onTarget, r3: RALLY_LINES.onTarget, r4: RALLY_LINES.onTarget });
+  assert.deepEqual(dealJobs([A, B], [{ id: 'solo', x: 14, z: 11 }]), { solo: A.line }, 'solo: the top line, wherever you stand');
+  const C = { line: 'Fries are low. Cook!', at: { x: 42, z: 6 } };
+  const six = dealJobs([A, B, C], Array.from({ length: 6 }, (_, i) => ({ id: 'p' + i, x: i * 8, z: 5 })));
+  const count = l => Object.values(six).filter(x => x === l).length;
+  assert.equal(Object.keys(six).length, 6);
+  assert.equal(count(A.line), 3, 'ceil(6/2) on the biggest');
+  assert.deepEqual([count(B.line), count(C.line)], [2, 1], 'every job gets a Rat, then round again');
+  for (const l of [A, B, C].map(j => j.line)) assert.ok(l.split(/\s+/).length <= 8, l);
+});
+
+test('round 7 #4: the lastcall event carries needs per online Rat, and need (the top line) for old clients', () => {
+  const clock = { t: 1_000_000 };
+  const crew = new Crew('RALZ', { day: 2 }, { shiftSecs: 100, seed: 9, now: () => clock.t });
+  const a = crew.join('A'); crew.connect(a); const b = crew.join('B'); crew.connect(b);
+  crew.startShift();
+  for (const m of crew.mats) m.next = 1e9;
+  crew.fixtures.sign = 1; for (const k of Object.keys(crew.fixtures)) if (k.startsWith('mat')) crew.fixtures[k] = 0.9;
+  a.x = 0; a.z = 3; b.x = 14; b.z = 11;
+  const ev = [];
+  while (crew.phase === 'shift') { clock.t += 50; crew.tick(0.05); a.x = 0; a.z = 3; b.x = 14; b.z = 11; ev.push(...crew.flush().ev); }
+  const lc = ev.find(e => e.t === 'lastcall');
+  assert.equal(lc.need, RALLY_LINES.mats);
+  assert.deepEqual(Object.keys(lc.needs).sort(), [a.id, b.id].sort());
+  assert.equal(lc.needs[a.id], RALLY_LINES.mats, 'the nearest Rat gets the biggest job');
+  assert.equal(lc.needs[b.id], RALLY_LINES.sign, 'the other gets the next one');
+});

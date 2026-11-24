@@ -12,6 +12,7 @@ import { GUTTERS_ROW } from './tiered.js';
 import { DRONES_ROW } from './county.js';
 //
 import { TETHER_ROW } from './orbit.js';
+import { OWNER_ROW } from './owner.js';   // endless (round 7 #9): the Owner's projects
 
 export const SIM = {
   G: 9.81,
@@ -217,7 +218,7 @@ export const SHOP = [
   ] },
   { id: 'helpers', title: 'Hired help', tiers: [
     { name: 'Nobody', desc: 'It is just the crew.' },
-    { name: 'One teenager', cost: 60, desc: 'Picks up balls with a beat-up tube (8 at a time) and banks them. Paid in pizza.' },
+    { name: 'One teenager', cost: 60, desc: 'Picks up balls with a beat-up tube (8 at a time) and banks them. Paid in pizza. They don’t do lawns. There’s a dog.' },
     { name: 'Two teenagers', cost: 150, desc: 'They walk out together. They walk back together.' },
     { name: 'Three teenagers', cost: 400, desc: 'One of them brought a speaker.' },
     { name: 'Four teenagers', cost: 1000, desc: 'A union is forming.' },
@@ -240,6 +241,7 @@ export const SHOP = [
   DRONES_ROW,    // County (4): drones
   //
   TETHER_ROW,    // Orbital (5): the orbital tether winch
+  OWNER_ROW,     // endless only (round 7 #9): the Owner's projects (`endless: true`)
   { id: 'ads', title: 'Advertising', minDay: 2, tiers: [
     { name: 'Word of mouth', desc: 'Customers trickle in.' },
     { name: 'A sign by the road', cost: 30, desc: 'Customers hit 25% more balls.' },
@@ -264,17 +266,17 @@ export const HELPER_NAMES = ['Kyle', 'Madison', 'Tanner', 'Brayden'];
 // A row appears at its venue (`minVenue`) and, at the Muni, on its day (`minDay`): day 1 is
 // gear, shoes, hard hats and the teenagers; the washer and ads on day 2; the cart on day 3;
 // the snack shed (the kitchen) at the Range Club. Hidden rows are not shown at all.
-export const shopShows = (item, venue = 0, day = Infinity) =>
-  (item.minVenue ?? 0) <= venue && (venue > 0 || (item.minDay ?? 0) <= day);
+export const shopShows = (item, venue = 0, day = Infinity, endless = false) =>   // round 7 #9: an `endless` row shows only in endless
+  (item.minVenue ?? 0) <= venue && (venue > 0 || (item.minDay ?? 0) <= day) && (!item.endless || !!endless);
 // The day the shop is shopping for: overnight (the report) it is tomorrow.
 export const shopDay = (phase, day) => (phase === 'report' ? day + 1 : day);
 
 // Crew upgrades scale with crew size (balanced for 4): ×1 solo, ×2.2 for four.
 // Personal gear doesn't: everyone buys their own at the catalog price.
 export const priceScale = crewSize => 1 + 0.4 * (Math.max(1, crewSize) - 1);
-export function nextPrice(id, up, crewSize, gearLevel = 0, venue = 0, day = Infinity) {
+export function nextPrice(id, up, crewSize, gearLevel = 0, venue = 0, day = Infinity, endless = false) {
   const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
-  if (!item || !shopShows(item, venue, day)) return null;
+  if (!item || !shopShows(item, venue, day, endless)) return null;
   const lvl = item.personal ? gearLevel : up?.[id] ?? 0;
   const t = item.tiers[lvl + 1];
   if (!t || (t.minVenue ?? 0) > venue) return null;    // maxed out, or not at this venue yet
@@ -414,7 +416,7 @@ export const VENUE_RULES = [
   { name: 'County Range', title: 'County Retrieval Director', fee: 2_000_000, writeOff: 712_000_000, memo: '712,000,000 balls have been reclassified as the county.', pa: 'county', eatEvery: 5,
     kpi: 'ZONING COMPLIANCE', howto: 'New: the Yards. Your customers now hit into the county. The county has noticed.' },
   { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 10_000_000, writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 5,
-    kpi: 'ORBITAL DEBRIS', howto: 'New: the Lift. Some customers now hit into orbit. Orbital Debris is now on the Board. Weight limit: one Rat, one bag, no opinions.' },
+    kpi: 'ORBITAL DEBRIS', howto: 'The Lift is open. Keep the sky clear.' },
 ];
 // Round 4: VENUE_RULES[v].kpi is the Board's fourth gauge label (only the current venue's KPI is graded),
 // and .howto is the reveal's second memo card.

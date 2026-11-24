@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { WASHER_HANDLES, atHandle, WASH, VENUE_RULES, gearGrimeFactor, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
 import { createPA } from './pa.js';
-import { showPromo, promoPanelHtml } from './promopanel.js';   // council round 6 #7: the fee line from 2 stamps
+import { showPromo, promoPanelHtml, feeHeadline } from './promopanel.js';   // council round 6 #7: the fee line from 2 stamps; round 7 #10.1 the headline
 import { createWasher, createCrank } from './washer.js';
 import { createVenues, paintSign } from './venues.js';
 import { createEnding } from './ending.js';
@@ -24,7 +24,9 @@ export function setupRound2(ctx) {
   const now = () => performance.now();
   let machineCash = 0, machineAt = -1e9;   // the washer's rolling popup
 
-  const pa = createPA({ root: document.body, audio: () => SFX.audioHandle?.() ?? null });
+  // The PA card is a PA item in the one centre-text queue (round 7 #3): the card shows the caption when its turn comes.
+  const pa = createPA({ root: document.body, audio: () => SFX.audioHandle?.() ?? null,
+    enqueue: it => ctx.say('PA', it.caption, { secs: it.secs, data: { show: it.show, hide: it.hide } }) });
   const washer = createWasher(scene, { onTick: () => SFX.scoop() });
   const venues = createVenues(scene);
   const ending = createEnding({ scene, camera });   // its overlays mount on document.body; `root` would be a 3D parent
@@ -59,7 +61,7 @@ export function setupRound2(ctx) {
     switch (e.t) {
       case 'pa': pa.say(e.id); break;
       case 'kit':
-        if (e.id === me.id) toast(e.level >= 2 ? 'New Hire Kit: a bucket with someone else\'s name on it.' : 'New Hire Kit: a hand-me-down tube from the lost and found. It\'s sticky.', 3.5);
+        if (e.id === me.id) toast(e.level >= 2 ? 'New Hire Kit: a bucket. Not your name.' : 'New Hire Kit: a sticky hand-me-down tube.', 3.5);
         break;
       case 'washed':
         washer.washed(Math.min(10, e.n));
@@ -69,7 +71,7 @@ export function setupRound2(ctx) {
         else if (e.cash > 0) board.floatText(21.5, 2.6, 6, '+' + money(e.cash), '#9fe8ff');
         break;
       case 'grime':
-        if (e.id === me.id && e.v > 0) toast(['', 'Your gear is grubby (×1.17).', 'Your gear is filthy (×1.08).', 'Your gear is caked in mud (×1.00). Hose off at the wash pad.'][e.v], 2.4);
+        if (e.id === me.id && e.v > 0) toast(['', 'Your gear is grubby (×1.17).', 'Your gear is filthy (×1.08).', 'Caked in mud (×1.00). Use the wash pad.'][e.v], 2.4);
         break;
       case 'hosed':
         SFX.scoop();
@@ -78,7 +80,7 @@ export function setupRound2(ctx) {
       case 'sign': toast(e.on ? nameOf(e.by) + ' signed the franchise agreement (' + e.n + ' of ' + e.of + ')' : nameOf(e.by) + ' unsigned', 2.5); renderReport(); break;
       case 'promoted':
         SFX.jackpot();
-        toast('PROMOTED: ' + VENUE_RULES[e.venue].name + '. Fee ' + money(e.fee) + '. Reveal tomorrow morning.', 4);
+        ctx.say('ALERT', 'PROMOTED: ' + VENUE_RULES[e.venue].name + '. Fee ' + money(e.fee) + '.', { secs: 4 });
         renderReport(true);
         break;
       case 'ready': renderReport(); break;
@@ -87,7 +89,7 @@ export function setupRound2(ctx) {
       case 'huddle': break;   // the Last Bucket banner (tick) shows who is still missing
       case 'lastbucket':
         if (e.phase === 'falling') toast('Corporate has paused the sun.', 3);
-        if (e.phase === 'carried' && !e.back) toast(e.by === me.id ? 'You have Ball No. 1. Walk it home. Everyone to the stand.' : nameOf(e.by) + ' has Ball No. 1. Everyone to the stand!', 4);
+        if (e.phase === 'carried' && !e.back) ctx.say('ALERT', e.by === me.id ? 'You have Ball No. 1. Walk it home.' : nameOf(e.by) + ' has Ball No. 1. To the stand!', { key: 'one', secs: 4 });
         if (e.phase === 'banked') {
           ring.hide(); holdingUse = false;
           // Two confetti cannons at the stand and the crowd's roar, then the $∞ finale (round 6 #5).
@@ -210,6 +212,17 @@ export function setupRound2(ctx) {
   }
 
   // ---- the report: promotion, Ready Up, the ledger ---------------------------------------
+  // Round 7 #10.1: the fee headline sits above the report's columns (its own element: main.js owns #report-body).
+  function feeHead(text) {
+    const card = $('report');
+    let el = $('fee-head');
+    if (!el && card && text) {
+      el = document.createElement('p'); el.id = 'fee-head';
+      el.style.cssText = 'font-size:1.6em;font-weight:800;color:#ffcf5a;margin:0 0 0.4em;text-align:center';
+      card.insertBefore(el, card.firstChild);
+    }
+    if (el) { el.textContent = text; el.classList.toggle('hidden', !text); }
+  }
   function renderReport(force) {
     const c = crew(), r = ctx.report();
     const el = $('report-extra');
@@ -221,11 +234,12 @@ export function setupRound2(ctx) {
     ledgerKey = key;
     const esc = s => String(s).replace(/[&<>"']/g, ch => '&#' + ch.charCodeAt(0) + ';');
     let html = '';
+    feeHead(c.promotedTo ? '' : feeHeadline(promo, c.cash));   // round 7 #10.1: "3 stamps. $895 short." leads the report
     if (r.ledger?.length) {
       html += '<div class="sheet ledger"><h3>The ledger</h3>' + r.ledger.map(l =>
         '<p style="color:' + l.color + '"><span>' + esc(l.name) + ' · banked ' + l.banked + ' · ' + money(l.cash) + (l.hosed ? ' · hosed ' + l.hosed : '') + ' · knocked down ' + l.knockdowns + '</span><b>' + esc(l.award) + ' — Corporate</b></p>').join('') + '</div>';
     }
-    if (r.record) html += '<p class="note">Crew record! Best shift: ' + money(r.record.cash) + ' (was ' + money(r.record.was) + ').</p>';
+    if (r.record) html += '<p class="note">Record shift! Best shift: ' + money(r.record.cash) + ' (was ' + money(r.record.was) + ').</p>';
     for (const line of ctx.views?.()?.reportLines(r) ?? []) html += '<p class="note">' + esc(line) + '</p>';   // round 4: venue report lines
     if (c.promotedTo) {
       html += '<div class="sheet promo"><h3>Promoted!</h3><p>The ' + esc(c.promotedTo) + ' opens tomorrow.</p></div>';

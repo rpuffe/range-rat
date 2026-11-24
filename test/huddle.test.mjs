@@ -85,3 +85,9 @@ test('the Board counts GARY 3 · 2 · 1 on his last leg to the stand, and only t
   assert.equal(at(12, 'stand', 'warn'), null);
   assert.equal(garyCountdown(null), null);
 });
+
+test('round 7 #5: the Last Bucket line during the sky gate counts the pieces still to clear', async () => {
+  const { lastBucketLine: line } = await import('../web/js/huddlerules.js');
+  assert.equal(line({ phase: 'shift', players: [], lastBucket: { phase: 'sky', debris: 38 } }, 'a'), 'CLEAR THE SKY · 23 UP');
+  assert.equal(line({ phase: 'shift', players: [], lastBucket: { phase: 'sky', debris: 15 } }, 'a'), 'CLEAR THE SKY · 0 UP');
+});

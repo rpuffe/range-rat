@@ -37,12 +37,18 @@ export const TARGET = {
   LIP: 1.5,            // m: a crew ball resting within r + LIP is a TARGET (council round 6, #4); customers cup inside r
 };
 
-// Automation: the ball-return gutters drain one ball a second from each cup to the stand.
-export const GUTTERS = { PER_SEC: 1, FROM_TIER: 1 };
+// Automation: the ball-return gutters. Council round 7 (#1): at Tiered they are LINKED and never drain on their own;
+// a TARGET drains all three cups to the shooter. From the Stadium on (venue > LINKED_VENUE, Bay Utilization is not
+// graded) they drain one ball a second from each cup to the stand, as before: pure convenience there.
+export const GUTTERS = { PER_SEC: 1, FROM_TIER: 1, LINKED_VENUE: 2 };
 export const GUTTERS_ROW = {
   id: 'gutters', title: 'Ball-return gutters', minVenue: 2, tiers: [
     { name: 'Cups fill up', desc: 'Balls that roll into a Target Green stay there until somebody empties the cup.' },
-    { name: 'Ball-return gutters', cost: 50000, desc: 'Buried pipes drain 1 ball a second from each cup to the stand, at gear x1. There is a glass section at each cup, so you can watch. Corporate calls this "visibility".' },
+    { name: 'Ball-return gutters', cost: 50000, desc: 'Linked pipes under every green. A TARGET drains all three cups.' },
   ],
 };
 export const hasGutters = up => ((up?.gutters ?? 0) | 0) >= GUTTERS.FROM_TIER;
+// A TARGET drains every cup (linked gutters) rather than just its own.
+export const drainsAll = (up, venue) => hasGutters(up) && (venue | 0) >= GUTTERS.LINKED_VENUE;
+// The gutters drain on their own (1 a second a cup) only after Tiered.
+export const guttersDrain = (up, venue) => hasGutters(up) && (venue | 0) > GUTTERS.LINKED_VENUE;
