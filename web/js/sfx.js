@@ -211,3 +211,29 @@ export function cartEngine() {
     },
   };
 }
+
+// Pressure-washer hiss: a looping band of high noise, faded in and out.
+// set(1) while spraying, set(0) when not; cheap to call every frame.
+export function sprayLoop() {
+  let src = null, gain = null;
+  function build() {
+    const c = live();
+    if (!c) return false;
+    src = c.createBufferSource();
+    src.buffer = noise(c); src.loop = true;
+    const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2200;
+    const pk = c.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 5200; pk.gain.value = 6;
+    gain = c.createGain(); gain.gain.value = 0;
+    src.connect(hp).connect(pk).connect(gain).connect(master);
+    src.start();
+    return true;
+  }
+  return {
+    set(on) {
+      try {
+        if (!src && !build()) return;
+        gain.gain.setTargetAtTime(on ? 0.06 : 0, ctx.currentTime, on ? 0.03 : 0.08);
+      } catch { /* ignore */ }
+    },
+  };
+}

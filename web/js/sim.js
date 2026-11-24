@@ -166,7 +166,9 @@ export function ballHitsPlayer(x0, y0, z0, b, p) {
 // Tier 0 of each item is what you start with; buying moves up one tier.
 
 export const SHOP = [
-  { id: 'gear', title: 'Carrying gear', tiers: [
+  // Personal: each Range Rat buys their own (from the crew wallet), at the
+  // catalog price, and keeps it under their name across sessions.
+  { id: 'gear', title: 'Your carrying gear', personal: true, tiers: [
     { name: 'Bare hands', desc: 'Your pockets. Holds 3.' },
     { name: 'Ball retriever tube', cost: 20, desc: 'Click, click, click. Holds 8 and reaches a bit further.' },
     { name: 'Range bucket', cost: 75, desc: 'Holds 25. You look like you work here.' },
@@ -179,7 +181,7 @@ export const SHOP = [
   ] },
   { id: 'helpers', title: 'Hired help', tiers: [
     { name: 'Nobody', desc: 'It is just the crew.' },
-    { name: 'One teenager', cost: 60, desc: 'Picks up balls and banks them, with the crew\'s gear (up to a bucket). Paid in pizza.' },
+    { name: 'One teenager', cost: 60, desc: 'Picks up balls with a beat-up tube (8 at a time) and banks them. Paid in pizza.' },
     { name: 'Two teenagers', cost: 150, desc: 'They walk out together. They walk back together.' },
     { name: 'Three teenagers', cost: 400, desc: 'One of them brought a speaker.' },
     { name: 'Four teenagers', cost: 1000, desc: 'A union is forming.' },
@@ -209,21 +211,31 @@ export const SHOP = [
 export const SHOP_BY_ID = Object.fromEntries(SHOP.map(i => [i.id, i]));
 export const HELPER_NAMES = ['Kyle', 'Madison', 'Tanner', 'Brayden'];
 
-// Prices scale with crew size (balanced for 4): ×1 solo, ×2.2 for four.
+// Crew upgrades scale with crew size (balanced for 4): ×1 solo, ×2.2 for four.
+// Personal gear doesn't: everyone buys their own at the catalog price.
 export const priceScale = crewSize => 1 + 0.4 * (Math.max(1, crewSize) - 1);
-export function nextPrice(id, up, crewSize) {
-  const item = SHOP_BY_ID[id], lvl = up?.[id] ?? 0;
-  const t = item?.tiers[lvl + 1];
-  return t ? Math.round(t.cost * priceScale(crewSize)) : null;   // null: maxed out
+export function nextPrice(id, up, crewSize, gearLevel = 0) {
+  const item = SHOP_BY_ID[id];
+  if (!item) return null;
+  const lvl = item.personal ? gearLevel : up?.[id] ?? 0;
+  const t = item.tiers[lvl + 1];
+  if (!t) return null;                                 // maxed out
+  return item.personal ? t.cost : Math.round(t.cost * priceScale(crewSize));
 }
+
+// One Range Rat's own carrying gear.
+export function gearPerks(level = 0) {
+  return {
+    pocket: [3, 8, 25, 60][level],
+    reach: [SIM.REACH, 2.0, 2.0, 2.2][level],
+    scoop: level >= 3 ? 1.1 : 0,                     // push picker: auto-pickup radius
+  };
+}
+export const HELPER_POCKET = 8;
 
 // What the crew's upgrades add up to.
 export function perks(up = {}) {
-  const g = up.gear ?? 0;
   return {
-    pocket: [3, 8, 25, 60][g],
-    reach: [SIM.REACH, 2.0, 2.0, 2.2][g],
-    scoop: g >= 3 ? 1.1 : 0,                         // push picker: auto-pickup radius
     helpers: up.helpers ?? 0,
     price: SIM.BALL_PRICE + (up.washer ?? 0),
     swingGapMult: [1, 0.8, 0.645, 0.5][up.ads ?? 0],
@@ -235,6 +247,28 @@ export function perks(up = {}) {
     cartSpeed: [0, 9, 11][up.cart ?? 0],
   };
 }
+
+// ---- ball value: Corporate pays per ball ------------------------------------
+// The per-ball rate is the crew's KPI. Upgrades raise it; upkeep (a clean
+// cart) keeps it up; Hit the Cart multiplies it for the day.
+
+export const WASH = {
+  STATION: { x: 36, z: 3 },   // the pressure washer, beside the cart's parking spot
+  GRAB: 2.5,                  // m, how close to grab the wand
+  HOSE: 10,                   // m of hose: wander further and you drop the wand
+  RANGE: 7,                   // m, how far the spray reaches
+  RATE: 0.08,                 // mud cleaned per second of spraying on target (stacks per sprayer)
+  MUD_PER_M: 0.003,           // the cart's mud per metre driven (full after ~330 m)
+};
+
+export function ballValue({ perks: k, mult = 1, cart = null }) {
+  const base = k.price;
+  // Corporate inspects the fleet: a spotless cart earns a bonus, a filthy one a dock.
+  const fleet = cart ? 1.25 - 0.55 * Math.max(0, Math.min(1, cart.mud ?? 0)) : 1;
+  const value = Math.round(base * fleet * mult * 100) / 100;
+  return { value, base, fleet, mult };
+}
+export const money = v => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 
 export const atStand = p =>Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < SIM.STAND_REACH;
 

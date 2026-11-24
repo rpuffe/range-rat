@@ -33,6 +33,8 @@
   #hud .top { position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px; right: 16px;
     display: flex; justify-content: space-between; align-items: baseline; text-shadow: 0 0.06em 0.25em #000a; font-size: 1.25em; }
   #pocket { letter-spacing: 0.2em; }
+  #value { position: absolute; top: calc(max(16px, env(safe-area-inset-top)) + 1.9em); left: 16px; font-size: 0.85em;
+    color: var(--dim); text-shadow: 0 0.06em 0.25em #000a; }
   #crewline { position: absolute; top: calc(max(16px, env(safe-area-inset-top)) + 2.2em); right: 16px; text-align: right; text-shadow: 0 0.06em 0.25em #000a; }
   #crewline small { color: var(--dim); font-weight: 500; }
   #code { letter-spacing: 0.15em; }
@@ -89,12 +91,13 @@
     <button id="join" class="quiet">Join</button>
   </div>
   <p id="join-error" role="alert"></p>
-  <p class="keys kb">WASD walk · mouse or arrows look · click or Space pick up (hold at a crew bay to swing) · E bucket and cart · Esc pause</p>
-  <p class="keys gp">Left stick walk · right stick look · Ⓐ pick up (hold at a crew bay to swing) · Ⓧ bucket · Ⓨ cart · ☰ pause</p>
+  <p class="keys kb">WASD walk · mouse or arrows look · click or Space pick up (hold at a crew bay to swing) · E bucket and washer · F cart · Esc pause</p>
+  <p class="keys gp">Left stick walk · right stick look · Ⓐ pick up (hold at a crew bay to swing) · Ⓧ bucket and washer · Ⓨ cart · ☰ pause</p>
 </div>
 
 <div id="hud" class="hidden">
   <div class="top"><span id="cash">$0</span><span id="pocket"></span><span id="clock"></span></div>
+  <div id="value"></div>
   <div id="crewline"><small>Crew</small> <span id="code"></span><ul id="roster"></ul></div>
   <div id="crosshair"></div>
   <div id="prompt"></div>

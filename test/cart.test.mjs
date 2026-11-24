@@ -350,12 +350,12 @@ test('pulling up to the stand banks the load at the ball price', () => {
   assert.equal(crew.cash, 0);
 
   crew.flush();
-  driveCart(crew, a, run, SIM.STAND.x + 2, SIM.STAND.z + 2);
+  c.x = SIM.STAND.x + 2; c.z = SIM.STAND.z + 2; c.mud = 0;   // spotless cart: fleet factor 1.25
   run(0.25);
   assert.equal(c.load, 0);
-  assert.equal(crew.cash, 5 * 2, 'washer tier 1: $2 a ball');
+  assert.equal(crew.cash, 12.5, 'washer tier 1: $2 a ball x 1.25 for a spotless cart');
   assert.equal(crew.stats.deposited, 5);
-  assert.equal(crew.stats.cash, 10);
+  assert.equal(crew.stats.cash, 12.5);
   const ev = crew.flush().ev.find(e => e.t === 'cash' && e.kind === 'cart');
   assert.ok(ev);
   assert.equal(ev.n, 5);
@@ -680,13 +680,14 @@ test('mult raises the multiplier, caps at MAX_MULT, and multiplies banked cash',
   assert.equal(crew.stats.pings, 5);
   assert.equal(pings(crew).at(-1).mult, CART.MAX_MULT);
 
-  assert.equal(crew.ballPrice(), 1 * CART.MAX_MULT);
+  crew.cart.mud = 0;
+  assert.equal(crew.ballPrice(), 1 * CART.MAX_MULT * 1.25, 'spotless cart: fleet factor 1.25');
   crew.cart.load = 4;
   const before = crew.cash;
-  driveCart(crew, driver, run, SIM.STAND.x + 2, SIM.STAND.z + 2);
+  crew.cart.x = SIM.STAND.x + 2; crew.cart.z = SIM.STAND.z + 2;
   run(0.25);
   assert.equal(crew.cart.load, 0);
-  assert.equal(crew.cash - before, 4 * CART.MAX_MULT);
+  assert.equal(crew.cash - before, 4 * CART.MAX_MULT * 1.25);
 });
 
 test('a customer ball (no `by`) rings the cage for no prize', () => {
@@ -791,15 +792,16 @@ test('endShift banks any cart load into the report', () => {
   act(crew, d, { t: 'board' });
   crew.cart.load = 7;
   crew.mult = 2;
+  crew.cart.mud = 0;
   crew.cart.boostT = 9;
   run(6);
   assert.equal(crew.phase, 'report');
   assert.equal(crew.cart.load, 0);
   assert.equal(crew.cart.boostT, 0);
-  assert.equal(crew.cash, 14, '7 balls at $1 x2');
+  assert.equal(crew.cash, 17.5, '7 balls at $1 x2 x1.25 (spotless cart)');
   assert.equal(crew.report.deposited, 7);
-  assert.equal(crew.report.cash, 14);
-  assert.equal(crew.report.bank, 14);
+  assert.equal(crew.report.cash, 17.5);
+  assert.equal(crew.report.bank, 17.5);
   assert.equal(crew.totals.deposited, 7);
 });
 
@@ -808,7 +810,7 @@ test('endShift banks a driverless cart\'s load too', () => {
   openShift(crew);
   crew.cart.load = 3;
   run(6);
-  assert.equal(crew.cash, 3);
+  assert.equal(crew.cash, 3.75, '3 balls x $1 x 1.25 (spotless cart)');
   assert.equal(crew.report.deposited, 3);
 });
 

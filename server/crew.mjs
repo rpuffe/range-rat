@@ -5,7 +5,8 @@
 
 import crypto from 'node:crypto';
 import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall, ballHitsPlayer, atStand, clampToField,
-  SHOP_BY_ID, nextPrice, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart } from '../web/js/sim.js';
+  SHOP_BY_ID, nextPrice, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
+  gearPerks, HELPER_POCKET, WASH, ballValue } from '../web/js/sim.js';
 
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: codes get read aloud
 export const CODE_LEN = 4;
@@ -25,14 +26,25 @@ export function cleanName(s) {
   return [...s].slice(0, NAME_MAX).join('').trim();
 }
 
-const freshStats = () => ({ picked: 0, deposited: 0, cash: 0, knockdowns: 0, helped: 0, carted: 0, swings: 0, pings: 0, runOver: 0 });
+const freshStats = () => ({ picked: 0, deposited: 0, cash: 0, knockdowns: 0, helped: 0, carted: 0, swings: 0, pings: 0, runOver: 0, washed: 0 });
+const cents = v => Math.round(v * 100) / 100;
 
 // Only known items, only whole tiers inside the catalog.
 function cleanUpgrades(up) {
   const out = {};
   for (const [id, item] of Object.entries(SHOP_BY_ID)) {
     const n = Math.floor(Number(up?.[id]) || 0);
-    if (n > 0) out[id] = Math.min(n, item.tiers.length - 1);
+    if (n > 0 && !item.personal) out[id] = Math.min(n, item.tiers.length - 1);
+  }
+  return out;
+}
+
+// Personal gear by Range Rat name, so it follows you back to the crew.
+function cleanGear(g) {
+  const out = {}, max = SHOP_BY_ID.gear.tiers.length - 1;
+  for (const [name, lvl] of Object.entries(g ?? {})) {
+    const n = Math.floor(Number(lvl) || 0);
+    if (n > 0 && typeof name === 'string' && name.length <= 16) out[name] = Math.min(n, max);
   }
   return out;
 }
@@ -50,6 +62,7 @@ export class Crew {
     this.cash = save?.cash ?? 0;
     this.totals = { ...freshStats(), ...(save?.totals ?? {}) };
     this.up = cleanUpgrades(save?.up);
+    this.gearByName = cleanGear(save?.gear);
     this.perks = perks(this.up);
     this.helpers = [];
     this.cart = null;
@@ -77,7 +90,9 @@ export class Crew {
       color: COLORS.find(c => !used.has(c)) ?? COLORS[0],
       x: SIM.STAND.x - 3 - this.players.size * 1.2, z: SIM.STAND.z - 4, yaw: Math.PI / 2,
       pocket: 0, down: 0, online: 0, seenAt: this.now(), movedAt: this.now(), swungAt: 0,
+      gear: 0, wand: false, washAt: 0,
     };
+    p.gear = this.gearByName[p.name] ?? 0;
     this.players.set(p.id, p);
     this.events.push({ t: 'join', id: p.id, name: p.name });
     return p;
@@ -97,12 +112,12 @@ export class Crew {
 
   // ---- money -------------------------------------------------------------------
 
-  ballPrice() { return this.perks.price * this.mult; }
+  ballPrice() { return ballValue({ perks: this.perks, mult: this.mult, cart: this.cart }).value; }
 
   bank(n, by, kind = null) {
     if (n <= 0) return;
-    const cash = n * this.ballPrice();
-    this.cash += cash; this.stats.deposited += n; this.stats.cash += cash; this.dirty = true;
+    const cash = cents(n * this.ballPrice());
+    this.cash = cents(this.cash + cash); this.stats.deposited += n; this.stats.cash += cash; this.dirty = true;
     if (kind === 'helper') this.stats.helped += n;
     this.events.push({ t: 'cash', by, n, cash, kind });
   }
@@ -125,6 +140,7 @@ export class Crew {
       p.movedAt = now;
     }
     if (Number.isFinite(msg.yaw) && !this.driving(p)) p.yaw = msg.yaw;
+    if (p.wand && Math.hypot(p.x - WASH.STATION.x, p.z - WASH.STATION.z) > WASH.HOSE) p.wand = false;   // out of hose
     for (const a of Array.isArray(msg.a) ? msg.a.slice(0, 8) : []) {
       if (a?.t === 'pickup') { if (!(a.cart ? this.cartPickup(p, a.ball) : this.pickup(p, a.ball))) denied.push(a.ball); }
       else if (a?.t === 'deposit') this.deposit(p);
@@ -133,15 +149,18 @@ export class Crew {
       else if (a?.t === 'board') this.board(p);
       else if (a?.t === 'leave') this.leaveCart(p);
       else if (a?.t === 'swing') this.swing(p, a);
+      else if (a?.t === 'wand') this.toggleWand(p);
+      else if (a?.t === 'wash') this.wash(p, a.secs);
     }
     return { denied };
   }
 
   pickup(p, id) {
     const b = this.balls.get(id);
-    if (!b || p.down > 0 || this.driving(p) || p.pocket >= this.perks.pocket || this.phase === 'lobby') return false;
+    const g = gearPerks(p.gear);
+    if (!b || p.down > 0 || this.driving(p) || p.pocket >= g.pocket || this.phase === 'lobby') return false;
     if (b.y > 0.4) return false;                           // still in the air
-    if (Math.hypot(b.x - p.x, b.z - p.z) > this.perks.reach + 1) return false;  // slack for a rolling ball
+    if (Math.hypot(b.x - p.x, b.z - p.z) > g.reach + 1) return false;  // slack for a rolling ball
     this.balls.delete(id);
     p.pocket++; this.stats.picked++; this.dirty = true;
     this.events.push({ t: 'gone', id, by: p.id });
@@ -157,14 +176,16 @@ export class Crew {
 
   // The shop is open overnight and before the first shift, never mid-shift.
   buy(p, id) {
-    if (this.phase === 'shift' || !SHOP_BY_ID[id]) return false;
-    const price = nextPrice(id, this.up, this.players.size);
+    const item = SHOP_BY_ID[id];
+    if (this.phase === 'shift' || !item) return false;
+    const price = nextPrice(id, this.up, this.players.size, p.gear);
     if (price === null || price > this.cash) return false;
-    this.cash -= price;
-    this.up[id] = (this.up[id] ?? 0) + 1;
-    this.applyUpgrades();
+    this.cash = cents(this.cash - price);
+    let level;
+    if (item.personal) { level = ++p.gear; this.gearByName[p.name] = p.gear; }
+    else { level = this.up[id] = (this.up[id] ?? 0) + 1; this.applyUpgrades(); }
     this.dirty = true;
-    this.events.push({ t: 'buy', by: p.id, id, level: this.up[id], price });
+    this.events.push({ t: 'buy', by: p.id, id, level, price, personal: !!item.personal });
     return true;
   }
 
@@ -172,7 +193,7 @@ export class Crew {
     this.perks = perks(this.up);
     this.hireHelpers();
     if (this.perks.cart && !this.cart) {
-      this.cart = { ...CART.PARK, v: 0, driver: null, load: 0, boostT: 0, movedAt: this.now() };
+      this.cart = { ...CART.PARK, v: 0, driver: null, load: 0, boostT: 0, movedAt: this.now(), mud: 0 };
     }
   }
 
@@ -213,6 +234,7 @@ export class Crew {
     c.z = Math.max(SIM.FIELD.zMin, Math.min(SIM.FIELD.zMax + 6, c.z));
     if (Number.isFinite(pose.yaw)) c.yaw = pose.yaw;
     c.v = Math.min(d, max) / dt;
+    c.mud = Math.min(1, c.mud + Math.min(d, max) * WASH.MUD_PER_M);   // the field is wet
     c.movedAt = now;
     p.x = c.x; p.z = c.z; p.yaw = c.yaw;
     // Anyone on foot in the way goes flying.
@@ -233,6 +255,32 @@ export class Crew {
     this.balls.delete(id);
     c.load++; this.stats.picked++; this.stats.carted++; this.dirty = true;
     this.events.push({ t: 'gone', id, by: p.id });
+    return true;
+  }
+
+  // ---- power washing ---------------------------------------------------------
+  // Grab the wand at the station, then spray the cart while it's in reach.
+  // The client says how long it sprayed on target; the server checks reach.
+
+  toggleWand(p) {
+    if (p.wand) { p.wand = false; return true; }
+    if (this.driving(p) || p.down > 0 || Math.hypot(p.x - WASH.STATION.x, p.z - WASH.STATION.z) > WASH.GRAB) return false;
+    p.wand = true; p.washAt = this.now();
+    return true;
+  }
+
+  wash(p, secs) {
+    const c = this.cart, now = this.now();
+    if (!c || !p.wand || p.down > 0 || !Number.isFinite(secs) || secs <= 0) return false;
+    if (Math.hypot(c.x - p.x, c.z - p.z) > WASH.RANGE + 1.5) return false;
+    const s = Math.min(secs, 0.5, (now - p.washAt) / 1000 + 0.1);
+    p.washAt = now;
+    if (s <= 0) return false;
+    const before = c.mud;
+    c.mud = Math.max(0, c.mud - WASH.RATE * s);
+    this.stats.washed = Math.round((this.stats.washed + s) * 10) / 10;
+    if (before > 0.05 && c.mud <= 0.05) { c.mud = 0; this.events.push({ t: 'spotless', by: p.id }); }
+    this.dirty = true;
     return true;
   }
 
@@ -293,7 +341,7 @@ export class Crew {
 
   stepHelpers(dt) {
     const claimed = new Set(this.helpers.map(h => h.target).filter(Boolean));
-    const cap = Math.min(this.perks.pocket, 25);   // they use the crew's gear, but nobody trusts them with the picker
+    const cap = HELPER_POCKET;                      // a beat-up tube
     for (const h of this.helpers) {
       if (h.down > 0) continue;
       const working = this.phase === 'shift';
@@ -447,10 +495,11 @@ export class Crew {
       mult: this.mult,
       players: [...this.players.values()].map(p => ({
         id: p.id, name: p.name, color: p.color, x: +p.x.toFixed(2), z: +p.z.toFixed(2), yaw: +p.yaw.toFixed(3),
-        pocket: p.pocket, down: +p.down.toFixed(2), online: p.online > 0,
+        pocket: p.pocket, down: +p.down.toFixed(2), online: p.online > 0, gear: p.gear, wand: p.wand,
       })),
+      value: ballValue({ perks: this.perks, mult: this.mult, cart: this.cart }),
       helpers: this.helpers.map(h => ({ id: h.id, name: h.name, x: +h.x.toFixed(2), z: +h.z.toFixed(2), yaw: +h.yaw.toFixed(3), pocket: h.pocket, down: +h.down.toFixed(2) })),
-      cart: c && { x: +c.x.toFixed(2), z: +c.z.toFixed(2), yaw: +c.yaw.toFixed(3), driver: c.driver, load: c.load, boost: +c.boostT.toFixed(1) },
+      cart: c && { x: +c.x.toFixed(2), z: +c.z.toFixed(2), yaw: +c.yaw.toFixed(3), driver: c.driver, load: c.load, boost: +c.boostT.toFixed(1), mud: +c.mud.toFixed(3) },
       up: this.up,
     };
   }
@@ -473,6 +522,6 @@ export class Crew {
   toSave() {
     // `day` is the next day to play: a finished shift has been banked.
     const day = this.phase === 'report' ? this.day + 1 : this.day;
-    return { v: 1, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, savedAt: new Date(this.now()).toISOString() };
+    return { v: 1, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, gear: this.gearByName, savedAt: new Date(this.now()).toISOString() };
   }
 }

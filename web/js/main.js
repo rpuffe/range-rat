@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
 import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, priceScale, perks,
-  CART, BAYS, atBay, underReels, stepCart } from './sim.js';
+  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money } from './sim.js';
 import * as NET from './net.js';
 import * as SFX from './sfx.js';
 
@@ -72,6 +72,29 @@ for (const b of BAYS) {
   flag.position.set(b.x - 0.6, 1.45, b.z + 0.9); scene.add(flag);
 }
 
+// The wash station: a pressure washer on a cart-sized concrete pad, with a hose reel.
+{
+  const st = new THREE.Group();
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(5, 0.06, 4), lambert(0x9c9a93));
+  pad.position.set(-3.2, 0.03, 0); pad.receiveShadow = true; st.add(pad);
+  const unit = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.8, 0.6), lambert(0x2f6fbf));
+  unit.position.y = 0.4; unit.castShadow = true; st.add(unit);
+  const reel = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.07, 8, 20), lambert(0xf2c94c));
+  reel.position.set(0, 1.0, 0); reel.rotation.y = Math.PI / 2; st.add(reel);
+  st.position.set(WASH.STATION.x, 0, WASH.STATION.z);
+  scene.add(st);
+}
+
+// Spray: a short-lived stream of droplets from the wand along where I'm looking.
+const SPRAY_N = 90;
+const sprayGeo = new THREE.BufferGeometry();
+sprayGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPRAY_N * 3), 3));
+const sprayPts = new THREE.Points(sprayGeo, new THREE.PointsMaterial({ color: 0xdff4ff, size: 0.07, transparent: true, opacity: 0.85 }));
+sprayPts.frustumCulled = false;
+scene.add(sprayPts);
+const drops = Array.from({ length: SPRAY_N }, () => ({ life: 0, p: new THREE.Vector3(), v: new THREE.Vector3() }));
+let dropNext = 0;
+
 // ---------------------------------------------------------------- the cart
 // A white utility cart with a wire cage over the seat, gang reels out front,
 // a hopper behind, and four bullseye targets on the cage that light up on a ping.
@@ -117,8 +140,19 @@ function buildCart() {
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 14, 10), lambert(0xf1c9a5));
   head.position.set(0, 1.9, 0.2); driver.add(head);
   driver.visible = false; g.add(driver);
+  // Mud: splotches that appear as the mud builds up, each at its own threshold.
+  const mudMat = lambert(0x5a3d1e), splotches = [];
+  for (let i = 0; i < 16; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.12 + Math.random() * 0.12, 8, 6), mudMat);
+    const side = i % 4;
+    if (side < 2) m.position.set(side ? 0.71 : -0.71, 0.4 + Math.random() * 0.35, -1.1 + Math.random() * 2.2);
+    else m.position.set(-0.6 + Math.random() * 1.2, 0.35 + Math.random() * 0.3, side === 2 ? -1.21 : 1.21);
+    m.scale.set(side < 2 ? 0.25 : 1, 1, side < 2 ? 1 : 0.25);
+    m.userData.at = (i + 0.5) / 16;
+    m.visible = false; splotches.push(m); g.add(m);
+  }
   scene.add(g);
-  return { g, targets, reels, fill, driver, torso, reelWidth: 0, flash: 0, wheelSpin: 0 };
+  return { g, targets, reels, fill, driver, torso, body, splotches, reelWidth: 0, flash: 0, wheelSpin: 0 };
 }
 function setReels(c, width) {
   if (c.reelWidth === width) return;
@@ -186,6 +220,13 @@ function gearModel(level) {
     b.position.set(0.42, 0.62, -0.05); g.add(b);
     const handle = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.012, 6, 16, Math.PI), steel);
     handle.position.set(0.42, 0.77, -0.05); g.add(handle);
+  } else if (level === 'wand') {   // pressure-washer wand: a yellow gun and a steel lance
+    const gun = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.22), lambert(0xf2c94c));
+    gun.position.set(0.32, 0.95, -0.25); g.add(gun);
+    const lance = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.9, 6), steel);
+    lance.rotation.x = Math.PI / 2; lance.position.set(0.32, 1.0, -0.75); g.add(lance);
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.015, 0.06, 8), lambert(0x222222));
+    tip.rotation.x = Math.PI / 2; tip.position.set(0.32, 1.0, -1.2); g.add(tip);
   } else if (level >= 3) {     // push picker: a wire drum on an axle, a long handle
     const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 12, 3, true), wire);
     drum.rotation.z = Math.PI / 2; drum.position.set(0, 0.28, -1.6); drum.name = 'drum'; g.add(drum);
@@ -203,7 +244,7 @@ camera.add(fpGear);
 scene.add(camera);
 function setMyGear(level) {
   myGear.clear(); fpGear.clear();
-  (level >= 3 ? myGear : fpGear).add(gearModel(level));
+  (level !== 'wand' && level >= 3 ? myGear : fpGear).add(gearModel(level));
   gearLevel = level;
 }
 
@@ -280,8 +321,8 @@ function onEvent(e) {
       removeBall(e.id);
       break;
     case 'cash':
-      if (e.by === me.id) { toast(e.kind === 'cart' ? `Cart unloaded: +$${e.cash}` : `+$${e.cash}`); SFX.cash(e.n); }
-      else if (e.kind !== 'helper') toast(`${e.kind === 'cart' ? 'The cart' : nameOf(e.by)} banked $${e.cash}`);   // helpers bank quietly
+      if (e.by === me.id) { toast(e.kind === 'cart' ? `Cart unloaded: +${money(e.cash)}` : `+${money(e.cash)}`); SFX.cash(e.n); }
+      else if (e.kind !== 'helper') toast(`${e.kind === 'cart' ? 'The cart' : nameOf(e.by)} banked ${money(e.cash)}`);   // helpers bank quietly
       break;
     case 'ping': {
       SFX.ping();
@@ -295,6 +336,10 @@ function onEvent(e) {
       break;
     }
     case 'board': if (e.by !== me.id) toast(`${nameOf(e.by)} is driving the cart`); break;
+    case 'spotless':
+      SFX.jackpot();
+      toast(`Spotless! ${e.by === me.id ? 'You' : nameOf(e.by)} washed the cart. Corporate pays ×1.25 a ball for a clean fleet`, 3);
+      break;
     case 'buy': {
       const item = SHOP.find(i => i.id === e.id);
       toast(`${e.by === me.id ? 'You' : nameOf(e.by)} bought: ${item?.tiers[e.level]?.name ?? e.id}`, 2.2);
@@ -319,11 +364,15 @@ function onEvent(e) {
 }
 
 let my = perks();                   // what the crew's upgrades add up to
+let gp = gearPerks(0);              // what my own carrying gear adds up to
 function applySnapshot(s) {
   crew = s;
   my = perks(s.up);
-  const gear = s.up?.gear ?? 0;
-  if (gear !== gearLevel) setMyGear(gear);
+  const mine = s.players.find(p => p.id === me.id);
+  me.gear = mine?.gear ?? 0; me.wand = !!mine?.wand;
+  gp = gearPerks(me.gear);
+  const held = me.wand ? 'wand' : me.gear;
+  if (held !== gearLevel) setMyGear(held);
   applyCart(s.cart);
   const seen = new Set();
   const people = [...s.players, ...(s.helpers ?? []).map(h => ({ ...h, helper: true, color: '#b9c0c8', online: true }))];
@@ -334,7 +383,7 @@ function applySnapshot(s) {
     const o = others.get(p.id);
     o.to = { x: p.x, z: p.z, yaw: p.yaw }; o.down = p.down;
     o.g.visible = (p.online || p.down > 0) && s.cart?.driver !== p.id;   // drivers are drawn in the cart
-    setMateGear(o, p.helper ? 0 : gear);
+    setMateGear(o, p.helper ? 1 : p.wand ? 'wand' : p.gear ?? 0);
   }
   for (const id of [...others.keys()]) if (!seen.has(id)) removeMate(id);
   renderRoster();
@@ -368,16 +417,16 @@ function applyCart(c) {
 let shopKey = '';
 function renderShop() {
   const size = crew.players.length;
-  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase]);
+  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase, me.gear]);
   if (key === shopKey) return;
   shopKey = key;
   const focused = document.activeElement?.dataset?.buy;
   const scale = priceScale(size);
-  const html = `<h3>${crew.phase === 'report' ? 'Overnight shop' : 'Shop'} <span>$${crew.cash} to spend</span></h3>
+  const html = `<h3>${crew.phase === 'report' ? 'Overnight shop' : 'Shop'} <span>${money(crew.cash)} to spend</span></h3>
     ${size > 1 ? `<p class="note">Prices are ×${scale.toFixed(1)} for a crew of ${size}.</p>` : ''}
     <ul>${SHOP.map(item => {
-      const lvl = crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
-      const price = nextPrice(item.id, crew.up, size);
+      const lvl = item.personal ? me.gear ?? 0 : crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
+      const price = nextPrice(item.id, crew.up, size, me.gear ?? 0);
       return `<li>
         <div><b>${item.title}</b>: ${now.name}${next ? `<small>Next: <i>${next.name}</i>. ${next.desc}</small>` : `<small>${now.desc} (maxed out)</small>`}</div>
         ${next ? `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>$${price}</button>` : '<span class="max">✓</span>'}
@@ -396,7 +445,7 @@ document.addEventListener('click', e => {
 });
 
 // ---------------------------------------------------------------- actions
-function nearestBall(reach = my.reach) {
+function nearestBall(reach = gp.reach) {
   let best = null, bd = reach;
   for (const b of balls.values()) {
     if (b.hidden || b.y > 0.4) continue;
@@ -413,21 +462,23 @@ const canSwing = () => crew.phase === 'shift' && atBay(me) && me.pocket > 0 && !
 
 // Separate buttons, so no action ever has to guess:
 //   use    (left click / Space / Ⓐ): pick up a ball, or hold at a crew bay to swing
-//   bucket (E / Ⓧ): drop balls in the bucket stand
-//   cart   (E / Ⓨ): get in or out of the cart
-// On a keyboard E does both: the stand and the cart are never in the same spot.
+//   bucket (E / Ⓧ): drop balls in the bucket stand, grab or stow the washer wand
+//   cart   (F / Ⓨ): get in or out of the cart (it parks right by the washer)
 function interact(only = null) {
   if (!playing() || me.down > 0) return;
   if (only !== 'bucket') {
     if (driving()) { link.act({ t: 'leave' }); return; }
     if (nearCart()) { link.act({ t: 'board' }); return; }
   }
-  if (only !== 'cart' && atStand(me) && carrying() > 0) link.act({ t: 'deposit' });
+  if (only === 'cart') return;
+  if (atStand(me) && carrying() > 0) { link.act({ t: 'deposit' }); return; }
+  if (me.wand || nearStation()) link.act({ t: 'wand' });
 }
+const nearStation = () => !!crew.cart && Math.hypot(me.x - WASH.STATION.x, me.z - WASH.STATION.z) < WASH.GRAB;
 function act() {
   if (!playing() || me.down > 0 || driving()) return;
-  if (carrying() >= my.pocket) { toast('Full: take them to the bucket stand'); return; }
-  const b = !my.scoop ? nearestBall() : null;
+  if (carrying() >= gp.pocket) { toast('Full: take them to the bucket stand'); return; }
+  const b = !gp.scoop ? nearestBall() : null;
   if (b) grab(b);
 }
 
@@ -436,12 +487,15 @@ function act() {
 // wherever you're looking, and looking up lofts it.
 const SWING_FULL = 1.0;
 let charging = null;                 // performance.now() when the wind-up started
+let spraying = false, washSecs = 0, washSent = 0;
 function pressAct() {
   SFX.unlock();
+  if (me.wand && playing() && me.down <= 0) { spraying = true; return; }
   if (playing() && me.down <= 0 && canSwing()) { charging = performance.now(); return; }
   act();
 }
 function releaseAct() {
+  spraying = false;
   if (charging === null) return;
   const power = Math.min(1, (performance.now() - charging) / 1000 / SWING_FULL);
   charging = null;
@@ -474,9 +528,9 @@ function grab(b) {
 }
 // The push picker scoops up whatever you roll over, no button needed.
 function scoop() {
-  if (!my.scoop || !playing() || me.down > 0) return;
-  for (let n = 0; n < 4 && carrying() < my.pocket; n++) {
-    const b = nearestBall(my.scoop);
+  if (!gp.scoop || !playing() || me.down > 0) return;
+  for (let n = 0; n < 4 && carrying() < gp.pocket; n++) {
+    const b = nearestBall(gp.scoop);
     if (!b) return;
     grab(b);
   }
@@ -577,7 +631,8 @@ addEventListener('keydown', e => {
   SFX.unlock();
   keys.add(e.code);
   if (e.code === 'Space' && !e.repeat) pressAct();
-  if (e.code === 'KeyE' && !e.repeat) interact();
+  if (e.code === 'KeyE' && !e.repeat) interact('bucket');
+  if (e.code === 'KeyF' && !e.repeat) interact('cart');
   if (e.code === 'Escape' && link) pause(!paused);
 });
 addEventListener('keyup', e => { keys.delete(e.code); if (e.code === 'Space') releaseAct(); });
@@ -660,11 +715,13 @@ function renderRoster() {
 const esc = s => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
 function hud() {
-  $('cash').textContent = `$${crew.cash}${crew.mult > 1 ? `  ×${crew.mult}` : ''}`;
-  const n = carrying(), cap = my.pocket, pad = document.body.classList.contains('pad');
+  $('cash').textContent = money(crew.cash);
+  const v = crew.value;
+  $('value').textContent = v ? `${money(v.value)} a ball${v.mult > 1 ? `  ×${v.mult}` : ''}${crew.cart ? `  ·  cart ${(crew.cart.mud ?? 0) < 0.05 ? 'spotless ✨' : (crew.cart.mud ?? 0) < 0.4 ? 'dusty' : 'MUDDY'}` : ''}` : '';
+  const n = carrying(), cap = gp.pocket, pad = document.body.classList.contains('pad');
   const btn = pad ? GLYPH.A : 'Click';          // use: pick up, swing
   const ibtn = pad ? GLYPH.X : 'E';             // the bucket stand
-  const cbtn = pad ? GLYPH.Y : 'E';             // the cart
+  const cbtn = pad ? GLYPH.Y : 'F';             // the cart
   if (driving()) {
     const load = (crew.cart?.load ?? 0) + pendingCart.size;
     $('pocket').textContent = `Cart ${load} / ${my.cartCap}${(crew.cart?.boost ?? 0) > 0 ? `  TURBO ${Math.ceil(crew.cart.boost)}s` : ''}`;
@@ -676,15 +733,51 @@ function hud() {
     : me.down > 0 ? 'Seeing stars…'
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
-    : n < cap && !my.scoop && nearestBall() ? `${btn}  Pick up${nearCart() ? `   ·   ${cbtn}  Drive the cart` : ''}`
+    : me.wand ? `Hold ${btn} to spray the cart · ${ibtn} put the wand back`
+    : nearStation() ? `${ibtn}  Grab the pressure washer${(crew.cart?.mud ?? 0) > 0.05 ? ' (the cart is muddy)' : ''}`
+    : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up${nearCart() ? `   ·   ${cbtn}  Drive the cart` : ''}`
     : nearCart() ? `${cbtn}  Drive the cart`
     : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `Hold ${btn} to swing, aim at the cart (${me.pocket} to hit)` : 'Bring balls to hit them')
-    : n < cap && !my.scoop && nearestBall() ? `${btn}  Pick up`
+    : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up`
     : n >= cap ? 'Full: head to the bucket stand' : '';
   const meter = $('meter');
   meter.classList.toggle('hidden', charging === null);
   if (charging !== null) meter.firstElementChild.style.width = `${Math.min(1, (performance.now() - charging) / 1000 / SWING_FULL) * 100}%`;
 }
+
+// ---------------------------------------------------------------- spraying
+const sprayRay = new THREE.Raycaster(), sprayDir = new THREE.Vector3(), sprayFrom = new THREE.Vector3(), cartCentre = new THREE.Vector3();
+function updateSpray(dt, now) {
+  const on = spraying && me.wand && playing() && me.down <= 0;
+  if (sprayHiss) sprayHiss.set(on ? 1 : 0);
+  if (on) {
+    camera.getWorldDirection(sprayDir);
+    sprayFrom.set(0.32, -0.55, -1.0).applyQuaternion(camera.quaternion).add(camera.position);
+    for (let i = 0; i < 4; i++) {
+      const d = drops[dropNext++ % SPRAY_N];
+      d.life = 0.45; d.p.copy(sprayFrom);
+      d.v.copy(sprayDir).multiplyScalar(16).add(new THREE.Vector3((Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2));
+    }
+    // On target? The spray reaches WASH.RANGE; the cart is a ~1.5 m sphere around its middle.
+    if (cartView && crew.cart) {
+      cartCentre.set(cartPose.x, 1.0, cartPose.z);
+      sprayRay.set(camera.position, sprayDir); sprayRay.far = WASH.RANGE + 1;
+      const hit = sprayRay.ray.distanceToPoint(cartCentre) < 1.5 && camera.position.distanceTo(cartCentre) < WASH.RANGE + 1;
+      if (hit) { washSecs += dt; cartView.wet = 1; }
+      sprayStats.frames++; if (hit) sprayStats.hits++;
+    }
+  }
+  if (washSecs > 0 && now - washSent > 250) { link.act({ t: 'wash', secs: +washSecs.toFixed(3) }); sprayStats.sent += washSecs; washSecs = 0; washSent = now; }
+  const pos = sprayGeo.attributes.position.array;
+  drops.forEach((d, i) => {
+    if (d.life > 0) { d.life -= dt; d.v.y -= 9.8 * dt; d.p.addScaledVector(d.v, dt); }
+    const vis = d.life > 0;
+    pos[i * 3] = vis ? d.p.x : 0; pos[i * 3 + 1] = vis ? d.p.y : -50; pos[i * 3 + 2] = vis ? d.p.z : 0;
+  });
+  sprayGeo.attributes.position.needsUpdate = true;
+}
+let sprayHiss = null;
+const sprayStats = { frames: 0, hits: 0, sent: 0 };
 
 // ---------------------------------------------------------------- loop
 function resize() {
@@ -723,6 +816,8 @@ function frame(now) {
   myGear.position.set(me.x, 0, me.z);
   myGear.rotation.set(0, me.yaw, 0);
   myGear.visible = fpGear.visible = me.down <= 0 && !drivingNow;
+  if (!sprayHiss && me.wand) sprayHiss = SFX.sprayLoop?.() ?? null;
+  updateSpray(dt, now);
 
   // The cart: my own pose while I drive, otherwise eased toward the server's.
   if (cartView && crew.cart) {
@@ -738,6 +833,9 @@ function frame(now) {
     for (const r of cartView.reels.children) r.rotation.x -= spin * dt / 0.26;
     cartView.fill.scale.y = Math.max(0.001, Math.min(1, ((crew.cart.load ?? 0) + (drivingNow ? pendingCart.size : 0)) / Math.max(1, my.cartCap)) * 0.45);
     cartView.fill.position.y = 0.8 + cartView.fill.scale.y / 2;
+    const mud = crew.cart.mud ?? 0;
+    for (const m of cartView.splotches) m.visible = mud > m.userData.at;
+    cartView.body.material.color.setRGB(0.95 - 0.45 * mud, 0.94 - 0.55 * mud, 0.9 - 0.65 * mud);
     // A ping lights the bullseyes up, then they fade back.
     cartView.flash = Math.max(0, cartView.flash - dt * 1.5);
     const glow = cartView.flash > 0 && (cartView.flash * 12) % 2 > 1;
@@ -775,4 +873,4 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Dev hook: /?debug exposes live state for poking at from the console.
-if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; } };
+if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats };

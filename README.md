@@ -52,8 +52,9 @@ Next: range expansions (cash plus stars), and the side jobs.
 | Look | Mouse (click to capture), or the arrow keys | Right stick |
 | Pick up | Left click or Space | Ⓐ |
 | Swing at a crew bay (hold to wind up, release to hit) | Hold left click or Space | Hold Ⓐ |
-| Drop balls in the bucket | E | Ⓧ |
-| Get in / out of the cart | E | Ⓨ |
+| Drop balls in the bucket, grab or stow the washer wand | E | Ⓧ |
+| Spray the cart (holding the wand) | Hold left click or Space | Hold Ⓐ |
+| Get in / out of the cart | F | Ⓨ |
 | Drive the cart | W/S throttle, A/D steer | RT/LT throttle, left stick steer |
 | Pause | Esc | ☰ |
 | Menus | Tab and Enter | D-pad or left stick, Ⓐ, Ⓑ |
