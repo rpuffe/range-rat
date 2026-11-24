@@ -70,6 +70,10 @@
   #roster li.help { color: var(--dim); font-weight: 500; }
   #meter { position: absolute; left: 50%; top: 64%; width: min(60vw, 14em); height: 0.7em; transform: translateX(-50%);
     background: rgba(20, 16, 32, 0.6); border-radius: 0.35em; overflow: hidden; box-shadow: 0 0 0 2px rgba(255, 248, 236, 0.5); }
+  #stamina { position: absolute; left: 50%; bottom: 7%; width: min(40vw, 10em); height: 0.35em; transform: translateX(-50%);
+    background: rgba(20, 16, 32, 0.5); border-radius: 0.2em; overflow: hidden; }
+  #stamina > div { height: 100%; background: #6fcf7c; }
+  #storehint { position: absolute; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); font-size: 0.75em; color: var(--dim); text-shadow: 0 0.06em 0.25em #000a; }
   #meter > div { height: 100%; width: 0; background: linear-gradient(90deg, #6fcf7c, #f2c94c 60%, #e8604c); }
 
   .keys { color: var(--dim); font-weight: 500; font-size: 0.85em; }
@@ -102,6 +106,8 @@
   <div id="crosshair"></div>
   <div id="prompt"></div>
   <div id="meter" class="hidden"><div></div></div>
+  <div id="stamina" class="hidden"><div></div></div>
+  <div id="storehint"><span class="kb">Tab</span><span class="gp">D-pad ↑</span> store · <span class="kb">Shift</span><span class="gp">click R</span> sprint</div>
   <div id="net"></div>
 </div>
 
@@ -120,6 +126,12 @@
   </div>
   <div class="row"><button id="next">Next shift</button></div>
   <p class="keys">Anyone on the crew can buy, and anyone can start the next shift. It's one wallet.</p>
+</div>
+
+<div id="store" class="card hidden">
+  <div class="sheet shop"></div>
+  <div class="row"><button id="store-close" class="quiet">Back to work</button></div>
+  <p class="keys"><span class="kb">Tab or Esc</span><span class="gp">Ⓑ</span> to close. The range keeps going while you shop.</p>
 </div>
 
 <div id="pause" class="card hidden">

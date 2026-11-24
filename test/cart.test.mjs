@@ -671,13 +671,13 @@ test('mult raises the multiplier, caps at MAX_MULT, and multiplies banked cash',
   assert.equal(crew.mult, 1);
   shootAtCart(crew, swinger.id); run(0.5);
   assert.equal(pings(crew)[0].prize, 'mult');
-  assert.equal(crew.mult, 2);
-  assert.equal(crew.snapshot().mult, 2);
+  assert.equal(crew.mult, 1 + CART.MULT_STEP);
+  assert.equal(crew.snapshot().mult, 1 + CART.MULT_STEP);
   shootAtCart(crew, swinger.id); run(0.5);
-  assert.equal(crew.mult, 3);
-  for (let i = 0; i < 3; i++) { shootAtCart(crew, swinger.id); run(0.5); }
+  assert.equal(crew.mult, 1 + 2 * CART.MULT_STEP);
+  for (let i = 0; i < 4; i++) { shootAtCart(crew, swinger.id); run(0.5); }
   assert.equal(crew.mult, CART.MAX_MULT, 'capped');
-  assert.equal(crew.stats.pings, 5);
+  assert.equal(crew.stats.pings, 6);
   assert.equal(pings(crew).at(-1).mult, CART.MAX_MULT);
 
   crew.cart.mud = 0;
@@ -740,7 +740,7 @@ test('a ball pings at most once', () => {
   b.x = crew.cart.x - 5; b.y = 1; b.z = crew.cart.z; b.vx = 20; b.vy = 1; b.vz = 0; b.rest = false;
   run(0.5);
   assert.equal(pings(crew).length, 1, 'no second ping');
-  assert.equal(crew.mult, 2);
+  assert.equal(crew.mult, 1 + CART.MULT_STEP);
   assert.equal(crew.stats.pings, 1);
 });
 

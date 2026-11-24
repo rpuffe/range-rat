@@ -38,7 +38,8 @@ export const CART = {
   BOOST: 1.6,           // speed multiplier during a ping boost
   BOOST_SECS: 20,
   JACKPOT_R: 15,        // m, a jackpot hoovers every resting ball this close
-  MAX_MULT: 3,
+  MAX_MULT: 2,          // Hustle: +MULT_STEP a ping, capped (council round 1: pings mustn't outearn chores)
+  MULT_STEP: 0.25,
 };
 
 // Crew bays: two mats of the crew's own, either side of the customers.
@@ -162,7 +163,7 @@ export function ballHitsPlayer(x0, y0, z0, b, p) {
 }
 
 // ---- the upgrade shop ------------------------------------------------------
-// Bought overnight (or before the first shift) from the crew's shared cash.
+// Open any time (Tab / D-pad up), paid from the crew's shared cash.
 // Tier 0 of each item is what you start with; buying moves up one tier.
 
 export const SHOP = [
@@ -199,9 +200,9 @@ export const SHOP = [
   ] },
   { id: 'shoes', title: 'Shoes', tiers: [
     { name: 'Range-issue loafers', desc: 'They squeak.' },
-    { name: 'Sneakers', cost: 15, desc: 'Walk 15% faster.' },
-    { name: 'Running shoes', cost: 45, desc: 'Walk 30% faster.' },
-    { name: 'Carbon spikes', cost: 120, desc: 'Walk 45% faster.' },
+    { name: 'Sneakers', cost: 15, desc: 'Walk 15% faster, sprint longer.' },
+    { name: 'Running shoes', cost: 45, desc: 'Walk 30% faster, sprint even longer.' },
+    { name: 'Carbon spikes', cost: 120, desc: 'Walk 45% faster, sprint for ages.' },
   ] },
   { id: 'hardhat', title: 'Hard hats', tiers: [
     { name: 'No hats', desc: `A ball hit floors you for ${SIM.KNOCK_SECS} seconds.` },
@@ -232,6 +233,10 @@ export function gearPerks(level = 0) {
   };
 }
 export const HELPER_POCKET = 8;
+
+// Sprint: a short burst at SPEED×, on a stamina bar that shoes stretch.
+export const SPRINT = { SPEED: 1.75, REGEN_DELAY: 0.8 };
+export const sprintSecs = shoes => 1.5 + 1.25 * (shoes ?? 0);   // 1.5 s in loafers, 5.25 s in carbon spikes
 
 // What the crew's upgrades add up to.
 export function perks(up = {}) {

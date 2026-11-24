@@ -40,7 +40,7 @@ test('perks follow the upgrades', () => {
   assert.equal(perks({ hardhat: 1 }).knockSecs, 1);
 });
 
-test('buying: only overnight or before the first shift, only with the cash', () => {
+test('buying: any time, only with the cash', () => {
   const { crew, run } = makeCrew();
   const a = crew.join('A'); crew.connect(a);
   buy(crew, a, 'gear');
@@ -55,13 +55,14 @@ test('buying: only overnight or before the first shift, only with the cash', () 
 
   crew.input(a, { a: [{ t: 'start' }] });
   buy(crew, a, 'shoes');
-  assert.equal(crew.up.shoes, undefined, 'the shop is shut mid-shift');
-  assert.equal(crew.cash, 80);
+  assert.equal(crew.up.shoes, 1, 'the shop is open mid-shift');
+  assert.equal(crew.cash, 65);
 
   run(61);
   assert.equal(crew.phase, 'report');
   buy(crew, a, 'shoes');
-  assert.equal(crew.up.shoes, 1, 'open again overnight');
+  assert.equal(crew.up.shoes, 2, 'open overnight too');
+  assert.equal(crew.cash, 20);
 
   buy(crew, a, 'nonsense');
   assert.deepEqual(Object.keys(crew.up), ['shoes']);

@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
 import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, priceScale, perks,
-  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money } from './sim.js';
+  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs } from './sim.js';
 import * as NET from './net.js';
 import * as SFX from './sfx.js';
 
@@ -614,6 +614,7 @@ $('join-code').addEventListener('keydown', e => { if (e.key === 'Enter') enter('
 $('start').addEventListener('click', startShift);
 $('next').addEventListener('click', startShift);
 $('resume').addEventListener('click', () => pause(false));
+$('store-close').addEventListener('click', () => toggleStore(false));
 $('leave').addEventListener('click', () => { link?.close(); link = null; try { sessionStorage.clear(); } catch {} location.reload(); });
 {
   const last = NET.lastUsed();
@@ -633,7 +634,8 @@ addEventListener('keydown', e => {
   if (e.code === 'Space' && !e.repeat) pressAct();
   if (e.code === 'KeyE' && !e.repeat) interact('bucket');
   if (e.code === 'KeyF' && !e.repeat) interact('cart');
-  if (e.code === 'Escape' && link) pause(!paused);
+  if (e.code === 'Escape' && link) { if (storeOpen) toggleStore(false); else pause(!paused); }
+  if (e.code === 'Tab' && link) { e.preventDefault(); toggleStore(); }
 });
 addEventListener('keyup', e => { keys.delete(e.code); if (e.code === 'Space') releaseAct(); });
 addEventListener('blur', () => { keys.clear(); charging = null; });
@@ -652,6 +654,16 @@ addEventListener('mousemove', e => {
   me.yaw -= e.movementX * 0.0025;
   me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch - e.movementY * 0.0025));
 });
+// The store: open any time with Tab / D-pad up. The range keeps going while you shop.
+let storeOpen = false;
+function toggleStore(on = !storeOpen) {
+  if (!link || (on && (menuOpen() || crew.phase === 'lobby'))) return;
+  storeOpen = on;
+  $('store').classList.toggle('hidden', !on);
+  shopKey = '';
+  renderShop();
+  if (on) { document.exitPointerLock?.(); keys.clear(); focusFirst($('store')); } else if (crew.phase === 'shift') lockMouse();
+}
 function pause(on) {
   if (!link) return;
   paused = on;
@@ -661,8 +673,8 @@ function pause(on) {
 
 // ---------------------------------------------------------------- controller
 // Menus are driven with the D-pad or left stick plus Ⓐ, like a console app.
-const menuOpen = () => ['title', 'lobby', 'report', 'pause'].some(id => !$(id).classList.contains('hidden'));
-const menuRoot = () => ['pause', 'report', 'lobby', 'title'].map($).find(el => !el.classList.contains('hidden')) ?? null;
+const menuOpen = () => ['title', 'lobby', 'report', 'pause', 'store'].some(id => !$(id).classList.contains('hidden'));
+const menuRoot = () => ['pause', 'store', 'report', 'lobby', 'title'].map($).find(el => !el.classList.contains('hidden')) ?? null;
 function focusFirst(root) { const t = navTargets(root); if (t.length && !root.contains(document.activeElement)) t[0].focus(); }
 
 let pad = null, navHeld = 0;
@@ -686,6 +698,7 @@ function pollPad(dt) {
       if (el?.tagName === 'BUTTON') el.click(); else el?.focus();   // on Xbox, a focused input opens the keyboard
     }
     if (pad.pressed[BTN.B] && root.id === 'pause') pause(false);
+    if ((pad.pressed[BTN.B] || pad.pressed[BTN.MENU] || pad.pressed[BTN.VIEW]) && root.id === 'store') toggleStore(false);
     if (pad.pressed[BTN.MENU] && root.id === 'pause') pause(false);
     return [0, 0];
   }
@@ -695,6 +708,8 @@ function pollPad(dt) {
   if (pad.pressed[BTN.X]) interact('bucket');
   if (pad.pressed[BTN.Y]) interact('cart');
   if (pad.pressed[BTN.MENU]) pause(true);
+  if (pad.pressed[BTN.UP] || pad.pressed[BTN.VIEW]) toggleStore(true);
+  if (pad.pressed[BTN.RS]) padSprint = true;
   if (!driving()) {
     me.yaw -= pad.rx * 2.6 * dt;
     me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch - pad.ry * 1.8 * dt));
@@ -740,6 +755,9 @@ function hud() {
     : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `Hold ${btn} to swing, aim at the cart (${me.pocket} to hit)` : 'Bring balls to hit them')
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up`
     : n >= cap ? 'Full: head to the bucket stand' : '';
+  const maxStam = sprintSecs(crew.up?.shoes);
+  $('stamina').classList.toggle('hidden', stamina >= maxStam - 0.01 || driving());
+  $('stamina').firstElementChild.style.width = `${(stamina / maxStam) * 100}%`;
   const meter = $('meter');
   meter.classList.toggle('hidden', charging === null);
   if (charging !== null) meter.firstElementChild.style.width = `${Math.min(1, (performance.now() - charging) / 1000 / SWING_FULL) * 100}%`;
@@ -787,6 +805,7 @@ function resize() {
 addEventListener('resize', resize); resize();
 
 let last = performance.now(), fall = 0;
+let stamina = sprintSecs(0), restT = 0, sprinting = false, padSprint = false;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const [px, py] = pollPad(dt);
@@ -799,8 +818,17 @@ function frame(now) {
     let fz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0) + py;
     const m = Math.hypot(fx, fz); if (m > 1) { fx /= m; fz /= m; }
     const sy = Math.sin(me.yaw), cy = Math.cos(me.yaw);
-    me.x += (fx * cy + fz * sy) * my.walk * dt;
-    me.z += (-fx * sy + fz * cy) * my.walk * dt;
+    // Sprint: hold Shift, or click the right stick (it lasts until you stop or run out).
+    const moving = m > 0.2;
+    if (!moving) padSprint = false;
+    const wantSprint = (keys.has('ShiftLeft') || keys.has('ShiftRight') || padSprint) && moving;
+    const maxStam = sprintSecs(crew.up?.shoes);
+    if (wantSprint && stamina > 0) { stamina = Math.max(0, stamina - dt); restT = 0; if (!stamina) padSprint = false; }
+    else if ((restT += dt) > SPRINT.REGEN_DELAY) stamina = Math.min(maxStam, stamina + dt * maxStam / 3);
+    sprinting = wantSprint && stamina > 0;
+    const speed = my.walk * (sprinting ? SPRINT.SPEED : 1);
+    me.x += (fx * cy + fz * sy) * speed * dt;
+    me.z += (-fx * sy + fz * cy) * speed * dt;
     if (m > 0.05) { const drum = myGear.getObjectByName('drum'); if (drum) drum.rotation.x -= m * my.walk * dt / 0.28; }
     clampToField(me);
     me.yaw += ((keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)) * 2.2 * dt;

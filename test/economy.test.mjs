@@ -79,7 +79,7 @@ test('gear price is the catalog price whatever the crew size, and follows the bu
   assert.equal(crew.cash, 905 - 132);
 });
 
-test('gear can be maxed, not bought without the cash, and not mid-shift', () => {
+test('gear can be maxed, not bought without the cash, and bought mid-shift', () => {
   const { crew } = makeCrew();
   const a = addPlayer(crew, 'A');
   buy(crew, a, 'gear');
@@ -91,7 +91,7 @@ test('gear can be maxed, not bought without the cash, and not mid-shift', () => 
   const b = addPlayer(crew, 'B');
   crew.startShift();
   buy(crew, b, 'gear');
-  assert.equal(b.gear, 0, 'shop shut mid-shift');
+  assert.equal(b.gear, 1, 'the shop is open mid-shift');
 });
 
 test('gear is remembered by name: saved, restored from a save, and on rejoin', () => {

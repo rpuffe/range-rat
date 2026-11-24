@@ -6,7 +6,7 @@
 import crypto from 'node:crypto';
 import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall, ballHitsPlayer, atStand, clampToField,
   SHOP_BY_ID, nextPrice, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
-  gearPerks, HELPER_POCKET, WASH, ballValue } from '../web/js/sim.js';
+  gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT } from '../web/js/sim.js';
 
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: codes get read aloud
 export const CODE_LEN = 4;
@@ -132,7 +132,7 @@ export class Crew {
     else if (Number.isFinite(msg.x) && Number.isFinite(msg.z) && p.down <= 0) {
       // Trust the reported position up to a generous walking speed.
       const dt = Math.min(1, Math.max(0.05, (now - p.movedAt) / 1000));
-      const max = this.perks.walk * 1.5 * dt + 0.5;
+      const max = this.perks.walk * SPRINT.SPEED * 1.3 * dt + 0.5;   // room for a sprint
       let dx = msg.x - p.x, dz = msg.z - p.z;
       const d = Math.hypot(dx, dz);
       if (d > max) { dx *= max / d; dz *= max / d; }
@@ -174,10 +174,10 @@ export class Crew {
     this.bank(n, p.id);
   }
 
-  // The shop is open overnight and before the first shift, never mid-shift.
+  // The shop is open any time (Tab / D-pad up mid-shift): the range keeps going while you browse.
   buy(p, id) {
     const item = SHOP_BY_ID[id];
-    if (this.phase === 'shift' || !item) return false;
+    if (!item) return false;
     const price = nextPrice(id, this.up, this.players.size, p.gear);
     if (price === null || price > this.cash) return false;
     this.cash = cents(this.cash - price);
@@ -322,7 +322,7 @@ export class Crew {
         this.events.push({ t: 'gone', id: o.id, by: c.driver });
       }
     } else if (prize === 'boost') c.boostT = CART.BOOST_SECS;
-    else this.mult = Math.min(CART.MAX_MULT, this.mult + 1);
+    else this.mult = Math.min(CART.MAX_MULT, this.mult + CART.MULT_STEP);
     this.events.push({ t: 'ping', by: b.by, prize, n, mult: this.mult });
   }
 
