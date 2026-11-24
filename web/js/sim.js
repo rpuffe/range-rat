@@ -376,6 +376,7 @@ export const FRIES = {
   MAX: 20,                    // baskets in stock: Fry Satisfaction = stock / MAX
   PEEL_SECS: 3,               // seconds of peeling per basket, by hand
   EAT_EVERY: 8,               // customer swings per basket eaten
+  SERVE_MIN_SECS: 4,          // the kitchen minigame: at most one serve this often per Rat
 };
 export const atShed = p => Math.hypot(p.x - FRIES.SHED.x, p.z - FRIES.SHED.z) < FRIES.REACH;
 

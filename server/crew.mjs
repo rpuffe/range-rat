@@ -178,6 +178,7 @@ export class Crew {
       if (a?.t === 'pickup') { if (!(a.cart ? this.cartPickup(p, a.ball) : a.pond ? this.pondPickup(p, a.ball) : this.pickup(p, a.ball))) denied.push(a.ball); }
       else if (a?.t === 'pump') p.pumping = !!a.on && onDock(p) && !p.diving;
       else if (a?.t === 'peel') this.peel(p, a.secs);
+      else if (a?.t === 'serve') this.serve(p, a);
       else if (a?.t === 'deposit') this.deposit(p);
       else if (a?.t === 'start') this.startShift();
       else if (a?.t === 'buy') this.buy(p, a.id);
@@ -465,6 +466,19 @@ export class Crew {
     p.peelAt = now;
     p.peeled = (p.peeled ?? 0) + s;
     while (p.peeled >= FRIES.PEEL_SECS) { p.peeled -= FRIES.PEEL_SECS; this.addFries(1, p.id); }
+    return true;
+  }
+  // The kitchen minigame (peel, slice, fry, serve): the client plays it, the server rate-limits it.
+  serve(p, a) {
+    const now = this.now();
+    if (!this.perks.shed || !atShed(p) || p.down > 0 || this.driving(p)) return false;
+    if (now - (p.servedAt ?? 0) < FRIES.SERVE_MIN_SECS * 1000) return false;
+    p.servedAt = now;
+    const q = ['perfect', 'good', 'burnt'].includes(a.quality) ? a.quality : 'burnt';
+    const n = q === 'perfect' ? 3 + (a.onePeel ? 1 : 0) : q === 'good' ? 2 : 0;
+    this.stats.served = (this.stats.served ?? 0) + 1;
+    this.events.push({ t: 'served', by: p.id, quality: q, n });
+    if (n) this.addFries(n, p.id);
     return true;
   }
   addFries(n, by) {

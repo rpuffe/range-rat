@@ -74,6 +74,16 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     return t;
   }
 
+  // Shared bags filled by several sections, built into InstancedMeshes in "Flora".
+  const bushes = [];
+  const flowers = [];
+  const flags = { mesh: null, items: [] };
+  const FLOWER_COLS = [0xf06a8a, 0xffd23f, 0xf4f0e6, 0xff8a3d, 0xb58cf0, 0xff5a4a];
+  const addBush = (x, y, z, s) => bushes.push({ p: [x, y, z], s: [s * R(1.0, 1.5), s * R(0.55, 0.8), s * R(0.9, 1.3)], ry: R(0, 3), c: tmpColor.setHSL(R(0.22, 0.31), R(0.4, 0.55), R(0.22, 0.32)).clone() });
+  const addFlowers = (x, y, z, spread, n) => {
+    for (let i = 0; i < n; i++) flowers.push({ p: [x + R(-spread, spread), y + R(0, 0.12), z + R(-spread * 0.4, spread * 0.4)], s: R(0.8, 1.3), c: FLOWER_COLS[(rnd() * FLOWER_COLS.length) | 0] });
+  };
+
   // ---------- 7. Ground variation ----------
   {
     const rough = lambert(0x6d9440, decalOpts(2));
@@ -89,11 +99,22 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     ]);
     // subtle decals on the field: target greens and dark tufts (flat, y <= 0.02)
     const greens = [];
-    for (const [x, z, r] of [[-30, -70, 7], [34, -110, 8], [-6, -136, 7]]) {
-      greens.push({ p: [x, 0.018, z], s: [r, 1, r], c: 0x62994a });
-      greens.push({ p: [x, 0.02, z], s: [r * 0.45, 1, r * 0.45], c: 0x74ad56 });
+    const flagSpots = [];
+    for (const [x, z, r] of [[-30, -70, 7], [34, -110, 8], [-6, -136, 7], [26, -160, 8]]) {
+      greens.push({ p: [x, 0.016, z], s: [r * 1.22, 1, r * 1.22], c: 0x5a9044 });   // fringe
+      greens.push({ p: [x, 0.018, z], s: [r, 1, r], c: 0x6aa352 });
+      greens.push({ p: [x, 0.02, z], s: [r * 0.45, 1, r * 0.45], c: 0x7db85c });
+      flagSpots.push({ x, z, ph: R(0, 6) });
     }
     inst(flatCircle(28), lambert(0xffffff, decalOpts(4)), greens);
+    // flag sticks: thin poles with a small pennant (the only things standing on the field)
+    inst(new THREE.CylinderGeometry(0.025, 0.03, 2.4, 5).translate(0, 1.2, 0), lambert(0xf2efe6),
+      flagSpots.map(f => ({ p: [f.x, 0, f.z] })));
+    const flagGeo = new THREE.BufferGeometry();
+    flagGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 2.35, 0, 0, 1.95, 0, 0.8, 2.15, 0], 3));
+    flagGeo.computeVertexNormals();
+    flags.items = flagSpots.map(f => ({ p: [f.x, 0, f.z], ph: f.ph }));
+    flags.mesh = inst(flagGeo, new THREE.MeshLambertMaterial({ color: 0xe0452f, side: THREE.DoubleSide, emissive: 0x401008 }), flags.items.map(f => ({ p: f.p })));
     const tufts = [];
     for (let i = 0; i < (lowDetail ? 14 : 28); i++) {
       const x = R(-56, 56), z = R(-145, -12);
@@ -180,14 +201,20 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       const s = R(0.8, 1.6);
       const greens = [0x4f7f33, 0x5d8f3a, 0x6b9a3f, 0x3f6f35, 0x78a043];
       const autumn = [0xd98a2b, 0xc8692a, 0xe0a33a];
-      const col = rnd() < 0.12 ? autumn[(rnd() * 3) | 0] : greens[(rnd() * 5) | 0];
+      const pr = rnd();
+      const base = pr < 0.09 ? autumn[(rnd() * 3) | 0]
+        : pr < 0.17 ? 0xe9a3b8                     // blossom pink
+        : pr < 0.23 ? 0xb8662f                     // copper beech
+        : greens[(rnd() * 5) | 0];
+      const col = new THREE.Color(base).offsetHSL(R(-0.025, 0.025), R(-0.06, 0.08), R(-0.05, 0.06));
       trees.push({ x, z, s, cone, col, ph: R(0, 6.28), trunkH: 1.6 * s });
     }
     const trunks = trees.map(t => ({ p: [t.x, 0, t.z], s: [t.s, t.trunkH, t.s] }));
     const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 1, 6).translate(0, 0.5, 0);
     inst(trunkGeo, lambert(0x6b4a2e), trunks);
 
-    const canopyMat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
+    // faint warm emissive = golden-hour rim lift without any lights
+    const canopyMat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true, emissive: 0x241506 });
     const coneGeo = new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0);
     const ballGeo = new THREE.IcosahedronGeometry(1, 1);
     for (const isCone of [true, false]) {
@@ -215,7 +242,16 @@ export function createScenery(scene, { lowDetail = false } = {}) {
         s: [R(110, 220), h, R(90, 150)], ry: R(0, 3), c: cols[i % cols.length],
       });
     }
-    inst(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true }), items);
+    // vertex-colour gradient: shaded valleys at the base, sunlit warm tops (multiplies instance colour)
+    const hillGeo = new THREE.IcosahedronGeometry(1, 1);
+    const hp = hillGeo.attributes.position;
+    const hc = new Float32Array(hp.count * 3);
+    for (let i = 0; i < hp.count; i++) {
+      const k = Math.min(1, Math.max(0, (hp.getY(i) + 0.25) / 1.25));
+      hc[i * 3] = 0.62 + 0.62 * k; hc[i * 3 + 1] = 0.66 + 0.5 * k; hc[i * 3 + 2] = 0.78 + 0.1 * k - 0.1 * k * k * 2;
+    }
+    hillGeo.setAttribute('color', new THREE.BufferAttribute(hc, 3));
+    inst(hillGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true, vertexColors: true, emissive: 0x120a08 }), items);
   }
 
   // ---------- 4. Parking lot and entrance ----------
@@ -385,10 +421,204 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     }
   }
 
+  // ---------- 8. Path edging and lamp posts ----------
+  const lamps = { halo: null };
+  {
+    const pts = ENTRANCE.path;
+    const segD = (px, pz, ax, az, bx, bz) => {
+      const dx = bx - ax, dz = bz - az;
+      const u = Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz)));
+      return Math.hypot(px - (ax + u * dx), pz - (az + u * dz));
+    };
+    const bricks = [];
+    const step = lowDetail ? 1.2 : 0.62;
+    const brickCols = [0xb86a4b, 0xa95c41, 0xc27a55, 0x9e5a45];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
+      const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
+      const ux = dx / len, uz = dz / len;
+      for (let d = 0.3; d < len; d += step) {
+        for (const side of [-1, 1]) {
+          const x = ax + ux * d - uz * 1.13 * side, z = az + uz * d + ux * 1.13 * side;
+          if (x > 17 && z < 8) continue;                       // keep clear of the stand end
+          let clear = true;
+          for (let j = 0; j < pts.length - 1 && clear; j++) {
+            if (segD(x, z, pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]) < 1.0) clear = false;
+          }
+          if (clear) bricks.push({ p: [x, 0.03, z], ry: Math.atan2(-dz, dx), c: brickCols[(rnd() * 4) | 0] });
+        }
+      }
+    }
+    inst(new THREE.BoxGeometry(0.5, 0.05, 0.15), lambert(0xffffff), bricks);
+
+    const spots = [[-10.2, 33.5], [-8, 29.2], [-5.2, 17], [-0.8, 17], [-0.8, 25], [2.5, 7], [9, 7]];
+    inst(new THREE.CylinderGeometry(0.05, 0.07, 3.2, 6).translate(0, 1.6, 0), lambert(0x2e3034), spots.map(([x, z]) => ({ p: [x, 0, z] })));
+    inst(new THREE.SphereGeometry(0.18, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffdc8f }), spots.map(([x, z]) => ({ p: [x, 3.3, z] })));
+    lamps.halo = new THREE.MeshBasicMaterial({ color: 0xffb860, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false });
+    inst(new THREE.SphereGeometry(0.55, 8, 6), lamps.halo, spots.map(([x, z]) => ({ p: [x, 3.3, z] })));
+  }
+
+  // ---------- 9. Flora: bushes, planters, flower beds ----------
+  {
+    const dens = lowDetail ? 2 : 1;
+    // behind the fence (z > 9.5); skip the stand/cart stretch (x 12..42) and the entrance gap
+    for (const [x0, x1] of [[-64, -9.5], [3, 10.5], [43, 64]]) {
+      for (let x = x0; x < x1; x += R(2.4, 3.6) * dens) {
+        const z = 10.7 + R(-0.15, 0.5), s = R(0.5, 0.85);
+        addBush(x, s * 0.35, z, s);
+        addFlowers(x, s * 0.75, z, s, lowDetail ? 2 : 4);
+      }
+    }
+    // lot edges
+    for (let z = 21; z < 42; z += 3.6 * dens) {
+      for (const x of [-29.4, 8.9]) { const s = R(0.5, 0.8); addBush(x, s * 0.35, z, s); addFlowers(x, s * 0.75, z, s, 3); }
+    }
+    for (let x = -27; x < 8; x += 3.6 * dens) { const s = R(0.5, 0.8); addBush(x, s * 0.35, 43, s); addFlowers(x, s * 0.75, 43, s, 3); }
+    // clubhouse porch beds
+    for (const [x0, x1] of [[43, 49], [55.5, 61.5]]) {
+      for (let x = x0; x < x1; x += 1.5 * dens) { const s = R(0.45, 0.7); addBush(x, s * 0.35, 14.7, s); addFlowers(x, s * 0.75, 14.7, s, 4); }
+    }
+    // arch planters (both sides of both posts)
+    const gx = ENTRANCE.gate.x, gz = ENTRANCE.gate.z;
+    const planters = [];
+    for (const px of [gx - 4.4, gx + 4.4]) {
+      for (const dz of [-1.0, 1.0]) {
+        planters.push({ p: [px, 0.25, gz + dz] });
+        addFlowers(px, 0.6, gz + dz, 0.6, 7);
+        addBush(px, 0.55, gz + dz, 0.38);
+      }
+    }
+    inst(new THREE.BoxGeometry(1.5, 0.5, 0.7), lambert(0x8a5a3a), planters);
+
+    inst(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true, emissive: 0x1a1006 }), bushes);
+    inst(new THREE.IcosahedronGeometry(0.11, 0), new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x2a1a0c }), flowers);
+  }
+
+  // ---------- 10. Sky dressing: clouds, birds, haze ----------
+  const clouds = { mesh: null, items: [] };
+  const birds = { mesh: null, items: [] };
+  const haze = { mat: null };
+  {
+    // clouds: one merged puff of overlapping spheres, instanced with per-cloud scale/tint
+    const puffs = [[0, 0, 0, 1], [0.9, -0.1, 0.1, 0.8], [-0.95, -0.12, -0.1, 0.78], [0.35, 0.35, 0.2, 0.7], [-0.4, 0.3, -0.2, 0.65], [1.6, -0.25, 0, 0.5], [-1.6, -0.25, 0.1, 0.5]];
+    const pos = [], nor = [];
+    for (const [x, y, z, r] of puffs) {
+      const g = new THREE.IcosahedronGeometry(r, 1).translate(x, y, z);
+      const p = g.attributes.position.array, n = g.attributes.normal.array;
+      for (let i = 0; i < p.length; i++) { pos.push(p[i]); nor.push(n[i]); }
+    }
+    const cg = new THREE.BufferGeometry();
+    cg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    cg.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    const cmat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.82, depthWrite: false, emissive: 0x3a2418 });
+    const tints = [0xfff1e4, 0xffe6d2, 0xfff6ee, 0xffdcc4];
+    const n = lowDetail ? 6 : 10;
+    for (let i = 0; i < n; i++) {
+      const w = R(26, 48);
+      clouds.items.push({
+        x: R(-650, 650), y: R(150, 290), z: R(-520, -120), sx: w, sy: w * R(0.22, 0.3), sz: w * R(0.5, 0.75),
+        ry: R(0, 3), v: R(1.2, 3.2), c: tints[i % tints.length],
+      });
+    }
+    clouds.mesh = inst(cg, cmat, clouds.items.map(c => ({ p: [c.x, c.y, c.z], s: [c.sx, c.sy, c.sz], ry: c.ry, c: c.c })));
+
+    // birds: flapping chevrons circling far off
+    const bg = new THREE.BufferGeometry();
+    bg.setAttribute('position', new THREE.Float32BufferAttribute([
+      0, 0, -0.3, -0.75, 0.0, 0.45, 0, 0, 0.1,
+      0, 0, -0.3, 0, 0, 0.1, 0.75, 0.0, 0.45,
+    ], 3));
+    const bmat = new THREE.MeshBasicMaterial({ color: 0x3e2f38, side: THREE.DoubleSide });
+    const nb = lowDetail ? 5 : 10;
+    for (let i = 0; i < nb; i++) {
+      birds.items.push({
+        cx: R(-40, 40), cz: R(-210, -120), r: R(120, 260), y: R(55, 120),
+        w: R(0.04, 0.08) * (i % 2 ? 1 : -1), a: R(0, 6.28), ph: R(0, 6), s: R(2.0, 3.0),
+      });
+    }
+    birds.mesh = inst(bg, bmat, birds.items.map(b => ({ p: [b.cx, b.y, b.cz] })));
+
+    // horizon haze: open cylinder, vertex alpha fading upward
+    const hg = new THREE.CylinderGeometry(700, 700, 80, 48, 1, true).translate(0, 40, 0);
+    const hpos = hg.attributes.position, hcol = new Float32Array(hpos.count * 4);
+    for (let i = 0; i < hpos.count; i++) {
+      const k = hpos.getY(i) / 80;
+      hcol[i * 4] = 1; hcol[i * 4 + 1] = 0.84; hcol[i * 4 + 2] = 0.66; hcol[i * 4 + 3] = 0.55 * (1 - k) * (1 - k);
+    }
+    hg.setAttribute('color', new THREE.BufferAttribute(hcol, 4));
+    haze.mat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, side: THREE.BackSide, depthWrite: false, fog: false });
+    const hm = mesh(hg, haze.mat, 0, 0, -100);
+    hm.frustumCulled = false;
+    hm.renderOrder = -1;
+  }
+
+  // ---------- 11. Fireflies (dusk only) ----------
+  const flies = { mesh: null, items: [], mat: null };
+  {
+    const n = lowDetail ? 16 : 34;
+    for (let i = 0; i < n; i++) {
+      const lot = i % 4 === 0;
+      flies.items.push({
+        x: lot ? R(-34, 12) : (i % 2 ? 1 : -1) * R(70, 115), y: lot ? R(1.5, 3) : R(0.7, 3.5),
+        z: lot ? R(12, 45) : R(-210, 30), ph: R(0, 6.28), sp: R(0.5, 1.1),
+      });
+    }
+    flies.mat = new THREE.MeshBasicMaterial({ color: 0xf3ff8a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+    flies.mesh = inst(new THREE.IcosahedronGeometry(0.09, 0), flies.mat, flies.items.map(f => ({ p: [f.x, f.y, f.z] })));
+    flies.mesh.visible = false;
+  }
+
   // ---------- animation ----------
   const flagPos = clubFlag.geo.attributes.position;
+  const hazeCol = new THREE.Color(), hazeA = new THREE.Color(0xf3dcb8), hazeB = new THREE.Color(0xff9e6a);
   return {
-    tick(dt, t) {
+    // dt seconds, t running seconds, timeOfDay01 optional (0 morning .. 1 sunset)
+    tick(dt, t, timeOfDay01 = 0) {
+      // clouds drift
+      for (let i = 0; i < clouds.items.length; i++) {
+        const c = clouds.items[i];
+        c.x += c.v * dt; if (c.x > 700) c.x = -700;
+        dummy.position.set(c.x, c.y, c.z); dummy.rotation.set(0, c.ry, 0); dummy.scale.set(c.sx, c.sy, c.sz);
+        dummy.updateMatrix(); clouds.mesh.setMatrixAt(i, dummy.matrix);
+      }
+      clouds.mesh.instanceMatrix.needsUpdate = true;
+      // birds circle and flap
+      for (let i = 0; i < birds.items.length; i++) {
+        const b = birds.items[i];
+        b.a += b.w * dt;
+        const vx = -Math.sin(b.a) * Math.sign(b.w), vz = Math.cos(b.a) * Math.sign(b.w);
+        dummy.position.set(b.cx + Math.cos(b.a) * b.r, b.y + Math.sin(t * 0.3 + b.ph) * 3, b.cz + Math.sin(b.a) * b.r);
+        dummy.rotation.set(0, Math.atan2(-vx, -vz), 0);
+        dummy.scale.set(b.s, b.s * Math.sin(t * 5 + b.ph) * 0.9, b.s);
+        dummy.updateMatrix(); birds.mesh.setMatrixAt(i, dummy.matrix);
+      }
+      birds.mesh.instanceMatrix.needsUpdate = true;
+      // target flags flutter
+      for (let i = 0; i < flags.items.length; i++) {
+        const f = flags.items[i];
+        dummy.position.set(f.p[0], 0, f.p[2]); dummy.rotation.set(0, 0.5 + Math.sin(t * 0.4 + f.ph) * 0.35, 0);
+        dummy.scale.set(1, 1, 1 + Math.sin(t * 3 + f.ph) * 0.12);
+        dummy.updateMatrix(); flags.mesh.setMatrixAt(i, dummy.matrix);
+      }
+      flags.mesh.instanceMatrix.needsUpdate = true;
+      // evening mood: haze warms, lamp glow swells, fireflies appear after 0.75
+      hazeCol.copy(hazeA).lerp(hazeB, timeOfDay01);
+      haze.mat.opacity = 0.55 + 0.45 * timeOfDay01;
+      haze.mat.color.copy(hazeCol);
+      lamps.halo.opacity = 0.12 + 0.3 * timeOfDay01;
+      const fa = Math.max(0, Math.min(1, (timeOfDay01 - 0.75) / 0.12));
+      flies.mesh.visible = fa > 0;
+      if (fa > 0) {
+        flies.mat.opacity = fa * 0.9;
+        for (let i = 0; i < flies.items.length; i++) {
+          const f = flies.items[i], a = t * f.sp + f.ph;
+          dummy.position.set(f.x + Math.sin(a) * 1.4, f.y + Math.sin(a * 1.7) * 0.5, f.z + Math.cos(a * 0.8) * 1.4);
+          dummy.rotation.set(0, 0, 0);
+          dummy.scale.setScalar(0.35 + 0.65 * Math.max(0, Math.sin(t * 2.2 + f.ph * 3)));
+          dummy.updateMatrix(); flies.mesh.setMatrixAt(i, dummy.matrix);
+        }
+        flies.mesh.instanceMatrix.needsUpdate = true;
+      }
       // trees: gentle sway, throttled to ~15 Hz
       sway.acc += dt;
       if (sway.acc >= 1 / 15) {

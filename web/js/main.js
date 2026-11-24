@@ -16,6 +16,8 @@ import { createBoard } from './board.js';
 import * as AMB from './ambience.js';
 import { createSwing, strikeToLaunch } from './swing.js';
 import { createScenery } from './scenery.js';
+import { createKitchen } from './kitchen.js';
+import { buildPerson, animatePerson, personAddress, SWING_IMPACT, SWING_SECS } from './people.js';
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
@@ -48,12 +50,24 @@ for (const [z, col] of [[-50, 0xd94a3a], [-90, 0xf2c94c], [-130, 0x3a7bd9]]) {
   flag.position.set(0.4, 2.15, z); scene.add(flag);
 }
 
-// The mats, each with a customer (stand-ins until real golfers move in).
+// The mats, each with a customer: a procedural golfer (people.js) who takes a
+// full swing whenever their mat sends a ball down range.
+const customers = [];
 for (const m of MATS) {
   const mat = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 1.6), lambert(0x2f6b2a));
   mat.position.set(m.x, 0.02, 0); mat.receiveShadow = true; scene.add(mat);
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.25, 0.9, 4, 8), lambert(new THREE.Color().setHSL(m.i / 10, 0.35, 0.6)));
-  body.position.set(m.x + 0.6, 0.75, 0.3); body.castShadow = true; scene.add(body);
+  const p = buildPerson({ seed: 1000 + m.i * 7 });
+  p.setClub(true, m.i % 3 ? 'iron' : 'driver');
+  p.setCarry('none');
+  personAddress(p, new THREE.Vector3(m.x, 0, -0.4), new THREE.Vector3(m.x, 0, -100));
+  scene.add(p.root);
+  customers.push({ p, mat: m, k: -1, idle: Math.random() * 3 });
+}
+// A ball leaving a mat: that mat's golfer swings (catch the swing just before impact).
+function customerSwing(x, z) {
+  if (Math.abs(z + 0.4) > 0.2) return;
+  const c = customers.find(c => Math.abs(c.mat.x - x) < 0.3);
+  if (c) c.k = SWING_IMPACT * 0.8;
 }
 
 // The bucket stand: where picked balls turn into cash.
@@ -389,26 +403,23 @@ function nameTag(text, color) {
 
 function addMate(p) {
   const g = new THREE.Group();
-  const body = new THREE.Group();                       // pivots at the feet so a knockdown tips it over
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.9, 4, 10), lambert(p.color));
-  torso.position.y = 0.75; torso.castShadow = true; body.add(torso);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), lambert(0xf1c9a5));
-  head.position.y = 1.55; head.castShadow = true; body.add(head);
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.21, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), lambert(p.color));
-  cap.position.y = 1.6; body.add(cap);
-  const brim = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.18), lambert(p.color));
-  brim.position.set(0, 1.6, -0.25); body.add(brim);
+  const seed = [...p.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7);
+  const person = buildPerson({ seed, staff: true, shirt: parseInt(p.color.slice(1), 16) });
+  const body = person.root;
   g.add(body);
-  const tag = nameTag(p.name, p.color); tag.position.y = 2.15; g.add(tag);
-  if (p.helper) { torso.scale.setScalar(0.85); head.position.y = 1.4; cap.position.y = 1.45; brim.position.y = 1.45; tag.position.y = 1.95; }
+  const tag = nameTag(p.name, p.color); tag.position.y = (body.userData.height ?? 1.8) + 0.35; g.add(tag);
+  if (p.helper) { body.scale.setScalar(0.88); tag.position.y -= 0.2; }
   g.position.set(p.x, 0, p.z);
   scene.add(g);
-  others.set(p.id, { g, body, tag, gear: null, gearLevel: -1, helper: !!p.helper, to: { x: p.x, z: p.z, yaw: p.yaw }, down: 0 });
+  others.set(p.id, { g, body, person, tag, gear: null, gearLevel: -1, helper: !!p.helper, to: { x: p.x, z: p.z, yaw: p.yaw }, down: 0, last: { x: p.x, z: p.z } });
 }
+// What a crewmate is carrying: the bucket and tube are held; the push picker rolls ahead.
 function setMateGear(o, level) {
   if (o.gearLevel === level) return;
-  if (o.gear) o.body.remove(o.gear);
-  o.gear = gearModel(level); o.body.add(o.gear); o.gearLevel = level;
+  o.gearLevel = level;
+  o.person.setCarry(level === 'wand' ? 'wand' : level === 1 ? 'tube' : level === 2 ? 'bucket' : 'none');
+  if (o.gear) { o.body.remove(o.gear); o.gear = null; }
+  if (level !== 'wand' && level >= 3) { o.gear = gearModel(level); o.body.add(o.gear); }
 }
 function removeMate(id) { const o = others.get(id); if (o) { scene.remove(o.g); others.delete(id); } }
 
@@ -439,7 +450,7 @@ function onMsg(m) {
 
 function onEvent(e) {
   switch (e.t) {
-    case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, kind: e.kind, curve: e.curve ?? 0 }); break;
+    case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, kind: e.kind, curve: e.curve ?? 0 }); customerSwing(e.x, e.z); break;
     case 'sink': {
       let b = balls.get(e.id);
       if (!b) { addBall({ id: e.id, x: e.x, y: POND.BOTTOM, z: e.z, vx: 0, vy: 0, vz: 0, rest: true, kind: e.kind }); b = balls.get(e.id); }
@@ -490,6 +501,10 @@ function onEvent(e) {
       toast(e.gained
         ? `Gary is satisfied. +${e.gained} commendation${e.gained > 1 ? 's' : ''}${e.huddle ? ' (the huddle doubled it)' : ''}: Rate +${e.gained * 5}% for good`
         : `Gary found ${e.fails} problems. "We'll circle back." No commendation.`, 5);
+      break;
+    case 'served':
+      if (e.by !== me.id) toast(`${nameOf(e.by)} served ${e.quality === 'burnt' ? 'burnt fries' : `${e.quality} fries`}`);
+      else if (e.n) toast(`+${e.n} baskets of fries`, 1.5);
       break;
     case 'fries':
       if (e.by === me.id) { SFX.scoop(); toast(`A basket of fries (${e.stock}/${FRIES.MAX})`, 1); }
@@ -706,10 +721,25 @@ const swing = createSwing({ canvas, onStrike(strike) {
   link.act({ t: 'swing', yaw: +l.yaw.toFixed(3), pitch: +l.pitch.toFixed(3), power: +l.power.toFixed(3), curve: +(strike.drift ?? 0).toFixed(3) });
   SFX.swing(Math.min(1, l.power));
 } });
+// The snack shed's kitchen (kitchen.js): peel, slice, fry, serve. Each serve is baskets of fries.
+const SIZZLE = { on: null };
+const kitchen = createKitchen({
+  root: document.body,
+  onServe({ quality, onePeel }) { link?.act({ t: 'serve', quality, onePeel: !!onePeel }); },
+  onSound(name) {
+    if (name === 'peel' || name === 'salt') SFX.scoop();
+    else if (name === 'chop') SFX.swing(0.15);
+    else if (name === 'ding') SFX.cash(1);
+    else if (name === 'serve') SFX.jackpot();
+    else if (name === 'sizzle-on') { SIZZLE.on ??= SFX.sprayLoop(); SIZZLE.on.set(1); }
+    else if (name === 'sizzle-off') SIZZLE.on?.set(0);
+  },
+});
+function openKitchen() { document.exitPointerLock?.(); keys.clear(); kitchen.open(); }
 let pumping = false, peeling = false, peelSecs = 0, peelSent = 0;
 function pressAct() {
   SFX.unlock();
-  if (playing() && crew.fries?.open && atShed(me) && !me.wand) { peeling = true; return; }
+  if (playing() && crew.fries?.open && atShed(me) && !me.wand) { openKitchen(); return; }
   if (playing() && onDock(me) && !me.diving && crew.players.some(p => p.diving && p.id !== me.id)) { pumping = true; link.act({ t: 'pump', on: true }); return; }
   if (me.wand && playing() && me.down <= 0) { spraying = true; return; }
   if (playing() && me.down <= 0 && canSwing()) return;   // the swing module handles the bay
@@ -854,6 +884,7 @@ const keys = new Set();
 const typing = () => ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
 addEventListener('keydown', e => {
   if (typing()) return;
+  if (kitchen.isOpen) { if (kitchen.handleKey('down', e)) e.preventDefault(); if (!kitchen.isOpen && crew.phase === 'shift') lockMouse(); return; }
   SFX.unlock();
   keys.add(e.code);
   if (e.code === 'Space' && !e.repeat) pressAct();
@@ -862,15 +893,16 @@ addEventListener('keydown', e => {
   if (e.code === 'Escape' && link) { if (storeOpen) toggleStore(false); else pause(!paused); }
   if (e.code === 'Tab' && link) { e.preventDefault(); toggleStore(); }
 });
-addEventListener('keyup', e => { keys.delete(e.code); if (e.code === 'Space') releaseAct(); });
+addEventListener('keyup', e => { if (kitchen.isOpen) { kitchen.handleKey('up', e); return; } keys.delete(e.code); if (e.code === 'Space') releaseAct(); });
 addEventListener('blur', () => { keys.clear(); charging = null; });
 addEventListener('pointerdown', () => SFX.unlock());
 // Pointer lock can be refused (embedded views, no user gesture): swallow that
 // and fall back to the arrow keys for looking.
 function lockMouse() { try { canvas.requestPointerLock?.()?.catch?.(() => {}); } catch {} }
 canvas.addEventListener('pointerdown', e => { if (playing()) swing.pointerDown(e); });
-addEventListener('pointermove', e => { if (swing.enabled) swing.pointerMove(e); });
-addEventListener('pointerup', e => { if (swing.enabled) swing.pointerUp(e); });
+addEventListener('pointerdown', e => { if (kitchen.isOpen) kitchen.handlePointer('down', e); });
+addEventListener('pointermove', e => { if (kitchen.isOpen) kitchen.handlePointer('move', e); else if (swing.enabled) swing.pointerMove(e); });
+addEventListener('pointerup', e => { if (kitchen.isOpen) kitchen.handlePointer('up', e); else if (swing.enabled) swing.pointerUp(e); });
 canvas.addEventListener('mousedown', e => {
   if (e.button !== 0 || !playing()) return;
   if (document.pointerLockElement !== canvas) lockMouse();
@@ -901,7 +933,7 @@ function pause(on) {
 
 // ---------------------------------------------------------------- controller
 // Menus are driven with the D-pad or left stick plus Ⓐ, like a console app.
-const menuOpen = () => ['title', 'lobby', 'report', 'pause', 'store'].some(id => !$(id).classList.contains('hidden'));
+const menuOpen = () => kitchen.isOpen || ['title', 'lobby', 'report', 'pause', 'store'].some(id => !$(id).classList.contains('hidden'));
 const menuRoot = () => ['pause', 'store', 'report', 'lobby', 'title'].map($).find(el => !el.classList.contains('hidden')) ?? null;
 function focusFirst(root) { const t = navTargets(root); if (t.length && !root.contains(document.activeElement)) t[0].focus(); }
 
@@ -910,6 +942,7 @@ function pollPad(dt) {
   pad = readPad(navigator.getGamepads?.(), pad);
   if (!pad) return [0, 0];
   if (pad.active) document.body.classList.add('pad');
+  if (kitchen.isOpen) { kitchen.stepPad(pad, dt); return [0, 0]; }
   const root = menuRoot();
   if (root) {
     const dx = (pad.down[BTN.RIGHT] ? 1 : 0) - (pad.down[BTN.LEFT] ? 1 : 0) || Math.round(pad.lx);
@@ -978,7 +1011,7 @@ function hud() {
     : me.diving ? `${nearestBall(POND.REACH) ? `${btn}  Grab` : 'Feel around for balls'} · bag ${me.bag}/${POND.BAG} · air ${Math.ceil(me.air ?? 0)}s`
     : onDock(me) && crew.players.some(p => p.diving && p.id !== me.id) ? `Hold ${btn} to pump air to your diver`
     : onDock(me) ? 'Walk into the pond to dive for sunk balls'
-    : atShed(me) && crew.fries?.open ? `${peeling ? 'Peeling…' : `Hold ${btn} to peel potatoes`} · fries ${crew.fries.stock}/${crew.fries.max}`
+    : atShed(me) && crew.fries?.open ? `${btn}  Cook fries: peel, slice, fry, serve · fries ${crew.fries.stock}/${crew.fries.max}`
     : atShed(me) ? 'The snack shed is boarded up (Tab: the shop can reopen it)'
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
@@ -1127,7 +1160,17 @@ function frame(now) {
     o.g.position.x += (o.to.x - o.g.position.x) * k;
     o.g.position.z += (o.to.z - o.g.position.z) * k;
     o.body.rotation.y = o.to.yaw;
-    o.body.rotation.x += ((o.down > 0 ? -Math.PI / 2 : 0) - o.body.rotation.x) * Math.min(1, dt * 14);
+    const speed = Math.hypot(o.g.position.x - o.last.x, o.g.position.z - o.last.z) / Math.max(dt, 1e-3);
+    o.last.x = o.g.position.x; o.last.z = o.g.position.z;
+    const mode = o.down > 0 ? 'knocked' : speed > 0.4 ? (o.gearLevel === 2 ? 'carry' : 'walk') : 'idle';
+    animatePerson(o.person, dt, { mode, speed });
+  }
+  for (const c of customers) {
+    if (c.k >= 0) {
+      c.k += dt / SWING_SECS;
+      if (c.k >= 1) c.k = -1;
+      animatePerson(c.p, dt, c.k >= 0 ? { mode: 'swing', k: Math.min(1, c.k) } : { mode: 'address' });
+    } else animatePerson(c.p, dt, { mode: 'address' });
   }
 
   // Knocked flat: the camera drops to the grass and tips over, then gets up.
@@ -1154,7 +1197,9 @@ function frame(now) {
 
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
   board.tick(dt);
-  scenery.tick(dt, sceneT += dt);
+  kitchen.tick(dt);
+  if (kitchen.isOpen && (!atShed(me) || me.down > 0)) kitchen.close();
+  scenery.tick(dt, sceneT += dt, crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);
   // Ambience: birds by morning, crickets at dusk, distant thwacks, the floodlight hum, muffled underwater.
   if (!ambOn) { const h = SFX.audioHandle(); if (h) { AMB.attach(h.ctx, h.master, h.isMuted); AMB.startAmbience(); ambOn = true; } }
   if (ambOn && (ambT -= dt) <= 0) {
