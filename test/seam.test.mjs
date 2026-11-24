@@ -77,7 +77,7 @@ function crewRun(save, opts = {}) {          // a whole seeded crew: customers, 
   out.push(JSON.stringify(crew.stats), String(crew.ceiling()), JSON.stringify(crew.quota));
   return out;
 }
-const CLUB_SAVE = { venue: 1, day: 6, venueDay: 2, up: { cart: 1, helpers: 2, shed: 1, washer: 2 } };
+const CLUB_SAVE = { venue: 1, day: 6, venueDay: 2, stamps: 2, up: { cart: 1, helpers: 2, shed: 1, washer: 2 } };   // stamps 2: the quota climbs with stamps (playtest), so this keeps the recorded day-3 target
 
 test('GOLDEN: ball landings at the Muni and the Club are unchanged', () => {
   assert.equal(fnv(landings(0)), 'b27ddabd');

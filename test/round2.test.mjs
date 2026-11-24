@@ -435,10 +435,18 @@ test('the Club quota: q = (ceiling - 1) x venueQuotaF(venueDay)', () => {
   const memo = events(crew).find(e => e.t === 'memo');
   near(memo.target, crew.quotaTarget(), 1e-9);
 
-  const d3 = makeCrew({ venue: 1, venueDay: 2, up: { shed: 1 }, day: 4 }).crew;
+  const d3 = makeCrew({ venue: 1, venueDay: 2, stamps: 2, up: { shed: 1 }, day: 4 }).crew;
   d3.startShift();
   assert.equal(d3.venueDay, 3);
   near(d3.quota.q, 1.5 * venueQuotaF(3));
+
+  // A crew that keeps missing is not pushed out of reach (playtest): day 6 with one stamp gets the 2-stamp target.
+  const behind = makeCrew({ venue: 1, venueDay: 5, stamps: 1, up: { shed: 1 }, day: 8 }).crew;
+  behind.startShift();
+  near(behind.quota.q, 1.5 * venueQuotaF(2));
+  const done = makeCrew({ venue: 1, venueDay: 5, stamps: 3, up: { shed: 1 }, day: 8 }).crew;
+  done.startShift();
+  near(done.quota.q, 1.5 * venueQuotaF(6), 1e-9);
 });
 
 test('the Muni quota is unchanged by venues: quotaQ(day, ceiling)', () => {

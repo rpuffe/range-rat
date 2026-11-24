@@ -766,7 +766,9 @@ export class Crew {
     // Corporate's memo and today's quota. Judged on Upkeep, so a mid-shift purchase can't buy it.
     if (this.endless) this.quota = null;
     else if (this.venue === 0) { const q = quotaQ(this.day, this.ceiling()); this.quota = q == null ? null : { q }; }
-    else this.quota = { q: (this.ceiling() - 1) * venueQuotaF(this.venueDay) };
+    // The target climbs with the stamps earned, not just the days served (playtest: a crew that kept missing
+    // got targets it could never reach). Once promoted-ready it climbs with the days again.
+    else this.quota = { q: (this.ceiling() - 1) * venueQuotaF(this.stamps < PROMO_STAMPS ? Math.min(this.venueDay, this.stamps + 1) : this.venueDay) };
     // Day 1 at the Muni is quiet (the checklist teaches it): the memo still fires, flagged `quiet`, and the client skips the card.
     this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaTarget() : null, text: memoText(this.day, this.quota && this.quotaTarget(), this.endless, this.rng),
       flavor: memoFlavor(this.day, this.venue, this.endless, this.rng), quiet: !!this.todo });

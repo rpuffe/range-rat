@@ -17,6 +17,8 @@ export function setupRound2(ctx) {
   const link = () => ctx.link();
   const crew = () => ctx.crew();
   const onDockNow = () => !!crew().pond?.unlocked && Math.hypot(me.x - POND.DOCK.x, me.z - POND.DOCK.z) < POND.DOCK_R;
+  const now = () => performance.now();
+  let machineCash = 0, machineAt = -1e9;   // the washer's rolling popup
 
   const pa = createPA({ root: document.body, audio: () => SFX.audioHandle?.() ?? null });
   const washer = createWasher(scene, { onTick: () => SFX.scoop() });
@@ -52,7 +54,9 @@ export function setupRound2(ctx) {
       case 'washed':
         washer.washed(Math.min(10, e.n));
         if (e.by === me.id) SFX.cash(e.n);
-        if (e.cash > 0) board.floatText(21.5, 2.6, 6, '+' + money(e.cash) + (e.by === 'machine' ? ' · washer' : ''), '#9fe8ff');
+        // The machine washes every 0.5 s: one rolling popup every 2 s instead of a stack (playtest).
+        if (e.cash > 0 && e.by === 'machine') { machineCash += e.cash; if (now() - machineAt > 2000) { board.floatText(21.5, 2.6, 6, '+' + money(Math.round(machineCash * 100) / 100) + ' · washer', '#9fe8ff'); machineCash = 0; machineAt = now(); } }
+        else if (e.cash > 0) board.floatText(21.5, 2.6, 6, '+' + money(e.cash), '#9fe8ff');
         break;
       case 'grime':
         if (e.id === me.id && e.v > 0) toast(['', 'Your gear is grubby (×1.17).', 'Your gear is filthy (×1.08).', 'Your gear is caked in mud (×1.00). Hose off at the wash pad.'][e.v], 2.4);

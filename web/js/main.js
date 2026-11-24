@@ -527,7 +527,8 @@ function onEvent(e) {
       break;
     case 'gasp':
       SFX.bonk();
-      e.id === me.id ? toast('Out of air! You popped up coughing, and your bag spilled.', 3) : feed(`${nameOf(e.id)} ran out of air`);
+      if (e.id === me.id) { me.placed = false; toast('Out of air! Your bag spilled.', 3); }   // the server put us on the dock: take its position
+      else feed(`${nameOf(e.id)} ran out of air`);
       break;
     case 'rest': { const b = balls.get(e.id); if (b) { b.x = e.x; b.z = e.z; b.y = SIM.BALL_R; b.vx = b.vy = b.vz = 0; b.rest = true; b.drifting = false; b.drift = null; } break; }
     case 'drift': {   // the server's word on a ball floating down the creek
@@ -759,7 +760,7 @@ function renderShop() {
       const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0, day);
       return `<li>
         <div><b>${item.title}</b>: ${now.name}${next ? `<small>Next: <i>${next.name}</i>. ${next.desc}</small>` : `<small>${now.desc} (maxed out)</small>`}</div>
-        ${!next ? '<span class="max">✓</span>' : price == null ? '<span class="max">🔒 next venue</span>' : `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>$${price}</button>`}
+        ${!next ? '<span class="max">✓</span>' : price == null ? `<span class="max">🔒 ${VENUE_RULES[next.minVenue ?? item.minVenue ?? 0]?.name ?? 'later'}</span>` : `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>${money(price)}</button>`}
       </li>`;
     }).join('')}</ul>`;
   for (const el of document.querySelectorAll('.shop')) el.innerHTML = html;
@@ -1002,6 +1003,7 @@ function showPhase() {
       ${report.swings ? `<p>Hit the Cart <b>${report.pings ?? 0} pings from ${report.swings} swings</b></p>` : ''}
       ${report.knockdowns ? `<p>Knockdowns <b>${report.knockdowns}</b></p>` : ''}
       ${report.runOver ? `<p>Run over by the cart <b>${report.runOver}</b></p>` : ''}
+      ${report.unwashed > 0 ? `<p>Unwashed at the bell <b>${report.unwashed} balls · −${money(report.lostPremium ?? 0)}</b></p>` : ''}
       <p>In the bank <b>${money(report.bank)}</b></p>
       ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b>BV ${money(report.quota.bv)} / ${money(report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
       ${report.quota ? `<p>Review stamps <b>${report.quota.stamps} · ${report.quota.title}</b></p>` : ''}
@@ -1267,17 +1269,17 @@ function hud(dt = 0) {
   const left = Math.max(0, crew.shiftSecs - crew.shiftT);
   $('clock').textContent = crew.phase === 'shift' ? `Day ${crew.day} · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : `Day ${crew.day}`;
   const load = (mc?.load ?? 0) + pendingCart.size;
-  $('prompt').textContent = !playing() ? ''
+  $('prompt').textContent = !playing() || r2?.cctvOn ? ''
     : me.down > 0 ? 'Seeing stars…'
     : me.one ? 'Ball No. 1: carry it to the stand. Everyone to the stand.'
     : views?.prompt(btn, ibtn) ? views.prompt(btn, ibtn)
     : r2?.prompt(btn) ? r2.prompt(btn)
-    : me.diving ? `${crew.pond?.treasure && !me.treasure && Math.hypot(crew.pond.treasure.x - me.x, crew.pond.treasure.z - me.z) <= POND.REACH + 0.5 ? `${btn}  Take the ${TREASURE_BY_ID[crew.pond.treasure.id]?.name ?? 'treasure'}` : nearestBall(POND.REACH) ? `${btn}  Grab` : 'Feel around for balls'}${me.bag > 0 ? `  ·  ${ibtn}  Send the bag up (${me.bag})` : ''} · bag ${me.bag}/${diveTiers(me.dive).bag} · air ${Math.ceil(me.air ?? 0)}s`
+    : me.diving ? `${crew.pond?.treasure && !me.treasure && Math.hypot(crew.pond.treasure.x - me.x, crew.pond.treasure.z - me.z) <= POND.REACH + 0.5 ? `${btn}  Take the ${TREASURE_BY_ID[crew.pond.treasure.id]?.name ?? 'treasure'}` : nearestBall(POND.REACH) ? `${btn}  Grab` : 'Feel around for balls'}${me.bag > 0 ? `  ·  ${ibtn}  Send up ${me.bag}/${diveTiers(me.dive).bag}` : ''}`   // air is the bar
     : dockOpen(me) && (crew.pond?.line ?? 0) > 0 ? `Hold ${ibtn}  Haul up the bag (${crew.pond.line})`
     : dockOpen(me) && crew.players.some(p => p.diving && p.id !== me.id) ? pad ? `Tap ${btn}, then circle either stick to pump air to your diver` : `Hold ${btn} and circle the mouse to pump air to your diver`
     : crew.pond?.unlocked && hasTube(crew.up) && atTube(me) && (carrying() > 0 || me.treasure) ? `${ibtn}  Feed the tube${crew.pond.tube ? ` (${crew.pond.tube} in flight)` : ''}`
     : dockOpen(me) ? 'Walk into the pond to dive for sunk balls'
-    : atShed(me) && crew.fries?.open ? `${btn}  Cook fries: peel, slice, fry, serve · fries ${crew.fries.stock}/${crew.fries.max}`
+    : atShed(me) && crew.fries?.open ? `${btn}  Open the kitchen · fries ${crew.fries.stock}/${crew.fries.max}`
     : atShed(me) ? (crew.venue ?? 0) >= 1 ? 'The snack shed is boarded up (Tab: the shop can reopen it)' : 'The snack shed is boarded up. It reopens at the Range Club.'
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`

@@ -93,8 +93,8 @@ export default {
           const s = seats[e.seat % seats.length];
           if (s.state === 'seated') { s.state = 'fall'; s.t = 0; s.since = 0; voice(ctx.SFX, 'gasp', 0.1); }
           const who = e.by === ctx.me?.id ? 'You' : ctx.nameOf?.(e.by) ?? 'Someone';
-          ctx.feed?.(`${who} poured the sixth drink. A guest has left the Upper Deck. Fine ${money(e.fine)}.`);
-          if (e.by === ctx.me?.id) ctx.toast?.(`LIABILITY FINE ${money(e.fine)}. Beer is not a ladder.`, 3.2);
+          // One message: the PA card says it. Others get a short feed line with the fine.
+          if (e.by !== ctx.me?.id) ctx.feed?.(`${who} overserved the deck. Fine ${money(e.fine)}.`);
         } else if (e.t === 'deckTab') {
           if (e.by === ctx.me?.id) ctx.toast?.(`Bar tab: +${money(e.n)}`, 1.4);
         } else if (e.t === 'served') {

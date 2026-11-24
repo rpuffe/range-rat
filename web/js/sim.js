@@ -483,7 +483,7 @@ export const GARY = {
     { id: 'stand', x: 26, z: 10 },
   ],
 };
-export const money = v => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
+export const money = v => `$${Number.isInteger(v) ? v.toLocaleString('en-US') : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;   // $6,000 and $1,234.50
 
 export const atStand = p =>Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < SIM.STAND_REACH;
 

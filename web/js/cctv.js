@@ -6,7 +6,7 @@ import * as THREE from 'three';
 
 // Fixed feed poses. Council doc wins over the brief: MAST / POND / FAR FIELD.
 export const FEEDS = [
-  { name: 'STAND MAST', pos: [26, 18, 14],   look: [8, 0, -110] },
+  { name: 'STAND MAST', pos: [26, 18, 14],   look: [4, 0, -45] },    // the mats and the near piles (playtest: it looked past them)
   { name: 'POND',       pos: [-30, 10, -58], look: [-12, 0, -78] },
   { name: 'FAR FIELD',  pos: [0, 22, -188],  look: [0, 0, 0] },
 ];
@@ -59,7 +59,7 @@ export function createCCTV({ camera, root, onFlag }) {
     el.className = 'cctv';
     el.innerHTML = '<canvas class="noise" width="128" height="72"></canvas><div class="scan"></div><div class="vig"></div>' +
       '<div class="ret"></div><div class="hdr"></div><div class="ts"></div>' +
-      '<div class="help">LB/RB feed · R-stick pan · LT/RT zoom · Ⓐ flag · Ⓑ leave</div><div class="layer"></div>';
+      '<div class="help"><span class="gp">LB/RB feed · R-stick pan · LT/RT zoom · Ⓐ flag · Ⓑ leave</span><span class="kb">Q/E feed · WASD pan · wheel zoom · click flag · C leave</span></div><div class="layer"></div>';
     el.prepend(css);
     root.appendChild(el);
     const n = el.querySelector('.noise');
