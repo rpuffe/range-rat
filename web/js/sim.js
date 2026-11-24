@@ -260,19 +260,97 @@ export function perks(up = {}) {
 export const WASH = {
   STATION: { x: 36, z: 3 },   // the pressure washer, beside the cart's parking spot
   GRAB: 2.5,                  // m, how close to grab the wand
-  HOSE: 10,                   // m of hose: wander further and you drop the wand
+  HOSE: 60,                   // m of hose (reaches the mats and the sign); wander further and you drop the wand
   RANGE: 7,                   // m, how far the spray reaches
   RATE: 0.08,                 // mud cleaned per second of spraying on target (stacks per sprayer)
   MUD_PER_M: 0.003,           // the cart's mud per metre driven (full after ~330 m)
 };
 
-export function ballValue({ perks: k, mult = 1, cart = null }) {
-  const base = k.price;
-  // Corporate inspects the fleet: a spotless cart earns a bonus, a filthy one a dock.
-  const fleet = cart ? 1.25 - 0.55 * Math.max(0, Math.min(1, cart.mud ?? 0)) : 1;
-  const value = Math.round(base * fleet * mult * 100) / 100;
-  return { value, base, fleet, mult };
+// The council's model (design/council-round1.md §2):
+//   pay per deposit = Σ ball weights × BV × Hustle × Gear(carrier)
+//   BV     = Rate × Upkeep                  the big number on the Board
+//   Rate   = venue rate × (1 + washer tier) × (1 + 0.05 × commendations)
+//   Upkeep = 1 + 0.5 × (Curb + Pond + Fries)  each 0..1; a locked KPI counts 0
+//   Hustle = Hit the Cart: 1 + 0.25 a ping, max ×2, resets each morning
+//   Gear   = the cart: 1 + 0.25 × cleanliness; people ×1 (gear grime comes later)
+export const VENUES = [{ name: 'Muni Range', rate: 1 }, { name: 'Range Club', rate: 5 }, { name: 'Tiered Entertainment Range', rate: 25 },
+  { name: 'Stadium Range', rate: 100 }, { name: 'County Range', rate: 500 }, { name: 'Orbital Range', rate: 2500 }];
+export const KIND_W = { range: 1, glow: 2, lead: 3 };
+export const BALLS_OUTSTANDING = 4_213_377_019;   // down to Ball No. 1, hit into orbit by the founder in 1958
+const clamp01 = v => Math.max(0, Math.min(1, v ?? 0));
+const c2 = v => Math.round(v * 100) / 100;
+
+export function ballValue({ perks: k, mult = 1, cart = null, curb = 0.5, pond = null, fries = null, commendations = 0, venue = 0 }) {
+  const rate = VENUES[venue].rate * k.price * (1 + 0.05 * Math.min(10, commendations));
+  const upkeep = 1 + 0.5 * (clamp01(curb) + (pond == null ? 0 : clamp01(pond)) + (fries == null ? 0 : clamp01(fries)));
+  const bv = c2(rate * upkeep);
+  const cartGear = cart ? 1 + 0.25 * (1 - clamp01(cart.mud)) : 1;
+  return { value: c2(bv * mult), bv, rate: c2(rate), upkeep, hustle: mult, cartGear, curb: clamp01(curb), pond, fries };
 }
+export const payFor = (w, v, gear = 1) => c2(w * v.bv * v.hustle * gear);
+export const upkeepCeiling = ({ pond = null, fries = null }) => 1 + 0.5 * (1 + (pond == null ? 0 : 1) + (fries == null ? 0 : 1));
+
+// Curb Appeal: the things customers see. Each gets muddy; the wand cleans them.
+export const FIXTURES = [
+  { id: 'sign', x: 14, z: 11, r: 1.8 },
+  { id: 'stand', x: 26, z: 6, r: 1.6 },
+  ...MATS.map(m => ({ id: `mat${m.i}`, x: m.x, z: 0, r: 1.1 })),
+];
+export const FIXTURE_BY_ID = Object.fromEntries(FIXTURES.map(f => [f.id, f]));
+
+// The daily quota: BV at the closing bell must reach Rate × (1 + q). None on day 1.
+export function quotaQ(day, ceiling) {
+  if (day <= 1) return null;
+  const q = [0.15, 0.2, 0.3, 0.35][day - 2] ?? 0.35 + 0.05 * (day - 5);
+  return Math.min(q, 0.8 * (ceiling - 1));
+}
+export const LAST_CALL = { SECS: 60, FROM_DAY: 2, SWING: 1.5 };
+
+// The pond (council round 1, #5): balls that land in it sink and stay overnight.
+// Pond Clarity counts toward Upkeep from day 4, when lead balls start arriving.
+export const POND = {
+  x: -12, z: -78, r: 8,
+  DOCK: { x: -12, z: -68.5 },     // the jetty on the near shore: pump air from here
+  DOCK_R: 2.2,
+  FROM_DAY: 4,                    // Pond Clarity and lead balls
+  LEAD_CHANCE: 0.06,
+  CLEAR_AT: 30,                   // clarity = 1 - sunk / CLEAR_AT
+  MAX_SUNK: 60,
+  BOTTOM: -1.1,                   // where sunk balls rest
+  AIR: 20,                        // seconds of air (mask)
+  AIR_REFILL: 6,                  // per second, back on land
+  PUMP: 2,                        // per second, while a crewmate pumps
+  BAG: 10,
+  REACH: 2.2,
+  SWIM: 0.6,                      // walking speed underwater
+};
+export const inPond = p => Math.hypot(p.x - POND.x, p.z - POND.z) < POND.r;
+export const onDock = p => Math.hypot(p.x - POND.DOCK.x, p.z - POND.DOCK.z) < POND.DOCK_R;
+export const pondClarity = sunk => Math.max(0, 1 - sunk / POND.CLEAR_AT);
+
+// A lead ball: lofted to land in the pond, from the customer's mat.
+export function leadLaunch(mat, rng) {
+  const tx = POND.x + (rng() - 0.5) * POND.r, tz = POND.z + (rng() - 0.5) * POND.r;
+  const dx = tx - mat.x, dz = tz - (-0.4), d = Math.hypot(dx, dz), loft = 0.6;
+  const speed = Math.sqrt(d * SIM.G / Math.sin(2 * loft));
+  const h = speed * Math.cos(loft);
+  return { x: mat.x, y: 0.1, z: -0.4, vx: dx / d * h, vy: speed * Math.sin(loft), vz: dz / d * h };
+}
+
+// Gary from Regional's Walkthrough (council round 1, #2). From day 3: a warning
+// at 43% of the shift, then he drives his route, pausing at each stop.
+export const GARY = {
+  FROM_DAY: 3, AT: 0.43, WARN_SECS: 45, SPEED: 5, PAUSE: 3,
+  CLEAN: 0.34,              // a stop passes at this much mud or less
+  HUDDLE_R: 8,              // every online Rat this close to the stand when he arrives: it counts twice
+  START: { x: 60, z: 14 },
+  STOPS: [
+    { id: 'sign', x: 14, z: 13 },
+    { id: 'mats', x: 0, z: 3.5 },
+    { id: 'cart', x: null, z: null },       // wherever the cart is (skipped if the crew has none)
+    { id: 'stand', x: 26, z: 10 },
+  ],
+};
 export const money = v => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 
 export const atStand = p =>Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < SIM.STAND_REACH;

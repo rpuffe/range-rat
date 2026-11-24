@@ -6,6 +6,7 @@ import { SIM, SHOP, nextPrice, priceScale, perks, gearPerks } from '../web/js/si
 function makeCrew(save = null, shiftSecs = 60) {
   const clock = { t: 1_000_000 };
   const crew = new Crew('SHOP', save, { shiftSecs, seed: 9, now: () => clock.t });
+  for (const k of Object.keys(crew.fixtures)) crew.fixtures[k] = 0;   // Curb Appeal 1: Upkeep 1.5, so the cash below is exact
   const run = secs => { for (let i = 0; i < secs * 20; i++) { clock.t += 50; crew.tick(0.05); } };
   return { crew, clock, run };
 }
@@ -89,7 +90,7 @@ test('the washer makes every banked ball worth more', () => {
   crew.input(a, { a: [{ t: 'start' }] });
   a.pocket = 3; a.x = SIM.STAND.x; a.z = SIM.STAND.z;
   crew.input(a, { a: [{ t: 'deposit' }] });
-  assert.equal(crew.cash, 9, 'no cart: fleet factor 1');
+  assert.equal(crew.cash, 13.5, 'washer 2: rate $3, BV $4.5 at Curb 1, people have Gear 1');
 });
 
 test('advertising: customers hit more balls', () => {
@@ -128,7 +129,7 @@ test('at closing, helpers turn in what they carry and it counts today', () => {
   run(6);
   assert.equal(crew.phase, 'report');
   assert.equal(crew.report.helped, 4);
-  assert.equal(crew.report.cash, 8, 'no cart: fleet factor 1');
+  assert.equal(crew.report.cash, 12, '4 balls x BV $3 (rate 2 x Upkeep 1.5), helpers have Gear 1');
   assert.equal(crew.helpers[0].pocket, 0);
 });
 

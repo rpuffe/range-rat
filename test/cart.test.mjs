@@ -7,6 +7,7 @@ import { SIM, CART, BAYS, perks, underReels } from '../web/js/sim.js';
 function makeCrew(save = { up: { cart: 1 } }, shiftSecs = 600) {
   const clock = { t: 1_000_000 };
   const crew = new Crew('CART', save, { shiftSecs, seed: 5, now: () => clock.t });
+  for (const k of Object.keys(crew.fixtures)) crew.fixtures[k] = 0;   // Curb Appeal 1: Upkeep 1.5, so the cash below is exact
   const run = secs => { for (let i = 0; i < secs * 20; i++) { clock.t += 50; crew.tick(0.05); } };
   return { crew, clock, run };
 }
@@ -350,12 +351,12 @@ test('pulling up to the stand banks the load at the ball price', () => {
   assert.equal(crew.cash, 0);
 
   crew.flush();
-  c.x = SIM.STAND.x + 2; c.z = SIM.STAND.z + 2; c.mud = 0;   // spotless cart: fleet factor 1.25
+  c.x = SIM.STAND.x + 2; c.z = SIM.STAND.z + 2; c.mud = 0;   // spotless cart: Gear 1.25
   run(0.25);
   assert.equal(c.load, 0);
-  assert.equal(crew.cash, 12.5, 'washer tier 1: $2 a ball x 1.25 for a spotless cart');
+  assert.equal(crew.cash, 18.75, 'washer tier 1: rate $2, BV $3 at Curb 1, x 1.25 Gear for a spotless cart');
   assert.equal(crew.stats.deposited, 5);
-  assert.equal(crew.stats.cash, 12.5);
+  assert.equal(crew.stats.cash, 18.75);
   const ev = crew.flush().ev.find(e => e.t === 'cash' && e.kind === 'cart');
   assert.ok(ev);
   assert.equal(ev.n, 5);
@@ -681,13 +682,13 @@ test('mult raises the multiplier, caps at MAX_MULT, and multiplies banked cash',
   assert.equal(pings(crew).at(-1).mult, CART.MAX_MULT);
 
   crew.cart.mud = 0;
-  assert.equal(crew.ballPrice(), 1 * CART.MAX_MULT * 1.25, 'spotless cart: fleet factor 1.25');
+  assert.equal(crew.ballPrice(), 1.5 * CART.MAX_MULT, 'BV $1.5 x Hustle 2; the cart Gear is applied at the deposit, not in the headline');
   crew.cart.load = 4;
   const before = crew.cash;
   crew.cart.x = SIM.STAND.x + 2; crew.cart.z = SIM.STAND.z + 2;
   run(0.25);
   assert.equal(crew.cart.load, 0);
-  assert.equal(crew.cash - before, 4 * CART.MAX_MULT * 1.25);
+  assert.equal(crew.cash - before, 4 * 1.5 * CART.MAX_MULT * 1.25, 'cart deposit: weights x BV x Hustle x Gear');
 });
 
 test('a customer ball (no `by`) rings the cage for no prize', () => {
@@ -798,10 +799,10 @@ test('endShift banks any cart load into the report', () => {
   assert.equal(crew.phase, 'report');
   assert.equal(crew.cart.load, 0);
   assert.equal(crew.cart.boostT, 0);
-  assert.equal(crew.cash, 17.5, '7 balls at $1 x2 x1.25 (spotless cart)');
+  assert.equal(crew.cash, 26.25, '7 balls x BV 1.5 x Hustle 2 x Gear 1.25 (spotless cart)');
   assert.equal(crew.report.deposited, 7);
-  assert.equal(crew.report.cash, 17.5);
-  assert.equal(crew.report.bank, 17.5);
+  assert.equal(crew.report.cash, 26.25);
+  assert.equal(crew.report.bank, 26.25);
   assert.equal(crew.totals.deposited, 7);
 });
 
@@ -810,7 +811,7 @@ test('endShift banks a driverless cart\'s load too', () => {
   openShift(crew);
   crew.cart.load = 3;
   run(6);
-  assert.equal(crew.cash, 3.75, '3 balls x $1 x 1.25 (spotless cart)');
+  assert.equal(crew.cash, 5.63, '3 balls x BV 1.5 x Gear 1.25 = 5.625, to cents (spotless cart)');
   assert.equal(crew.report.deposited, 3);
 });
 

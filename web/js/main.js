@@ -9,9 +9,10 @@ import * as THREE from 'three';
 import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
 import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, priceScale, perks,
-  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs } from './sim.js';
+  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock } from './sim.js';
 import * as NET from './net.js';
 import * as SFX from './sfx.js';
+import { createBoard } from './board.js';
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
@@ -61,6 +62,73 @@ const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.25, 0.45, 16, 1
 bucket.position.set(0, 1.22, 0); stand.add(bucket);
 stand.position.set(SIM.STAND.x, 0, SIM.STAND.z);
 scene.add(stand);
+
+// The Board (Ball Value, KPIs, quota, Balls Outstanding) and the ball silo, on the stand.
+const board = createBoard(scene, { x: SIM.STAND.x, z: SIM.STAND.z + 1.2 });
+
+// Mud on the fixtures customers see (Curb Appeal): the road sign, the stand, the mats.
+// Each fixture's material browns as its mud rises; the wand cleans it.
+const fixtureMats = {};
+const MUD = new THREE.Color(0x5a3d1e);
+{
+  const sign = new THREE.Group();
+  const c = document.createElement('canvas'); c.width = 512; c.height = 256;
+  const x = c.getContext('2d');
+  x.fillStyle = '#1d4d2f'; x.fillRect(0, 0, 512, 256);
+  x.fillStyle = '#fff8ec'; x.textAlign = 'center';
+  x.font = 'bold 54px system-ui, sans-serif'; x.fillText('MUNI RANGE', 256, 110);
+  x.font = '600 26px system-ui, sans-serif'; x.fillText('a Fairway Holdings property', 256, 160);
+  x.font = 'italic 24px system-ui, sans-serif'; x.fillText('Every Ball Matters.™', 256, 205);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const signMat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide });
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), signMat);
+  panel.position.y = 2.0; sign.add(panel);
+  for (const px of [-1.4, 1.4]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2), lambert(0x6b5a45)); post.position.set(px, 1.1, -0.02); sign.add(post); }
+  const fx = FIXTURE_BY_ID.sign;
+  sign.position.set(fx.x, 0, fx.z); sign.rotation.y = Math.PI;   // faces the field
+  scene.add(sign);
+  fixtureMats.sign = { mat: signMat, base: new THREE.Color(0xffffff) };
+}
+fixtureMats.stand = { mat: box.material, base: box.material.color.clone() };
+scene.traverse(o => {   // the customer mats were built above; find them by position
+  if (o.isMesh && o.geometry?.parameters?.width === 1.6 && o.geometry.parameters.height === 0.04) {
+    const m = MATS.find(m => Math.abs(m.x - o.position.x) < 0.01);
+    if (m) { o.material = o.material.clone(); fixtureMats['mat' + m.i] = { mat: o.material, base: o.material.color.clone() }; }
+  }
+});
+function paintFixtures(fx) {
+  for (const [id, mud] of Object.entries(fx ?? {})) {
+    const fm = fixtureMats[id];
+    if (fm) fm.mat.color.copy(fm.base).lerp(MUD, Math.min(1, mud) * 0.85);
+  }
+}
+
+// The pond: a sunken bowl with a murky surface, a muddy bottom and a jetty on the near shore.
+const pondWater = new THREE.Mesh(new THREE.CircleGeometry(POND.r, 48),
+  new THREE.MeshLambertMaterial({ color: 0x2f6f73, transparent: true, opacity: 0.78, side: THREE.DoubleSide }));
+pondWater.rotation.x = -Math.PI / 2; pondWater.position.set(POND.x, 0.03, POND.z); scene.add(pondWater);
+const pondBed = new THREE.Mesh(new THREE.CircleGeometry(POND.r, 48), lambert(0x3b3322));
+pondBed.rotation.x = -Math.PI / 2; pondBed.position.set(POND.x, POND.BOTTOM - 0.06, POND.z); scene.add(pondBed);
+const pondWall = new THREE.Mesh(new THREE.CylinderGeometry(POND.r, POND.r, -POND.BOTTOM + 0.1, 48, 1, true),
+  new THREE.MeshLambertMaterial({ color: 0x4a3f2a, side: THREE.BackSide }));
+pondWall.position.set(POND.x, POND.BOTTOM / 2, POND.z); scene.add(pondWall);
+{
+  const dock = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.15, 3.6), lambert(0x8b6b45));
+  dock.position.set(POND.DOCK.x, 0.25, POND.DOCK.z - 0.6); dock.castShadow = true; scene.add(dock);
+  const pump = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 0.9, 10), lambert(0xd9382b));
+  pump.position.set(POND.DOCK.x + 0.7, 0.75, POND.DOCK.z + 0.6); scene.add(pump);
+}
+const diveLight = new THREE.SpotLight(0xd8ffe8, 0, 10, 0.5, 0.5, 1);
+camera.add(diveLight); camera.add(diveLight.target); diveLight.target.position.set(0, 0, -3);
+const surfaceFog = { color: new THREE.Color(), near: 0, far: 0 };
+
+// Last Call floodlights: on for the final minute of a shift.
+const floods = [-14, 0, 14].map(x => {
+  const l = new THREE.SpotLight(0xfff1c8, 0, 140, 0.55, 0.4, 1);
+  l.position.set(x, 14, 8); l.target.position.set(x * 0.6, 0, -55);
+  scene.add(l, l.target);
+  return l;
+});
 
 // Crew bays: orange mats with a little flag, for hitting balls at the cart.
 for (const b of BAYS) {
@@ -152,7 +220,7 @@ function buildCart() {
     m.visible = false; splotches.push(m); g.add(m);
   }
   scene.add(g);
-  return { g, targets, reels, fill, driver, torso, body, splotches, reelWidth: 0, flash: 0, wheelSpin: 0 };
+  return { g, targets, reels, fill, driver, torso, body, cage, splotches, reelWidth: 0, flash: 0, wheelSpin: 0 };
 }
 function setReels(c, width) {
   if (c.reelWidth === width) return;
@@ -165,6 +233,23 @@ function setReels(c, width) {
   }
   c.reelWidth = width;
 }
+// Gary from Regional: a white cart flying a Dimples pennant.
+let garyView = null;
+const garyPose = { x: 60, z: 14, yaw: 0 };
+function buildGary() {
+  const v = buildCart();
+  v.body.material = lambert(0xffffff);
+  v.cage.visible = false; v.targets.forEach(t => (t.visible = false)); v.reels.visible = false;
+  v.driver.visible = true; v.torso.material.color.set(0x2b3a67);      // navy blazer
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.6), lambert(0xcccccc));
+  pole.position.set(0.6, 1.6, 1.0); v.g.add(pole);
+  const pennant = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.35), new THREE.MeshBasicMaterial({ color: 0x1d4d2f, side: THREE.DoubleSide }));
+  pennant.position.set(0.9, 2.2, 1.0); v.g.add(pennant);
+  const dimples = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+  dimples.position.set(0.9, 2.2, 1.005); v.g.add(dimples);
+  const tag = nameTag('Gary · Regional', '#ffffff'); tag.position.y = 2.6; v.g.add(tag);
+  return v;
+}
 let cartView = null;                // the 3D cart, once the crew owns one
 const cartPose = { x: CART.PARK.x, z: CART.PARK.z, yaw: CART.PARK.yaw, v: 0 };  // where I draw it
 const pendingCart = new Set();      // balls my cart scooped that the server hasn't confirmed
@@ -173,6 +258,9 @@ let engine = null;
 // ---------------------------------------------------------------- balls
 // Every ball on the field is one instance of one mesh: hundreds of balls, one draw call.
 const ballMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(SIM.BALL_R, 12, 8), lambert(0xf4f1e8), SIM.MAX_BALLS + 64);
+const glowMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(SIM.BALL_R, 12, 8),
+  new THREE.MeshBasicMaterial({ color: 0x9dff6a }), SIM.MAX_BALLS + 64);   // glow balls (Last Call): worth ×2
+glowMesh.frustumCulled = false; glowMesh.count = 0; scene.add(glowMesh);
 ballMesh.castShadow = true;
 ballMesh.frustumCulled = false;
 ballMesh.count = 0;
@@ -190,14 +278,15 @@ function removeBall(id) {
 }
 const ballM = new THREE.Matrix4(), ballQ = new THREE.Quaternion(), ballP = new THREE.Vector3(), ballS = new THREE.Vector3();
 function drawBalls() {
-  let i = 0;
+  let i = 0, g = 0;
   for (const b of balls.values()) {
     if (b.hidden || i >= ballMesh.instanceMatrix.count) continue;
     // A real ball is sub-pixel past ~40 m; grow far ones so the field reads as dots.
-    const s = Math.max(1, Math.hypot(b.x - me.x, b.z - me.z) / 25);
+    const s = Math.max(1, Math.hypot(b.x - me.x, b.z - me.z) / 25) * (b.kind === 'glow' ? 1.3 : 1);
     ballM.compose(ballP.set(b.x, b.y, b.z), ballQ, ballS.set(s, s, s));
-    ballMesh.setMatrixAt(i++, ballM);
+    if (b.kind === 'glow') glowMesh.setMatrixAt(g++, ballM); else ballMesh.setMatrixAt(i++, ballM);
   }
+  glowMesh.count = g; glowMesh.instanceMatrix.needsUpdate = true;
   ballMesh.count = i;
   ballMesh.instanceMatrix.needsUpdate = true;
 }
@@ -314,13 +403,27 @@ function onMsg(m) {
 
 function onEvent(e) {
   switch (e.t) {
-    case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false }); break;
+    case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, kind: e.kind }); break;
+    case 'sink': {
+      let b = balls.get(e.id);
+      if (!b) { addBall({ id: e.id, x: e.x, y: POND.BOTTOM, z: e.z, vx: 0, vy: 0, vz: 0, rest: true, kind: e.kind }); b = balls.get(e.id); }
+      Object.assign(b, { x: e.x, z: e.z, y: POND.BOTTOM, vx: 0, vy: 0, vz: 0, rest: true, sunk: true });
+      break;
+    }
+    case 'dive':
+      if (e.id === me.id) toast(e.on ? 'Under the pond. Grab balls before your air runs out.' : 'Surfaced. Bank what you found.', 2);
+      break;
+    case 'gasp':
+      SFX.bonk();
+      toast(e.id === me.id ? 'Out of air! You popped up coughing, and your bag spilled.' : `${nameOf(e.id)} ran out of air`, 3);
+      break;
     case 'rest': { const b = balls.get(e.id); if (b) { b.x = e.x; b.z = e.z; b.y = SIM.BALL_R; b.vx = b.vy = b.vz = 0; b.rest = true; } break; }
     case 'gone':
       if (pendingCart.delete(e.id)) SFX.scoop();
       removeBall(e.id);
       break;
     case 'cash':
+      floatPay(e);
       if (e.by === me.id) { toast(e.kind === 'cart' ? `Cart unloaded: +${money(e.cash)}` : `+${money(e.cash)}`); SFX.cash(e.n); }
       else if (e.kind !== 'helper') toast(`${e.kind === 'cart' ? 'The cart' : nameOf(e.by)} banked ${money(e.cash)}`);   // helpers bank quietly
       break;
@@ -336,9 +439,38 @@ function onEvent(e) {
       break;
     }
     case 'board': if (e.by !== me.id) toast(`${nameOf(e.by)} is driving the cart`); break;
+    case 'gary':
+      if (e.phase === 'warn') { SFX.bonk(); toast('GARY FROM REGIONAL is 45 seconds out. Clean the sign, the mats, the cart and the stand. Then huddle at the stand.', 5); }
+      else toast('Gary is inspecting. Stay out of his way.', 3);
+      break;
+    case 'check': {
+      const names = { sign: 'Sign', mats: 'Mats', cart: 'Cart', stand: 'Stand' };
+      board.floatText(e.x, 3.2, e.z, `${e.ok ? '✓' : '✗'} ${names[e.stop] ?? e.stop}`, e.ok ? '#6fcf7c' : '#ff6b5b');
+      (e.ok ? SFX.cash : SFX.bonk)(1);
+      break;
+    }
+    case 'verdict':
+      if (e.gained) SFX.jackpot();
+      toast(e.gained
+        ? `Gary is satisfied. +${e.gained} commendation${e.gained > 1 ? 's' : ''}${e.huddle ? ' (the huddle doubled it)' : ''}: Rate +${e.gained * 5}% for good`
+        : `Gary found ${e.fails} problems. "We'll circle back." No commendation.`, 5);
+      break;
+    case 'memo':
+      showMemo(e.text, e.target);
+      break;
+    case 'lastcall':
+      SFX.jackpot();
+      toast('LAST CALL: glow balls are worth ×2 until the bell', 3);
+      break;
+    case 'quota':
+      toast(e.hit ? `Quota HIT: BV ${money(e.bv)} vs ${money(e.target)}. Bonus ${money(e.bonus)} and a review stamp` : `Quota missed: BV ${money(e.bv)} vs ${money(e.target)}. Corporate is not angry. Corporate is disappointed.`, 4);
+      if (e.hit) SFX.jackpot();
+      break;
     case 'spotless':
       SFX.jackpot();
-      toast(`Spotless! ${e.by === me.id ? 'You' : nameOf(e.by)} washed the cart. Corporate pays ×1.25 a ball for a clean fleet`, 3);
+      toast(e.target && e.target !== 'cart'
+        ? `Spotless ${e.target.startsWith('mat') ? 'mat' : e.target}! Curb Appeal is up`
+        : `Spotless! ${e.by === me.id ? 'You' : nameOf(e.by)} washed the cart. Corporate pays ×1.25 a ball for a clean fleet`, 3);
       break;
     case 'buy': {
       const item = SHOP.find(i => i.id === e.id);
@@ -347,8 +479,8 @@ function onEvent(e) {
     }
     case 'knock': {
       SFX.bonk();
-      const how = e.by === 'cart' ? 'got run over by the cart' : 'got knocked flat';
-      if (e.id === me.id) toast(e.by === 'cart' ? 'You got run over by the cart.' : 'BONK. You got knocked flat.', 2.4);
+      const how = e.by === 'cart' ? 'got run over by the cart' : e.by === 'gary' ? 'got run over by Gary from Regional' : 'got knocked flat';
+      if (e.id === me.id) toast(e.by === 'cart' ? 'You got run over by the cart.' : e.by === 'gary' ? 'Gary ran you over. He did not slow down.' : 'BONK. You got knocked flat.', 2.4);
       else toast(`${nameOf(e.id) === 'Someone' ? crew.helpers?.find(h => h.id === e.id)?.name ?? 'Someone' : nameOf(e.id)} ${how}`);
       break;
     }
@@ -363,6 +495,20 @@ function onEvent(e) {
   }
 }
 
+// "+$32.50 · 8 × $4.06" over whoever banked it, in their colour.
+function floatPay(e) {
+  const who = crew.players.find(p => p.id === e.by);
+  const at = e.by === me.id ? me : who ?? (crew.helpers ?? []).find(h => h.id === e.by) ?? SIM.STAND;
+  const at2 = e.kind === 'cart' ? cartPose : at;
+  board.floatText(at2.x, 2.4, at2.z, `+${money(e.cash)} · ${e.n} × ${money(e.per ?? e.cash / e.n)}`, who?.color ?? '#ffd54a');
+}
+let memoT = 0;
+function showMemo(text, target) {
+  $('memo-text').textContent = text;
+  $('memo-target').textContent = target ? `TARGET  ${money(target)}` : '';
+  $('memo').classList.remove('hidden'); memoT = 9;
+}
+
 let my = perks();                   // what the crew's upgrades add up to
 let gp = gearPerks(0);              // what my own carrying gear adds up to
 function applySnapshot(s) {
@@ -370,10 +516,22 @@ function applySnapshot(s) {
   my = perks(s.up);
   const mine = s.players.find(p => p.id === me.id);
   me.gear = mine?.gear ?? 0; me.wand = !!mine?.wand;
+  me.diving = !!mine?.diving; me.air = mine?.air ?? POND.AIR; me.bag = mine?.bag ?? 0;
   gp = gearPerks(me.gear);
   const held = me.wand ? 'wand' : me.gear;
   if (held !== gearLevel) setMyGear(held);
   applyCart(s.cart);
+  paintFixtures(s.fixtures);
+  const v = s.value ?? {};
+  board.update({ bv: v.bv, rate: v.rate, upkeep: v.upkeep, hustle: v.hustle, curb: v.curb, pond: s.pond?.unlocked ? v.pond ?? 0 : null, fries: v.fries ?? null,
+    quota: s.quota?.target ?? null, outstanding: s.outstanding, lastCall: s.lastCall, title: s.title, silo: s.silo,
+    gary: s.gary?.phase === 'warn' ? `GARY FROM REGIONAL · 0:${String(Math.ceil(s.gary.t)).padStart(2, '0')}` : s.gary?.phase === 'drive' ? 'GARY IS INSPECTING' : null });
+  if (s.gary && s.gary.phase !== 'warn') {
+    if (!garyView) { garyView = buildGary(); Object.assign(garyPose, { x: s.gary.x, z: s.gary.z, yaw: s.gary.yaw }); }
+    garyView.g.visible = s.gary.phase === 'drive';
+    garyView.to = s.gary;
+  } else if (garyView) garyView.g.visible = false;
+  floods.forEach(l => { l.intensity = s.lastCall ? 420 : 0; });
   const seen = new Set();
   const people = [...s.players, ...(s.helpers ?? []).map(h => ({ ...h, helper: true, color: '#b9c0c8', online: true }))];
   for (const p of people) {
@@ -448,7 +606,7 @@ document.addEventListener('click', e => {
 function nearestBall(reach = gp.reach) {
   let best = null, bd = reach;
   for (const b of balls.values()) {
-    if (b.hidden || b.y > 0.4) continue;
+    if (b.hidden || b.y > 0.4 || !!b.sunk !== !!me.diving) continue;
     const d = Math.hypot(b.x - me.x, b.z - me.z);
     if (d < bd) { bd = d; best = b; }
   }
@@ -477,6 +635,12 @@ function interact(only = null) {
 const nearStation = () => !!crew.cart && Math.hypot(me.x - WASH.STATION.x, me.z - WASH.STATION.z) < WASH.GRAB;
 function act() {
   if (!playing() || me.down > 0 || driving()) return;
+  if (me.diving) {
+    if (me.bag + pending.size >= POND.BAG) { toast('Your bag is full: surface!'); return; }
+    const b = nearestBall(POND.REACH);
+    if (b) grab(b);
+    return;
+  }
   if (carrying() >= gp.pocket) { toast('Full: take them to the bucket stand'); return; }
   const b = !gp.scoop ? nearestBall() : null;
   if (b) grab(b);
@@ -488,14 +652,17 @@ function act() {
 const SWING_FULL = 1.0;
 let charging = null;                 // performance.now() when the wind-up started
 let spraying = false, washSecs = 0, washSent = 0;
+let pumping = false;
 function pressAct() {
   SFX.unlock();
+  if (playing() && onDock(me) && !me.diving && crew.players.some(p => p.diving && p.id !== me.id)) { pumping = true; link.act({ t: 'pump', on: true }); return; }
   if (me.wand && playing() && me.down <= 0) { spraying = true; return; }
   if (playing() && me.down <= 0 && canSwing()) { charging = performance.now(); return; }
   act();
 }
 function releaseAct() {
   spraying = false;
+  if (pumping) { pumping = false; link.act({ t: 'pump', on: false }); }
   if (charging === null) return;
   const power = Math.min(1, (performance.now() - charging) / 1000 / SWING_FULL);
   charging = null;
@@ -524,7 +691,7 @@ function driveCart(dt, px, py, lt, rt) {
 }
 function grab(b) {
   b.hidden = true; pending.add(b.id);
-  link.act({ t: 'pickup', ball: b.id });
+  link.act(b.sunk ? { t: 'pickup', ball: b.id, pond: true } : { t: 'pickup', ball: b.id });
 }
 // The push picker scoops up whatever you roll over, no button needed.
 function scoop() {
@@ -602,7 +769,10 @@ function showPhase() {
       <p>Knockdowns <b>${report.knockdowns}</b></p>
       ${report.runOver ? `<p>Run over by the cart <b>${report.runOver}</b></p>` : ''}
       <p>Balls left out there <b>${report.left}</b></p>
-      <p>In the bank <b>$${report.bank}</b></p>`;
+      <p>In the bank <b>${money(report.bank)}</b></p>
+      ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : 'QUOTA MISSED'} <b>BV ${money(report.quota.bv)} / ${money(report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
+      ${report.quota ? `<p>Review stamps <b>${report.quota.stamps} · ${report.quota.title}</b></p>` : ''}
+      ${report.tomorrow ? `<p class="dim">${report.tomorrow}</p>` : ''}`;
   }
   if (crew.phase === 'shift') lockMouse();
   else document.exitPointerLock?.();
@@ -732,7 +902,7 @@ const esc = s => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 function hud() {
   $('cash').textContent = money(crew.cash);
   const v = crew.value;
-  $('value').textContent = v ? `${money(v.value)} a ball${v.mult > 1 ? `  ×${v.mult}` : ''}${crew.cart ? `  ·  cart ${(crew.cart.mud ?? 0) < 0.05 ? 'spotless ✨' : (crew.cart.mud ?? 0) < 0.4 ? 'dusty' : 'MUDDY'}` : ''}` : '';
+  $('value').textContent = v ? `BV ${money(v.bv)}${v.hustle > 1 ? ` ×${v.hustle}` : ''} · curb ${Math.round((v.curb ?? 0) * 100)}%${crew.pond?.unlocked ? ` · pond ${Math.round((v.pond ?? 0) * 100)}%` : ''}${crew.quota ? ` · target ${money(crew.quota.target)}` : ''}${crew.cart ? ` · cart ${(crew.cart.mud ?? 0) < 0.05 ? 'spotless ✨' : (crew.cart.mud ?? 0) < 0.4 ? 'dusty' : 'MUDDY'}` : ''}${crew.lastCall ? ' · LAST CALL' : ''}` : '';
   const n = carrying(), cap = gp.pocket, pad = document.body.classList.contains('pad');
   const btn = pad ? GLYPH.A : 'Click';          // use: pick up, swing
   const ibtn = pad ? GLYPH.X : 'E';             // the bucket stand
@@ -746,6 +916,9 @@ function hud() {
   const load = (crew.cart?.load ?? 0) + pendingCart.size;
   $('prompt').textContent = !playing() ? ''
     : me.down > 0 ? 'Seeing stars…'
+    : me.diving ? `${nearestBall(POND.REACH) ? `${btn}  Grab` : 'Feel around for balls'} · bag ${me.bag}/${POND.BAG} · air ${Math.ceil(me.air ?? 0)}s`
+    : onDock(me) && crew.players.some(p => p.diving && p.id !== me.id) ? `Hold ${btn} to pump air to your diver`
+    : onDock(me) ? 'Walk into the pond to dive for sunk balls'
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
     : me.wand ? `Hold ${btn} to spray the cart · ${ibtn} put the wand back`
@@ -755,6 +928,8 @@ function hud() {
     : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `Hold ${btn} to swing, aim at the cart (${me.pocket} to hit)` : 'Bring balls to hit them')
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up`
     : n >= cap ? 'Full: head to the bucket stand' : '';
+  $('air').classList.toggle('hidden', !me.diving);
+  $('air').firstElementChild.style.width = `${((me.air ?? POND.AIR) / POND.AIR) * 100}%`;
   const maxStam = sprintSecs(crew.up?.shoes);
   $('stamina').classList.toggle('hidden', stamina >= maxStam - 0.01 || driving());
   $('stamina').firstElementChild.style.width = `${(stamina / maxStam) * 100}%`;
@@ -765,6 +940,11 @@ function hud() {
 
 // ---------------------------------------------------------------- spraying
 const sprayRay = new THREE.Raycaster(), sprayDir = new THREE.Vector3(), sprayFrom = new THREE.Vector3(), cartCentre = new THREE.Vector3();
+let washTarget = 'cart';
+function flushWash(now) {
+  if (washSecs > 0) link.act({ t: 'wash', secs: +washSecs.toFixed(3), target: washTarget });
+  sprayStats.sent += washSecs; washSecs = 0; washSent = now;
+}
 function updateSpray(dt, now) {
   const on = spraying && me.wand && playing() && me.down <= 0;
   if (sprayHiss) sprayHiss.set(on ? 1 : 0);
@@ -776,16 +956,21 @@ function updateSpray(dt, now) {
       d.life = 0.45; d.p.copy(sprayFrom);
       d.v.copy(sprayDir).multiplyScalar(16).add(new THREE.Vector3((Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2));
     }
-    // On target? The spray reaches WASH.RANGE; the cart is a ~1.5 m sphere around its middle.
-    if (cartView && crew.cart) {
-      cartCentre.set(cartPose.x, 1.0, cartPose.z);
-      sprayRay.set(camera.position, sprayDir); sprayRay.far = WASH.RANGE + 1;
-      const hit = sprayRay.ray.distanceToPoint(cartCentre) < 1.5 && camera.position.distanceTo(cartCentre) < WASH.RANGE + 1;
-      if (hit) { washSecs += dt; cartView.wet = 1; }
-      sprayStats.frames++; if (hit) sprayStats.hits++;
-    }
+    // On target? The nearest of the cart (a ~1.5 m sphere) and the fixtures along the spray, within reach.
+    sprayRay.set(camera.position, sprayDir);
+    let best = null, bestD = Infinity;
+    const consider = (id, x, y, z, r) => {
+      cartCentre.set(x, y, z);
+      const along = cartCentre.clone().sub(camera.position).dot(sprayDir);
+      if (along < 0 || along > WASH.RANGE + r) return;
+      if (sprayRay.ray.distanceToPoint(cartCentre) < r && along < bestD) { bestD = along; best = id; }
+    };
+    if (cartView && crew.cart) consider('cart', cartPose.x, 1.0, cartPose.z, 1.5);
+    for (const fx of FIXTURES) consider(fx.id, fx.x, fx.id === 'sign' ? 2.0 : fx.id === 'stand' ? 0.6 : 0.1, fx.z, fx.r);
+    if (best) { if (washTarget !== best) { flushWash(now); washTarget = best; } washSecs += dt; }
+    sprayStats.frames++; if (best) sprayStats.hits++;
   }
-  if (washSecs > 0 && now - washSent > 250) { link.act({ t: 'wash', secs: +washSecs.toFixed(3) }); sprayStats.sent += washSecs; washSecs = 0; washSent = now; }
+  if (washSecs > 0 && now - washSent > 250) flushWash(now);
   const pos = sprayGeo.attributes.position.array;
   drops.forEach((d, i) => {
     if (d.life > 0) { d.life -= dt; d.v.y -= 9.8 * dt; d.p.addScaledVector(d.v, dt); }
@@ -826,7 +1011,7 @@ function frame(now) {
     if (wantSprint && stamina > 0) { stamina = Math.max(0, stamina - dt); restT = 0; if (!stamina) padSprint = false; }
     else if ((restT += dt) > SPRINT.REGEN_DELAY) stamina = Math.min(maxStam, stamina + dt * maxStam / 3);
     sprinting = wantSprint && stamina > 0;
-    const speed = my.walk * (sprinting ? SPRINT.SPEED : 1);
+    const speed = my.walk * (sprinting ? SPRINT.SPEED : 1) * (inPond(me) ? POND.SWIM : 1);
     me.x += (fx * cy + fz * sy) * speed * dt;
     me.z += (-fx * sy + fz * cy) * speed * dt;
     if (m > 0.05) { const drum = myGear.getObjectByName('drum'); if (drum) drum.rotation.x -= m * my.walk * dt / 0.28; }
@@ -889,11 +1074,27 @@ function frame(now) {
     camera.position.set(cartPose.x - fx * 7, 3.6, cartPose.z - fz * 7);
     camera.lookAt(cartPose.x + fx * 6, 0.8, cartPose.z + fz * 6);
   } else {
-    camera.position.set(me.x, EYE - fall * (EYE - 0.25), me.z);
+    const under = inPond(me) && !drivingNow;
+    camera.position.set(me.x, under ? POND.BOTTOM + 0.75 : EYE - fall * (EYE - 0.25), me.z);
+    if (under !== !!scene.userData.under) {    // murky green, a flashlight, the surface overhead
+      scene.userData.under = under;
+      if (under) { surfaceFog.color.copy(scene.fog.color); scene.fog.color.set(0x1f4a3a); }
+      document.body.classList.toggle('underwater', under);
+      diveLight.intensity = under ? 60 : 0;
+    }
+    if (under) { scene.fog.near = 0.5; scene.fog.far = 9; scene.fog.color.set(0x1f4a3a); }
     camera.rotation.set(me.pitch + fall * 1.1, me.yaw, fall * 0.6, 'YXZ');
   }
 
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
+  board.tick(dt);
+  if (garyView?.g.visible && garyView.to) {
+    const kg = 1 - Math.exp(-dt * 8);
+    garyPose.x += (garyView.to.x - garyPose.x) * kg; garyPose.z += (garyView.to.z - garyPose.z) * kg;
+    let dy = garyView.to.yaw - garyPose.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); garyPose.yaw += dy * kg;
+    garyView.g.position.set(garyPose.x, 0, garyPose.z); garyView.g.rotation.y = garyPose.yaw;
+  }
+  if (memoT > 0 && (memoT -= dt) <= 0) $('memo').classList.add('hidden');
   if (link) hud();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);

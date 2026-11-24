@@ -29,6 +29,7 @@ const MAX_CREWS = 200;
 const BODY_MAX = 4096;
 const SHIFT_SECS = Number(process.env.SHIFT_SECS) || SIM.SHIFT_SECS;  // shorter for local testing
 const DEV_START_CASH = Number(process.env.DEV_START_CASH) || 0;       // local shop testing only; never in the manifest
+const DEV_START_DAY = Number(process.env.DEV_START_DAY) || 0;         // local testing only: new crews start on this day
 
 const store = newStore(process.env.STORAGE_BUCKET);
 const crews = new Map();         // code -> { crew, subs: Set<{p, res}>, savedAt, saving }
@@ -114,7 +115,7 @@ async function api(req, res, url) {
     let code;
     for (let i = 0; i < 20 && !code; i++) { const c = newCode(); if (!crews.has(c) && !(await store.load(c))) code = c; }
     if (!code) return send(res, 503, { error: 'Could not find a free crew code.' });
-    const c = { crew: new Crew(code, null, { shiftSecs: SHIFT_SECS }), subs: new Set(), savedAt: Date.now() };
+    const c = { crew: new Crew(code, DEV_START_DAY ? { day: DEV_START_DAY } : null, { shiftSecs: SHIFT_SECS }), subs: new Set(), savedAt: Date.now() };
     crews.set(code, c);
     c.crew.cash = DEV_START_CASH;
     const p = c.crew.join(body.name);

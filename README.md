@@ -42,7 +42,23 @@ The design lives in [design/game-design.md](design/game-design.md).
   multiplier for the rest of the day.
 - **Sound effects,** made in the browser with no audio files.
 
-Next: range expansions (cash plus stars), and the side jobs.
+- **The story (fun council round 1):** you're Range Rats working for Fairway
+  Holdings International, and Corporate pays per ball. The **Board** on the
+  stand shows Ball Value (BV = Rate × Upkeep), the KPI dials, today's target,
+  Balls Outstanding, and a silo filling with today's balls.
+- **Upkeep jobs raise BV:**
+  - power-wash the sign, the stand and the mats (Curb Appeal)
+  - dive the pond for sunk balls (Pond Clarity)
+  - keep the cart clean (×1.25 on its loads)
+- **Each day:**
+  - a Corporate memo with a quota (from day 2), checked in the review at the bell, where hits earn stamps and titles
+  - **Last Call** glow balls (×2) in the final minute, from day 2
+  - **Gary from Regional's** inspection (from day 3): clean ahead of his route, then huddle at the stand for double commendations
+  - lead balls (×3) that sink into the pond (from day 4)
+- **Shop and movement:** the shop opens any time (Tab / D-pad up), you can
+  sprint (Shift / click R), and carrying gear is personal.
+
+Next: the potato line (Fry Satisfaction), more ball types, the first promotion.
 
 ## Controls
 

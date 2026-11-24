@@ -1,5 +1,7 @@
 # Range Rat — game design
 
+> **Round 1 of the fun council** (design/council-round1.md) sets the story (Range Rats, Fairway Holdings, Ball Value) and replaces the stars below with Ball Value and the daily quota. Where this doc and the council record disagree, the council record wins.
+
 A co-op incremental game set on a golf driving range. You start by picking up
 one ball by hand. You end up running a range so big it needs its own weather.
 

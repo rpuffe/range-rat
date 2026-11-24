@@ -7,6 +7,7 @@ import { SIM } from '../web/js/sim.js';
 function makeCrew(opts = {}) {
   const clock = { t: 1_000_000 };
   const crew = new Crew('TEST', opts.save ?? null, { shiftSecs: 30, seed: 42, now: () => clock.t, ...opts });
+  for (const k of Object.keys(crew.fixtures)) crew.fixtures[k] = 0;   // Curb Appeal 1: Upkeep 1.5, so the cash below is exact
   const run = secs => { for (let i = 0; i < secs * 20; i++) { clock.t += 50; crew.tick(0.05); } };
   return { crew, clock, run };
 }
@@ -80,7 +81,7 @@ test('dropping balls in the bucket stand pays the whole crew', () => {
   assert.equal(crew.cash, 0, 'not at the stand');
   standOn(crew, a, SIM.STAND.x, SIM.STAND.z - 1);
   crew.input(a, { a: [{ t: 'deposit' }] });
-  assert.equal(crew.cash, 3 * SIM.BALL_PRICE);
+  assert.equal(crew.cash, 3 * 1.5 * SIM.BALL_PRICE, 'BV = rate 1 x Upkeep 1.5 (Curb 1)');
   assert.equal(a.pocket, 0);
 });
 
@@ -123,7 +124,7 @@ test('a shift ends into a report, then the next day starts on a clean field', ()
   assert.equal(crew.toSave().day, 2, 'the save is ready for tomorrow');
   crew.input(a, { a: [{ t: 'start' }] });
   assert.equal(crew.day, 2);
-  assert.equal(crew.balls.size, 0);
+  assert.equal([...crew.balls.values()].filter(b => !b.sunk).length, 0, 'the field is clean (the pond keeps what sank)');
 });
 
 test('a crew loads from its save', () => {

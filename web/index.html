@@ -67,12 +67,25 @@
   .shop button { padding: 0.35em 0.9em; min-width: 4.5em; }
   .shop button:disabled { background: rgba(255, 248, 236, 0.15); color: var(--dim); cursor: default; }
   .shop .max { color: #6fcf7c; min-width: 4.5em; text-align: center; }
+  #memo { position: fixed; top: 14%; left: 50%; transform: translateX(-50%); width: min(calc(100vw - 32px), 26em);
+    background: #fbf6e8; color: #2a2418; border-radius: 0.3em; padding: 0.9em 1.2em; box-shadow: 0 0.4em 1.5em #0008;
+    font-family: "Courier New", ui-monospace, monospace; pointer-events: none; }
+  #memo .memo-head { font-size: 0.7em; letter-spacing: 0.08em; border-bottom: 2px solid #2a2418; padding-bottom: 0.3em; }
+  #memo .dimples { color: #fff; text-shadow: 0 0 2px #000; }
+  #memo p { margin: 0.6em 0; font-weight: 600; }
+  #memo-target { font-size: 1.4em; font-weight: 800; color: #b3261e; }
+  .sheet p.stamp b { color: inherit; } .sheet p.stamp.hit { color: #6fcf7c; } .sheet p.stamp.miss { color: #ff8a7a; }
+  .sheet p.dim { color: var(--dim); font-weight: 500; display: block; }
   #roster li.help { color: var(--dim); font-weight: 500; }
   #meter { position: absolute; left: 50%; top: 64%; width: min(60vw, 14em); height: 0.7em; transform: translateX(-50%);
     background: rgba(20, 16, 32, 0.6); border-radius: 0.35em; overflow: hidden; box-shadow: 0 0 0 2px rgba(255, 248, 236, 0.5); }
   #stamina { position: absolute; left: 50%; bottom: 7%; width: min(40vw, 10em); height: 0.35em; transform: translateX(-50%);
     background: rgba(20, 16, 32, 0.5); border-radius: 0.2em; overflow: hidden; }
   #stamina > div { height: 100%; background: #6fcf7c; }
+  #air { position: absolute; left: 50%; bottom: 10%; width: min(50vw, 13em); height: 0.6em; transform: translateX(-50%);
+    background: rgba(10, 30, 40, 0.6); border-radius: 0.3em; overflow: hidden; box-shadow: 0 0 0 2px #bfe9ff88; }
+  #air > div { height: 100%; background: linear-gradient(90deg, #4fc3f7, #b3e5fc); }
+  body.underwater canvas { filter: saturate(0.7) hue-rotate(-12deg) brightness(0.85); }
   #storehint { position: absolute; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); font-size: 0.75em; color: var(--dim); text-shadow: 0 0.06em 0.25em #000a; }
   #meter > div { height: 100%; width: 0; background: linear-gradient(90deg, #6fcf7c, #f2c94c 60%, #e8604c); }
 
@@ -107,6 +120,7 @@
   <div id="prompt"></div>
   <div id="meter" class="hidden"><div></div></div>
   <div id="stamina" class="hidden"><div></div></div>
+  <div id="air" class="hidden"><div></div></div>
   <div id="storehint"><span class="kb">Tab</span><span class="gp">D-pad ↑</span> store · <span class="kb">Shift</span><span class="gp">click R</span> sprint</div>
   <div id="net"></div>
 </div>
@@ -140,6 +154,11 @@
   <div class="row"><button id="resume">Back to work</button><button id="leave" class="quiet">Leave crew</button></div>
 </div>
 
+<div id="memo" class="hidden" role="status" aria-live="polite">
+  <div class="memo-head"><span class="dimples">●</span> FAIRWAY HOLDINGS INTERNATIONAL · INTEROFFICE MEMO</div>
+  <p id="memo-text"></p>
+  <div id="memo-target"></div>
+</div>
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script type="module" src="/js/main.js"></script>
