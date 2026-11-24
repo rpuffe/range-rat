@@ -102,27 +102,42 @@ export function setupRound2(ctx) {
 
   // ---- inputs: crank, CCTV ------------------------------------------------------
   // Returns true if the use press was consumed here.
-  function press() {
+  // latch (pad only): a tap grabs the handle / pump and it stays grabbed, so the right thumb is free to circle
+  // (either stick feeds it, movement is frozen by capturing()). A second tap of Ⓐ or Ⓑ lets go (unlatch).
+  let latched = false;
+  function press(latch = false) {
     const c = crew();
     if (c.phase !== 'shift' || me.down > 0 || ctx.driving()) return false;
     if (c.up?.washer) for (const side of ['L', 'R']) {
-      if (atHandle(me, side)) { cranking = side; washer.crank.begin(side); return true; }
+      if (atHandle(me, side)) { cranking = side; latched = !!latch; washer.crank.begin(side); return true; }
     }
     return false;
   }
   function release() {
     if (cranking) { washer.crank.end(); cranking = null; }
+    latched = false;
   }
+  // Let go of a latched crank or pump. Returns true if something was latched.
+  function unlatch() {
+    if (!latched) return false;
+    release(); pumpEnd();
+    return true;
+  }
+  // Both sticks: whichever is pushed harder feeds the crank (the stick not circled sits near the centre).
+  const feedPad = (crank, pad) => {
+    const r = Math.hypot(pad.rx, pad.ry), l = Math.hypot(pad.lx ?? 0, pad.ly ?? 0);
+    if (l > r) crank.feedStick(pad.lx, pad.ly); else crank.feedStick(pad.rx, pad.ry);
+  };
   const capturing = () => !!cranking || pumpOn || cctv.isOn || !!reveal;
   function mouseMove(e) {
     mouse.dx += e.movementX ?? 0; mouse.dy += e.movementY ?? 0;
     if (cranking) washer.crank.feedMouse(e.movementX ?? 0, e.movementY ?? 0);
     if (pumpOn) pumpCrank.feedMouse(e.movementX ?? 0, e.movementY ?? 0);
   }
-  function pumpBegin() { pumpOn = true; pumpCrank.begin('L'); pumpTurns = 0; pumpSent = 0; }
+  function pumpBegin(latch = false) { pumpOn = true; latched = !!latch; pumpCrank.begin('L'); pumpTurns = 0; pumpSent = 0; }
   function pumpEnd() {
     if (!pumpOn) return;
-    pumpOn = false; pumpCrank.end(); pumpRateNow = 0;
+    pumpOn = false; latched = false; pumpCrank.end(); pumpRateNow = 0;
     link()?.act({ t: 'pump', turns: +pumpTurns.toFixed(3), held: false });
     pumpTurns = 0;
   }
@@ -209,7 +224,7 @@ export function setupRound2(ctx) {
       if (!atHandle(me, cranking) || c.phase !== 'shift') release();
       else {
         const pad = ctx.pad();
-        if (pad) washer.crank.feedStick(pad.rx, pad.ry);
+        if (pad) feedPad(washer.crank, pad);
         crankTurns += washer.crank.step(dt);
       }
     }
@@ -218,7 +233,7 @@ export function setupRound2(ctx) {
       if (!onDockNow() || me.diving || c.phase !== 'shift') pumpEnd();
       else {
         const pad = ctx.pad();
-        if (pad) pumpCrank.feedStick(pad.rx, pad.ry);
+        if (pad) feedPad(pumpCrank, pad);
         const t = pumpCrank.step(dt), slow = Math.abs(t - dt) < 1e-6;
         pumpRateNow = slow ? 0.2 : Math.min(1, t / Math.max(dt, 1e-3) / 2.5);
         if (!slow) pumpTurns += t;
@@ -255,16 +270,16 @@ export function setupRound2(ctx) {
   }
   function prompt(btn) {
     const c = crew();
-    if (pumpOn) return 'Pumping: circle the ' + (ctx.pad() ? 'right stick' : 'mouse') + ' to send air down (1 turn = 1.5 s)';
+    if (pumpOn) return 'Pumping: circle ' + (ctx.pad() ? 'either stick' : 'the mouse') + ' to send air down (1 turn = 1.5 s)' + (latched ? ' · ' + btn + ' lets go' : '');
     if (haulOn) return 'Hauling up the bag… ' + Math.min(100, Math.round(haulSecs / 1.5 * 100)) + '%';
     const owed = c.washer?.credit ?? 0, n = c.washer?.n ?? 0;
-    if (c.up?.washer && c.phase === 'shift') for (const side of ['L', 'R']) if (atHandle(me, side)) return cranking ? 'Cranking… circle the right stick or the mouse · ' + money(owed) + ' left in the washer'
-      : n ? 'Hold ' + btn + ' to crank ' + money(owed) + ' out of the washer (' + n + ' balls)' : 'The ball washer is empty. Bank some balls.';
+    if (c.up?.washer && c.phase === 'shift') for (const side of ['L', 'R']) if (atHandle(me, side)) return cranking ? 'Cranking… circle ' + (ctx.pad() ? 'either stick' : 'the mouse') + ' · ' + money(owed) + ' left in the washer' + (latched ? ' · ' + btn + ' lets go' : '')
+      : n ? (ctx.pad() ? 'Tap ' : 'Hold ') + btn + ' to crank ' + money(owed) + ' out of the washer (' + n + ' balls)' : 'The ball washer is empty. Bank some balls.';
     return null;
   }
 
   return {
-    pa, onEvent, onSnapshot, press, release, capturing, mouseMove, wheel, toggleCCTV, tick, hudLine, prompt,
+    pa, onEvent, onSnapshot, press, release, unlatch, latched: () => latched, capturing, mouseMove, wheel, toggleCCTV, tick, hudLine, prompt,
     pumpBegin, pumpEnd, haulBegin, haulEnd, pumpRate: () => (pumpOn ? pumpRateNow : 0.6),
     get cctvOn() { return cctv.isOn; }, get revealing() { return !!reveal; },
     setMouseDown(v) { mouse.down = v; if (v) mouse.click = true; },

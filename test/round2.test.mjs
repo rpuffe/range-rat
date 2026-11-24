@@ -1433,6 +1433,7 @@ test('Endless mode: a reveal, no quota, no Gary, and the first customer ball set
   assert.equal(crew.outstanding, 0, 'nothing out there yet');
   for (const m of crew.mats) m.next = 1e9;
   run(6.5);                                             // the reveal
+  setMud(crew, 0); run(2);                              // the morning mud kept the early birds waiting: hose it, they step on
   crew.flush();
   swing(crew);
   ev = events(crew);
@@ -1658,4 +1659,16 @@ test('prices scale with the Rats who are online, not everyone in the grace windo
   assert.equal(ev.price, 60, 'one Rat online: the solo price, not x1.8');
   assert.equal(crew.cash, 940);
   assert.equal(crew.promoInfo().fee, 2500);
+});
+
+// ---- council round 4, build item 1: Gary counts only the mats in play --------------------
+test('Gary\'s mats check ignores mats that are not in play (solo uses 6 of 10)', () => {
+  const { crew } = (() => { const clock = { t: 1_000_000 }; return { crew: new Crew('GARYM', null, { shiftSecs: 600, seed: 5, now: () => clock.t }) }; })();
+  const p = crew.join('Solo'); crew.connect(p);
+  for (const k of Object.keys(crew.fixtures)) crew.fixtures[k] = 0;
+  assert.equal(crew.inspect('mats'), true);
+  for (let i = 6; i < 10; i++) crew.fixtures['mat' + i] = 1;            // four filthy mats nobody plays
+  assert.equal(crew.inspect('mats'), true, 'mats 6-9 are not counted solo');
+  for (let i = 0; i < 2; i++) crew.fixtures['mat' + i] = 1;             // 2 of 6 active are filthy: 4/6 < 0.8
+  assert.equal(crew.inspect('mats'), false);
 });

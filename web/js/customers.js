@@ -9,6 +9,8 @@
 // Occupant states (mat.st):
 //   'empty'   nobody here
 //   'playing' hitting a bucket; the per-mat ball timer may fire (matReady)
+//   'wait'    arrived at a muddy mat (mud >= REFUSE_MUD): stands on the walkway, arms crossed. Seated once the
+//             mat is under WAIT_OK; after WAIT_MAX s they refuse (-> 'sulk')
 //   'sulk'    refused a muddy mat: sulks CUST.SULK s, then leaves
 //   'leave'   walking out with the empty bucket (the mat is free from here on)
 // Incoming customer (mat.inc = {cust, look, t0}) is in the 'arrive' state: they walk
@@ -22,8 +24,10 @@ import { MATS } from './sim.js';
 export const CUST = {
   WALK: 1.3,              // m/s
   BUCKET: 30,             // balls per bucket
-  BUCKET_CLUB: 50,        // balls per bucket at the Range Club (venue >= 1) and up
-  REFUSE_MUD: 0.9,        // mat mud at or above this: the customer refuses
+  BUCKET_CLUB: 40,        // balls per bucket at the Range Club (venue >= 1) and up
+  REFUSE_MUD: 0.9,        // mat mud at or above this: the customer will not step on, and waits
+  WAIT_OK: 0.6,           // hose the mat under this and the waiting customer steps on
+  WAIT_MAX: 25,           // s a customer waits at a muddy mat before refusing and leaving
   SULK: 2,                // s of sulking before they leave
   EMPTY_AFTER_REFUSE: 30, // s the mat stays empty (nobody arrives) after a refusal
   GRAB: 2,                // s at the stand picking up a bucket
@@ -98,7 +102,8 @@ export function custPos(c, t, opt = {}) {
     return at(p.x, p.z, { yaw: end ? 0 : heading(p.hx, p.hz), speed: end ? 0 : CUST.WALK, act: end ? 'wait' : 'walk', carry: true });
   }
   if (c.st === 'playing') return at(sx, PLAY_Z, { act: u < CUST.SETUP ? 'set' : 'play', carry: true });
-  if (c.st === 'sulk') return at(sx, PLAY_Z, { act: 'sulk', carry: true });
+  if (c.st === 'wait') return at(sx, APPROACH_Z, { act: 'wait', carry: true });
+  if (c.st === 'sulk') return at(sx, APPROACH_Z, { act: 'sulk', carry: true });
   if (c.st === 'leave') {
     const r = leaveRoute(c.mat, dx), d = Math.min(u * CUST.WALK, r.dur * CUST.WALK);
     const p = polyAt(r.P, d), done = u >= r.dur;
@@ -141,12 +146,18 @@ function seat(mat, now, balls, ev, venue) {
 
 // Opening bell: every open mat is already taken by an early bird (no walk, partial
 // bucket so refills stagger); the rest are empty. Returns events.
-export function openShift(mats, { now = 0, rng = Math.random, venue = 0, nOpen = mats.length, nextCust } = {}) {
+// mud: (i) => this mat's mud 0..1. An early bird never takes a mat at >= REFUSE_MUD: they wait behind it.
+export function openShift(mats, { now = 0, rng = Math.random, venue = 0, nOpen = mats.length, nextCust, mud } = {}) {
   const ev = [], ctx = { nextCust };
   for (const mat of mats) {
     Object.assign(mat, newMat(mat.i), { clock: now });
     if (mat.i >= nOpen) continue;
     mat.cust = nextId(ctx); mat.look = newLook(rng);
+    if ((mud?.(mat.i) ?? 0) >= CUST.REFUSE_MUD) {
+      mat.st = 'wait'; mat.t0 = now;
+      ev.push({ t: 'wait', mat: mat.i, cust: mat.cust });
+      continue;
+    }
     seat(mat, now - CUST.SETUP, Math.max(1, Math.ceil(bucketFor(venue) * (0.35 + 0.65 * rng()))), ev, venue);
   }
   return ev;
@@ -164,6 +175,14 @@ export function stepMat(mat, dt, ctx = {}) {
   if (mat.st === 'playing') {
     if (mat.fin && now >= mat.fin) toLeave(mat, now, 'done', ev);
     else if (!open) toLeave(mat, now, 'closed', ev);
+  } else if (mat.st === 'wait') {
+    if (!open) toLeave(mat, now, 'closed', ev);
+    else if (mud < CUST.WAIT_OK) seat(mat, now, bucketFor(venue), ev, venue);
+    else if (now >= mat.t0 + CUST.WAIT_MAX) {
+      mat.st = 'sulk'; mat.t0 = now; mat.balls = 0; mat.fin = 0;
+      mat.noBefore = now + CUST.EMPTY_AFTER_REFUSE;
+      ev.push({ t: 'refuse', mat: mat.i, cust: mat.cust, mud });
+    }
   } else if (mat.st === 'sulk') {
     if (now >= mat.t0 + CUST.SULK) toLeave(mat, now, 'refused', ev);
   } else if (mat.st === 'leave') {
@@ -186,9 +205,8 @@ export function stepMat(mat, dt, ctx = {}) {
   if (mat.inc && now >= mat.inc.t0 + arr && (mat.st === 'empty' || mat.st === 'leave') && now >= mat.noBefore) {
     mat.cust = mat.inc.cust; mat.look = mat.inc.look; mat.inc = null;
     if (mud >= CUST.REFUSE_MUD) {
-      mat.st = 'sulk'; mat.t0 = now; mat.balls = 0; mat.fin = 0;
-      mat.noBefore = now + CUST.EMPTY_AFTER_REFUSE;
-      ev.push({ t: 'refuse', mat: mat.i, cust: mat.cust, mud });
+      mat.st = 'wait'; mat.t0 = now; mat.balls = 0; mat.fin = 0;
+      ev.push({ t: 'wait', mat: mat.i, cust: mat.cust });
     } else seat(mat, now, bucketFor(venue), ev, venue);
   }
   return ev;

@@ -268,7 +268,7 @@ export class Crew {
     this.fixtures.sign = 0.9; this.fixtures.stand = 0.5;
     if (this.perks?.covered) return;     // covered bays: the members never see a muddy mat
     const mats = FIXTURES.filter(x => x.id.startsWith('mat'));
-    for (let i = 0; i < 5; i++) this.fixtures[mats[Math.floor(this.rng() * mats.length)].id] = 0.85;
+    for (let i = 0; i < 5; i++) this.fixtures[mats[Math.floor(this.rng() * mats.length)].id] = 0.95;   // over the 0.9 refusal line: a customer waits for the hose
   }
 
   // ---- inputs ----------------------------------------------------------------
@@ -709,7 +709,9 @@ export class Crew {
     this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaTarget() : null, text: memoText(this.day, this.quota && this.quotaTarget(), this.endless, this.rng) });
     if (this.cart) { this.cart.boostT = 0; if (!this.cart.driver) Object.assign(this.cart, CART.PARK, { v: 0 }); }
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
-    openMats(this.mats, { now: this.custT, rng: this.rng, venue: this.venue, nOpen: activeMats(this.onlineCount()), nextCust: () => ++this.nextCust });
+    for (const e of openMats(this.mats, { now: this.custT, rng: this.rng, venue: this.venue, nOpen: activeMats(this.onlineCount()), nextCust: () => ++this.nextCust, mud: i => this.fixtures['mat' + i] ?? 0 })) {
+      if (e.t === 'wait') this.events.push({ t: 'custwait', mat: e.mat });
+    }
     this.rollTreasureToday();
     this.revealT = 0;
     if (this.pendingReveal) {        // a promotion: the next morning plays the reveal
@@ -1051,7 +1053,8 @@ export class Crew {
     if (id === 'cart') return !this.cart || this.cart.mud <= GARY.CLEAN;
     if (id === 'kitchen') return !!this.gary?.fed || this.fries >= FRIES.MAX * 0.5;   // Gary had a hot dog
     if (id === 'mats') {
-      const mats = Object.entries(f).filter(([k]) => k.startsWith('mat'));
+      const nAct = activeMats(this.onlineCount());   // only the mats in play: solo never washes mats nobody uses
+      const mats = Object.entries(f).filter(([k]) => k.startsWith('mat') && +k.slice(3) < nAct);
       return mats.filter(([, v]) => v <= GARY.CLEAN).length >= mats.length * 0.8;
     }
     return true;
@@ -1122,6 +1125,7 @@ export class Crew {
     this.mats.forEach((m, i) => {
       for (const e of stepMat(m, dt, { now: this.custT, rng: this.rng, venue: this.venue, mud: this.fixtures['mat' + m.i] ?? 0, open: i < nOpen,
         gap: 8 * this.perks.swingGapMult, nextCust: () => ++this.nextCust })) {
+        if (e.t === 'wait') this.events.push({ t: 'custwait', mat: m.i });
         if (e.t === 'refuse') { this.events.push({ t: 'refuse', mat: m.i }); this.stats.refused = (this.stats.refused ?? 0) + 1; }
       }
     });

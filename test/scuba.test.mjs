@@ -158,10 +158,10 @@ test('the tube: 6 s to the stand at the gear factor you fed it with; the pump cl
 test('12 treasures, the 1958 scorecard last and County-only', () => {
   assert.equal(TREASURE.length, 12);
   assert.equal(new Set(TREASURE.map(t => t.id)).size, 12);
-  assert.equal(TREASURE.at(-1).id, 'scorecard'); assert.equal(TREASURE.at(-1).minVenue, 2);
+  assert.equal(TREASURE.at(-1).id, 'scorecard'); assert.equal(TREASURE.at(-1).minVenue, 4);
   assert.match(TREASURE.at(-1).blurb, /Signed by the founder/);
   assert.equal(TREASURE[0].name, 'Car keys');
-  assert.equal(TREASURE.filter(t => t.minVenue === 2).length, 1);
+  assert.equal(TREASURE.filter(t => t.minVenue === 4).length, 1);
   for (const t of TREASURE) { assert.ok(t.name && t.blurb && t.mesh && t.fee === 200, t.id); assert.equal(TREASURE_BY_ID[t.id], t); }
   assert.match(TREASURE_BY_ID.trophy.blurb, /GARY/);
 });
@@ -171,7 +171,9 @@ test('treasure turns up one at a time, in order', () => {
   assert.equal(nextTreasure(['keys', 'trophy'], 1).id, 'shades');
   const eleven = TREASURE.slice(0, 11).map(t => t.id);
   assert.equal(nextTreasure(eleven, 1), null, 'at the Club the scorecard is held back');
-  assert.equal(nextTreasure(eleven, 2).id, 'scorecard');
+  assert.equal(nextTreasure(eleven, 2), null, 'not at Tiered');
+  assert.equal(nextTreasure(eleven, 3), null, 'not at the Stadium');
+  assert.equal(nextTreasure(eleven, 4).id, 'scorecard');
   assert.equal(nextTreasure(TREASURE.map(t => t.id), 3), null, 'all found');
   assert.equal(nextTreasure(['pin'], 1).id, 'keys', 'order is by list, skipping only what is found');
   assert.equal(rollTreasure([], 0, () => 0), null, 'no pond before the Club');

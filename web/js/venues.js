@@ -55,6 +55,10 @@ function boxes(list, mat, shadow) {
 }
 const box = (w, h, d, mat, x, y, z) => { const m = new THREE.Mesh(BOX, mat); m.scale.set(w, h, d); m.position.set(x, y, z); return m; };
 
+// Venue animation rate for the heavy loops (neon colours, stadium crowd bob). 0 = every frame. perf.js sets it.
+let heavyHz = 0;
+export function setHeavyRate(hz) { heavyHz = Number.isFinite(hz) && hz > 0 ? hz : 0; }
+
 export function createVenues(scene) {
   const built = {};
   const groups = {};
@@ -205,16 +209,20 @@ export function createVenues(scene) {
   }
 
   const col = new THREE.Color();
+  let heavyAcc = 0;
   function tick(dt, t) {
     if (venue >= 1 && live.flags.length) for (const f of live.flags) {
       f.m.rotation.y = Math.sin(t * 4 + f.ph) * 0.35; f.m.scale.x = 0.9 + 0.1 * Math.sin(t * 7 + f.ph);
     }
-    if (venue >= 2 && live.neon) {
+    // The neon colours and the stadium crowd's bob (hundreds of matrix writes) run at heavyHz on Xbox / Low.
+    let heavy = true;
+    if (heavyHz > 0) { heavyAcc += dt; if (heavyAcc < 1 / heavyHz) heavy = false; else heavyAcc %= 1 / heavyHz; }
+    if (heavy && venue >= 2 && live.neon) {
       const n = live.neon.count;
       for (let i = 0; i < n; i++) { col.setHSL((t * 0.15 + i * 0.09) % 1, 1, 0.55); live.neon.setColorAt(i, col); }
       live.neon.instanceColor.needsUpdate = true;
     }
-    if (venue >= 3) for (const c of live.crowd) {
+    if (heavy && venue >= 3) for (const c of live.crowd) {
       for (let i = 0; i < c.base.length; i++) {
         const b = c.base[i];
         c.p.set(b[0], b[1] + Math.max(0, Math.sin(t * 3 + b[3])) * 0.35, b[2]);

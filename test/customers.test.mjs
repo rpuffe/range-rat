@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CUST, bucketFor, GATE, ENTRANCE_PATH, arriveRoute, arriveDur, leaveDur, custPos, newMat, stepMat, matReady, shoot, openShift, matWire } from '../web/js/customers.js';
+import { CUST, bucketFor, GATE, APPROACH_Z, ENTRANCE_PATH, arriveRoute, arriveDur, leaveDur, custPos, newMat, stepMat, matReady, shoot, openShift, matWire } from '../web/js/customers.js';
 import { MATS, mulberry32 } from '../web/js/sim.js';
 
 const run = (mat, from, to, ctx, step = 0.25) => {
@@ -12,9 +12,9 @@ const run = (mat, from, to, ctx, step = 0.25) => {
 const ctxOf = (o = {}) => ({ rng: mulberry32(7), venue: 0, mud: 0, ...o });
 
 test('constants match the spec', () => {
-  assert.equal(CUST.WALK, 1.3); assert.equal(CUST.BUCKET, 30); assert.equal(CUST.BUCKET_CLUB, 50);
+  assert.equal(CUST.WALK, 1.3); assert.equal(CUST.BUCKET, 30); assert.equal(CUST.BUCKET_CLUB, 40);
   assert.equal(CUST.REFUSE_MUD, 0.9); assert.equal(CUST.SULK, 2); assert.equal(CUST.EMPTY_AFTER_REFUSE, 30);
-  assert.equal(bucketFor(0), 30); assert.equal(bucketFor(1), 50); assert.equal(bucketFor(5), 50);
+  assert.equal(bucketFor(0), 30); assert.equal(bucketFor(1), 40); assert.equal(bucketFor(5), 40);
 });
 
 test('the route copy matches ENTRANCE in scenery.js', () => {
@@ -82,8 +82,8 @@ test('early birds take every open mat at opening, with staggered buckets', () =>
   assert.equal(new Set(mats.slice(0, 6).map(m => m.cust)).size, 6);
 });
 
-test('a bucket is 30 balls at the Muni and 50 at the Club', () => {
-  for (const [venue, n] of [[0, 30], [1, 50]]) {
+test('a bucket is 30 balls at the Muni and 40 at the Club', () => {
+  for (const [venue, n] of [[0, 30], [1, 40]]) {
     const m = newMat(1), ctx = ctxOf({ venue });
     const ev = run(m, 0, arriveDur(1) + 1, ctx);
     assert.ok(ev.some(e => e.t === 'arrive'));
@@ -125,30 +125,72 @@ test('the next customer is timed to arrive as the bucket runs dry (no idle mat, 
   assert.ok(idle < 900 * 0.1, `idle ${idle}s of 900`);
 });
 
-test('a filthy mat is refused: sulk 2 s, leave, empty for 30 s, then fine once cleaned', () => {
+test('a filthy mat: the customer waits at the walkway, then refuses after 25 s; empty for 30 s, then fine once cleaned', () => {
   const m = newMat(2), ev = [];
   let mud = 0.95, now = 0;
   const tick = to => { for (; now < to; now += 0.25) ev.push(...stepMat(m, 0.25, { ...ctxOf(), mud, now })); };
   tick(arriveDur(2) + 0.5);
+  assert.equal(m.st, 'wait'); assert.ok(ev.some(e => e.t === 'wait' && e.mat === 2));
+  assert.equal(ev.some(e => e.t === 'refuse'), false, 'not refused yet');
+  assert.equal(matReady(m, now), false);
+  const tw = m.t0;
+  assert.equal(custPos({ mat: 2, st: 'wait', t0: tw }, tw + 5).z, APPROACH_Z, 'on the walkway behind the mat');
+  tick(tw + CUST.WAIT_MAX - 1);
+  assert.equal(m.st, 'wait');
+  tick(tw + CUST.WAIT_MAX + 0.5);
   const refuse = ev.find(e => e.t === 'refuse');
   assert.ok(refuse && refuse.mud === 0.95 && m.st === 'sulk');
   const tr = m.t0;
-  assert.equal(m.balls, 0); assert.equal(matReady(m, now), false);
+  assert.equal(m.balls, 0);
   tick(tr + CUST.SULK + 0.5);
   assert.equal(m.st, 'leave');
   assert.ok(ev.some(e => e.t === 'leave' && e.why === 'refused'));
-  // nobody arrives at the mat until 30 s after the refusal
-  tick(tr + CUST.EMPTY_AFTER_REFUSE - 1);
-  assert.equal(m.st === 'playing' || m.st === 'sulk', false);
-  assert.equal(matReady(m, now), false, 'no balls from a refused mat');
-  mud = 0;                                        // someone hosed it down
+  tick(tr + CUST.EMPTY_AFTER_REFUSE - 1);                 // nobody arrives until 30 s after the refusal
+  assert.equal(m.st === 'playing' || m.st === 'sulk' || m.st === 'wait', false);
+  mud = 0;                                                 // someone hosed it down
   tick(tr + CUST.EMPTY_AFTER_REFUSE + arriveDur(2) + 2);
   assert.equal(m.st, 'playing');
   assert.ok(m.t0 >= tr + CUST.EMPTY_AFTER_REFUSE - 1e-6, 'arrived no sooner than 30 s after the refusal');
 });
 
-test('mud just under the threshold is accepted, at the threshold refused', () => {
-  for (const [mud, st] of [[0.89, 'playing'], [0.9, 'sulk']]) {
+test('a waiting customer is seated as soon as the mat is hosed under 0.6', () => {
+  const m = newMat(1), ev = [];
+  let mud = 0.95, now = 0;
+  const tick = to => { for (; now < to; now += 0.25) ev.push(...stepMat(m, 0.25, { ...ctxOf(), mud, now })); };
+  tick(arriveDur(1) + 0.5);
+  assert.equal(m.st, 'wait');
+  tick(now + 10); mud = 0.7; tick(now + 2);
+  assert.equal(m.st, 'wait', '0.7 is still too muddy');
+  mud = 0.59; tick(now + 0.5);
+  assert.equal(m.st, 'playing');
+  const start = ev.find(e => e.t === 'start');
+  assert.ok(start && start.balls === 30 && start.mat === 1);
+  assert.equal(ev.some(e => e.t === 'refuse'), false);
+});
+
+test('a muddy mat at the opening has a waiting customer instead of an early bird', () => {
+  const mats = Array.from({ length: 4 }, (_, i) => newMat(i));
+  const ev = openShift(mats, { now: 0, rng: mulberry32(5), nOpen: 4, mud: i => (i === 2 ? 0.95 : 0) });
+  assert.equal(mats[2].st, 'wait'); assert.ok(mats[2].cust > 0);
+  assert.ok(ev.some(e => e.t === 'wait' && e.mat === 2));
+  for (const i of [0, 1, 3]) assert.equal(mats[i].st, 'playing');
+  const m = mats[2], out = [];
+  let now = 0;
+  const tick = (to, mud) => { for (; now < to; now += 0.25) out.push(...stepMat(m, 0.25, { ...ctxOf(), mud, now })); };
+  tick(CUST.WAIT_MAX - 1, 0.95);
+  assert.equal(m.st, 'wait');
+  tick(CUST.WAIT_MAX + 0.5, 0.95);
+  assert.equal(m.st, 'sulk'); assert.ok(out.some(e => e.t === 'refuse'));
+  // and the washed case: seated
+  const mats2 = [newMat(0)];
+  openShift(mats2, { now: 0, rng: mulberry32(5), nOpen: 1, mud: () => 0.95 });
+  const out2 = []; let t2 = 0;
+  for (; t2 < 6; t2 += 0.25) out2.push(...stepMat(mats2[0], 0.25, { ...ctxOf(), mud: t2 < 5 ? 0.95 : 0.3, now: t2 }));
+  assert.equal(mats2[0].st, 'playing');
+});
+
+test('mud just under the threshold is accepted, at the threshold the customer waits', () => {
+  for (const [mud, st] of [[0.89, 'playing'], [0.9, 'wait']]) {
     const m = newMat(0); run(m, 0, arriveDur(0) + 0.5, ctxOf({ mud }));
     assert.equal(m.st, st);
   }

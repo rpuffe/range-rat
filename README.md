@@ -117,4 +117,40 @@ DEV_START_CASH=500 node server/server.mjs  # new crews start with cash, to try t
 Open a second browser tab to be a second player. Add `?debug` to the URL to
 get `window.rr` (your player, the balls, crew state) in the console.
 
+## Performance
+
+Target on the owner's Xbox (Edge, 4K TV): average frame at most 16.7 ms and
+**p95 at most 20 ms**, over a 7-minute shift with 4 players, 14 customers, 800
+balls and the Stadium crowd.
+
+**Graphics setting** (Settings > Graphics): Auto (Low on Xbox, High elsewhere;
+Auto also steps down by itself if p95 stays over 22 ms for 10 s, up to three
+times: render scale 0.85, shadows off, 6 customers, with a toast), High, or Low.
+Low: pixel ratio 1 and at most 1080 rows rendered (CSS-scaled up), a 1024 shadow
+map refreshed every 2nd frame with only the sun and fixtures casting, 8 full
+customers within 30 m, no scuba light shafts, half the silt and kelp, venue
+neon and stadium crowd animated at 20 Hz. Scenery density (`lowDetail`) is
+chosen at page load; the rest changes live.
+
+**Measuring.** Add `?perf` to the URL for the overlay (P toggles it): frame ms
+average, p50, p95 and worst over 5 s, draw calls, triangles, heap where the
+browser reports it, and a `[perf]` console line every 10 s. To get to a heavy
+venue quickly, run the server with `RR_DEV=1` (never in the manifest) and load a
+fixture from `tools/fixtures/` (`muni-day3`, `club-day2`, `stadium`):
+
+```sh
+RR_DEV=1 node server/server.mjs
+curl -s -XPOST localhost:8080/api/dev/crew -H 'Content-Type: application/json' -d '{"fixture":"stadium","name":"Perf"}'
+# -> {code,p,k}; join that code from the lobby with ?perf in the URL
+```
+
+Method: Stadium fixture, 4 clients, a full 7-minute shift, read p95 from the
+overlay at the end of each minute; once with Graphics High, once with Auto.
+
+| Device | Graphics | avg ms | p95 ms | worst ms | calls | tris |
+| --- | --- | --- | --- | --- | --- | --- |
+| Desktop Chrome (reference) | High | _todo_ | _todo_ | _todo_ | _todo_ | _todo_ |
+| Xbox, Edge, 4K TV | Auto (Low) | _todo_ | _todo_ | _todo_ | _todo_ | _todo_ |
+| Xbox, Edge, 4K TV | High | _todo_ | _todo_ | _todo_ | _todo_ | _todo_ |
+
 Before pushing, run `make preflight` (it needs Docker, yq and Trivy).

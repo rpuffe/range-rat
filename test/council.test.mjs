@@ -272,7 +272,7 @@ test('the hose reaches the sign, the stand and every mat from the station', () =
 
 // ---- morning mud -----------------------------------------------------------------
 
-const matsMuddy = crew => Object.entries(crew.fixtures).filter(([k, v]) => k.startsWith('mat') && v === 0.85);
+const matsMuddy = crew => Object.entries(crew.fixtures).filter(([k, v]) => k.startsWith('mat') && v === 0.95);
 
 test('the constructor lays the morning mud', () => {
   const { crew } = makeCrew();
@@ -281,7 +281,7 @@ test('the constructor lays the morning mud', () => {
   assert.equal(crew.fixtures.stand, 0.5);
   const n = matsMuddy(crew).length;
   assert.ok(n >= 1 && n <= 5, `${n} muddy mats (random picks can repeat)`);
-  for (const [k, v] of Object.entries(crew.fixtures)) if (k.startsWith('mat')) assert.ok(v === 0 || v === 0.85, `${k} ${v}`);
+  for (const [k, v] of Object.entries(crew.fixtures)) if (k.startsWith('mat')) assert.ok(v === 0 || v === 0.95, `${k} ${v}`);
 });
 
 test('day 1 starts with whatever mud there is; the mud comes back from day 2\'s start', () => {

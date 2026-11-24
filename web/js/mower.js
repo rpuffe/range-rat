@@ -49,6 +49,16 @@ export function createMower({ scene }) {
   const decal = new THREE.Mesh(new THREE.PlaneGeometry(MOWER.X1 - MOWER.X0, 4).rotateX(-Math.PI / 2), decalMat);
   decal.position.y = 0.04; decal.visible = false; decal.renderOrder = 2; scene.add(decal);
 
+  // Two 4 m orange-and-white cones at x +-64 on the lane, so the lane reads from the yard (the decal alone is a few pixels).
+  const coneCv = document.createElement('canvas'); coneCv.width = 8; coneCv.height = 64;
+  const cc = coneCv.getContext('2d');
+  for (let i = 0; i < 8; i++) { cc.fillStyle = i % 2 ? '#f4f1ea' : '#f26a1b'; cc.fillRect(0, i * 8, 8, 8); }
+  const coneTex = new THREE.CanvasTexture(coneCv); coneTex.wrapS = THREE.RepeatWrapping;
+  const coneGeo = new THREE.ConeGeometry(0.9, 4, 12, 1, true), coneMat = new THREE.MeshLambertMaterial({ map: coneTex, side: THREE.DoubleSide });
+  const cones = [MOWER.X0, MOWER.X1].map(x => {
+    const c = new THREE.Mesh(coneGeo, coneMat); c.position.set(x, 2, 0); c.visible = false; scene.add(c); return c;
+  });
+
   let snap = null, tgt = { x: 0, z: 0, yaw: 0 }, spin = 0;
   const cur = { x: 0, z: 0, yaw: 0 };
 
@@ -57,9 +67,10 @@ export function createMower({ scene }) {
     // The server's mower snapshot (mowerSnap) or null/undefined.
     update(s) {
       const was = snap; snap = s || null;
-      if (!snap) { root.visible = false; decal.visible = false; return; }
+      if (!snap) { root.visible = false; decal.visible = false; for (const c of cones) c.visible = false; return; }
       root.visible = true;
       decal.visible = snap.phase === 'warn' || snap.phase === 'drive';
+      for (const c of cones) { c.visible = decal.visible; c.position.z = snap.lane; }
       decal.position.set((MOWER.X0 + MOWER.X1) / 2, 0.04, snap.lane);
       // while warning the server sends the shed-to-start roll-out position
       tgt = { x: snap.x, z: snap.z, yaw: snap.yaw ?? -Math.PI / 2 };

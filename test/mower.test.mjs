@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MOWER, MOWER_DRIVE_SECS, pickLane, newMower, mowerPos, stepMower, mowerDue, mowerSnap, mowerBoard } from '../web/js/mowe.js';
+import { MOWER, MOWER_DRIVE_SECS, pickLane, newMower, mowerPos, stepMower, mowerDue, mowerSnap, mowerBoard, laneName } from '../web/js/mowe.js';
 import { FRIES_MENU, FRIES_YIELD, menuFor, yieldFor, garyEats, garyHungry } from '../web/js/menu.js';
 
 const ball = (id, x, z, extra = {}) => ({ id, x, z, rest: true, kind: 'range', ...extra });
@@ -31,8 +31,8 @@ test('mowerDue: Club day 2+, once, at 25% of the shift', () => {
 });
 
 test('pickLane takes the candidate with the most resting balls', () => {
-  const bs = [ball(1, 0, -131), ball(2, 5, -133), ball(3, 9, -130), ball(4, 0, -24)];
-  assert.equal(pickLane(bs, mid), -132);
+  const bs = [ball(1, 0, -119), ball(2, 5, -121), ball(3, 9, -122), ball(4, 0, -24)];
+  assert.equal(pickLane(bs, mid), -120);
 });
 
 test('pickLane skips ones, drifting, treasure, sunk, moving balls; ties go to rng', () => {
@@ -47,7 +47,7 @@ test('warn counts down 12 s then drives; board line', () => {
   const s = newMower([], mid);
   assert.equal(s.phase, 'warn');
   assert.deepEqual(mowerPos(s), MOWER.SHED);
-  assert.equal(mowerBoard(s), `MOW-E · LANE z ${s.lane} · 0:12`);
+  assert.equal(mowerBoard(s), `MOW-E · BY ${laneName(s.lane).toUpperCase()} · 0:12`);
   let changed = null;
   for (let i = 0; i < 12 / 0.05 + 2 && !changed; i++) changed = stepMower(s, 0.05, {}).phaseChange;
   assert.equal(changed, 'drive');
@@ -144,4 +144,23 @@ test('Gary eats one: a hot dog while he is on site and before his kitchen stop',
   assert.equal(garyEats({ ...g, phase: 'done' }, 'hotdog', 'good').fed, false);
   assert.equal(garyEats({ ...g, checks: [{ stop: 'kitchen', ok: false }] }, 'hotdog', 'good').fed, false);
   assert.equal(garyHungry(null), false);
+});
+
+// ---- council round 4, build item 1 --------------------------------------------------
+import { MAP } from '../web/js/map.js';
+test('MOW-E lanes clear every rock, box and Target Green bowl, and are named after landmarks', () => {
+  assert.deepEqual(MOWER.LANES, [-24, -36, -120, -156, -166, -178]);
+  assert.equal(MOWER.LANE_NAMES.length, MOWER.LANES.length);
+  const bowls = [{ x: -4, z: -48, r: 7 }, { x: 26, z: -76, r: 8 }, { x: -6, z: -140, r: 9 }];   // round 4 §3.1
+  const mowerHalf = 2.2;
+  for (const lane of MOWER.LANES) {
+    for (const r of [...MAP.ROCKS, ...bowls]) assert.ok(Math.abs(lane - r.z) - r.r >= mowerHalf, `lane ${lane} vs ${r.id ?? 'bowl'}`);
+    for (const b of MAP.BOXES) assert.ok(Math.abs(lane - b.z) - b.d / 2 >= mowerHalf + MOWER.RAKE_HALF, `lane ${lane} vs ${b.id}`);
+  }
+  for (const [i, lane] of MOWER.LANES.entries()) assert.equal(laneName(lane), MOWER.LANE_NAMES[i]);
+  assert.equal(laneName(-120), 'the Tractor');
+  assert.equal(laneName(-999), 'z -999');
+  const s = newMower([ball(1, 0, -120)], mid);
+  assert.equal(s.lane, -120);
+  assert.equal(mowerBoard(s), 'MOW-E · BY THE TRACTOR · 0:12');
 });

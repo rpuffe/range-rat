@@ -14,6 +14,14 @@ export const seatInTab = loadSeat;
 export function lastUsed() { try { return JSON.parse(localStorage.getItem(LAST)) ?? {}; } catch { return {}; } }
 export function rememberUsed(code, name) { try { localStorage.setItem(LAST, JSON.stringify({ code, name })); } catch {} }
 
+// The ?c=KQPZ deep link: a 4-letter code from the page's query string, or ''.
+export function codeFromUrl(search = globalThis.location?.search ?? '') {
+  const c = new URLSearchParams(search).get('c') ?? '';
+  return /^[A-Za-z0-9]{4}$/.test(c.trim()) ? c.trim().toUpperCase() : '';
+}
+// The shareable link for a crew: <origin>/?c=CODE.
+export const joinLink = (code, origin = globalThis.location?.origin ?? '') => `${origin}/?c=${code}`;
+
 async function post(path, body) {
   const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const j = await res.json().catch(() => ({}));

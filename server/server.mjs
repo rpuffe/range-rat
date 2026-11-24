@@ -12,7 +12,7 @@
 // deploy ends live crews; they reload from their save on the next join.
 
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Crew, newCode, validCode } from './crew.mjs';
@@ -108,8 +108,39 @@ function readJson(req) {
   });
 }
 
+// Dev fixtures (perf testing): only when RR_DEV is set in the environment, never in the manifest.
+//   POST /api/dev/crew  {name?, fixture: 'stadium-day2'}  or  {name?, save: {...}}  or a bare save body
+//   -> {code, p, k}: a new crew loaded from tools/fixtures/<fixture>.json (or the save), with you on it.
+//   GET  /api/dev/fixtures -> {fixtures: [names]}
+const FIXTURES = fileURLToPath(new URL('../tools/fixtures/', import.meta.url));
+async function devApi(req, res, parts) {
+  if (!process.env.RR_DEV) return send(res, 404, { error: 'not found' });
+  if (parts[2] === 'fixtures' && req.method === 'GET') {
+    const names = (await readdir(FIXTURES).catch(() => [])).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5));
+    return send(res, 200, { fixtures: names });
+  }
+  if (parts[2] !== 'crew' || req.method !== 'POST') return send(res, 404, { error: 'not found' });
+  const body = await readJson(req);
+  let save = body.save;
+  if (body.fixture !== undefined) {
+    if (!/^[a-z0-9-]{1,40}$/.test(String(body.fixture))) return send(res, 400, { error: 'bad fixture name' });
+    try { save = JSON.parse(await readFile(join(FIXTURES, `${body.fixture}.json`), 'utf8')); }
+    catch { return send(res, 404, { error: 'no such fixture' }); }
+  } else if (!save) { const { name: _n, ...rest } = body; save = rest; }
+  if (crews.size >= MAX_CREWS) return send(res, 503, { error: 'The range is full right now. Try again soon.' });
+  let code;
+  for (let i = 0; i < 20 && !code; i++) { const c = newCode(); if (!crews.has(c) && !(await store.load(c))) code = c; }
+  if (!code) return send(res, 503, { error: 'Could not find a free crew code.' });
+  const c = { crew: new Crew(code, save, { shiftSecs: SHIFT_SECS }), subs: new Set(), savedAt: Date.now() };
+  crews.set(code, c);
+  const p = c.crew.join(body.name);
+  saveCrew(c);
+  return send(res, 200, { code, p: p.id, k: p.token });
+}
+
 async function api(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean);   // ['api', 'crew', CODE?, verb?]
+  if (parts[1] === 'dev') return devApi(req, res, parts);
   if (parts[1] !== 'crew') return send(res, 404, { error: 'not found' });
 
   if (parts.length === 2 && req.method === 'POST') {          // new crew

@@ -12,7 +12,8 @@ export const MOWER = {
   AT: 0.25,                 // of the shift
   WARN_SECS: 12,
   SPEED: 4,                 // m/s
-  LANES: [-24, -36, -120, -132, -148, -160],
+  LANES: [-24, -36, -120, -156, -166, -178],   // clear Dimples Rock (>= 3.8 m), the tractor and the Tiered bowls
+  LANE_NAMES: ['the Short Grass', 'Short of Red', 'the Tractor', 'the Rock', 'the Long Grass', 'the Back Net'],   // after the landmarks, so a crew can call it
   RAKE_OFFSET: 2.4,         // windrow lands at lane + this, keeping x
   RAKE_HALF: 2,             // balls within +-2 m of the lane get raked
   JITTER: 0.3,              // +- m on the windrow's z
@@ -102,4 +103,6 @@ export function stepMower(s, dt, { balls, players, cart, rng = Math.random } = {
 
 // What the clients see.
 export const mowerSnap = s => s ? { phase: s.phase, t: s.t, lane: s.lane, x: s.x, z: s.z, yaw: s.yaw, blocked: s.blocked } : null;
-export const mowerBoard = s => s && s.phase === 'warn' ? `MOW-E · LANE z ${s.lane} · 0:${String(Math.max(0, Math.ceil(s.t))).padStart(2, '0')}` : null;
+// The lane's landmark name, "the Tractor"; falls back to the coordinate for a lane that is not in LANES.
+export const laneName = lane => { const i = MOWER.LANES.indexOf(lane); return i >= 0 ? MOWER.LANE_NAMES[i] : `z ${lane}`; };
+export const mowerBoard = s => s && s.phase === 'warn' ? `MOW-E · BY ${laneName(s.lane).toUpperCase()} · 0:${String(Math.max(0, Math.ceil(s.t))).padStart(2, '0')}` : null;

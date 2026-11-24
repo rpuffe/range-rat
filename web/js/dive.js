@@ -207,8 +207,8 @@ export function pondPumpStep(tube, dt) {
 }
 
 // ---- 4.4 Treasure and the Lost & Found case --------------------------------------------
-// 12 treasures, in the order they surface. `mesh` is the scuba.js model key. `minVenue` 2 =
-// County and up (the scorecard foreshadows Ball No. 1). `blurb` is the memo card's Corporate
+// 12 treasures, in the order they surface. `mesh` is the scuba.js model key. `minVenue` 4 =
+// County and up (the scorecard foreshadows Ball No. 1); 2 is Tiered, 3 Stadium. `blurb` is the memo card's Corporate
 // voice; `fee` is the finder's fee in ball values (200 x BV: about $2,000 at the Club).
 export const TREASURE = [
   { id: 'keys',      mesh: 'keys',      name: 'Car keys',                         minVenue: 1, fee: 200, blurb: 'A 1994 Buick. Still unlocked.' },
@@ -222,7 +222,7 @@ export const TREASURE = [
   { id: 'pin',       mesh: 'pin',       name: 'A Dimples lapel pin',              minVenue: 1, fee: 200, blurb: 'One eye scratched out. Dimples has forgiven you.' },
   { id: 'memo',      mesh: 'memo',      name: 'A waterlogged memo',               minVenue: 1, fee: 200, blurb: 'Stamped URGENT. Unreadable. Corporate confirms it was important.' },
   { id: 'vhs',       mesh: 'vhs',       name: 'A VHS tape',                       minVenue: 1, fee: 200, blurb: 'Ball Retrieval Training (1979). You are already doing it wrong.' },
-  { id: 'scorecard', mesh: 'scorecard', name: 'The 1958 scorecard',               minVenue: 2, fee: 200, blurb: 'Hole 1: LOST BALL. Signed by the founder.' },
+  { id: 'scorecard', mesh: 'scorecard', name: 'The 1958 scorecard',               minVenue: 4, fee: 200, blurb: 'Hole 1: LOST BALL. Signed by the founder.' },
 ];
 export const TREASURE_BY_ID = Object.fromEntries(TREASURE.map(t => [t.id, t]));
 export const TREASURE_IDS = TREASURE.map(t => t.id);

@@ -281,3 +281,12 @@ Source: `design/council-round3.md`. What changed in the build:
 - **Scuba v2** (`web/js/dive.js`): the Deep End where lead and gold sink, a
   personal dive-gear ladder, crank-to-pump air from the dock, send the bag up the
   line and haul it, 12 treasures for the Lost & Found case, the ball tube.
+
+## Round 4 fix pack (build item 1)
+
+- **Pad latch.** On a pad, tap Ⓐ at the washer handle or the dock pump to latch it on; either stick circles the crank (the harder-pushed one feeds it), movement is frozen while you hold it, and a second tap of Ⓐ or Ⓑ lets go. The mouse stays hold-and-circle; "hold without rotating" is still the slow trickle.
+- **Wand.** Looking down (pitch < -1.0) with grime now sends target `'self'` (it was never wired on the client); the prompt names every target: sign, mats, stand, cart, a crewmate, boots.
+- **Customers.** Morning mud is 0.95. A customer who reaches a mat at >= 0.9 mud (or the early bird at the opening) now *waits* on the walkway (`wait` state) and is seated once the mat is under 0.6; after 25 s they refuse and sulk as before. Feed: "A customer is waiting for a clean mat (Mat 4)." Mats are numbered 1-10 on their back edge. The Club bucket is 40.
+- **Gary** counts only the mats in play (`activeMats`).
+- **MOW-E.** Lanes are [-24, -36, -120, -156, -166, -178] (the Short Grass, Short of Red, the Tractor, the Rock, the Long Grass, the Back Net), clear of the rock, tractor and Tiered bowls. The Board and toast name the lane; two orange-and-white cones mark it at x +-64 during the warning.
+- **Shop hint** fires at cash >= $20 (hinter `cash` context); the old `nudged` toast in `hud()` is gone. The 1958 scorecard needs venue 4.

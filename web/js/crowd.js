@@ -21,7 +21,8 @@ const PASTELS = [0xf2b6c0, 0xb8d8f0, 0xc9e4b5, 0xf5dfa0, 0xd5c3ec, 0xf4c7a4, 0xa
 const TURN = 7;          // rad/s a figure may turn
 const CHASE = 3;         // m/s a figure may close on its deterministic spot (absorbs snapshot jitter)
 
-export function createCrowd({ scene, people, maxFull = 14, nearM = 50, farM = 180 }) {
+export function createCrowd({ scene, people, maxFull: maxFull0 = 14, nearM: nearM0 = 50, farM = 180 }) {
+  let maxFull = maxFull0, nearM = nearM0;               // setBudget() lowers them live (perf.js: Xbox / Graphics Low / Auto)
   const { buildPerson, animatePerson, SWING_IMPACT, SWING_SECS } = people;
   const root = new THREE.Group(); root.name = 'crowd'; scene.add(root);
   const figs = new Map();                              // cust id -> figure
@@ -138,6 +139,7 @@ export function createCrowd({ scene, people, maxFull = 14, nearM = 50, farM = 18
   function clear() { for (const f of [...figs.values()]) drop(f); synced = false; }
   return {
     sync, update, onMatShot, clear, root,
+    setBudget(b = {}) { if (Number.isFinite(b.maxFull)) maxFull = Math.max(0, b.maxFull | 0); if (Number.isFinite(b.nearM)) nearM = Math.max(1, b.nearM); },
     get size() { return figs.size; },
     stats() { let full = 0; for (const f of figs.values()) if (f.person) full++; return { figs: figs.size, full, lite: figs.size - full }; },
     // who is at mat i right now ({cust, st, ...} or null); handy for PA lines or Gary

@@ -8,7 +8,7 @@
   :root { --ink: #fff8ec; --dim: #e8d6bd; --panel: rgba(28, 22, 40, 0.82); --accent: #ffb347; --bad: #ff8a7a; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #1e1c38; color: var(--ink);
-    font: 600 clamp(16px, 2.2vmin, 28px)/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    font: 600 calc(clamp(16px, 2.2vmin, 28px) * var(--ts, 1))/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
   canvas { display: block; width: 100vw; height: 100vh; outline: none; }
   .hidden { display: none !important; }
 
@@ -51,6 +51,22 @@
   #toast { position: fixed; z-index: 90; left: 50%; bottom: 12%; transform: translate(-50%, 1em); opacity: 0; transition: 0.25s;
     background: var(--panel); padding: 0.4em 1em; border-radius: 0.6em; pointer-events: none; text-align: center; max-width: calc(100vw - 32px); }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #hint { position: fixed; z-index: 89; left: 50%; bottom: 20%; transform: translate(-50%, 0.6em); opacity: 0; transition: 0.3s;
+    background: rgba(255, 179, 71, 0.92); color: #2a1d10; font-size: 0.85em; padding: 0.35em 0.9em; border-radius: 2em;
+    pointer-events: none; text-align: center; max-width: calc(100vw - 32px); }
+  #hint.show { opacity: 1; transform: translate(-50%, 0); }
+  #hint:empty { display: none; }
+  .own-screen { font-size: 0.85em; }
+  .linkbox { background: rgba(255, 248, 236, 0.15); padding: 0.45em 1em; border-radius: 0.6em; font-size: 1.3em; letter-spacing: 0.04em; user-select: all; }
+  #lobby-roster { list-style: none; margin: 0; padding: 0; display: flex; gap: 0.6em; justify-content: center; flex-wrap: wrap; }
+  #lobby-roster li { display: flex; gap: 0.4em; align-items: center; background: var(--panel); padding: 0.25em 0.8em; border-radius: 2em; }
+  #lobby-roster li.off { opacity: 0.45; }
+  #lobby-roster .dot { width: 0.8em; height: 0.8em; border-radius: 50%; background: var(--c); }
+  .sheet.goal { max-width: 32em; margin: 0 auto; text-align: left; }
+  .sheet.goal p { display: block; margin: 0.4em 0; }
+  .sheet.goal b { font-weight: 700; }
+  .crew-save b { letter-spacing: 0.15em; color: var(--accent); }
+  html.reduce-motion *, html.reduce-motion *::before, html.reduce-motion *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   #feed { position: fixed; left: 16px; top: 34%; display: flex; flex-direction: column; gap: 0.25em; pointer-events: none; font-size: 0.8em; max-width: 40vw; }
   #feed > div { background: rgba(20, 16, 32, 0.55); padding: 0.2em 0.6em; border-radius: 0.3em; color: #fff8ec; animation: feedin 0.2s; }
   @keyframes feedin { from { opacity: 0; transform: translateX(-0.5em); } }
@@ -113,6 +129,7 @@
 <div id="title" class="card">
   <h1>Range Rat</h1>
   <p>The customers hit them. Your crew picks them up.</p>
+  <p class="own-screen">Each Rat plays on their own screen: an Xbox, a PC or a laptop. Up to 6 per crew.</p>
   <div class="row"><input id="name" maxlength="16" placeholder="Your name" autocomplete="nickname" aria-label="Your name"></div>
   <div class="row"><button id="create">Start a crew</button></div>
   <p class="or">or join friends with their code</p>
@@ -142,6 +159,13 @@
   <p>Your crew code</p>
   <div class="big" id="lobby-code"></div>
   <p>Friends join with this code, from any browser (Edge on Xbox too). Up to 6.</p>
+  <div class="row"><span id="lobby-link" class="linkbox"></span><button id="copy-link" class="quiet" type="button">Copy link</button></div>
+  <ul id="lobby-roster" aria-label="Rats in the crew"></ul>
+  <div class="sheet goal">
+    <p><b>Customers hit balls. You pick them up and bank them at the bucket stand.</b></p>
+    <p><b>Keep the place clean and Corporate pays more per ball.</b> That's Ball Value, on the big board.</p>
+    <p><b>Hit Corporate's daily target three times, pay the fee, and the whole crew gets promoted.</b></p>
+  </div>
   <div class="row"><button id="start">Open the range</button></div>
   <div class="sheet shop"></div>
 </div>
@@ -154,6 +178,7 @@
   </div>
   <div class="row"><button id="next">Next shift</button></div>
   <p class="keys">Anyone on the crew can buy, and anyone can start the next shift. It's one wallet.</p>
+  <p class="keys crew-save">Crew code <b class="crew-code-text"></b>: this is your save. Come back with it.</p>
 </div>
 
 <div id="store" class="card hidden">
@@ -165,6 +190,7 @@
 <div id="pause" class="card hidden">
   <h1>Paused</h1>
   <p>The range keeps going without you. It's a shared range.</p>
+  <p class="crew-save">Crew code <b class="crew-code-text"></b>: this is your save. Come back with it.</p>
   <div class="row"><button id="resume">Back to work</button><button id="settings-open" class="quiet">Settings</button><button id="leave" class="quiet">Leave crew</button></div>
 </div>
 
@@ -176,6 +202,7 @@
   <div id="memo-target"></div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="hint" role="status" aria-live="polite"></div>
 <div id="feed" aria-live="polite"></div>
 
 <script type="module" src="/js/main.js"></script>

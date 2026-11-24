@@ -11,7 +11,7 @@
 
 export const MAP = {
   // What walkers and the cart are held inside. The nets sit half a metre outside it (NETS), because a ball
-  // is clamped to the net itself. NOTE: sim.js's SIM.FIELD is still +-150 x -290..9; this is the smaller one.
+  // is clamped to the net itself. NOTE: SIM.FIELD (sim.js) is +-64 x -189..9, the same box as this one.
   FIELD: { xMin: -64, xMax: 64, zMin: -189, zMax: 9 },
   NETS: { side: 64.5, back: -190 },                            // they catch everything; no fly-overs
   CREEK: {

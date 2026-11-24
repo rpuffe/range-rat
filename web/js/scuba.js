@@ -1202,7 +1202,7 @@ export function createScuba(scene, camera, POND, opts = {}) {
 
     // shafts sway slowly
     const e = new THREE.Euler(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), m = new THREE.Matrix4();
-    for (let i = 0; i < SHAFTS; i++) {
+    for (let i = 0; !lowDetail && i < SHAFTS; i++) {   // lowDetail: shafts are hidden, skip the matrix writes too
       const d = shaftData[i];
       e.set(Math.sin(T * 0.21 + d.ph) * 0.07, 0, 0.2 + Math.sin(T * 0.17 + d.ph * 2) * 0.08);
       q.setFromEuler(e); p.set(d.x, SURF, d.z); sc.set(d.s, 1, d.s);
@@ -1265,8 +1265,19 @@ export function createScuba(scene, camera, POND, opts = {}) {
     if (canvasEl) canvasEl.style.transform = '';
   }
 
+  // Low detail (perf.js: Xbox / Graphics Low): no light shafts, half the silt, half the kelp. Safe to flip live.
+  let lowDetail = false;
+  function setLowDetail(on) {
+    lowDetail = !!on;
+    shafts.visible = !lowDetail;
+    motes.geometry.setDrawRange(0, lowDetail ? MOTES >> 1 : MOTES);
+    kelp.count = lowDetail ? KELP >> 1 : KELP;
+  }
+  setLowDetail(opts.lowDetail);
+
   setUnder(false);
   return {
+    setLowDetail,
     // the original API
     setUnder, tick, dispose, group: root, trophyPos,
     // Scuba v2
