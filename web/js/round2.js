@@ -191,18 +191,21 @@ export function setupRound2(ctx) {
     if (!el || c.phase !== 'report' || !r) return;
     const promo = c.promo, mine = c.players?.find(p => p.id === me.id);
     const online = (c.players ?? []).filter(p => p.online);
-    const key = JSON.stringify([promo, c.cash, online.map(p => [p.id, p.ready, p.signed]), r.day, c.venue, c.readyIn]);
+    const key = JSON.stringify([promo, c.cash, online.map(p => [p.id, p.ready, p.signed]), r.day, c.venue, c.readyIn, c.promotedTo]);
     if (key === ledgerKey && !force) return;
     ledgerKey = key;
     const esc = s => String(s).replace(/[&<>"']/g, ch => '&#' + ch.charCodeAt(0) + ';');
     let html = '';
     if (r.ledger?.length) {
       html += '<div class="sheet ledger"><h3>The ledger</h3>' + r.ledger.map(l =>
-        '<p style="color:' + l.color + '"><span>' + esc(l.name) + ' · banked ' + l.banked + ' · ' + money(l.cash) + (l.hosed ? ' · hosed ' + l.hosed : '') + ' · flat ' + l.knockdowns + '</span><b>' + esc(l.award) + ' — Corporate</b></p>').join('') + '</div>';
+        '<p style="color:' + l.color + '"><span>' + esc(l.name) + ' · banked ' + l.banked + ' · ' + money(l.cash) + (l.hosed ? ' · hosed ' + l.hosed : '') + ' · knocked down ' + l.knockdowns + '</span><b>' + esc(l.award) + ' — Corporate</b></p>').join('') + '</div>';
     }
     if (r.record) html += '<p class="note">Crew record! Best shift: ' + money(r.record.cash) + ' (was ' + money(r.record.was) + ').</p>';
     for (const line of ctx.views?.()?.reportLines(r) ?? []) html += '<p class="note">' + esc(line) + '</p>';   // round 4: venue report lines
-    if (promo) {
+    if (c.promotedTo) {
+      html += '<div class="sheet promo"><h3>Promoted!</h3><p>The ' + esc(c.promotedTo) + ' opens tomorrow.</p></div>';
+      const tm = document.querySelector('#report-body .dim'); if (tm) tm.textContent = 'Tomorrow: the ' + c.promotedTo + '.';
+    } else if (promo && (promo.stamps > 0 || promo.ready)) {   // nothing to request before the first stamp (playtest)
       const dots = '●'.repeat(Math.min(promo.stamps, promo.need)) + '○'.repeat(Math.max(0, promo.need - promo.stamps));
       const signedN = promo.signed.length;
       html += '<div class="sheet promo"><h3>Request promotion: ' + esc(promo.next) + '</h3>' +

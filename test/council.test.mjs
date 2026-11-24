@@ -841,8 +841,8 @@ test('the report says what is coming tomorrow', () => {
   }
   assert.match(tomorrow[0], /first Ball Value target/);
   assert.match(tomorrow[0], /Last Call/);
-  assert.match(tomorrow[1], /Gary from Regional/);
-  assert.match(tomorrow[2], /Tomorrow/);
+  assert.match(tomorrow[1], /gold/, 'day 3 brings gold');
+  assert.match(tomorrow[2], /Gary from Regional/, 'Gary inspects on day 4 (playtest)');
   assert.ok(new Set(tomorrow).size >= 3);
 });
 

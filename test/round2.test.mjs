@@ -345,7 +345,7 @@ test('Gary adds a kitchen stop at the Club, and it passes with fries at 50% or m
 });
 
 test('Gary visits the kitchen on his round and a thin fryer counts as a fail', () => {
-  const { crew, run } = makeCrew({ venue: 1, day: 3, up: { shed: 1 }, fries: 4, voiced: ['welcome'] }, 600);
+  const { crew, run } = makeCrew({ venue: 1, day: 4, up: { shed: 1 }, fries: 4, voiced: ['welcome'] }, 600);
   openShift(crew);
   run(0.1);                      // the reveal flag is not set (no promotion), so the clock runs
   crew.shiftT = 600 * 0.43;
@@ -1053,7 +1053,7 @@ test('PA: the first cart purchase speaks, once', () => {
 });
 
 test('PA: Gary\'s first warning speaks once', () => {
-  const { crew, run } = makeCrew({ day: 3, voiced: ['welcome'] }, 600);
+  const { crew, run } = makeCrew({ day: 4, voiced: ['welcome'] }, 600);
   openShift(crew);
   crew.shiftT = 600 * 0.43;
   run(0.1);

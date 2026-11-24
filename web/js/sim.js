@@ -21,7 +21,7 @@ export const SIM = {
   POCKET: 3,           // balls a player can carry by hand
   REACH: 1.6,          // m, how close a ball must be to pick it up
   STAND: { x: 26, z: 6 },
-  STAND_REACH: 3,
+  STAND_REACH: 3.5,   // 3 m read as "go to the stand" while touching it (playtest)
   BALL_PRICE: 1,       // $ per ball dropped in the bucket stand
   WALK: 4.2,           // m/s
   FIELD: { xMin: -64, xMax: 64, zMin: -189, zMax: 9 },   // Dimple Creek's netted field (map.js MAP.FIELD)
@@ -472,7 +472,7 @@ export function leadLaunch(mat, rng) {
 // Gary from Regional's Walkthrough (council round 1, #2). From day 3: a warning
 // at 43% of the shift, then he drives his route, pausing at each stop.
 export const GARY = {
-  FROM_DAY: 3, AT: 0.43, WARN_SECS: 45, SPEED: 5, PAUSE: 3,
+  FROM_DAY: 4, AT: 0.43, WARN_SECS: 45, SPEED: 5, PAUSE: 3,   // day 4 (playtest: day 3 already brings the first target and gold)
   CLEAN: 0.34,              // a stop passes at this much mud or less
   HUDDLE_R: 8,              // every online Rat this close to the stand when he arrives: it counts twice
   START: { x: 60, z: 14 },

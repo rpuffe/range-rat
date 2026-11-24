@@ -100,13 +100,13 @@ test('GOLDEN: cartBlocked, fieldFor, clampToField and BV are unchanged at venues
 });
 
 test('GOLDEN: a whole seeded crew plays out identically at the Muni and the Club (no modules)', () => {
-  assert.equal(fnv(crewRun(null)), 'f416eda4');
+  assert.equal(fnv(crewRun(null)), '10b46ff0');
   assert.equal(fnv(crewRun(CLUB_SAVE)), '4a2e71f4');
 });
 
 test('GOLDEN: a module that lives at venue 2+ changes nothing at venues 0-1', () => {
   const noisy = { id: 'noisy', venue: 2, kpi: () => 0, launchMod: (c, st, shot) => ({ ...shot, vx: shot.vx + 9 }), tick: c => { c.cash += 1000; } };
-  assert.equal(fnv(crewRun(null, { modules: [noisy] })), 'f416eda4');
+  assert.equal(fnv(crewRun(null, { modules: [noisy] })), '10b46ff0');
   assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), '4a2e71f4');
 });
 

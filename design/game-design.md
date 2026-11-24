@@ -645,3 +645,11 @@ Economy calls (the owner: pick the more fun, easier option for a casual 4):
 Left for a council round (bigger design): late automation (second cart, drones, tether) adds no
 income because supply is customer-bound; endless has nothing to buy; Target Greens are too hard to
 see and hit; the Tiered deck never fires for a careful crew; the venue KPIs never decide a stamp.
+- **Playtest A (first night):** Gary now inspects on **day 4** (day 3 already brings the first target
+  and gold) and never runs over the huddle on his way to the stand; his warning is one short line
+  after the PA card. An unfinished day-1 checklist **carries into day 2**; day-1 mats start clean
+  (no refusals while training); the buy step names the real cheapest price. The memo with a target
+  says **"Clean up: Ball Value $X"** (the target is met by cleaning). The stand reach is 3.5 m. The
+  overnight report hides the promotion panel until the first stamp, says "Promoted!" after signing,
+  keeps "Next shift" pinned on screen, and its shop shows names and prices only. Hints wait for
+  toasts. Golden fingerprints re-recorded for the day-1 mats and the stand reach.

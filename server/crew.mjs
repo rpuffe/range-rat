@@ -756,7 +756,11 @@ export class Crew {
     }
     if (this.day > 1) { this.morningMud(); this.fries = Math.floor(this.fries / 2); }   // the fries went cold overnight
     // Day 1 at the Muni is training: a shared checklist (snapshot `todo`) teaches the loop.
-    this.todo = this.day === 1 && this.venue === 0 && !this.endless ? { sign: false, buy: false } : null;
+    const unfinished = this.todo && !(this.todo.pick && this.todo.bank && this.todo.sign && this.todo.buy);
+    this.todo = this.venue !== 0 || this.endless ? null
+      : this.day === 1 ? { pick: false, bank: false, sign: false, buy: false }
+      : this.day === 2 && unfinished ? this.todo : null;            // a solo day 1 rarely finishes: carry it over (playtest)
+    if (this.day === 1 && this.todo) for (const k of Object.keys(this.fixtures)) if (k.startsWith('mat')) this.fixtures[k] = 0;   // no mat refusals while training
     // Day 2: Corporate sends a teenager, so every crew meets automation early (owner playtest).
     if (this.day === 2 && this.venue === 0 && !this.endless && (this.up.helpers ?? 0) < SHOP_BY_ID.helpers.tiers.length - 1) {
       this.up.helpers = (this.up.helpers ?? 0) + 1; this.applyUpgrades();
@@ -771,7 +775,7 @@ export class Crew {
     else this.quota = { q: (this.ceiling() - 1) * venueQuotaF(this.stamps < PROMO_STAMPS ? Math.min(this.venueDay, this.stamps + 1) : this.venueDay) };
     // Day 1 at the Muni is quiet (the checklist teaches it): the memo still fires, flagged `quiet`, and the client skips the card.
     this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaTarget() : null, text: memoText(this.day, this.quota && this.quotaTarget(), this.endless, this.rng),
-      flavor: memoFlavor(this.day, this.venue, this.endless, this.rng), quiet: !!this.todo });
+      flavor: memoFlavor(this.day, this.venue, this.endless, this.rng), quiet: this.day === 1 && !!this.todo });
     for (const c of this.carts) { c.boostT = 0; if (!c.driver) Object.assign(c, c.i ? CART.PARK2 : CART.PARK, { v: 0 }); }
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
     for (const e of openMats(this.mats, { now: this.custT, rng: this.rng, venue: this.venue, nOpen: activeMats(this.onlineCount()), nextCust: () => ++this.nextCust, mud: i => this.fixtures['mat' + i] ?? 0 })) {
@@ -1058,6 +1062,7 @@ export class Crew {
       const k = Math.min(1, step / d);
       g.x += dx * k; g.z += dz * k; g.yaw = Math.atan2(-dx, -dz);
       for (const o of [...this.players.values(), ...this.helpers]) {     // he drives like he owns the place
+        if (stop.id === 'stand') break;          // ...except into the huddle he asked for (playtest)
         if (o.down > 0 || this.driving(o) || this.aloft(o)) continue;
         if (Math.hypot(o.x - g.x, o.z - g.z) < 1.3) { this.knockDown(o, 'gary'); this.stats.runOver++; }
       }
@@ -1419,9 +1424,11 @@ export class Crew {
     if (!this.todo || this.phase !== 'shift') return null;
     if ((this.fixtures.sign ?? 1) <= 0.05) this.todo.sign = true;
     const picked = Math.min(TODO_PICK, this.stats.picked), banked = Math.min(TODO_BANK, this.stats.deposited);
+    if (picked >= TODO_PICK || banked >= TODO_BANK) this.todo.pick = true;
+    if (banked >= TODO_BANK) this.todo.bank = true;
     return [
-      { id: 'pick', n: picked, of: TODO_PICK, done: picked >= TODO_PICK || banked >= TODO_BANK },
-      { id: 'bank', n: banked, of: TODO_BANK, done: banked >= TODO_BANK },
+      { id: 'pick', n: this.todo.pick ? TODO_PICK : picked, of: TODO_PICK, done: !!this.todo.pick },
+      { id: 'bank', n: this.todo.bank ? TODO_BANK : banked, of: TODO_BANK, done: !!this.todo.bank },
       { id: 'sign', done: this.todo.sign },
       { id: 'buy', done: this.todo.buy },
     ];
@@ -1449,6 +1456,8 @@ export class Crew {
         ? { record: this.records.cash, now: cents(this.records.cash * Math.min(1, this.shiftT / this.shiftSecs)), cash: this.stats.cash } : null,
       silo: this.stats.deposited, lastCall: this.lastCall(),
       promo: this.promoInfo(), revealT: +this.revealT.toFixed(1),
+      promotedTo: this.phase === 'report' && this.pendingReveal ? VENUE_RULES[this.pendingReveal]?.name ?? null : null,   // the report says so (playtest)
+      promotedTo: this.phase === 'report' && this.pendingReveal ? VENUE_RULES[this.pendingReveal]?.name ?? null : null,   // the report says so (playtest)
       // While the signatures hold the Ready Up timer: no countdown, and `sigWait` {n, of} ("Waiting for signatures").
       readyIn: this.phase === 'report' && this.readyAt && !this.awaitingSignatures() ? Math.max(0, Math.ceil(READY_SECS - (now - this.readyAt) / 1000)) : null,
       sigWait: this.phase === 'report' && this.readyAt ? this.awaitingSignatures() : null,
@@ -1514,7 +1523,7 @@ const RAT_MEMOS = ["Today's target: whatever. — the Rats", 'Reminder: we are C
 function memoText(day, target, endless, rng) {
   if (endless) return RAT_MEMOS[Math.floor(rng() * RAT_MEMOS.length)];
   if (target == null) return day === 1 ? 'Welcome to the Muni Range. Pick up balls.' : 'Pick up balls. Bank them. Corporate pays per ball.';
-  return 'Today: Ball Value $' + target.toFixed(2) + ' by the closing bell.';
+  return 'Clean up: Ball Value $' + target.toFixed(2) + ' by the closing bell.';   // the target is met by cleaning (playtest)
 }
 function memoFlavor(day, venue, endless, rng) {
   if (endless) return '';
@@ -1526,7 +1535,8 @@ function memoFlavor(day, venue, endless, rng) {
 function tomorrowText(day, venue, endless) {
   if (endless) return 'Tomorrow: Range Rats LLC opens as usual. The job never ends.';
   if (day === 2) return 'Tomorrow: Corporate sets your first Ball Value target. Last Call begins at dusk.';
-  if (day === 3) return 'Tomorrow: Gary from Regional inspects. Clean everything, then huddle at the stand.';
+  if (day === 3) return 'Tomorrow: the first gold balls. Worth ten.';
+  if (day === 4) return 'Tomorrow: Gary from Regional inspects. Clean everything, then huddle at the stand.';
   if (venue === 0) return 'Tomorrow: three review stamps plus the fee earn the Range Club.';
   return 'Tomorrow: more balls. Corporate thanks you for your continued compliance.';
 }

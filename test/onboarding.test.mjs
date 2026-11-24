@@ -103,3 +103,30 @@ test('day 1 skips the memo card (quiet) but keeps the PA welcome; later memos ar
   assert.ok(m2.text.split(' ').length <= 9, m2.text);
   assert.match(m2.flavor, /teenager/);
 });
+
+test('playtest: an unfinished day-1 checklist carries into day 2 (and not beyond); day-1 mats start clean', () => {
+  const { crew } = makeCrew();
+  const a = crew.join('A'); crew.connect(a);
+  crew.startShift();
+  assert.ok(Object.keys(crew.fixtures).filter(k => k.startsWith('mat')).every(k => crew.fixtures[k] === 0), 'no mat refusals while training');
+  crew.stats.picked = 1; crew.stats.deposited = 3; crew.snapshot();
+  crew.endShift(); crew.flush(); crew.startShift();
+  const todo = crew.snapshot().todo;
+  assert.ok(todo, 'day 2 keeps the unfinished checklist');
+  assert.deepEqual(todo.filter(t => t.done).map(t => t.id), ['pick', 'bank'], 'the banked steps stay done');
+  const memo = crew.flush().ev.find(e => e.t === 'memo');
+  assert.equal(memo.quiet, false, 'day 2 still gets its memo');
+  crew.endShift(); crew.startShift();
+  assert.equal(crew.snapshot().todo, null, 'gone on day 3');
+});
+
+test('playtest: Gary does not run over the huddle on his way to the stand', () => {
+  const { crew } = makeCrew({ day: 4 });
+  const a = crew.join('A'); crew.connect(a);
+  crew.startShift();
+  crew.gary = { phase: 'drive', pause: 0, stop: 0, x: 26, z: 14, yaw: 0, fails: 0, checks: [] };
+  crew.garyStops = () => [{ id: 'stand', x: 26, z: 10 }];
+  a.x = 26; a.z = 13.6; a.down = 0;
+  crew.stepGary(0.1);
+  assert.equal(a.down, 0);
+});

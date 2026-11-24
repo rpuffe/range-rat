@@ -572,7 +572,7 @@ function onEvent(e) {
     }
     case 'board': break;
     case 'gary':
-      if (e.phase === 'warn') { SFX.horn('gary'); toast('GARY FROM REGIONAL is 45 seconds out. Clean the sign, the mats, the cart and the stand. Then huddle at the stand.', 5); }
+      if (e.phase === 'warn') { SFX.horn('gary'); toastQuiet('Gary in 45 s: clean up, then huddle', 4); }
       else toast('Gary is inspecting. Stay out of his way.', 3);
       break;
     case 'check': {
@@ -759,7 +759,7 @@ function renderShop() {
       const lvl = item.personal ? mineLvl : crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
       const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0, day);
       return `<li>
-        <div><b>${item.title}</b>: ${now.name}${next ? `<small>Next: <i>${next.name}</i>. ${next.desc}</small>` : `<small>${now.desc} (maxed out)</small>`}</div>
+        <div><b>${item.title}</b>: ${now.name}${next ? `<small>Next: <i>${next.name}</i><span class="desc">. ${next.desc}</span></small>` : `<small>${now.desc} (maxed out)</small>`}</div>
         ${!next ? '<span class="max">✓</span>' : price == null ? `<span class="max">🔒 ${VENUE_RULES[next.minVenue ?? item.minVenue ?? 0]?.name ?? 'later'}</span>` : `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>${money(price)}</button>`}
       </li>`;
     }).join('')}</ul>`;
@@ -818,7 +818,7 @@ function act() {
   if (me.diving) {
     const tr = crew.pond?.treasure;
     if (tr && !me.treasure && Math.hypot(tr.x - me.x, tr.z - me.z) <= POND.REACH + 0.5) { link.act({ t: 'treasure' }); return; }
-    if (me.bag + pending.size >= diveTiers(me.dive).bag) { toast('Your bag is full: send it up (E) or surface!'); return; }
+    if (me.bag + pending.size >= diveTiers(me.dive).bag) { toast(`Bag full: send it up (${document.body.classList.contains('pad') ? GLYPH.X : 'E'}) or surface`); return; }
     const b = nearestBall(POND.REACH);
     if (b) grab(b);
     return;
@@ -1168,6 +1168,8 @@ function toast(msg, secs = 1.6) {
   $('toast').textContent = msg; $('toast').classList.add('show'); toastT = Math.min(4, secs);
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastT = 0; $('toast').classList.remove('show'); }, toastT * 1000);   // real time: a background tab pauses rAF
 }
+// A toast that waits for the PA card to finish (one text at a time).
+function toastQuiet(msg, secs) { const go = () => (paOn() ? setTimeout(go, 400) : toast(msg, secs)); go(); }
 // One text element at a time (owner playtest): while the memo or the PA card is up, the checklist and hints wait.
 const paOn = () => !!document.getElementById('pa-card')?.classList.contains('on');
 const textBusy = () => !$('memo').classList.contains('hidden') || paOn() || memoQ.length > 0;
@@ -1185,8 +1187,15 @@ const TODO_TEXT = {
   pick: (t, k) => `Pick up a ball · ${k.btn}`,
   bank: (t, k) => `Bank them at the stand · ${k.ibtn}  ${t.n}/${t.of}`,
   sign: (t, k) => me.wand ? `Spray the sign · hold ${k.btn}` : `Grab the pressure washer · ${k.ibtn}`,
-  buy: (t, k) => crew.cash >= 15 ? `Buy something · ${k.shop}` : `Bank $15, then shop · ${money(crew.cash)}`,
+  buy: (t, k) => { const p = cheapest(); return crew.cash >= p ? `Buy something · ${k.shop}` : `Bank ${money(p)}, then shop · ${money(crew.cash)}`; },
 };
+// The cheapest thing in the shop right now (prices scale with the Rats online).
+function cheapest() {
+  const size = Math.max(1, crew.players.filter(p => p.online).length), day = shopDay(crew.phase, crew.day ?? 1);
+  let best = Infinity;
+  for (const item of SHOP) if (shopShows(item, crew.venue ?? 0, day)) { const p = nextPrice(item.id, crew.up, size, item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0, crew.venue ?? 0, day); if (p != null && p < best) best = p; }
+  return Number.isFinite(best) ? best : 15;
+}
 const TODO_DONE = { pick: 'Picked up!', bank: 'Banked!', sign: 'Spotless!', buy: 'Bought!' };
 const todoArrow = (() => {
   const g = new THREE.Group();
@@ -1224,7 +1233,7 @@ function renderTodo(dt) {
   todoArrow.g.visible = todoArrow.ring.visible = !!tg;
   if (tg) {
     const bob = Math.sin(todoT * 4) * 0.2;
-    const far = Math.max(1, Math.hypot(tg.x - me.x, tg.z - me.z) / 8);       // grows with distance so it reads from the yard
+    const dist = Math.hypot(tg.x - me.x, tg.z - me.z), far = dist > 8 ? dist / 8 : Math.max(0.45, dist / 8);   // grows with distance; small when you're on it
     tg.s *= far; tg.y *= Math.sqrt(far);
     todoArrow.g.position.set(tg.x, tg.y + bob * far, tg.z); todoArrow.g.scale.setScalar(tg.s);
     const dir = document.getElementById('todo-dir');
@@ -1233,7 +1242,7 @@ function renderTodo(dt) {
   }
   if (doneNow && show) toast(TODO_DONE[doneNow], 1.4);
   const k = { btn: pad ? GLYPH.A : 'Click', ibtn: pad ? GLYPH.X : 'E', shop: pad ? 'D-pad ↑' : 'Tab' };
-  const key = show ? JSON.stringify([cur?.id, cur?.n, pad, me.wand, crew.cash >= 15, cur?.id === 'buy' ? crew.cash : 0, todoDoneT > 0, !!tg]) : '';
+  const key = show ? JSON.stringify([cur?.id, cur?.n, pad, me.wand, crew.cash >= cheapest(), cur?.id === 'buy' ? crew.cash : 0, todoDoneT > 0, !!tg]) : '';
   if (key === todoKey) return;
   todoKey = key;
   el.innerHTML = !show ? '' : todoDoneT > 0 || !cur ? '<b>You know the job. Go.</b>'
@@ -1281,7 +1290,7 @@ function hud(dt = 0) {
     : crew.pond?.unlocked && hasTube(crew.up) && atTube(me) && (carrying() > 0 || me.treasure) ? `${ibtn}  Feed the tube${crew.pond.tube ? ` (${crew.pond.tube} in flight)` : ''}`
     : dockOpen(me) ? 'Walk into the pond to dive for sunk balls'
     : atShed(me) && crew.fries?.open ? `${btn}  Open the kitchen · fries ${crew.fries.stock}/${crew.fries.max}`
-    : atShed(me) ? (crew.venue ?? 0) >= 1 ? 'The snack shed is boarded up (Tab: the shop can reopen it)' : 'The snack shed is boarded up. It reopens at the Range Club.'
+    : atShed(me) ? (crew.venue ?? 0) >= 1 ? 'The snack shed is boarded up' : 'The snack shed is boarded up. It reopens at the Range Club.'
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
     : me.wand ? `Hold ${btn} to spray · look down to rinse your boots · ${ibtn} put it back`
@@ -1472,7 +1481,7 @@ function frame(now) {
   views?.camera(camera, dt);
   r2?.tick(dt, now);       // after the camera: CCTV and the venue reveal drive it when active
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
-  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen() && !crew.todo && !textBusy() && !crew.mods?.orbit?.r?.[me.id],   // no ball-washer tips at 120 m venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: showHint,
+  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen() && !crew.todo && !textBusy() && toastT <= 0 && !crew.mods?.orbit?.r?.[me.id],   // no ball-washer tips at 120 m venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: showHint,
     day: crew.day, cash: crew.cash, signMud: crew.fixtures?.sign ?? 0, pocketFull: gp.pocket > 0 && carrying() >= gp.pocket, washerCash: crew.washer?.credit ?? 0, onDock: dockOpen(me), beers: beersPoured });
   board.tick(dt);
   mowe.update(crew.mower ?? null); mowe.tick(dt, sceneT);
