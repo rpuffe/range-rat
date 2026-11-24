@@ -647,7 +647,7 @@ function floatPay(e) {
   const at2 = e.kind === 'cart' ? cartViews[e.cart ?? 0]?.pose ?? cartPose : at;
   board.floatText(at2.x, 2.4, at2.z, `+${money(e.cash)} · ${e.n} × ${money(e.per ?? e.cash / e.n)}`, who?.color ?? '#ffd54a');
 }
-let memoT = 0, memoHold = 0;
+let memoT = 0, memoHold = 0, paOffT = 0;
 // Memos queue: a ball debut never knocks the morning memo (and its target) off the screen.
 const memoQ = [];
 function showMemo(text, target, secs = 9, flavor = '') {
@@ -745,7 +745,7 @@ function applyCarts(list) {
 // something it shows changes, so controller focus survives the 10 Hz ticks.
 let shopKey = '';
 function renderShop() {
-  const size = crew.players.length;
+  const size = Math.max(1, crew.players.filter(p => p.online).length);   // the server prices by Rats online
   const day = shopDay(crew.phase, crew.day ?? 1);
   const key = JSON.stringify([crew.cash, crew.up, size, crew.phase, me.gear, me.dive, crew.venue, day]);
   if (key === shopKey) return;
@@ -988,7 +988,7 @@ $('copy-link').addEventListener('click', copyJoinLink);
 function showPhase() {
   $('hud').classList.toggle('in-lobby', crew.phase === 'lobby');   // the lobby card owns the screen
   $('lobby').classList.toggle('hidden', crew.phase !== 'lobby' || !link);
-  $('report').classList.toggle('hidden', crew.phase !== 'report' || !report);
+  $('report').classList.toggle('hidden', crew.phase !== 'report' || !report || !!report?.ending);   // the ending has its own card
   renderLobby();
   if (crew.phase === 'shift' && link && joinToastFor !== link) {
     joinToastFor = link;
@@ -1256,7 +1256,7 @@ function hud(dt = 0) {
   // One line: BV · target · gear (the KPIs live on the Board, council round 3).
   $('value').classList.toggle('hidden', !!crew.todo);
   $('storehint').classList.toggle('hidden', !!crew.todo && crew.todo.find(t => !t.done)?.id !== 'buy');
-  $('value').textContent = v ? `BV ${money(v.bv)}${v.hustle > 1 ? ` ×${v.hustle}` : ''}${crew.quota ? ` · target ${money(crew.quota.target)}` : crew.pace ? ` · record pace ${money(crew.pace.now)}` : ''}${r2 ? ' · ' + r2.hudLine() : ''}${crew.lastCall ? ' · LAST CALL' : ''}` : '';
+  $('value').textContent = v ? `BV ${money(v.bv)}${v.hustle > 1 ? ` ×${v.hustle}` : ''}${crew.quota ? ` · target ${money(crew.quota.target)}` : crew.pace ? ` · today ${money(crew.pace.cash)} / pace ${money(crew.pace.now)}` : ''}${r2 ? ' · ' + r2.hudLine() : ''}${crew.lastCall ? ' · LAST CALL' : ''}` : '';
   const n = carrying(), cap = gp.pocket, pad = document.body.classList.contains('pad');
   const btn = pad ? GLYPH.A : 'Click';          // use: pick up, swing
   const ibtn = pad ? GLYPH.X : 'E';             // the bucket stand
@@ -1269,9 +1269,10 @@ function hud(dt = 0) {
   const left = Math.max(0, crew.shiftSecs - crew.shiftT);
   $('clock').textContent = crew.phase === 'shift' ? `Day ${crew.day} · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : `Day ${crew.day}`;
   const load = (mc?.load ?? 0) + pendingCart.size;
-  $('prompt').textContent = !playing() || r2?.cctvOn ? ''
+  $('prompt').textContent = !playing() || r2?.cctvOn || paOn() ? ''   // one text at a time: the PA card wins
     : me.down > 0 ? 'Seeing stars…'
-    : me.one ? 'Ball No. 1: carry it to the stand. Everyone to the stand.'
+    : me.one ? 'Ball No. 1: carry it to the stand.'
+    : nearestBall()?.kind === 'one' ? `${btn}  Pick up Ball No. 1`
     : views?.prompt(btn, ibtn) ? views.prompt(btn, ibtn)
     : r2?.prompt(btn) ? r2.prompt(btn)
     : me.diving ? `${crew.pond?.treasure && !me.treasure && Math.hypot(crew.pond.treasure.x - me.x, crew.pond.treasure.z - me.z) <= POND.REACH + 0.5 ? `${btn}  Take the ${TREASURE_BY_ID[crew.pond.treasure.id]?.name ?? 'treasure'}` : nearestBall(POND.REACH) ? `${btn}  Grab` : 'Feel around for balls'}${me.bag > 0 ? `  ·  ${ibtn}  Send up ${me.bag}/${diveTiers(me.dive).bag}` : ''}`   // air is the bar
@@ -1471,7 +1472,7 @@ function frame(now) {
   views?.camera(camera, dt);
   r2?.tick(dt, now);       // after the camera: CCTV and the venue reveal drive it when active
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
-  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen() && !crew.todo && !textBusy(), venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: showHint,
+  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen() && !crew.todo && !textBusy() && !crew.mods?.orbit?.r?.[me.id],   // no ball-washer tips at 120 m venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: showHint,
     day: crew.day, cash: crew.cash, signMud: crew.fixtures?.sign ?? 0, pocketFull: gp.pocket > 0 && carrying() >= gp.pocket, washerCash: crew.washer?.credit ?? 0, onDock: dockOpen(me), beers: beersPoured });
   board.tick(dt);
   mowe.update(crew.mower ?? null); mowe.tick(dt, sceneT);
@@ -1492,8 +1493,9 @@ function frame(now) {
     garyView.g.position.set(garyPose.x, 0, garyPose.z); garyView.g.rotation.y = garyPose.yaw;
   }
   if (memoT > 0 && (memoT -= dt) <= 0) $('memo').classList.add('hidden');
+  paOffT = paOn() ? 0 : paOffT + dt;
   if (memoHold > 0) memoHold -= dt;
-  else if (memoT <= 0 && memoQ.length && !paOn()) showMemo(...memoQ.shift());
+  else if (memoT <= 0 && memoQ.length && paOffT > 1) showMemo(...memoQ.shift());   // a beat after the PA card (it can chain lines)
   if (link) hud(dt);
   props.tick(dt, sceneT, crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);   // station details (props.js)
   perf.tick(now);

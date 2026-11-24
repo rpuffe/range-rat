@@ -3,7 +3,7 @@
 // No top-level DOM access: everything is created lazily inside createEnding().
 import * as THREE from 'three';
 
-export const FINAL_MEMO = 'There are no more balls. Fairway Holdings International no longer requires a driving range. Effective immediately, Site 12 belongs to the Range Rats. Every Ball Mattered.™ — Dimples';
+export const FINAL_MEMO = 'There are no more balls. Site 12 belongs to the Range Rats. Every Ball Mattered.™';
 
 const TRAIL_N = 48;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,7 +20,7 @@ const CSS = `
   background: rgba(28, 22, 40, 0.86); color: #fff8ec; border: 0.12em solid #ffb347; border-radius: 0.5em; padding: 0.3em 1em;
   font-size: clamp(22px, 5vmin, 64px); font-weight: 800; letter-spacing: 0.08em; text-shadow: 0 0.06em 0.25em #000a; max-width: calc(100vw - 32px); }
 #ending-huddle b { color: #ffb347; }
-#endcard { z-index: 50; background: linear-gradient(rgba(14, 12, 28, 0.82), rgba(14, 12, 28, 0.95)); }
+#endcard { z-index: 85; background: linear-gradient(rgba(14, 12, 28, 0.82), rgba(14, 12, 28, 0.95)); }
 #endcard .sheet { min-width: min(calc(100vw - 32px), 30em); }
 #endcard .sheet h1 { margin: 0 0 0.2em; color: #ffb347; font-size: 2.2em; text-align: center; }
 #endcard .rat { display: flex; justify-content: space-between; gap: 2em; margin: 0.35em 0; font-size: 1.15em; }
@@ -106,7 +106,7 @@ export function createEnding({ scene, root, camera }) {
     ensureStyle();
     if (!huddleEl) { huddleEl = document.createElement('div'); huddleEl.id = 'ending-huddle'; huddleEl.setAttribute('role', 'status'); document.body.appendChild(huddleEl); }
     huddleEl.classList.remove('hidden');
-    huddleEl.innerHTML = `EVERYONE TO THE STAND · <b>${n} / ${of}</b>`;
+    huddleEl.innerHTML = typeof n === 'string' ? n : `EVERYONE TO THE STAND · <b>${n} / ${of}</b>`;
   }
 
   // ---- finale ----

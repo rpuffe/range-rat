@@ -32,7 +32,7 @@ const READY_SECS = 20;            // Ready Up: the next shift starts this long a
 const READY_HOLD_SECS = 120;      // ...held (for signatures) at most this long when a promotion is ready
 const REVEAL_SECS = 6;            // a venue reveal holds the clock this long
 const PA_CAP = 3, PA_GAP_MS = 20_000;
-const HUDDLE_R = 8;
+const HUDDLE_R = 8, HUDDLE_IDLE_MS = 60_000;
 
 // What a ping on the cage pays out, and how often.
 export const PING_PRIZES = [['jackpot', 0.4], ['boost', 0.3], ['mult', 0.3]];
@@ -1163,12 +1163,15 @@ export class Crew {
 
   // Banking Ball No. 1 needs the whole crew at the stand.
   depositOne(p) {
-    const online = this.online();
-    const near = online.filter(o => Math.hypot(o.x - SIM.STAND.x, o.z - SIM.STAND.z) < HUDDLE_R).length;
+    const online = this.online(), now = this.now();
+    // At the stand, or idle a minute (playtest: one AFK Rat stalled the ending for ever).
+    const present = o => Math.hypot(o.x - SIM.STAND.x, o.z - SIM.STAND.z) < HUDDLE_R || now - (o.movedAt ?? now) > HUDDLE_IDLE_MS;
+    const near = online.filter(present).length;
     if (near < online.length) { this.events.push({ t: 'huddle', n: near, of: online.length, by: p.id }); return false; }
     p.one = false;
     const v = this.valueNow();
     const pay = cents(ONE_YEAR * v.bv);
+    p.shift.banked++; p.shift.cash = cents(p.shift.cash + pay);   // the end card credits the Rat who carried it
     this.cash = cents(this.cash + pay); this.stats.cash = cents(this.stats.cash + pay); this.stats.deposited++;
     this.outstanding = 0;
     this.lastBucket = { phase: 'done', by: p.id };
@@ -1245,7 +1248,7 @@ export class Crew {
     this.stepPond(dt);
     this.stepBouncy();
     this.mods.call('tick', dt);
-    if (this.phase === 'shift' && !paused && this.perks.autoFry && (this.autoFryT += dt) >= this.perks.autoFry) { this.autoFryT = 0; this.addFries(1, 'machine'); }
+    if (this.phase === 'shift' && !paused && this.perks.autoFry && (this.autoFryT += dt) >= this.perks.autoFry) { this.autoFryT = 0; this.addFries(this.perks.autoFry <= 3 ? 2 : 1, 'machine'); }   // the conveyor drops 2 (playtest: 4P out-ate it)
     // The electric / industrial ball washer works through the hopper on its own.
     if (this.phase === 'shift' && this.perks.washAuto && this.hopper.n > 0) {
       this.hopper.frac += this.perks.washAuto * dt;

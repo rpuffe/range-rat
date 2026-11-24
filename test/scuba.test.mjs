@@ -56,11 +56,11 @@ test('lead and gold balls always end up in the Deep End, inside the pond', () =>
   assert.deepEqual(sinkSpot('gold', { x: 0, z: 0 }, seeded(9)), sinkSpot('gold', { x: 50, z: 50 }, seeded(9)), 'the landing spot does not matter to a rolling ball');
 });
 
-test('the dive gear row: free mask, then $1,200 / $5,000 / $80,000 (County)', () => {
+test('the dive gear row: free mask, then $1,200 / $5,000 / $40,000 (the scooter, halved by the playtest)', () => {
   assert.equal(DIVE_ROW.id, 'dive'); assert.equal(DIVE_ROW.personal, true); assert.equal(DIVE_ROW.minVenue, 1);
   assert.equal(DIVE_ROW.tiers.length, MAX_DIVE_LEVEL + 1);
   assert.equal(DIVE_ROW.tiers[0].cost, undefined);
-  assert.deepEqual(DIVE_ROW.tiers.slice(1).map(t => t.cost), [1200, 5000, 80000]);
+  assert.deepEqual(DIVE_ROW.tiers.slice(1).map(t => t.cost), [1200, 5000, 40000]);
   assert.equal(DIVE_ROW.tiers[3].minVenue, 2);
   for (let i = 2; i < DIVE_ROW.tiers.length; i++) assert.ok(DIVE_ROW.tiers[i].cost > DIVE_ROW.tiers[i - 1].cost);
   for (const t of DIVE_ROW.tiers) assert.ok(t.name && t.desc);

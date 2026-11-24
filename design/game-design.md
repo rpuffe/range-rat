@@ -612,3 +612,36 @@ each, and show, don't tell.
   MOW-E details. Ground noise, mowing stripes, worn dirt, green rings, contact shadows, billboard
   clouds, a warmer light. All scaled by the perf.js tier (`detailFor`); `?noprops` turns it off.
   Known gap: props read the tier at load, so an Auto step-down mid-session applies after a reload.
+
+## Full-game agent playtest (2026-11-24): fixes and economy calls
+
+Three agents played the whole game (Muni→Club; Club+Tiered; Stadium→ending→endless), headless bots
+for pace and the browser for feel. Fixed:
+
+- **Ending:** the end card sat under the overnight report (its button unclickable); the report now
+  hides on the ending shift and the card is above it. The Rat who carries Ball No. 1 is credited on
+  the end card. A Rat idle for a minute counts as at the huddle (one AFK Rat stalled it for ever).
+  One persistent banner says where Ball No. 1 is and who the stand is waiting for; "Pick up Ball No. 1"
+  prompt; the final memo is one line.
+- **Out of air** now moves the diver's own view to the dock (it stayed underwater client-side).
+- **Targets at the Club and up climb with stamps earned**, not days served, until the crew holds its
+  three (a struggling crew was pushed out of reach for ever).
+- **One text at a time, again:** the deck fall is the PA card only; the memo waits a beat after the PA
+  card; the prompt hides while the PA card speaks; no hints while aloft on the Orbital; no duplicate
+  huddle toast; the washer's cash popup rolls up every 2 s.
+- **The Board** shows whole dollars from $100 up, so cents of drift no longer restart the split-flap.
+- **CCTV** keyboard hints and a first camera that looks at the mats; **shop prices** use the Rats
+  online (the server's count), print with commas, and a lock names its venue; **report** shows
+  unwashed balls and the lost premium; endless HUD shows today vs pace.
+
+Economy calls (the owner: pick the more fun, easier option for a casual 4):
+- **Tiered fee $80k → $50k base.** The physical bot sat 7–9 Club shifts at 4P earning it while its
+  stamps were done by day 3.
+- **Gutters $100k → $50k, dive scooter $80k → $40k:** neither paid back before the Stadium.
+- **Crowd Sentiment decays half as fast (0.0012/s) and a lap is worth +0.1**, so lapping the cart
+  visibly moves the crowd.
+- **The fry conveyor drops two baskets**, so a 4-Rat Club can keep the fries up.
+
+Left for a council round (bigger design): late automation (second cart, drones, tether) adds no
+income because supply is customer-bound; endless has nothing to buy; Target Greens are too hard to
+see and hit; the Tiered deck never fires for a careful crew; the venue KPIs never decide a stamp.

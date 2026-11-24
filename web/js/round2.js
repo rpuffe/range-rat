@@ -74,7 +74,7 @@ export function setupRound2(ctx) {
       case 'ready': renderReport(); break;
       case 'reveal': startReveal(e); break;
       case 'mark': cctv.showFlag({ x: e.x, z: e.z, by: nameOf(e.by), color: e.color }); break;
-      case 'huddle': ending.huddle(e.n, e.of); setTimeout(() => ending.huddle(null), 2500); if (e.by === me.id) toast('Everyone to the stand: ' + e.n + ' / ' + e.of, 2); break;
+      case 'huddle': break;   // the Last Bucket banner (tick) shows who is still missing
       case 'lastbucket':
         if (e.phase === 'falling') toast('Corporate has paused the sun.', 3);
         if (e.phase === 'carried') toast(e.by === me.id ? 'You have Ball No. 1. Walk it home. Everyone to the stand.' : nameOf(e.by) + ' has Ball No. 1. Everyone to the stand!', 4);
@@ -223,7 +223,27 @@ export function setupRound2(ctx) {
   }
 
   // ---- per frame ----------------------------------------------------------------------
+  // The Last Bucket: one persistent line that says where Ball No. 1 is and who the stand is waiting for.
+  let lbKey = '';
+  function lastBucketBanner() {
+    const c = crew(), lb = c?.lastBucket;
+    let html = '';
+    if (lb && lb.phase !== 'done' && c.phase === 'shift') {
+      const on = (c.players ?? []).filter(p => p.online);
+      const carrier = on.find(p => p.one);
+      if (carrier) {
+        const atStand = p => Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < 8;
+        const missing = on.filter(p => !atStand(p)).map(p => p.id === me.id ? 'you' : p.name);
+        html = `BALL NO. 1 → THE STAND · <b>${on.length - missing.length} / ${on.length}</b>${missing.length ? ` · waiting: ${missing.slice(0, 3).join(', ')}` : ''}`;
+      } else if (lb.phase === 'down') html = 'BALL NO. 1 IS DOWN · follow the beam';
+    }
+    if (html === lbKey) return;
+    lbKey = html;
+    ending.huddle(html || null);
+  }
+
   function tick(dt, now) {
+    lastBucketBanner();
     const c = crew();
     washer.tick(dt);
     venues.tick(dt, now / 1000);

@@ -169,3 +169,16 @@ test('Q4: without a promotion, the 20 s Ready Up timer still starts the shift', 
   c.readyUp(a); run(21);
   assert.equal(c.phase, 'shift');
 });
+
+test('playtest: the Rat who carries Ball No. 1 is credited, and an idle Rat cannot stall the huddle', () => {
+  const { c, run, ps: [a, b] } = room({ day: 30, venue: 5, venueDay: 2, outstanding: 2 }, ['A', 'B']);
+  c.readyUp(a); c.readyUp(b); run(1);
+  a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a);
+  for (let i = 0; i < 60 && !(one(c) && one(c).rest); i++) run(1);
+  b.x = -40; b.z = -100; b.movedAt = c.now();        // B is away and just moved: the huddle waits
+  assert.equal(bankOne(c, a), false, 'B is not at the stand yet');
+  b.movedAt = c.now() - 61_000;                       // B has not moved for a minute: counted present
+  assert.ok(c.depositOne(a), 'an idle Rat no longer stalls the ending');
+  assert.equal(a.shift.banked >= 1, true, 'the carrier banked it');
+  assert.ok(a.shift.cash > 0, 'and gets the payout on the end card');
+});

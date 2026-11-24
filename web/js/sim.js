@@ -403,7 +403,7 @@ export const LAST_CALL = { SECS: 60, FROM_DAY: 2, SWING: 1.5 };
 export const VENUE_RULES = [
   { name: 'Muni Range', title: 'Range Rat' },
   { name: 'Range Club', title: 'Club Retrieval Associate', fee: 2500, writeOff: 1_200_000_000, memo: "1,200,000,000 balls have been reclassified as members' property.", pa: 'club', eatEvery: 5 },
-  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 80000, writeOff: 1_500_000_000, memo: '1,500,000,000 balls have been reclassified as experiential.', pa: 'tiered', eatEvery: 5,
+  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 50000, writeOff: 1_500_000_000, memo: '1,500,000,000 balls have been reclassified as experiential.', pa: 'tiered', eatEvery: 5,
     kpi: 'BAY UTILIZATION', howto: 'New: Target Greens. Balls in a cup block the sensors. Bay Utilization is now on the Board. The Upper Deck is now serving.' },
   { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 400000, writeOff: 800_000_000, memo: '800,000,000 balls have been sold to fans as souvenirs.', pa: 'stadium', eatEvery: 5,
     kpi: 'CROWD SENTIMENT', howto: 'New: the Ping Track. The crowd grades you now. The crowd has never played golf.' },

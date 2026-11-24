@@ -51,6 +51,10 @@ function drawDimples(g, cx, cy, r) {
   g.lineTo(cx + r * 0.18, cy + r * 1.05); g.lineTo(cx, cy + r * 1.2); g.lineTo(cx - r * 0.18, cy + r * 1.05); g.closePath(); g.fill();
 }
 
+// From $100 up the Board shows whole dollars, so cents of drift don't restart the split-flap (playtest: it
+// never stopped scrambling at the Stadium).
+const boardMoney = v => (v >= 100 ? '$' + Math.round(v).toLocaleString('en-US') : money(v));
+
 export function createBoard(scene, { x, z }) {
   const root = new THREE.Group();
   scene.add(root);
@@ -123,7 +127,7 @@ export function createBoard(scene, { x, z }) {
 
     // BV big
     g.textAlign = 'left';
-    const bvText = money(st.bv);
+    const bvText = boardMoney(st.bv);
     g.fillStyle = '#1d2129'; g.fillRect(24, 96, 560, 170);
     g.fillStyle = '#f5e6b8';
     const bpx = fit(show('bv', bvText), p => `700 ${p}px ${MONO}`, hustleShown(st) ? 360 : 530, 160);
@@ -280,7 +284,7 @@ export function createBoard(scene, { x, z }) {
 
     // board
     const k = [
-      money(state.bv), money(state.rate), money(state.upkeep), state.hustle > 1 ? state.hustle.toFixed(2) : '-',
+      boardMoney(state.bv), money(state.rate), money(state.upkeep), state.hustle > 1 ? state.hustle.toFixed(2) : '-',
       state.curb == null ? 'x' : Math.round(clamp01(state.curb) * 100),
       state.pond == null ? 'x' : Math.round(clamp01(state.pond) * 100),
       state.fries == null ? 'x' : Math.round(clamp01(state.fries) * 100),
@@ -290,7 +294,7 @@ export function createBoard(scene, { x, z }) {
     ].join('|');
     if (k === key) return;
     key = k;
-    const next = { bv: money(state.bv), quota: state.quota == null ? '' : money(state.quota), banner: bannerOf(state) };
+    const next = { bv: boardMoney(state.bv), quota: state.quota == null ? '' : money(state.quota), banner: bannerOf(state) };
     if (s) {                                   // no flip on the very first draw
       for (const f of ['bv', 'quota', 'banner']) if (next[f] !== prev[f]) { flipping[f] = true; flipT = FLIP_TIME; }
     }

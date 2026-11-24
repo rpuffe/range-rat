@@ -4,9 +4,9 @@ import { MAP, onTrack } from './map.js';
 
 export const CROWD = {
   START: 0.5,            // sentiment each morning
-  DECAY: 0.0025,         // per second (empty in 200 s if ignored)
+  DECAY: 0.0012,         // per second (empty in ~400 s if ignored; playtest: 0.0025 ate every lap)
   PING: 0.08, PING_TRACK: 0.16,   // a paid ping; while that cart is on the Track
-  LAP: 0.06, TARGET: 0.06, JACKPOT: 0.10, KNOCK: 0.02,
+  LAP: 0.1, TARGET: 0.06, JACKPOT: 0.10, KNOCK: 0.02,
   KNOCK_CAP: 10,         // knockdowns that count per shift
   LAP_SECS: 25,          // all four gates, in order, within this
   GATE_PAD: 1.5,         // how far off the painted edge still counts as being on the Track

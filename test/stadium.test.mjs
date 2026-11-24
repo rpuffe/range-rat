@@ -49,8 +49,8 @@ test('a lap needs all four gates in order, either direction, within 25 s', () =>
 });
 
 test('sentiment: decay, deltas, clamps', () => {
-  assert.equal(stepSentiment(0.5, 200), 0, 'empty in 200 s');
-  assert.ok(Math.abs(stepSentiment(0.5, 1) - 0.4975) < 1e-9);
+  assert.equal(stepSentiment(0.5, 420), 0, 'empty in about 400 s');
+  assert.ok(Math.abs(stepSentiment(0.5, 1) - 0.4988) < 1e-9);
   assert.equal(bump(0.95, 0.16), 1);
   assert.equal(pingDelta(false, 'boost'), 0.08);
   assert.equal(pingDelta(true, 'boost'), 0.16);
@@ -72,7 +72,7 @@ test('the server module: starts at 0.5, decays, pings pay more on the Track, kno
   const { crew, p, run, st } = stadiumCrew();
   assert.equal(crew.mods.kpi(), 0.5);
   run(10);
-  assert.ok(Math.abs(st.s - (0.5 - 0.025)) < 0.01, 'decayed about 0.0025/s');
+  assert.ok(Math.abs(st.s - (0.5 - 0.012)) < 0.01, 'decayed about 0.0012/s');
   const s0 = st.s;
   crew.cart.x = 0; crew.cart.z = 0;
   const b = { by: p.id };
