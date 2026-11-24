@@ -29,8 +29,8 @@ export function yardAt(x, z) {
 export const DRONES_ROW = {
   id: 'drones', title: 'Drones', minVenue: 4, tiers: [
     { name: 'No drones', desc: 'The Yards are cleared on foot. The county is watching.' },
-    { name: 'Two drones', cost: 600000, desc: 'They take the strays first, then the nearest ball. 10 m/s, 25 balls each, never knocked down. "They are not watching you."' },
-    { name: 'Four drones', cost: 1500000, desc: 'Four of them. Zoning has stopped returning your calls, which is the good kind of quiet.' },
+    { name: 'Two drones', cost: 1200000, desc: 'They take the strays first, then the nearest ball. 10 m/s, 25 balls each, never knocked down. "They are not watching you."' },
+    { name: 'Four drones', cost: 3000000, desc: 'Four of them. Zoning has stopped returning your calls, which is the good kind of quiet.' },
   ],
 };
 export const DRONE_COUNTS = [0, 2, 4];

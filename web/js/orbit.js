@@ -29,7 +29,7 @@ export const LIFT = { x: MAP.LIFT.x, z: MAP.LIFT.z };
 export const TETHER_ROW = {
   id: 'tether', title: 'Orbital tether winch', minVenue: 5, tiers: [
     { name: 'Hands and a prayer', desc: 'Debris is retrieved by hand, in a spacesuit. The suit was sized for someone else.' },
-    { name: 'Orbital tether winch', cost: 3_000_000, desc: 'Reels in one piece of debris every 8 s, all shift. A winch on a 400 m tower. Corporate calls it "the tether". The EVA becomes optional.' },
+    { name: 'Orbital tether winch', cost: 6_000_000, desc: 'Reels in one piece of debris every 8 s, all shift. A winch on a 400 m tower. Corporate calls it "the tether". The EVA becomes optional.' },
   ],
 };
 export const tetherTier = up => Math.max(0, Math.min(TETHER_ROW.tiers.length - 1, (up?.tether ?? 0) | 0));

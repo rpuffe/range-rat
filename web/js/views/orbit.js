@@ -19,6 +19,8 @@ const PH = ['up', 'out', 'down'];
 const SPACE_TOP = new THREE.Color(0x00020a), SPACE_MID = new THREE.Color(0x070618), SPACE_HORIZON = new THREE.Color(0x5a3552);
 const TETHER_SEGS = 26;
 const FIELD_YAW = Math.atan2(-(0 - LIFT.x), -(-60 - LIFT.z));   // the yaw that faces the middle of the range from the Lift
+// Either stick feeds the crank: whichever is pushed further.
+export const padStick = pad => !pad ? [0, 0] : Math.hypot(pad.rx ?? 0, pad.ry ?? 0) >= Math.hypot(pad.lx ?? 0, pad.ly ?? 0) ? [pad.rx ?? 0, pad.ry ?? 0] : [pad.lx ?? 0, pad.ly ?? 0];
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
@@ -98,7 +100,7 @@ export default {
     let snap = null;                       // s.mods.orbit: { d: [ids], r: { id: [ph, t, air, bag] }, p, w }
     let ids = [];
     let ph = null, rt = 0, air = 0, bag = 0;   // my ride, from the snapshot, with the clock run on locally
-    let wasRiding = false, v = { x: 0, z: 0 }, carY = 1.5, pumpUntil = 0, lastAng = null, turnAcc = 0, turnSend = 0, heldSend = 0;
+    let wasRiding = false, v = { x: 0, z: 0 }, carY = 1.5, pumpUntil = 0, latched = false, lastAng = null, turnAcc = 0, turnSend = 0, heldSend = 0;
     const hidden = new Set();                // first-person gear on the camera: out of sight while you're up there
     let speed01 = 0, fov0 = camera.fov, fovOn = false, shake = 0, clock = 0;
     const baseFog = { near: 120, far: 900 };
@@ -149,6 +151,7 @@ export default {
           if (ph === 'out') return `${btn}  Grab debris (${bag}/${kitCap()})   ${ibtn}  Ride down`;
           return ph === 'up' ? 'Riding the Lift...' : 'Riding down...';
         }
+        if (latched) return `Cranking their oxygen: circle either stick   ${btn} or Ⓑ  Let go`;
         if (!canRide()) return null;
         return someoneOut() ? `Tap ${btn} to crank their oxygen   ${ibtn}  Ride the Lift` : `${ibtn}  Ride the Lift`;
       },
@@ -157,14 +160,18 @@ export default {
         if (!canRide()) return false;
         ctx.act({ t: 'lift' }); return true;
       },
-      use() {
+      use(fromPad) {
         if (mine()) { if (ph === 'out') ctx.act({ t: 'grab' }); return true; }
+        if (latched) { latched = false; return true; }     // a second tap lets go
         if (!someoneOut() || !atLift(me, 3.4)) return false;
+        if (fromPad) { latched = true; lastAng = null; turnAcc = 0; return true; }   // the pad latches the crank (like the dock pump)
         pumpUntil = clock + 1.2; return true;          // a tap keeps the crank held for a moment
       },
-      capturing() { return mine(); },
+      unlatch() { if (!latched) return false; latched = false; return true; },     // Ⓑ
+      lockLook() { return latched; },                    // the camera stays put while you crank
+      capturing() { return mine() || latched; },
       amb() { return mine() ? { underwater: true, crowd: 0, nearField: 0 } : null; },
-      reportLines(r) { return r?.stats?.debris ? [`Debris retrieved: ${r.stats.debris}`] : []; },
+      reportLines(r) { return r?.debris ? [`Debris retrieved: ${r.debris}`] : []; },
 
       tick(dt, t) {
         clock += dt;
@@ -295,11 +302,12 @@ export default {
 
       // Buddies on the platform: a tap of Ⓐ holds the crank for a moment; circling the right stick sends whole turns.
       _crank(dt) {
-        if (mine() || !snap || !someoneOut() || !atLift(me, 3.4) || !ctx.playing()) { lastAng = null; turnAcc = 0; return; }
+        if (mine() || !snap || !someoneOut() || !atLift(me, 3.4) || !ctx.playing()) { lastAng = null; turnAcc = 0; latched = false; return; }
         heldSend -= dt; turnSend -= dt;
         const pad = ctx.pad?.();
-        if (pad && Math.hypot(pad.rx, pad.ry) > 0.5) {
-          const a = Math.atan2(pad.ry, pad.rx);
+        const [sx, sy] = padStick(pad);
+        if (pad && Math.hypot(sx, sy) > 0.5) {
+          const a = Math.atan2(sy, sx);
           if (lastAng != null) { let d = a - lastAng; d = Math.atan2(Math.sin(d), Math.cos(d)); turnAcc += Math.abs(d) / (Math.PI * 2); }
           lastAng = a;
         } else lastAng = null;

@@ -29,6 +29,7 @@ const GRACE_MS = 60_000;          // an offline player keeps their spot this lon
 const DRIVER_GRACE_MS = 5_000;    // an offline driver gives up the cart this fast
 const NAME_MAX = 16;
 const READY_SECS = 20;            // Ready Up: the next shift starts this long after the first Rat is ready
+const READY_HOLD_SECS = 120;      // ...held (for signatures) at most this long when a promotion is ready
 const REVEAL_SECS = 6;            // a venue reveal holds the clock this long
 const PA_CAP = 3, PA_GAP_MS = 20_000;
 const HUDDLE_R = 8;
@@ -190,6 +191,7 @@ export class Crew {
   online() { return [...this.players.values()].filter(p => p.online > 0); }
   world() { return { venue: this.venue }; }   // what the map's rules depend on (Dimple Creek: dry or running)
   driving(p) { return !!this.cartOf(p); }
+  aloft(p) { return !!this.mods.state('orbit')?.riders?.has(p.id); }   // on the Lift or floating on the EVA: nothing on the ground reaches you
   cartOf(p) { return this.carts.find(c => c.driver === p.id) ?? null; }   // the cart this Rat drives, if any
   // The legacy alias (one release): "the cart" is the first one. Venue modules and old code read it.
   get cart() { return this.carts[0] ?? null; }
@@ -264,7 +266,9 @@ export class Crew {
   countDown(n) {
     if (this.venue === 5 && !this.endless) {
       this.outstanding = Math.max(1, this.outstanding - n);
-      if (this.outstanding === 1 && !this.lastBucket) this.beginLastBucket();
+      // Only mid-shift: a bank at the bell (the report) waits for the next morning (startShift), so
+      // Ball No. 1 never lands under the report card or into the night crew's sweep.
+      if (this.outstanding === 1 && !this.lastBucket && this.phase === 'shift') this.beginLastBucket();
     } else this.outstanding = Math.max(0, this.outstanding - n);
   }
 
@@ -448,6 +452,14 @@ export class Crew {
     if (online.every(o => this.ready.has(o.id))) this.startShift();
   }
 
+  // A promotion is ready to sign and not every online Rat has signed: { n, of }, else null.
+  awaitingSignatures() {
+    if (this.phase !== 'report' || !this.promoInfo()?.ready) return null;
+    const online = this.online();
+    const n = online.filter(o => this.signed.has(o.id)).length;
+    return n < online.length ? { n, of: online.length } : null;
+  }
+
   // ---- the cart --------------------------------------------------------------
 
   // Climb into the nearest free cart within reach.
@@ -501,7 +513,7 @@ export class Crew {
     // Anyone on foot in the way goes flying.
     if (c.v > CART.RUN_OVER_SPEED) {
       for (const o of [...this.players.values(), ...this.helpers]) {
-        if (o === p || o.down > 0 || this.driving(o)) continue;
+        if (o === p || o.down > 0 || this.driving(o) || this.aloft(o)) continue;
         if (Math.hypot(o.x - c.x, o.z - c.z) < 1.3) { this.knockDown(o, 'cart'); this.stats.runOver++; }
       }
     }
@@ -725,7 +737,8 @@ export class Crew {
     if (this.phase === 'report') this.day++;
     this.venueDay++;
     // The night crew clears the field: every morning starts clean (the pond keeps what sank).
-    for (const [id, b] of this.balls) if (!b.sunk) { this.balls.delete(id); this.events.push({ t: 'gone', id }); }
+    // Ball No. 1 is never swept: losing it would hold the clock for ever.
+    for (const [id, b] of this.balls) if (!b.sunk && b.kind !== 'one') { this.balls.delete(id); this.events.push({ t: 'gone', id }); }
     this.shiftSecs = this.shiftOverride ?? (this.endless || this.venue > 0 ? SIM.SHIFT_SECS : shiftSecsFor(this.day));
     this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false;
     this.gary = null; this.mower = null; this.paShift = 0; this.jackpotSaid = false;
@@ -760,6 +773,8 @@ export class Crew {
       this.pa(VENUE_RULES[v].pa);
     }
     if (this.endlessFresh) { this.endlessFresh = false; this.events.push({ t: 'reveal', venue: 6, memo: 'Under New Management.', title: 'Owner' }); }
+    // The Last Bucket that came due at the bell (or a reload saved at 1) begins this morning.
+    if (this.venue === 5 && !this.endless && this.outstanding <= 1 && !this.lastBucket) { this.outstanding = 1; this.beginLastBucket(); }
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'shift', day: this.day });
     if (this.day === 1 || !this.voiced.has('welcome')) this.pa('welcome', { once: true });
@@ -1030,7 +1045,7 @@ export class Crew {
       const k = Math.min(1, step / d);
       g.x += dx * k; g.z += dz * k; g.yaw = Math.atan2(-dx, -dz);
       for (const o of [...this.players.values(), ...this.helpers]) {     // he drives like he owns the place
-        if (o.down > 0 || this.driving(o)) continue;
+        if (o.down > 0 || this.driving(o) || this.aloft(o)) continue;
         if (Math.hypot(o.x - g.x, o.z - g.z) < 1.3) { this.knockDown(o, 'gary'); this.stats.runOver++; }
       }
       return;
@@ -1067,7 +1082,7 @@ export class Crew {
       return;
     }
     if (this.mower.phase === 'done') return;
-    const people = [...this.players.values(), ...this.helpers].map(o => ({ id: o.id, x: o.x, z: o.z, down: o.down, driving: this.driving(o) }));
+    const people = [...this.players.values(), ...this.helpers].filter(o => !this.aloft(o)).map(o => ({ id: o.id, x: o.x, z: o.z, down: o.down, driving: this.driving(o) }));
     const r = stepMower(this.mower, dt, { balls: this.balls, players: people, carts: this.carts, rng: this.rng });
     const ids = [];
     for (const m of r.raked) {
@@ -1116,8 +1131,14 @@ export class Crew {
   }
 
   stepLastBucket(dt) {
-    const lb = this.lastBucket;
-    if (!lb) return;
+    let lb = this.lastBucket;
+    if (!lb || this.phase !== 'shift') return;
+    // Self-healing: if Ball No. 1 is neither on the field nor in anyone's hands, find it or send it again.
+    if ((lb.phase === 'down' || lb.phase === 'carried') && !this.balls.has(lb.id) && ![...this.players.values()].some(p => p.one)) {
+      const b = [...this.balls.values()].find(o => o.kind === 'one');
+      if (b) { lb.phase = 'down'; lb.id = b.id; }
+      else { lb = this.lastBucket = { phase: 'falling', t: 3 }; this.dirty = true; }
+    }
     if (lb.phase === 'falling' && (lb.t -= dt) <= 0 && !lb.id) {
       // Ball No. 1 comes home: high above the field, landing 90–120 m out, away from the pond.
       const tx = (this.rng() - 0.5) * 70, tz = -(90 + this.rng() * 30), secs = 6;
@@ -1141,7 +1162,7 @@ export class Crew {
     this.endless = true; this.endlessFresh = true; this.endlessArmed = true;
     this.events.push({ t: 'lastbucket', phase: 'banked', by: p.id, cash: pay });
     this.pa('last', { once: true });
-    this.endShift(true);
+    this.endShift(true, pay);
     return true;
   }
 
@@ -1238,7 +1259,7 @@ export class Crew {
         const shooter = this.players.get(b.by); if (shooter) shooter.shift.pings++;
       }
       for (const p of [...this.players.values(), ...this.helpers]) {
-        if (!p.helper && this.driving(p)) continue;            // the cage keeps the driver safe
+        if (!p.helper && (this.driving(p) || this.aloft(p))) continue;   // the cage keeps the driver safe; riders are 120 m up
         if (b.by === p.id || b.kind === 'one') continue;       // your own swing leaves from your feet
         if (!ballHitsPlayer(x0, y0, z0, b, p)) continue;
         this.knockDown(p);
@@ -1271,7 +1292,10 @@ export class Crew {
     for (const h of this.helpers) if (h.down > 0) h.down = Math.max(0, h.down - dt);
 
     // Ready Up: 20 s after the first Rat is ready, the next shift starts anyway.
-    if (this.phase === 'report' && this.readyAt && now - this.readyAt >= READY_SECS * 1000) this.startShift();
+    // It holds while a promotion is ready and the signatures aren't all in (the promotion must not slip),
+    // up to READY_HOLD_SECS, so one Rat gone idle at the keyboard can't stall the crew for ever.
+    if (this.phase === 'report' && this.readyAt && now - this.readyAt >= READY_SECS * 1000
+      && (!this.awaitingSignatures() || now - this.readyAt >= READY_HOLD_SECS * 1000)) this.startShift();
     if (this.phase === 'shift' && this.shiftT >= this.shiftSecs) this.endShift();
   }
 
@@ -1284,26 +1308,36 @@ export class Crew {
     // Whatever you were carrying goes everywhere.
     for (const s of spill(p.x, p.z, p.pocket, this.rng)) this.addBall(s);
     p.pocket = 0; p.pocketW = 0;
-    if (p.one) {                     // Ball No. 1 drops at your feet. It doesn't fly.
-      p.one = false;
-      const b = this.addBall({ x: p.x + 0.4, y: SIM.BALL_R, z: p.z, vx: 0, vy: 0, vz: 0, kind: 'one' });
-      if (b) { b.rest = true; this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z, one: true }); }
-      if (this.lastBucket) { this.lastBucket.phase = 'down'; this.lastBucket.id = b?.id; }
-    }
+    if (p.one) this.dropOne(p, 0.4);   // Ball No. 1 drops at your feet. It doesn't fly.
     if (!p.helper) this.addGrime(p, 1);   // you landed in the mud
     this.mods.call('knockDown', p, by);
+  }
+
+  // Ball No. 1 leaves your hands at rest beside you, or on the dock if that's in the pond: a diver can't
+  // pick it up, so a ball in the water would be lost for good.
+  dropOne(p, off = 0) {
+    p.one = false;
+    let x = p.x + off, z = p.z;
+    if (inPond({ x, z })) { x = POND.DOCK.x; z = POND.DOCK.z + 1.5; }
+    const b = this.addBall({ x, y: SIM.BALL_R, z, vx: 0, vy: 0, vz: 0, kind: 'one' });
+    if (b) { b.rest = true; this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z, one: true }); }
+    if (this.lastBucket && this.lastBucket.phase !== 'done') { this.lastBucket.phase = 'down'; this.lastBucket.id = b?.id; }
+    this.dirty = true;
+    return b;
   }
 
   removePlayer(p) {
     const own = this.cartOf(p); if (own) { own.driver = null; own.v = 0; }
     for (const s of spill(p.x, p.z, p.pocket, this.rng)) this.addBall(s);
-    if (p.one) { const b = this.addBall({ x: p.x, y: SIM.BALL_R, z: p.z, vx: 0, vy: 0, vz: 0, kind: 'one' }); if (b) b.rest = true; }
+    if (p.one) this.dropOne(p);
+    if (p.treasure) this.dropTreasure(p, true);   // a carried treasure goes back to the Deep End
     this.players.delete(p.id);
     this.signed.delete(p.id); this.ready.delete(p.id);
     this.events.push({ t: 'leave', id: p.id });
   }
 
-  endShift(ending = false) {
+  // `onePay`: Ball No. 1's payout, which stays out of the crew record (the endless pace target).
+  endShift(ending = false, onePay = 0) {
     this.phase = 'report';
     // Closing time: hired help and the cart turn in what they're carrying, so it counts today.
     for (const h of this.helpers) { this.bank(h.pocket, h.id, 'helper', h.pocketW ?? h.pocket); h.pocket = 0; h.pocketW = 0; h.target = null; }
@@ -1332,9 +1366,10 @@ export class Crew {
     }
     // Crew records (from day 3).
     let record = null;
-    if (this.day >= 3 && this.stats.cash > this.records.cash) {
-      record = { cash: this.stats.cash, was: this.records.cash };
-      this.records = { cash: this.stats.cash, banked: this.stats.deposited, day: this.day };
+    const dayCash = cents(this.stats.cash - onePay);
+    if (this.day >= 3 && dayCash > this.records.cash) {
+      record = { cash: dayCash, was: this.records.cash };
+      this.records = { cash: dayCash, banked: this.stats.deposited - (onePay ? 1 : 0), day: this.day };
       this.pa('record');
     }
     for (const k of Object.keys(this.stats)) this.totals[k] = (this.totals[k] ?? 0) + this.stats[k];
@@ -1385,7 +1420,9 @@ export class Crew {
         ? { record: this.records.cash, now: cents(this.records.cash * Math.min(1, this.shiftT / this.shiftSecs)), cash: this.stats.cash } : null,
       silo: this.stats.deposited, lastCall: this.lastCall(),
       promo: this.promoInfo(), revealT: +this.revealT.toFixed(1),
-      readyIn: this.phase === 'report' && this.readyAt ? Math.max(0, Math.ceil(READY_SECS - (now - this.readyAt) / 1000)) : null,
+      // While the signatures hold the Ready Up timer: no countdown, and `sigWait` {n, of} ("Waiting for signatures").
+      readyIn: this.phase === 'report' && this.readyAt && !this.awaitingSignatures() ? Math.max(0, Math.ceil(READY_SECS - (now - this.readyAt) / 1000)) : null,
+      sigWait: this.phase === 'report' && this.readyAt ? this.awaitingSignatures() : null,
       lastBucket: this.lastBucket && { phase: this.lastBucket.phase, by: this.lastBucket.by ?? null },
       washer: this.perks.washer ? { n: this.hopper.n, credit: this.hopper.credit, auto: this.perks.washAuto,
         L: cr.L && now - cr.L.at < 400 ? cr.L.id : null, R: cr.R && now - cr.R.at < 400 ? cr.R.id : null, rateL: rateOf('L'), rateR: rateOf('R') } : null,

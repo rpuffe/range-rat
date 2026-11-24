@@ -39,7 +39,7 @@ export const GUTTERS = { PER_SEC: 1, FROM_TIER: 1 };
 export const GUTTERS_ROW = {
   id: 'gutters', title: 'Ball-return gutters', minVenue: 2, tiers: [
     { name: 'Cups fill up', desc: 'Balls that roll into a Target Green stay there until somebody empties the cup.' },
-    { name: 'Ball-return gutters', cost: 50000, desc: 'Buried pipes drain 1 ball a second from each cup to the stand, at gear x1. There is a glass section at each cup, so you can watch. Corporate calls this "visibility".' },
+    { name: 'Ball-return gutters', cost: 100000, desc: 'Buried pipes drain 1 ball a second from each cup to the stand, at gear x1. There is a glass section at each cup, so you can watch. Corporate calls this "visibility".' },
   ],
 };
 export const hasGutters = up => ((up?.gutters ?? 0) | 0) >= GUTTERS.FROM_TIER;

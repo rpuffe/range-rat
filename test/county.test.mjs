@@ -77,11 +77,11 @@ test('Zoning Compliance = 1 - strays / 30, recomputed every half second, graded 
   assert.ok(run);
 });
 
-test('drone row: two then four, $600k then $1.5M base, from the County only', () => {
-  assert.equal(DRONES_ROW.tiers[1].cost, 600000); assert.equal(DRONES_ROW.tiers[2].cost, 1500000);
+test('drone row: two then four, $1.2M then $3M base, from the County only', () => {
+  assert.equal(DRONES_ROW.tiers[1].cost, 1200000); assert.equal(DRONES_ROW.tiers[2].cost, 3000000);
   assert.equal(droneCount({}), 0); assert.equal(droneCount({ drones: 1 }), 2); assert.equal(droneCount({ drones: 2 }), 4);
   assert.equal(nextPrice('drones', {}, 1, 0, 3), null);
-  assert.equal(nextPrice('drones', {}, 1, 0, 4), 600000);
+  assert.equal(nextPrice('drones', {}, 1, 0, 4), 1200000);
 });
 
 test('drones take strays first, are never knocked down, and bank at the stand', () => {

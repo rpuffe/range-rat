@@ -87,7 +87,7 @@ export const DIVE_ROW = {
     { name: 'Mask and snorkel', desc: '20 s of air, a bag of 10. The Deep End drains you twice as fast.' },
     { name: 'Scuba tank', cost: 1200, desc: '40 s of air, a bag of 15. A yellow tank. It has never been inspected.' },
     { name: 'Twin tanks and a dive light', cost: 5000, desc: '70 s of air, a bag of 25, and no extra drain in the Deep End. The light glints treasure at 8 m.' },
-    { name: 'Dive scooter', cost: 40000, minVenue: 2, desc: 'Swim 1.3x faster, a bag of 40. Corporate calls it a "personal aquatic mobility asset".' },
+    { name: 'Dive scooter', cost: 80000, minVenue: 2, desc: 'Swim 1.3x faster, a bag of 40. Corporate calls it a "personal aquatic mobility asset".' },
   ],
 };
 

@@ -385,3 +385,15 @@ test('views: created lazily at their venue, shown and hidden, called in order, f
   assert.ok(log.includes('show:a:true') && log.includes('show:b:true'), 'endless counts as the Orbital');
   assert.equal(log.filter(l => l.startsWith('create')).length, 0, 'built once');
 });
+
+test('views: use() passes fromPad, and unlatch / lockLook reach the view that latched (the Lift crank)', () => {
+  let latched = false;
+  const v = createViews({}, [{ id: 'l', venue: 2, create: () => ({ show() {},
+    use: fromPad => { if (latched) { latched = false; return true; } if (fromPad) { latched = true; return true; } return false; },
+    unlatch: () => { if (!latched) return false; latched = false; return true; }, lockLook: () => latched, capturing: () => latched }) }]);
+  v.onSnapshot({ venue: 2, mods: {} });
+  assert.equal(v.use(false), false, 'a mouse click does not latch');
+  assert.equal(v.use(true), true); assert.equal(v.lockLook(), true); assert.equal(v.capturing(), true);
+  assert.equal(v.unlatch(), true); assert.equal(v.lockLook(), false); assert.equal(v.capturing(), false);
+  v.use(true); assert.equal(v.use(true), true, 'a second tap lets go'); assert.equal(v.lockLook(), false);
+});

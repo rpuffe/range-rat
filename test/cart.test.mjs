@@ -885,14 +885,14 @@ test('fleet: the alias is carts[0], in the crew and in the snapshot', () => {
   assert.equal(bare.snapshot().cart, null);
 });
 
-test('fleet: tier 3 is the second cart, from the Stadium, $150k base, parked at (35, 10)', () => {
+test('fleet: tier 3 is the second cart, from the Stadium, $300k base, parked at (35, 10)', () => {
   assert.equal(CART.PARK2.x, 35); assert.equal(CART.PARK2.z, 10);
   assert.equal(nextPrice('cart', { cart: 2 }, 1, 0, 2), null, 'not before venue 3');
-  assert.equal(nextPrice('cart', { cart: 2 }, 1, 0, 3), 150_000);
-  assert.equal(nextPrice('cart', { cart: 2 }, 4, 0, 3), 330_000);
+  assert.equal(nextPrice('cart', { cart: 2 }, 1, 0, 3), 300_000);
+  assert.equal(nextPrice('cart', { cart: 2 }, 4, 0, 3), 660_000);
   assert.equal(perks({ cart: 3 }).carts, 2);
   assert.equal(perks({ cart: 3 }).cartCap, 600);
-  const { crew } = fleetCrew({ up: { cart: 2 }, cash: 200_000 });
+  const { crew } = fleetCrew({ up: { cart: 2 }, cash: 400_000 });
   const first = crew.cart;
   const p = addPlayer(crew, 'A', 0, 0);
   act(crew, p, { t: 'buy', id: 'cart' });

@@ -100,8 +100,7 @@ export default {
         } else if (e.t === 'served') {
           if (e.item === 'beer' && e.by === ctx.me?.id && !hinted) {
             hinted = true;
-            let seen = false; try { seen = localStorage.getItem('rr.hint.deck') === '1'; localStorage.setItem('rr.hint.deck', '1'); } catch { /* private mode */ }
-            if (!seen) ctx.toast?.('Beer pays a tab. Six drinks on the deck and somebody falls off. Hot dogs sober them up.', 5);
+            // (the first-time hint chip in settings.js owns the "beer pays a tab" tip)
           }
         } else if (e.t === 'knock' && e.by === 'customer' && e.id === ctx.me?.id) {
           ctx.toast?.('A customer fell on you. Corporate is reviewing the footage.', 3.2);

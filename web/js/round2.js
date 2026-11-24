@@ -209,7 +209,7 @@ export function setupRound2(ctx) {
     $('sign-btn')?.addEventListener('click', () => link()?.act({ t: 'sign', on: !mine?.signed }));
     const readyN = online.filter(p => p.ready).length;
     const btn = $('next');
-    if (btn) btn.textContent = online.length > 1 ? (mine?.ready ? 'Ready ✓ (' + readyN + ' / ' + online.length + ')' : 'Ready (' + readyN + ' / ' + online.length + ')') + (c.readyIn != null ? ' · starts in ' + c.readyIn + 's' : '') : 'Next shift';
+    if (btn) btn.textContent = online.length > 1 ? (mine?.ready ? 'Ready ✓ (' + readyN + ' / ' + online.length + ')' : 'Ready (' + readyN + ' / ' + online.length + ')') + (c.sigWait ? ' · waiting for signatures (' + c.sigWait.n + ' of ' + c.sigWait.of + ')' : c.readyIn != null ? ' · starts in ' + c.readyIn + 's' : '') : 'Next shift';
   }
 
   function showEndCard(report) {

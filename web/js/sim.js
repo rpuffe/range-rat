@@ -207,7 +207,7 @@ export const SHOP = [
     { name: 'No cart', desc: 'Everything on foot.' },
     { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 300, unloads itself at the stand, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
     { name: 'Wide gang reels', cost: 1500, desc: 'Scoops a lane almost twice as wide, holds 600, a bit faster.' },
-    { name: 'A second cart', cost: 150000, minVenue: 3, desc: 'Another caged cart with wide reels, parked beside the first. One laps for the crowd, one harvests. Each pings on its own.' },
+    { name: 'A second cart', cost: 300000, minVenue: 3, desc: 'Another caged cart with wide reels, parked beside the first. One laps for the crowd, one harvests. Each pings on its own.' },
   ] },
   { id: 'shed', title: 'Snack shed', tiers: [
     { name: 'Boarded up', desc: 'The old shed. Something smells like fryer oil.' },
@@ -394,13 +394,13 @@ export const LAST_CALL = { SECS: 60, FROM_DAY: 2, SWING: 1.5 };
 export const VENUE_RULES = [
   { name: 'Muni Range', title: 'Range Rat' },
   { name: 'Range Club', title: 'Club Retrieval Associate', fee: 2500, writeOff: 1_200_000_000, memo: "1,200,000,000 balls have been reclassified as members' property.", pa: 'club', eatEvery: 5 },
-  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 40000, writeOff: 1_500_000_000, memo: '1,500,000,000 balls have been reclassified as experiential.', pa: 'tiered', eatEvery: 5,
+  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 80000, writeOff: 1_500_000_000, memo: '1,500,000,000 balls have been reclassified as experiential.', pa: 'tiered', eatEvery: 5,
     kpi: 'BAY UTILIZATION', howto: 'New: Target Greens. Balls in a cup block the sensors. Bay Utilization is now on the Board. The Upper Deck is now serving.' },
-  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 200000, writeOff: 800_000_000, memo: '800,000,000 balls have been sold to fans as souvenirs.', pa: 'stadium', eatEvery: 5,
+  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 400000, writeOff: 800_000_000, memo: '800,000,000 balls have been sold to fans as souvenirs.', pa: 'stadium', eatEvery: 5,
     kpi: 'CROWD SENTIMENT', howto: 'New: the Ping Track. The crowd grades you now. The crowd has never played golf.' },
-  { name: 'County Range', title: 'County Retrieval Director', fee: 1_000_000, writeOff: 712_000_000, memo: '712,000,000 balls have been reclassified as the county.', pa: 'county', eatEvery: 5,
+  { name: 'County Range', title: 'County Retrieval Director', fee: 2_000_000, writeOff: 712_000_000, memo: '712,000,000 balls have been reclassified as the county.', pa: 'county', eatEvery: 5,
     kpi: 'ZONING COMPLIANCE', howto: 'New: the Yards. Your customers now hit into the county. The county has noticed.' },
-  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 5_000_000, writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 5,
+  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 10_000_000, writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 5,
     kpi: 'ORBITAL DEBRIS', howto: 'New: the Lift. Some customers now hit into orbit. Orbital Debris is now on the Board. Weight limit: one Rat, one bag, no opinions.' },
 ];
 // Round 4: VENUE_RULES[v].kpi is the Board's fourth gauge label (only the current venue's KPI is graded),

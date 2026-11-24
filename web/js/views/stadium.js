@@ -95,7 +95,7 @@ export default {
         draw();
       },
       amb: snap => (snap?.phase === 'shift' ? { crowd: ambFor(s) } : {}),
-      reportLines: () => [`The crowd: ${Math.round(s * 100)}% ♥, ${laps} laps, ${knocks} knockdowns`],
+      reportLines: () => ctx.crew?.()?.venue !== 3 ? [] : [`The crowd: ${Math.round(s * 100)}% ♥, ${laps} laps, ${knocks} knockdowns`],
     };
   },
 };

@@ -570,7 +570,7 @@ function onEvent(e) {
       else toast('Gary is inspecting. Stay out of his way.', 3);
       break;
     case 'check': {
-      const names = { sign: 'Sign', mats: 'Mats', cart: 'Cart', stand: 'Stand' };
+      const names = { sign: 'Sign', mats: 'Mats', cart: 'Cart', stand: 'Stand', kitchen: 'Kitchen' };
       board.floatText(e.x, 3.2, e.z, `${e.ok ? '✓' : '✗'} ${names[e.stop] ?? e.stop}`, e.ok ? '#6fcf7c' : '#ff6b5b');
       (e.ok ? SFX.cash : SFX.bonk)(1);
       break;
@@ -855,7 +855,7 @@ let pumping = false;
 function pressAct(fromPad = false) {
   SFX.unlock();
   if (fromPad && r2?.unlatch()) return;                  // a latched crank or pump: this tap lets go
-  if (playing() && me.down <= 0 && views?.use()) return; // a venue view's own use (grab debris, ...)
+  if (playing() && me.down <= 0 && views?.use(fromPad)) return; // a venue view's own use (grab debris, ...)
   if (playing() && crew.fries?.open && atShed(me) && !me.wand) { openKitchen(); return; }
   if (playing() && dockOpen(me) && !me.diving && crew.players.some(p => p.diving && p.id !== me.id)) { pumping = true; r2?.pumpBegin(fromPad); return; }   // round2.js cranks (mouse or right stick) and sends {t:'pump', turns}
   if (me.wand && playing() && me.down <= 0) { spraying = true; return; }
@@ -1136,7 +1136,7 @@ function pollPad(dt) {
   }
   if (pad.pressed.some(Boolean)) SFX.unlock();
   if (pad.pressed[BTN.A]) pressAct(true);
-  if (pad.pressed[BTN.B]) r2?.unlatch();
+  if (pad.pressed[BTN.B]) { r2?.unlatch(); views?.unlatch(); }
   if (pad.released[BTN.A]) releaseAct(true);
   if (pad.released[BTN.X]) releaseBucket();
   if (pad.pressed[BTN.X]) interact('bucket');
@@ -1146,7 +1146,7 @@ function pollPad(dt) {
   if (pad.pressed[BTN.DOWN] && !r2?.cctvOn) r2?.toggleCCTV();
   if (pad.pressed[BTN.RS]) padSprint = true;
   if (swing.enabled) swing.stepPad(pad, dt, performance.now());
-  else if (!driving() && !r2?.capturing()) {
+  else if (!driving() && !r2?.capturing() && !views?.lockLook()) {
     me.yaw -= pad.rx * 2.6 * dt * SET.get().look;
     me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch - pad.ry * 1.8 * dt * SET.get().look * (SET.get().invertY ? -1 : 1)));
   }

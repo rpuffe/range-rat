@@ -413,7 +413,7 @@ Files: `web/js/tiered.js` (pure: `inBowl`, `cupSpot`, `bayUtil`, `TARGET`, `GUTT
   shooter at gear x1 (`bank(n, id, null, w, 1)`), then Hustle +0.25 (capped at `CART.MAX_MULT`), `stats.targets`,
   `p.shift.targets` (award: Bullseye (Noted)), event `{t:'target', by, bowl, n, mult}` and a `'target'` signal for the
   Stadium crowd. The pin strobes 3 s on the client. Outside the shift a crew ball just cups.
-- **Gutters** (`GUTTERS_ROW`, crew row, `minVenue` 2, $50,000 base): each cup drains 1 ball/s (oldest first) while the
+- **Gutters** (`GUTTERS_ROW`, crew row, `minVenue` 2, $100,000 base): each cup drains 1 ball/s (oldest first) while the
   shift runs, banked as `bank(n, 'gutter', 'gutter', w, 1)` with a `{t:'gutter'}` event (THUNK). No burst after an
   empty cup: the accumulator is capped at 1 s.
 - **Snapshot** `s.mods.tiered = {cups: [A, B, C], util}`; no save key.
@@ -430,7 +430,7 @@ fences with gates, mailboxes, the Gnome, the pool, "Yard N" signs, drones; hides
 - **The slice.** 40% of customer shots (not the pond's lead balls) get `curve` 1.0-2.0, bending right. The doc's 0.6-1.4 puts only ~6% of
   shots past the kerb; 1.0-2.0 gives ~12% (pinned at 8-18% by 2,000 seeded shots). Venues 0-3 have no slice.
 - **Zoning Compliance** = `1 - strays / 30`, strays = resting balls (not Ball No. 1) at x > 64.5, recomputed every 0.5 s; the module's `kpi`.
-- **Drones** (`drones` crew row, `minVenue` 4: two drones $600k, four $1.5M base). State lives in the module (`st.drones`), not in `crew.helpers`,
+- **Drones** (`drones` crew row, `minVenue` 4: two drones $1.2M, four $3M base). State lives in the module (`st.drones`), not in `crew.helpers`,
   so nothing can knock them down. 10 m/s at y 6, strays first then the nearest ball, 25 carried, dip to y 1 to grab, bank at the stand (`kind: 'helper'`,
   so `stats.helped` counts them); they bank at the bell. Snapshot `s.mods.county = { strays, kpi, drones: [{id, x, y, z, yaw, n}] }`. The PA line
   `drones` is voiced once-ever on first purchase. The view cheers (jackpot sound) on the `buy` event for `drones`.
@@ -473,7 +473,7 @@ Built to council-round4.md §3.4 (the full EVA, not the "Orbital lite" fallback)
 - **Air.** `evaStep` is `airStep` from `dive.js` with the Lift's position, so there is no Deep End drain. Out of air (or knocked flat, or
   disconnected): `{t:'reel'}`, the bag returns to orbit with the same ids, and you ride down. Down: the bag lands in the pocket at weight 3 a ball
   (`KIND_W.debris`); at the bell a rider still out is brought down and the bag banks directly.
-- **The tether winch** (`TETHER_ROW`, crew row `tether`, $3,000,000): every 8 s of a working shift, the lowest debris id is cleared and banked at
+- **The tether winch** (`TETHER_ROW`, crew row `tether`, $6,000,000): every 8 s of a working shift, the lowest debris id is cleared and banked at
   weight 3 as `by: 'tether'` (a `winch` event).
 - **View.** Ⓧ on the platform rides up; the car follows the highest rider (`venues.parts.carY`), the camera climbs 1.7 to 120 m, the sky (the
   shared uniforms in `sky.js`) fades to space, 3,000 stars and a Milky Way band come in, an Earth limb with an atmosphere shell curves the
@@ -488,7 +488,7 @@ Built to council-round4.md §3.4 (the full EVA, not the "Orbital lite" fallback)
 
 ## The fleet (round 4, build item 10): the second cart
 
-- **Buying it.** The `cart` row's tier 3, *A second cart*: `minVenue: 3`, $150,000 base ($330k at 4P). It has the wide reels (cap 600). The
+- **Buying it.** The `cart` row's tier 3, *A second cart*: `minVenue: 3`, $300,000 base ($660k at 4P). It has the wide reels (cap 600). The
   first cart keeps (31, 10); the second parks at `CART.PARK2` (35, 10) and returns there each morning. The `fleet` PA line plays once on purchase.
 - **Server.** `crew.cart` became `crew.carts[]` (`perks.carts`: 0, 1, 1, 2 by tier). `crew.cart` stays as an alias for one release: a getter
   for `carts[0]` (and a setter, for old tests), so venue modules and old code keep working. Each cart has its own driver, reels, hopper, mud,
@@ -522,3 +522,34 @@ Source: `design/council-round4.md` (§3.5 the side-by-side, §5 the build items)
 - **Venue seam**: how venues plug in is [Round 4 venue seam](#round-4-venue-seam-build-item-3-how-to-add-a-venue-module).
 - **Venues**: [Tiered](#tiered-entertainment-range-venue-2-round-4-item-4-the-target-greens), [Stadium](#stadium-venue-3-round-4-item-7-the-ping-track-and-crowd-sentiment), [County](#the-county-venue-4-round-4-build-item-8), [Orbital](#round-4-the-orbital-venue-5-build-item-9-the-lift-orbit-shots-the-eva-the-tether), [the fleet](#the-fleet-round-4-build-item-10-the-second-cart).
 - **Measuring**: `?pace` records the per-shift pace log (item 11); `?perf` the frame overlay (item 6). See the README.
+
+## Round 5 price decision (x2 from Tiered on)
+
+Council round 5 (design/council-round5.md, section 3) found that from the Club on the fee never gated anything
+(every venue took exactly the 3 review stamps) and the late shop rows cost 0.1-0.25 of a shift. It proposed x3.
+The owner delegated the call; **x2** won as the more fun, easier option for a casual crew of 4. The Muni and the
+Club are untouched.
+
+| Thing | Before (base) | After (base) |
+| --- | --- | --- |
+| Fee into Tiered / Stadium / County / Orbital | $40k / $200k / $1M / $5M | $80k / $400k / $2M / $10M |
+| Gutters | $50k | $100k |
+| Second cart (cart tier 3) | $150k | $300k |
+| Drones, 2 / 4 | $600k / $1.5M | $1.2M / $3M |
+| Tether winch | $3M | $6M |
+| Dive scooter (personal) | $40k | $80k |
+
+Fees and shop prices scale with crew size at 4P (about x2.2). Sim (`ladder.mjs`, seed 7, skill 1), minutes at each
+promotion, Tiered / Stadium / County / Orbital, then the Last Bucket:
+
+- **4P**: before 65 / 88 / 111 / 134, Last Bucket 149 min, 20 shifts. After: identical (65 / 88 / 111 / 134, 149,
+  20 shifts). The stamps still set the pace at 4P; the fee is now 1.0-1.3 shifts of income instead of 0.8-1.1 and
+  the crew banks less spare cash. Cash at the Orbital bell: $38.2M before, $30.3M after. End cash: $184M before,
+  $158M after. The crew now buys the late automation on arrival less often with change to spare, which is the
+  point: it is a decision, not a formality.
+- **Solo**: before 73 / 96 / 119 / 142, Last Bucket 165 min, 22 shifts. After: 80 / 104 / 127 / 150, Last Bucket
+  173 min, 23 shifts. The $80k Tiered fee costs one extra Club shift (4 instead of 3), then the rest keep their 3.
+  Solo is about 8 minutes longer overall.
+
+The reason for x2 over x3: the climb stays at the same length for a 4-person crew, and a solo Rat adds about one
+shift, so no crew gets stuck, while the late shop stops being free. Quotas and `PROMO_STAMPS` are unchanged.

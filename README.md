@@ -13,52 +13,28 @@ The design lives in [design/game-design.md](design/game-design.md).
 
 ## Status
 
-**The shared range works.**
-- **Crews:** start one, or join with a 4-letter code. Up to 6 players, who see
-  each other with name tags.
-- **The shift:** anyone opens the range. Customers hit balls (more crew, more
-  customers). Anyone picks up by hand, up to 3 in a pocket, and drops them at
-  the bucket stand for the crew's cash.
-- **Knockdowns:** a customer's ball knocks a player flat and spills their
-  pocket.
-- **End of day:** the shift ends in a report for everyone, then anyone starts
-  the next day.
-- **Saves:** day, cash, totals and upgrades save to S3, so a crew can come
-  back to their range.
-- **The upgrade shop:** open before the first shift and overnight, with one
-  shared wallet:
-  - carrying gear: tube, then bucket, then a push picker that scoops up
-    whatever you walk over
-  - hired helpers, who walk the field and bank balls on their own
-  - a ball washer, advertising, shoes, and hard hats
+**The game is feature-complete and in playtest.** Crews of up to 6 (a 4-letter
+code to join) run one shared range through a ladder of **six venues**, each
+with its own KPI, toys and stations: the starting range, the Club, the Tiered
+deck, the Stadium, the County, and the Orbital (a Lift, a spacewalk for debris,
+an oxygen crank for the buddy on the platform). Money, upgrades and progress
+save to S3, so a crew can come back to their range.
 
-- **The picker cart:** a shared, caged cart anyone can drive, with a chase
-  camera. Its gang reels scoop up whatever they roll over, and it unloads
-  itself at the bucket stand. The cage keeps the driver safe, and the cart
-  runs over anyone in the way.
-- **Hit the Cart:** from the orange crew bays, hit the balls you're carrying
-  at the cart while someone drives it. A ball that rings the cage pays the
-  crew a prize: a jackpot that hoovers up nearby balls, a turbo, or a price
-  multiplier for the rest of the day.
-- **Sound effects,** made in the browser with no audio files.
+- **The loop:** you're Range Rats working for Fairway Holdings International,
+  and Corporate pays per ball. Pick up by hand, drive the shared picker cart,
+  hit the cart from the crew bays, run the snack shed's kitchen, and keep the
+  range up (sign, mats, cart, the pond). The **Board** shows Ball Value
+  (BV = Rate × Upkeep), the KPI dials, today's quota and Balls Outstanding.
+- **Each day:** a Corporate memo and quota, Last Call glow balls, Gary from
+  Regional's inspection, lead balls, and a review at the bell. The shop is open
+  any time (Tab / D-pad up) with one shared wallet.
+- **The ending:** the Balls Outstanding countdown runs out at the Orbital with
+  the Last Bucket. After it the game goes on in **endless** mode.
+- **Play:** keyboard and mouse, or an Xbox controller (Edge, TV friendly), with
+  first-time hints, CCTV, a map and procedural sound (no audio files).
 
-- **The story (fun council round 1):** you're Range Rats working for Fairway
-  Holdings International, and Corporate pays per ball. The **Board** on the
-  stand shows Ball Value (BV = Rate × Upkeep), the KPI dials, today's target,
-  Balls Outstanding, and a silo filling with today's balls.
-- **Upkeep jobs raise BV:**
-  - power-wash the sign, the stand and the mats (Curb Appeal)
-  - dive the pond for sunk balls (Pond Clarity)
-  - keep the cart clean (×1.25 on its loads)
-- **Each day:**
-  - a Corporate memo with a quota (from day 2), checked in the review at the bell, where hits earn stamps and titles
-  - **Last Call** glow balls (×2) in the final minute, from day 2
-  - **Gary from Regional's** inspection (from day 3): clean ahead of his route, then huddle at the stand for double commendations
-  - lead balls (×3) that sink into the pond (from day 4)
-- **Shop and movement:** the shop opens any time (Tab / D-pad up), you can
-  sprint (Shift / click R), and carrying gear is personal.
-
-Next: the potato line (Fry Satisfaction), more ball types, the first promotion.
+Next: the owner's measurements (console perf, a long clean run, a real 4-player
+night) and the post-1.0 ideas in [design/council-round5.md](design/council-round5.md).
 
 ## Controls
 

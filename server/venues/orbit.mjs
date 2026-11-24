@@ -54,7 +54,12 @@ export default {
       const p = crew.players.get(id);
       if (!p) { st.riders.delete(id); continue; }
       if ((p.online <= 0 || p.down > 0) && r.ph !== 'down') reel(crew, st, p, r);
-      if (crew.paused()) continue;
+      // The Last Bucket needs everyone at the stand: the Lift brings every rider home (bag kept, it lands
+      // in the pocket). It keeps running through that pause; only a venue reveal holds it.
+      if (crew.lastBucket && crew.lastBucket.phase !== 'done' && r.ph !== 'down') {
+        r.ph = 'down'; r.t = 0; pin(p); crew.events.push({ t: 'lift', id: p.id, dir: 'down' });
+      }
+      if (crew.paused() && !(crew.lastBucket && crew.lastBucket.phase !== 'done')) continue;
       const tier = diveTiers(p.dive);
       if (r.ph === 'up') { r.t += dt; pin(p); if (r.t >= ORBIT.RIDE) { r.ph = 'out'; r.t = 0; } }
       else if (r.ph === 'out') {

@@ -1231,9 +1231,10 @@ test('Last Bucket: it starts the same way from 1,958 and from a reloaded save at
 
   const back = makeCrew({ venue: 5, outstanding: 1, day: 5 }).crew;
   openShift(back);
-  assert.equal(back.lastBucket, null);
+  // (council round 5, Q1) a restart mid-moment picks the moment up at the morning, not on the next ball
+  assert.equal(back.lastBucket.phase, 'falling', 'a restart mid-moment picks the moment up at the morning');
   back.bank(1, 'x');
-  assert.equal(back.lastBucket.phase, 'falling', 'a restart mid-moment picks the moment up on the next ball');
+  assert.equal(back.lastBucket.phase, 'falling', 'and the next ball changes nothing');
 });
 
 test('Last Bucket: not before the Orbital Range', () => {

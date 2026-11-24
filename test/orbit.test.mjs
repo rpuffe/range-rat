@@ -214,12 +214,12 @@ test('the tether winch clears 1 debris every 8 s and banks it', () => {
   assert.ok(crew.events.some(e => e.t === 'winch'));
 });
 
-test('the shop row: $3,000,000 base, Orbital only, and old saves load', () => {
+test('the shop row: $6,000,000 base, Orbital only, and old saves load', () => {
   assert.ok(SHOP.includes(TETHER_ROW));
   assert.equal(TETHER_ROW.id, 'tether'); assert.equal(TETHER_ROW.minVenue, 5);
-  assert.equal(TETHER_ROW.tiers[1].cost, 3_000_000);
+  assert.equal(TETHER_ROW.tiers[1].cost, 6_000_000);
   assert.equal(nextPrice('tether', {}, 1, 0, 4), null);
-  assert.equal(nextPrice('tether', {}, 1, 0, 5), 3_000_000);
+  assert.equal(nextPrice('tether', {}, 1, 0, 5), 6_000_000);
 });
 
 test('the save keeps the debris ids (and the next id); junk is cleaned', () => {

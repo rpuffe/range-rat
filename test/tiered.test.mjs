@@ -117,11 +117,11 @@ test('a crew ball in a bowl outside the shift is just a cupped ball (no bank)', 
   assert.equal(b.cup, 'A');
 });
 
-test('the gutters row: $50,000 base, a Tiered crew row; it drains 1 a second per cup, banked as kind gutter', () => {
+test('the gutters row: $100,000 base, a Tiered crew row; it drains 1 a second per cup, banked as kind gutter', () => {
   assert.ok(SHOP.includes(GUTTERS_ROW));
   assert.equal(GUTTERS_ROW.minVenue, 2);
   assert.equal(nextPrice('gutters', {}, 1, 0, 1), null, 'not before Tiered');
-  assert.equal(nextPrice('gutters', {}, 1, 0, 2), 50000);
+  assert.equal(nextPrice('gutters', {}, 1, 0, 2), 100000);
   const { crew, drop, run } = setup({ gutters: 1 });
   for (let i = 0; i < 6; i++) { drop(A.x + 0.2, A.z); drop(B.x, B.z + 0.2); }
   run(0.3);
