@@ -27,11 +27,12 @@ const SAVE_MS = 60_000;
 const UNLOAD_MS = 10 * 60_000;   // a crew with nobody online for this long is saved and dropped
 const MAX_CREWS = 200;
 const BODY_MAX = 4096;
-const SHIFT_SECS = Number(process.env.SHIFT_SECS) || SIM.SHIFT_SECS;  // shorter for local testing
+const SHIFT_SECS = Number(process.env.SHIFT_SECS) || null;  // shorter for local testing; unset = the day lengths
 const DEV_START_CASH = Number(process.env.DEV_START_CASH) || 0;       // local shop testing only; never in the manifest
 const DEV_START_DAY = Number(process.env.DEV_START_DAY) || 0;         // local testing only: new crews start on this day
 const DEV_VENUE = Number(process.env.DEV_VENUE) || 0;                 // local testing only: start at this venue
 const DEV_OUTSTANDING = Number(process.env.DEV_OUTSTANDING) || 0;     // local testing only: Balls Outstanding
+const DEV_STAMPS = Number(process.env.DEV_STAMPS) || 0;               // local testing only: review stamps
 
 const store = newStore(process.env.STORAGE_BUCKET);
 const crews = new Map();         // code -> { crew, subs: Set<{p, res}>, savedAt, saving }
@@ -117,9 +118,10 @@ async function api(req, res, url) {
     let code;
     for (let i = 0; i < 20 && !code; i++) { const c = newCode(); if (!crews.has(c) && !(await store.load(c))) code = c; }
     if (!code) return send(res, 503, { error: 'Could not find a free crew code.' });
-    const c = { crew: new Crew(code, DEV_START_DAY || DEV_VENUE || DEV_OUTSTANDING ? { day: DEV_START_DAY || 1, venue: DEV_VENUE, ...(DEV_OUTSTANDING ? { outstanding: DEV_OUTSTANDING } : {}) } : null, { shiftSecs: SHIFT_SECS }), subs: new Set(), savedAt: Date.now() };
+    const c = { crew: new Crew(code, DEV_START_DAY || DEV_VENUE || DEV_OUTSTANDING ? { day: DEV_START_DAY || 1, venue: DEV_VENUE, venueDay: DEV_VENUE ? 1 : 0, ...(DEV_OUTSTANDING ? { outstanding: DEV_OUTSTANDING } : {}) } : null, { shiftSecs: SHIFT_SECS }), subs: new Set(), savedAt: Date.now() };
     crews.set(code, c);
     c.crew.cash = DEV_START_CASH;
+    if (DEV_STAMPS) c.crew.stamps = DEV_STAMPS;
     const p = c.crew.join(body.name);
     saveCrew(c);   // so the code can be rejoined even before the first shift ends
     return send(res, 200, { code, p: p.id, k: p.token });

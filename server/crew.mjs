@@ -12,11 +12,14 @@ import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall
   SHOP_BY_ID, nextPrice, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
   gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT, FIXTURES, FIXTURE_BY_ID, KIND_W, BALLS_OUTSTANDING, payFor,
   upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed, pickKind,
-  VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor } from '../web/js/sim.js';
+  VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor } from '../web/js/sim.js';
+import { newMat, openShift as openMats, stepMat, matReady, shoot, matWire } from '../web/js/customers.js';
+import { mowerDue, newMower, stepMower, mowerSnap } from '../web/js/mowe.js';
+import { menuFor, yieldFor, garyEats } from '../web/js/menu.js';
 
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: codes get read aloud
 export const CODE_LEN = 4;
-const COLORS = ['#e8604c', '#4c9be8', '#f2c94c', '#6fcf7c', '#b07ce8', '#f29e4c'];
+const COLORS = ['#e8604c', '#4c9be8', '#f2c94c', '#6fcf7c', '#b07ce8', '#3fc1c9'];
 const GRACE_MS = 60_000;          // an offline player keeps their spot this long (page reloads)
 const DRIVER_GRACE_MS = 5_000;    // an offline driver gives up the cart this fast
 const NAME_MAX = 16;
@@ -29,7 +32,7 @@ const HUDDLE_R = 8;
 export const PING_PRIZES = [['jackpot', 0.4], ['boost', 0.3], ['mult', 0.3]];
 // PA lines that ignore the per-shift cap and the gap (venue reveals and the ending).
 const PA_BIG = new Set(['club', 'tiered', 'stadium', 'county', 'orbital', 'one', 'last', 'endless']);
-const DEBUT_PA = { glow: 'glow', square: 'square', gold: 'gold', lead: 'lead', foam: 'foam', splitter: 'splitter', bouncy: 'bouncy' };
+const DEBUT_PA = { glow: 'glow', square: 'square', gold: 'gold', lead: 'lead', splitter: 'splitter', bouncy: 'bouncy' };
 
 export const newCode = () => Array.from(crypto.randomBytes(CODE_LEN), b => CODE_CHARS[b % CODE_CHARS.length]).join('');
 export const validCode = c => typeof c === 'string' && c.length === CODE_LEN && [...c].every(ch => CODE_CHARS.includes(ch));
@@ -41,7 +44,7 @@ export function cleanName(s) {
 
 const freshStats = () => ({ picked: 0, deposited: 0, cash: 0, knockdowns: 0, helped: 0, carted: 0, swings: 0, pings: 0, runOver: 0, washed: 0,
   scrubbed: 0, unwashed: 0, lostPremium: 0 });
-const freshShift = () => ({ banked: 0, cash: 0, knockdowns: 0, dived: 0, cooked: 0, scrubbed: 0, hosed: 0, pings: 0 });
+const freshShift = () => ({ banked: 0, cash: 0, knockdowns: 0, dived: 0, cooked: 0, scrubbed: 0, hosed: 0, pings: 0, mowed: 0 });
 const cents = v => Math.round(v * 100) / 100;
 const int = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.floor(Number(v) || 0)));
 
@@ -66,9 +69,10 @@ function cleanGear(g) {
 }
 
 export class Crew {
-  constructor(code, save = null, { shiftSecs = SIM.SHIFT_SECS, now = Date.now, seed } = {}) {
+  constructor(code, save = null, { shiftSecs = null, now = Date.now, seed } = {}) {
     this.code = code;
-    this.shiftSecs = shiftSecs;
+    this.shiftOverride = shiftSecs;      // the env override wins over the day lengths
+    this.shiftSecs = shiftSecs ?? SIM.SHIFT_SECS;
     this.now = now;
     this.rng = mulberry32(seed ?? crypto.randomBytes(4).readUInt32LE());
     this.players = new Map();
@@ -111,7 +115,8 @@ export class Crew {
     this.shiftT = 0;
     this.stats = freshStats();
     this.report = null;
-    this.mats = MATS.map(m => ({ ...m, next: 1 + this.rng() * 5 }));
+    this.mats = MATS.map((m, i) => ({ ...newMat(m.i ?? i), ...m, next: 1 + this.rng() * 5 }));
+    this.custT = 0; this.nextCust = 0;     // customers walk on their own clock: it never pauses
     this.events = [];
     this.dirty = false;
     this.lastActive = now();
@@ -133,7 +138,7 @@ export class Crew {
       x: SIM.STAND.x - 3 - this.players.size * 1.2, z: SIM.STAND.z - 4, yaw: Math.PI / 2,
       pocket: 0, pocketW: 0, down: 0, online: 0, seenAt: this.now(), movedAt: this.now(), swungAt: 0,
       gear: 0, wand: false, washAt: 0, diving: false, air: POND.AIR, bag: 0, bagW: 0, bagKinds: [], pumping: false,
-      grime: 0, loadsSince: 0, hoseAcc: 0, rinseAcc: 0, crankAt: 0, one: false, shift: freshShift(),
+      grime: 0, hoseAcc: 0, rinseAcc: 0, crankAt: 0, one: false, shift: freshShift(),
     };
     if (Object.hasOwn(this.gearByName, p.name)) p.gear = this.gearByName[p.name];
     else if (this.day > 1) {         // the New Hire Kit (council round 2, §4.5)
@@ -264,7 +269,6 @@ export class Crew {
     for (const a of Array.isArray(msg.a) ? msg.a.slice(0, 8) : []) {
       if (a?.t === 'pickup') { if (!(a.cart ? this.cartPickup(p, a.ball) : a.pond ? this.pondPickup(p, a.ball) : this.pickup(p, a.ball))) denied.push(a.ball); }
       else if (a?.t === 'pump') p.pumping = !!a.on && onDock(p) && !p.diving;
-      else if (a?.t === 'peel') this.peel(p, a.secs);
       else if (a?.t === 'serve') this.serve(p, a);
       else if (a?.t === 'deposit') this.deposit(p);
       else if (a?.t === 'start') this.readyUp(p);
@@ -274,7 +278,6 @@ export class Crew {
       else if (a?.t === 'swing') this.swing(p, a);
       else if (a?.t === 'wand') this.toggleWand(p);
       else if (a?.t === 'wash') this.wash(p, a.secs, a.target);
-      else if (a?.t === 'rinse') this.rinse(p, a.secs);
       else if (a?.t === 'crank') this.crank(p, a.side, a.turns);
       else if (a?.t === 'sign') this.sign(p, !!a.on);
       else if (a?.t === 'cctv') { if (this.venue >= 1) this.pa('cctv', { once: true }); }
@@ -301,9 +304,7 @@ export class Crew {
     p.pocket++; p.pocketW = (p.pocketW ?? 0) + (KIND_W[b.kind] ?? 1); this.stats.picked++; this.dirty = true;
     this.events.push({ t: 'gone', id, by: p.id });
     if (b.kind === 'splitter') for (const s of spill(b.x, b.z, 2, this.rng)) this.addBall({ ...s, y: 0.3, vy: 2.5, kind: 'range' });
-    // Grime: a layer every four loads, whatever the gear (council round 2, §4.7).
-    if (++p.loadsSince >= g.pocket * 4) { p.loadsSince = 0; this.addGrime(p, 1); }
-    return true;
+    return true;   // grime comes only from knockdowns (council round 3)
   }
 
   deposit(p) {
@@ -472,6 +473,13 @@ export class Crew {
     if (!p.wand || p.down > 0 || !Number.isFinite(secs) || secs <= 0) return false;
     const reach = WASH.RANGE * (this.perks.turbo ? 9 / 7 : 1) + 1.5;
     const s = Math.min(secs, 0.5, (now - p.washAt) / 1000 * 1.15);
+    if (target === 'self') {   // look down and hose your own boots: a layer every 1.5 s
+      p.washAt = now;
+      if (s <= 0 || p.grime <= 0) return false;
+      p.rinseAcc += s;
+      if (p.rinseAcc >= 1.5) { p.rinseAcc = 0; this.addGrime(p, -1); }
+      return true;
+    }
     if (typeof target === 'string' && target.startsWith('p:')) {
       const o = this.players.get(target.slice(2));
       if (!o || o === p || Math.hypot(o.x - p.x, o.z - p.z) > reach) return false;
@@ -502,16 +510,6 @@ export class Crew {
     return true;
   }
 
-  // The spigot by the wash pad: rinse your own gear, a layer every 2 s.
-  rinse(p, secs) {
-    const now = this.now();
-    if (p.wand || p.down > 0 || !Number.isFinite(secs) || secs <= 0 || p.grime <= 0) return false;
-    if (Math.hypot(p.x - WASH.STATION.x, p.z - WASH.STATION.z) > WASH.GRAB + 1) return false;
-    p.rinseAcc += Math.min(secs, 0.5, (now - (p.rinseAt ?? 0)) / 1000 * 1.15);
-    p.rinseAt = now;
-    if (p.rinseAcc >= 2) { p.rinseAcc = 0; this.addGrime(p, -1); }
-    return true;
-  }
 
   addGrime(p, d) {
     const v = Math.max(0, Math.min(3, p.grime + d));
@@ -654,11 +652,19 @@ export class Crew {
     this.venueDay++;
     // The night crew clears the field: every morning starts clean (the pond keeps what sank).
     for (const [id, b] of this.balls) if (!b.sunk) { this.balls.delete(id); this.events.push({ t: 'gone', id }); }
+    this.shiftSecs = this.shiftOverride ?? (this.endless || this.venue > 0 ? SIM.SHIFT_SECS : shiftSecsFor(this.day));
     this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false;
-    this.gary = null; this.paShift = 0; this.jackpotSaid = false;
+    this.gary = null; this.mower = null; this.paShift = 0; this.jackpotSaid = false;
     this.ready.clear(); this.readyAt = 0; this.signed.clear();
     this.hopper = { n: 0, credit: 0, frac: 0 };
-    for (const p of this.players.values()) { p.shift = freshShift(); p.grime = 0; p.loadsSince = 0; }   // the locker room
+    // The locker room, then clock in at the yard: everyone starts each shift together.
+    let slot = 0;
+    for (const p of this.players.values()) {
+      p.shift = freshShift(); p.grime = 0;
+      if (this.cart?.driver === p.id) this.cart.driver = null;
+      p.diving = false; p.wand = false;
+      p.x = 18 + (slot++ % 6) * 2.4; p.z = 4; p.yaw = 0;
+    }
     if (this.day > 1) { this.morningMud(); this.fries = Math.floor(this.fries / 2); }   // the fries went cold overnight
     // Corporate's memo and today's quota. Judged on Upkeep, so a mid-shift purchase can't buy it.
     if (this.endless) this.quota = null;
@@ -667,6 +673,7 @@ export class Crew {
     this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaTarget() : null, text: memoText(this.day, this.quota && this.quotaTarget(), this.endless, this.rng) });
     if (this.cart) { this.cart.boostT = 0; if (!this.cart.driver) Object.assign(this.cart, CART.PARK, { v: 0 }); }
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
+    openMats(this.mats, { now: this.custT, rng: this.rng, venue: this.venue, nOpen: activeMats(this.onlineCount()), nextCust: () => ++this.nextCust });
     this.revealT = 0;
     if (this.pendingReveal) {        // a promotion: the next morning plays the reveal
       const v = this.pendingReveal;
@@ -701,24 +708,17 @@ export class Crew {
   }
 
   // ---- the snack shed ------------------------------------------------------------
-  peel(p, secs) {
-    const now = this.now();
-    if (!this.perks.shed || !atShed(p) || p.down > 0 || this.driving(p) || !Number.isFinite(secs) || secs <= 0) return false;
-    const s = Math.min(secs, 0.5, (now - (p.peelAt ?? 0)) / 1000 * 1.15);
-    p.peelAt = now;
-    p.peeled = (p.peeled ?? 0) + s;
-    while (p.peeled >= FRIES.PEEL_SECS) { p.peeled -= FRIES.PEEL_SECS; this.addFries(1, p.id); }
-    return true;
-  }
   // The kitchen minigame: fries, hot dogs and beer. The client plays it, the server rate-limits it.
   serve(p, a) {
     const now = this.now();
     if (!this.perks.shed || !atShed(p) || p.down > 0 || this.driving(p)) return false;
     if (now - (p.servedAt ?? 0) < FRIES.SERVE_MIN_SECS * 1000) return false;
     p.servedAt = now;
-    const item = ['fries', 'hotdog', 'beer'].includes(a.item) ? a.item : 'fries';
+    const item = menuFor(this.venue).includes(a.item) ? a.item : 'fries';   // a locked item can't be served
     const q = ['perfect', 'good', 'burnt'].includes(a.quality) ? a.quality : 'burnt';
-    const n = q === 'perfect' ? 3 + (item === 'fries' && a.onePeel ? 1 : 0) : q === 'good' ? 2 : 0;
+    let n = yieldFor(item, q, !!a.onePeel);
+    const { fed, take } = garyEats(this.gary, item, q);
+    if (fed) { this.gary.fed = true; n = Math.max(0, n - take); this.events.push({ t: 'garyFed', by: p.id }); this.dirty = true; }
     this.stats.served = (this.stats.served ?? 0) + 1;
     if (item === 'beer') this.stats.beers = (this.stats.beers ?? 0) + (q === 'burnt' ? 0 : 1);   // counted for the Tiered deck (overserving, later)
     this.events.push({ t: 'served', by: p.id, item, quality: q, n });
@@ -845,12 +845,45 @@ export class Crew {
     }
   }
 
+  // ---- MOW-E, the Club's autonomous mower (council round 3, §3.5) ---------------------
+  stepMowe(dt) {
+    if (this.phase !== 'shift' || this.endless || this.paused()) return;
+    if (!this.mower) {
+      if (mowerDue({ venue: this.venue, venueDay: this.venueDay, shiftT: this.shiftT, shiftSecs: this.shiftSecs, mower: this.mower, endless: this.endless })) {
+        this.mower = newMower(this.balls, this.rng);
+        this.events.push({ t: 'mower', phase: 'warn', lane: this.mower.lane });
+        this.pa('mower', { once: true });
+        this.dirty = true;
+      }
+      return;
+    }
+    if (this.mower.phase === 'done') return;
+    const people = [...this.players.values(), ...this.helpers].map(o => ({ id: o.id, x: o.x, z: o.z, down: o.down, driving: this.driving(o) }));
+    const r = stepMower(this.mower, dt, { balls: this.balls, players: people, cart: this.cart, rng: this.rng });
+    const ids = [];
+    for (const m of r.raked) {
+      const b = this.balls.get(m.id);
+      if (!b || b.sunk || b.kind === 'one') continue;
+      b.x = m.x; b.z = m.z; b.rest = true; b.vx = b.vy = b.vz = 0;
+      ids.push(m.id);
+    }
+    if (ids.length) this.events.push({ t: 'rake', ids, moves: r.raked.filter(m => ids.includes(m.id)) });
+    for (const id of r.knocked) {
+      const o = this.players.get(id) ?? this.helpers.find(h => h.id === id);
+      if (!o || o.down > 0) continue;
+      this.knockDown(o, 'mower'); this.stats.runOver++;
+      if (o.shift) o.shift.mowed = (o.shift.mowed ?? 0) + 1;
+    }
+    if (r.honk) this.events.push({ t: 'honk' });
+    if (r.phaseChange) this.events.push({ t: 'mower', phase: r.phaseChange, lane: this.mower.lane });
+  }
+
   inspect(id) {
     const f = this.fixtures;
     if (id === 'sign') return f.sign <= GARY.CLEAN;
     if (id === 'stand') return f.stand <= GARY.CLEAN;
     if (id === 'cart') return !this.cart || this.cart.mud <= GARY.CLEAN;
-    if (id === 'kitchen') return this.fries >= FRIES.MAX * 0.5;
+    if (id === 'kitchen') return !!this.gary?.fed || this.fries >= FRIES.MAX * 0.5;   // Gary had a hot dog
     if (id === 'mats') {
       const mats = Object.entries(f).filter(([k]) => k.startsWith('mat'));
       return mats.filter(([, v]) => v <= GARY.CLEAN).length >= mats.length * 0.8;
@@ -917,6 +950,15 @@ export class Crew {
     const paused = this.paused();
     const lastCall = this.lastCall();
     if (lastCall && !this.lastCallRung) { this.lastCallRung = true; this.events.push({ t: 'lastcall' }); }
+    // Customers: arrive at the gate, grab a bucket, hit it, walk out. A filthy mat is refused.
+    this.custT += dt;
+    const nOpen = this.phase === 'shift' ? activeMats(this.onlineCount()) : 0;
+    this.mats.forEach((m, i) => {
+      for (const e of stepMat(m, dt, { now: this.custT, rng: this.rng, venue: this.venue, mud: this.fixtures['mat' + m.i] ?? 0, open: i < nOpen,
+        gap: 8 * this.perks.swingGapMult, nextCust: () => ++this.nextCust })) {
+        if (e.t === 'refuse') { this.events.push({ t: 'refuse', mat: m.i }); this.stats.refused = (this.stats.refused ?? 0) + 1; }
+      }
+    });
     if (this.phase === 'shift' && !paused) {
       this.shiftT += dt;
       this.fixtures.sign = Math.min(1, this.fixtures.sign + dt * 0.0008);    // dust off the road
@@ -925,10 +967,12 @@ export class Crew {
       const eatEvery = VENUE_RULES[this.venue].eatEvery ?? FRIES.EAT_EVERY;
       for (let i = 0; i < n; i++) {
         const m = this.mats[i];
-        if ((m.next -= dt) <= 0 && this.balls.size < SIM.MAX_BALLS) {
+        if ((m.next -= dt) > 0) continue;
+        if (!matReady(m, this.custT)) { m.next = 0.5; continue; }   // nobody on the mat yet
+        if (this.balls.size < SIM.MAX_BALLS) {
           const lead = !lastCall && this.pondOpen() && this.rng() < POND.LEAD_CHANCE;
           const kind = lead ? 'lead' : lastCall ? 'glow' : pickKind(this.day, this.venue, this.rng);
-          const b = this.addBall(lead ? { ...leadLaunch(m, this.rng), kind } : { ...launch(m, this.rng), kind });
+          const b = this.addBall(lead ? { ...leadLaunch(m, this.rng), kind } : { ...launch(m, this.rng, { beginner: this.day === 1 && this.venue === 0 }), kind });
           if (b && kind !== 'range' && !this.debuts.has(kind)) {
             this.debuts.add(kind); this.dirty = true; this.events.push({ t: 'debut', kind });
             if (DEBUT_PA[kind]) this.pa(DEBUT_PA[kind], { once: true });
@@ -941,12 +985,14 @@ export class Crew {
           if (this.perks.shed && --this.swingsToEat <= 0) { this.swingsToEat = eatEvery; this.fries = Math.max(0, this.fries - 1); }
           const id = 'mat' + m.i;
           if (b) this.fixtures[id] = Math.min(1, this.fixtures[id] + 0.006 * (this.perks.covered ? 0.5 : 1));   // every swing scuffs the mat
+          if (b) shoot(m, this.custT);
         }
       }
     }
 
     this.stepHelpers(dt);
     this.stepGary(dt);
+    this.stepMowe(dt);
     this.stepPond(dt);
     this.stepBouncy();
     if (this.phase === 'shift' && !paused && this.perks.autoFry && (this.autoFryT += dt) >= this.perks.autoFry) { this.autoFryT = 0; this.addFries(1, 'machine'); }
@@ -968,6 +1014,12 @@ export class Crew {
       const x0 = b.x, y0 = b.y, z0 = b.z;
       const stopped = advanceBall(b, dt);
       if (c && b.kind !== 'one' && !b.pinged && ballHitsCart(x0, y0, z0, b, c)) { this.ping(b); continue; }
+      // Gary's cart rings too, but it isn't a PING. Gary has noted your enthusiasm.
+      if (this.gary?.phase === 'drive' && b.kind !== 'one' && !b.pinged && ballHitsCart(x0, y0, z0, b, this.gary)) {
+        b.pinged = true;
+        this.events.push({ t: 'enthusiasm', by: b.by ?? null, x: this.gary.x, z: this.gary.z });
+        const shooter = this.players.get(b.by); if (shooter) shooter.shift.pings++;
+      }
       for (const p of [...this.players.values(), ...this.helpers]) {
         if (!p.helper && this.driving(p)) continue;            // the cage keeps the driver safe
         if (b.by === p.id || b.kind === 'one') continue;       // your own swing leaves from your feet
@@ -1072,7 +1124,7 @@ export class Crew {
   ledger() {
     const rats = this.online().length ? this.online() : [...this.players.values()];
     const AWARDS = [['Employee of the Shift', 'banked'], ['Most Horizontal Associate', 'knockdowns'], ['Department of Wet', 'dived'],
-      ['Fry Laureate', 'cooked'], ['Crank Operator of the Shift', 'scrubbed'], ['Hydration Officer', 'hosed'], ['Enthusiasm (Noted)', 'pings']];
+      ['Fry Laureate', 'cooked'], ['Crank Operator of the Shift', 'scrubbed'], ['Hydration Officer', 'hosed'], ['Enthusiasm (Noted)', 'pings'], ['Mown Down (Twice)', 'mowed']];
     const award = new Map();
     for (const [name, key] of AWARDS) {
       const best = rats.filter(r => !award.has(r.id) && (key === 'banked' || r.shift[key] > 0))
@@ -1103,9 +1155,12 @@ export class Crew {
       outstanding: this.outstanding, records: this.records,
       silo: this.stats.deposited, lastCall: this.lastCall(),
       promo: this.promoInfo(), revealT: +this.revealT.toFixed(1),
+      readyIn: this.phase === 'report' && this.readyAt ? Math.max(0, Math.ceil(READY_SECS - (now - this.readyAt) / 1000)) : null,
       lastBucket: this.lastBucket && { phase: this.lastBucket.phase, by: this.lastBucket.by ?? null },
       washer: this.perks.washer ? { n: this.hopper.n, credit: this.hopper.credit, auto: this.perks.washAuto,
         L: cr.L && now - cr.L.at < 400 ? cr.L.id : null, R: cr.R && now - cr.R.at < 400 ? cr.R.id : null, rateL: rateOf('L'), rateR: rateOf('R') } : null,
+      mower: mowerSnap(this.mower),
+      ct: +this.custT.toFixed(2), mats: this.mats.map(matWire),
       gary: this.gary && { phase: this.gary.phase, t: +this.gary.t.toFixed(1), x: +this.gary.x.toFixed(2), z: +this.gary.z.toFixed(2), yaw: +this.gary.yaw.toFixed(3) },
       pond: { sunk: this.sunkCount(), unlocked: this.pondOpen() },
       fries: { stock: this.fries, max: FRIES.MAX, open: !!this.perks.shed },
@@ -1154,7 +1209,7 @@ const RAT_MEMOS = ["Today's target: whatever. — the Rats", 'Reminder: we are C
 function memoText(day, target, endless, rng) {
   if (endless) return RAT_MEMOS[Math.floor(rng() * RAT_MEMOS.length)];
   const line = MEMOS[Math.floor(rng() * MEMOS.length)];
-  if (target == null) return 'Welcome to the Muni Range. Pick up balls. Bank them. Corporate pays per ball. ' + line;
+  if (target == null) return day === 1 ? 'Welcome to the Muni Range. Pick up balls. Bank them. Corporate pays per ball. Corporate has scheduled a beginners’ clinic. Balls will land closer. Corporate will not.' : 'Pick up balls. Bank them. Corporate pays per ball. ' + line;
   return "Today's Ball Value target is $" + target.toFixed(2) + ' at the closing bell. ' + line;
 }
 function tomorrowText(day, venue, endless) {

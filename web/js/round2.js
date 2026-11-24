@@ -1,7 +1,7 @@
 // Round-2 client features (design/council-round2.md), kept out of main.js:
 // the Corporate PA, the ball washer crank, promotion and venue reveals and
 // re-dress, Ready Up, the ledger and awards, gear grime with Hose a Friend and
-// the spigot, the New Hire Kit, Corporate CCTV, and the Last Bucket ending.
+// the New Hire Kit, Corporate CCTV, and the Last Bucket ending.
 // main.js hands over a context of the things it owns and calls these hooks.
 
 import * as THREE from 'three';
@@ -25,7 +25,6 @@ export function setupRound2(ctx) {
 
   let venueShown = -1, endlessShown = false;
   let cranking = null, crankTurns = 0, crankSent = 0;
-  let rinsing = false, rinseSecs = 0, rinseSent = 0;
   let reveal = null;                // { t, venue, from: {pos, quat}, memo, title }
   let mouse = { dx: 0, dy: 0, wheel: 0, down: false, click: false };
   let oneId = null, endingCard = null, ledgerKey = '';
@@ -97,7 +96,7 @@ export function setupRound2(ctx) {
     renderReport();
   }
 
-  // ---- inputs: crank, rinse, CCTV ------------------------------------------------------
+  // ---- inputs: crank, CCTV ------------------------------------------------------
   // Returns true if the use press was consumed here.
   function press() {
     const c = crew();
@@ -105,12 +104,10 @@ export function setupRound2(ctx) {
     if (c.up?.washer) for (const side of ['L', 'R']) {
       if (atHandle(me, side)) { cranking = side; washer.crank.begin(side); return true; }
     }
-    if (!me.wand && (me.grime ?? 0) > 0 && Math.hypot(me.x - WASH.STATION.x, me.z - WASH.STATION.z) < WASH.GRAB + 1) { rinsing = true; return true; }
     return false;
   }
   function release() {
     if (cranking) { washer.crank.end(); cranking = null; }
-    rinsing = false;
   }
   const capturing = () => !!cranking || cctv.isOn || !!reveal;
   function mouseMove(e) { mouse.dx += e.movementX ?? 0; mouse.dy += e.movementY ?? 0; if (cranking) washer.crank.feedMouse(e.movementX ?? 0, e.movementY ?? 0); }
@@ -154,7 +151,7 @@ export function setupRound2(ctx) {
     if (!el || c.phase !== 'report' || !r) return;
     const promo = c.promo, mine = c.players?.find(p => p.id === me.id);
     const online = (c.players ?? []).filter(p => p.online);
-    const key = JSON.stringify([promo, c.cash, online.map(p => [p.id, p.ready, p.signed]), r.day, c.venue]);
+    const key = JSON.stringify([promo, c.cash, online.map(p => [p.id, p.ready, p.signed]), r.day, c.venue, c.readyIn]);
     if (key === ledgerKey && !force) return;
     ledgerKey = key;
     const esc = s => String(s).replace(/[&<>"']/g, ch => '&#' + ch.charCodeAt(0) + ';');
@@ -175,7 +172,7 @@ export function setupRound2(ctx) {
     $('sign-btn')?.addEventListener('click', () => link()?.act({ t: 'sign', on: !mine?.signed }));
     const readyN = online.filter(p => p.ready).length;
     const btn = $('next');
-    if (btn) btn.textContent = online.length > 1 ? (mine?.ready ? 'Ready ✓ (' + readyN + ' / ' + online.length + ')' : 'Ready (' + readyN + ' / ' + online.length + ')') : 'Next shift';
+    if (btn) btn.textContent = online.length > 1 ? (mine?.ready ? 'Ready ✓ (' + readyN + ' / ' + online.length + ')' : 'Ready (' + readyN + ' / ' + online.length + ')') + (c.readyIn != null ? ' · starts in ' + c.readyIn + 's' : '') : 'Next shift';
   }
 
   function showEndCard(report) {
@@ -199,8 +196,6 @@ export function setupRound2(ctx) {
       }
     }
     if (crankTurns > 0 && now - crankSent > 250) { link()?.act({ t: 'crank', side: cranking ?? 'L', turns: +crankTurns.toFixed(3) }); crankTurns = 0; crankSent = now; }
-    if (rinsing) rinseSecs += dt;
-    if (rinseSecs > 0 && now - rinseSent > 250) { link()?.act({ t: 'rinse', secs: +rinseSecs.toFixed(3) }); rinseSecs = 0; rinseSent = now; }
     // Ball No. 1: drawn here, big and gold, not by the instanced balls.
     const one = [...ctx.balls().values()].find(b => b.kind === 'one');
     if (one) ending.ballOne(one.x, one.y, one.z); else ending.hideBall();
@@ -218,14 +213,14 @@ export function setupRound2(ctx) {
   function hudLine() {
     const c = crew(), parts = [];
     parts.push('gear ×' + gearGrimeFactor(me.grime ?? 0).toFixed(2) + ((me.grime ?? 0) === 0 ? ' ✦' : ''));
-    if (c.promo) parts.push(c.promo.ready ? 'PROMOTION READY · sign at the bell' : 'next: ' + c.promo.next + ' ' + '●'.repeat(Math.min(c.promo.stamps, 3)) + '○'.repeat(Math.max(0, 3 - c.promo.stamps)));
-    if (c.washer?.n) parts.push('unwashed ' + c.washer.n);
+    if (c.promo?.ready) parts.push('PROMOTION READY');
     return parts.join(' · ');
   }
   function prompt(btn) {
     const c = crew();
-    if (c.up?.washer && c.phase === 'shift') for (const side of ['L', 'R']) if (atHandle(me, side)) return cranking ? 'Cranking… circle the right stick or the mouse (' + (c.washer?.n ?? 0) + ' to wash)' : 'Hold ' + btn + ' to crank the ball washer (' + (c.washer?.n ?? 0) + ' waiting)';
-    if (!me.wand && (me.grime ?? 0) > 0 && Math.hypot(me.x - WASH.STATION.x, me.z - WASH.STATION.z) < WASH.GRAB + 1) return rinsing ? 'Rinsing…' : 'Hold ' + btn + ' to rinse your gear at the spigot';
+    const owed = c.washer?.credit ?? 0, n = c.washer?.n ?? 0;
+    if (c.up?.washer && c.phase === 'shift') for (const side of ['L', 'R']) if (atHandle(me, side)) return cranking ? 'Cranking… circle the right stick or the mouse · ' + money(owed) + ' left in the washer'
+      : n ? 'Hold ' + btn + ' to crank ' + money(owed) + ' out of the washer (' + n + ' balls)' : 'The ball washer is empty. Bank some balls.';
     return null;
   }
 

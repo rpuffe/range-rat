@@ -484,6 +484,12 @@ function computePose(p, P, mode, st, A) {
     P.br = Math.sin(T * 6); P.tx = -0.06; P.ty = 0.1 * Math.sin(t * TAU / (per * 2)); P.hx = -0.25;
     setV(P, 'al', sX + 0.26, sY + 0.4 + 0.1 * pump, 0.06); setV(P, 'ar', -(sX + 0.26), sY + 0.4 - 0.1 * pump, 0.06);
     setV(P, 'pl', 0.8, -0.5, 0); setV(P, 'pr', -0.8, -0.5, 0);
+  } else if (mode === 'sulk') {
+    // refused: slump, shake the head, kick at the dirt now and then
+    const u = (t % 1.6) / 1.6, kick = smooth(0.55, 0.65, u) * (1 - smooth(0.72, 0.84, u));
+    P.br = Math.sin(T * 1.1) * 0.7; P.tx = 0.2; P.hx = 0.5; P.hy = 0.4 * Math.sin(t * 3.4) * smooth(0, 0.4, t); P.roll = 0.02 * Math.sin(T * 0.9);
+    P.rhx = -0.5 * kick; P.rkx = 0.12 + 0.35 * kick; P.lhz = D.stance + 0.04;
+    setV(P, 'al', sX + 0.02, sY - 0.5, 0.0); setV(P, 'ar', -(sX + 0.02), sY - 0.5, 0.0);
   } else if (mode === 'facepalm') {
     const u = t % 3.2, sh = smooth(0.6, 0.9, u) * (1 - smooth(2.2, 2.5, u));
     P.br = Math.sin(T * 1.2) * 0.5; P.tx = 0.15; P.hx = 0.3; P.hy = 0.22 * Math.sin(t * 3) * sh; P.roll = 0.03 * Math.sin(T * 0.8);
@@ -494,7 +500,7 @@ function computePose(p, P, mode, st, A) {
 
   // props held in the hands (only while the arm is just carrying, not swinging or cheering)
   const carrying = mode === 'idle' || mode === 'walk' || mode === 'carry';
-  const holdL = (mode === 'carry' || p.carry === 'bucket') && (carrying || mode === 'facepalm');
+  const holdL = (mode === 'carry' || p.carry === 'bucket') && (carrying || mode === 'facepalm' || mode === 'sulk');
   const holdR = (p.club || p.carry === 'tube' || p.carry === 'wand') && carrying;
   if (holdL) setV(P, 'al', sX + 0.05, sY - 0.54, 0.04 + 0.03 * Math.sin(ph) * mv);
   if (holdR) { setV(P, 'ar', -0.25, sY - 0.44, 0.13); setV(P, 'pr', -0.6, -0.3, -1); }
@@ -537,10 +543,10 @@ function applyPose(p, P) {
 }
 
 // ---------------------------------------------------------------- animate
-const MODES = new Set(['idle', 'walk', 'carry', 'address', 'swing', 'knocked', 'cheer', 'facepalm']);
+const MODES = new Set(['idle', 'walk', 'carry', 'address', 'swing', 'knocked', 'cheer', 'facepalm', 'sulk']);
 
 // state: { mode: 'idle' } | { mode: 'walk'|'carry', speed } | { mode: 'address' } | { mode: 'swing', k }
-//      | { mode: 'knocked' } | { mode: 'cheer' } | { mode: 'facepalm' }
+//      | { mode: 'knocked' } | { mode: 'cheer' } | { mode: 'facepalm' } | { mode: 'sulk' }
 export function animatePerson(p, dt, state = { mode: 'idle' }) {
   const A = p.anim;
   dt = Math.min(Math.max(dt || 0, 0), 0.1);

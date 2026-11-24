@@ -7,10 +7,10 @@ export const PA_LINES = {
   square: 'Corporate has introduced a square ball. It does not roll. Neither does Corporate.',
   gold: 'A gold ball has been hit. It belongs to Corporate. You may hold it briefly.',
   lead: 'Corporate has sourced a heavier ball. The pond is now a department.',
-  foam: 'Corporate has introduced a foam ball. It is worth half as much and goes wherever it likes.',
   splitter: 'A ball has divided into three. Corporate considers this growth.',
   bouncy: 'The members have requested a livelier ball. Please do not chase it. It can tell.',
   gary: 'Gary from Regional is on site. Look busy. Then be busy.',
+  mower: 'Corporate has deployed an autonomous mower. It has been trained on your movements.',
   huddle: 'Gary from Regional is satisfied. Gary has never been satisfied.',
   cart: 'Corporate has issued you a vehicle. Corporate has not issued you a license.',
   jackpot: 'A jackpot has occurred. Please do not get used to this.',
@@ -33,7 +33,7 @@ const MAX_QUEUE = 2;
 const CSS_ID = 'pa-style';
 
 const CSS = `
-#pa-card { position: fixed; top: 4%; left: 50%; transform: translate(-50%, -0.6em); width: min(calc(100vw - 32px), 34em);
+#pa-card { position: fixed; bottom: 20%; left: 50%; transform: translate(-50%, 0.6em); width: min(calc(100vw - 32px), 34em);
   display: flex; gap: 0.9em; align-items: center; box-sizing: border-box;
   background: #fbf6e8; color: #2a2418; border-radius: 0.3em; padding: 0.7em 1.1em; box-shadow: 0 0.4em 1.5em #0008;
   font-family: "Courier New", ui-monospace, monospace; pointer-events: none; z-index: 60;

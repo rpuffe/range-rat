@@ -1,0 +1,172 @@
+<!doctype html>
+<!--
+  Range Rat scuba demo: the Deep End, water clarity, treasure glints + sonar ping, plunge and
+  surfacing effects, and the Lost & Found glass case, all from web/js/scuba.js + web/js/dive.js.
+
+  HOW TO OPEN: the game's dev server only serves web/, so serve the REPO ROOT
+  (this page imports ../web/js/scuba.js and ../web/lib/three.module.min.js):
+
+      cd range-rat
+      npx serve .            # then open http://localhost:3000/tools/scuba-demo.html
+      # or: node -e "require('http').createServer((q,r)=>require('fs').createReadStream('.'+q.url.split('?')[0]).on('error',()=>r.end()).pipe(r)).listen(8000)"
+
+  Drag to look. W/A/S/D swims (Shift = scooter). "Dive" drops you in at the dock; "Shore" orbits.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Range Rat scuba demo</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9ecbe8; font: 13px system-ui, sans-serif; }
+  canvas { display: block; }
+  #hud { position: fixed; top: 8px; left: 8px; background: rgba(12,20,32,.78); color: #fff; padding: 8px 10px; border-radius: 8px; max-width: 330px; }
+  #hud label, #hud button { margin: 2px 6px 2px 0; }
+  #hud button { cursor: pointer; }
+  #hud .row { margin: 4px 0; }
+  #info { position: fixed; bottom: 8px; left: 8px; color: #fff; background: rgba(12,20,32,.7); padding: 4px 8px; border-radius: 6px; }
+  #err { position: fixed; bottom: 8px; right: 8px; color: #900; background: #fff; padding: 6px 10px; border-radius: 6px; display: none; }
+  body.underwater canvas { filter: saturate(0.7) hue-rotate(-12deg) brightness(0.85); }
+</style>
+<script type="importmap">{ "imports": { "three": "../web/lib/three.module.min.js" } }</script>
+</head>
+<body>
+<div id="hud">
+  <div class="row"><button id="shore">Shore view</button><button id="dive">Dive</button><button id="deep">To the Deep End</button><button id="case">Look at the case</button></div>
+  <div class="row"><label>Clarity <input id="clar" type="range" min="0" max="1" step="0.01" value="1"></label></div>
+  <div class="row"><label>Gear
+    <select id="gear"><option value="0">Mask</option><option value="1">Tank</option><option value="2" selected>Twin tanks + light</option><option value="3">Scooter</option></select></label>
+    <label><input type="checkbox" id="eva"> EVA palette</label></div>
+  <div class="row"><label>Treasure down there <select id="tre"></select></label></div>
+  <div class="row"><button id="plunge">Plunge</button><button id="surf">Surface (+12)</button><button id="ping">Ping</button></div>
+  <div class="row" id="foundRow">Found:</div>
+</div>
+<div id="info"></div>
+<div id="err"></div>
+<script type="module">
+import * as THREE from 'three';
+import { createScuba } from '../web/js/scuba.js';
+import { POND_DEEP, TREASURE, treasureSpot, diveTiers, eyeY, lostFoundLine } from '../web/js/dive.js';
+
+const errBox = document.getElementById('err');
+window.addEventListener('error', e => { errBox.style.display = 'block'; errBox.textContent = String(e.message); });
+
+// The slice of sim.js's POND that scuba.js reads (pinned to the real one by test/scuba.test.mjs).
+const POND = { x: -12, z: -78, r: 8, DOCK: { x: -12, z: -68.5 }, DOCK_R: 2.2, BOTTOM: -1.1, AIR: 20 };
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+const SKY = new THREE.Color(0x9ecbe8);
+scene.background = SKY.clone();
+scene.fog = new THREE.Fog(SKY, 40, 160);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x5f8f3a, 1.7));
+const sun = new THREE.DirectionalLight(0xfff2d6, 2.0); sun.position.set(20, 40, 10); scene.add(sun);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 400);
+scene.add(camera);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ color: 0x5f8f3a }));
+ground.rotation.x = -Math.PI / 2; ground.position.set(POND.x, 0, POND.z); scene.add(ground);
+
+// The same pond meshes main.js builds; scuba.js carves the bed and tints the water on its own.
+const pondWater = new THREE.Mesh(new THREE.CircleGeometry(POND.r, 48), new THREE.MeshLambertMaterial({ color: 0x2f6f73, transparent: true, opacity: 0.78, side: THREE.DoubleSide }));
+pondWater.rotation.x = -Math.PI / 2; pondWater.position.set(POND.x, 0.03, POND.z); scene.add(pondWater);
+const pondBed = new THREE.Mesh(new THREE.CircleGeometry(POND.r, 48), new THREE.MeshLambertMaterial({ color: 0x3b3322 }));
+pondBed.rotation.x = -Math.PI / 2; pondBed.position.set(POND.x, POND.BOTTOM - 0.06, POND.z); scene.add(pondBed);
+const pondWall = new THREE.Mesh(new THREE.CylinderGeometry(POND.r, POND.r, -POND.BOTTOM + 0.1, 48, 1, true), new THREE.MeshLambertMaterial({ color: 0x4a3f2a, side: THREE.BackSide }));
+pondWall.position.set(POND.x, POND.BOTTOM / 2, POND.z); scene.add(pondWall);
+const dock = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.15, 3.6), new THREE.MeshLambertMaterial({ color: 0x8b6b45 }));
+dock.position.set(POND.DOCK.x, 0.25, POND.DOCK.z - 0.6); scene.add(dock);
+// (the pond's grass lip: a ring of ground cut out of the way so the hole reads from above)
+ground.visible = true;
+
+const diveLight = new THREE.SpotLight(0xd8ffe8, 0, 10, 0.5, 0.5, 1);
+camera.add(diveLight); camera.add(diveLight.target); diveLight.target.position.set(0, 0, -3);
+
+const scuba = createScuba(scene, camera, POND, { onPing: p => { info.dataset.ping = `ping pan ${p.pan.toFixed(2)} @ ${p.dist.toFixed(1)}m`; } });
+scuba.placeCase(POND.DOCK.x + 3.6, POND.DOCK.z + 1.2, 0);
+
+// ---- UI
+const $ = id => document.getElementById(id);
+const info = $('info');
+const treSel = $('tre');
+treSel.innerHTML = '<option value="">(none)</option>' + TREASURE.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+treSel.value = 'trophy';
+const foundIds = new Set(['keys']);
+function drawFound() {
+  const row = $('foundRow'); row.innerHTML = 'Found: ';
+  for (const t of TREASURE) {
+    const l = document.createElement('label'), c = document.createElement('input');
+    c.type = 'checkbox'; c.checked = foundIds.has(t.id); c.onchange = () => { c.checked ? foundIds.add(t.id) : foundIds.delete(t.id); scuba.setFound([...foundIds]); setTre(); };
+    l.append(c, t.id); row.append(l);
+  }
+  scuba.setFound([...foundIds]);
+}
+drawFound();
+function setTre() {
+  const id = treSel.value;
+  if (!id) return scuba.setTreasure(null);
+  const sp = treasureSpot(1987, id);
+  scuba.setTreasure(id, sp.x, sp.z);
+}
+treSel.onchange = setTre; setTre();
+
+let under = false, mode = 'shore', yaw = 0, pitch = -0.2, pos = new THREE.Vector3(POND.DOCK.x, 0, POND.DOCK.z - 1.5), orbit = 0, tier = diveTiers(2);
+let swimming = false, air = 20;
+const keys = {};
+addEventListener('keydown', e => { keys[e.code] = true; });
+addEventListener('keyup', e => { keys[e.code] = false; });
+let drag = false;
+renderer.domElement.addEventListener('pointerdown', () => drag = true);
+addEventListener('pointerup', () => drag = false);
+addEventListener('pointermove', e => { if (drag) { yaw -= e.movementX * 0.005; pitch = Math.max(-1.4, Math.min(1.4, pitch - e.movementY * 0.005)); } });
+function setUnder(v) {
+  if (v === under) return; under = v;
+  document.body.classList.toggle('underwater', v);
+  diveLight.intensity = v ? 60 : 0;
+  scuba.setUnder(v);
+  if (v) { scene.fog.near = 0.5; scene.fog.far = 9; } else { scene.fog.color.copy(SKY); scene.fog.near = 40; scene.fog.far = 160; }
+}
+$('shore').onclick = () => { if (under) scuba.surface(pos.x, pos.z, { mine: false, bag: 12 }); mode = 'shore'; orbit = 0; setUnder(false); };
+$('dive').onclick = () => { mode = 'dive'; pos.set(POND.DOCK.x, 0, POND.DOCK.z - 3); yaw = 0; pitch = -0.1; setUnder(true); scuba.plunge(pos.x, pos.z, true); };
+$('deep').onclick = () => { mode = 'dive'; pos.set(POND_DEEP.x + 1.6, 0, POND_DEEP.z + 2.4); yaw = Math.PI * 0.8; pitch = -0.25; if (!under) { setUnder(true); scuba.plunge(pos.x, pos.z, true); } };
+$('case').onclick = () => { mode = 'shore'; setUnder(false); orbit = 'case'; };
+$('plunge').onclick = () => scuba.plunge(pos.x, pos.z, true);
+$('surf').onclick = () => scuba.surface(pos.x, pos.z, { mine: true, bag: 12 });
+$('ping').onclick = () => { const sp = treSel.value ? treasureSpot(1987, treSel.value) : POND_DEEP; scuba.ping(sp.x, sp.z); };
+$('gear').onchange = () => { tier = diveTiers(+$('gear').value); };
+$('eva').onchange = () => scuba.setMode($('eva').checked ? 'eva' : 'pond');
+$('clar').oninput = () => scuba.setClarity(+$('clar').value);
+
+function resize() { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+
+const clock = new THREE.Clock(); let t = 0;
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05); t += dt;
+  if (mode === 'dive') {
+    const sp = 4 * tier.swim * (keys.ShiftLeft ? 1.6 : 1) * dt;
+    const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), r = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+    pos.x += (-Math.sin(yaw) * f + Math.cos(yaw) * r) * sp; pos.z += (-Math.cos(yaw) * f - Math.sin(yaw) * r) * sp;
+    const d = Math.hypot(pos.x - POND.x, pos.z - POND.z); if (d > POND.r - 0.3) { pos.x = POND.x + (pos.x - POND.x) * (POND.r - 0.3) / d; pos.z = POND.z + (pos.z - POND.z) * (POND.r - 0.3) / d; }
+    camera.position.set(pos.x, eyeY(pos.x, pos.z), pos.z);
+    camera.rotation.set(pitch, yaw, 0, 'YXZ');
+  } else if (orbit === 'case') {
+    camera.position.set(POND.DOCK.x + 3.6, 1.5, POND.DOCK.z + 4.2); camera.lookAt(POND.DOCK.x + 3.6, 1.2, POND.DOCK.z + 1.2);
+  } else {
+    orbit += dt * 0.12;
+    camera.position.set(POND.x + Math.sin(orbit) * 15, 9, POND.z + 14 + Math.cos(orbit) * 4); camera.lookAt(POND.x, -1, POND.z);
+  }
+  if (under) scene.fog.far = 9;
+  scuba.tick(dt, t, { air01: 0.9, pumping: mode === 'dive' && Math.hypot(pos.x - POND.DOCK.x, pos.z - POND.DOCK.z) < 5, pumpRate: 0.5 + 0.5 * Math.sin(t * 2), clarity: +$('clar').value, glintR: tier.glintR, light: tier.light });
+  const t0 = TREASURE.find(x => x.id === treSel.value);
+  info.textContent = `${lostFoundLine([...foundIds])}  |  ${tier.name}: ${tier.air}s air, bag ${tier.bag}, swim x${tier.swim}  |  ${t0 ? 'down there: ' + t0.name : 'nothing down there'}  ${info.dataset.ping || ''}`;
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+shoreStart();
+function shoreStart() { scuba.setClarity(1, true); frame(); }
+</script>
+</body>
+</html>

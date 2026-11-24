@@ -770,10 +770,9 @@ test('cart and helper loads go through the hopper too', () => {
 test('grime resets to 0 at the start of every shift', () => {
   const { crew } = makeCrew({ day: 2 }, 5);
   const a = addPlayer(crew, 'A');
-  a.grime = 3; a.loadsSince = 7;
+  a.grime = 3;
   crew.startShift();
   assert.equal(a.grime, 0);
-  assert.equal(a.loadsSince, 0);
 });
 
 test('a knockdown adds a layer of grime, capped at 3, with a grime event', () => {
@@ -790,22 +789,12 @@ test('a knockdown adds a layer of grime, capped at 3, with a grime event', () =>
   assert.equal(h.helpers[0].grime, undefined, 'helpers do not get dirty');
 });
 
-test('every four loads picked up by hand add a layer: 12 bare-handed, 32 with a tube', () => {
-  for (const [gear, loads] of [[0, 12], [1, 32]]) {
-    const { crew } = makeCrew();
-    openShift(crew);
-    const a = addPlayer(crew, 'A', 30, 30);
-    a.gear = gear;
-    const pick = () => { a.pocket = 0; return act(crew, a, { t: 'pickup', ball: restingBall(crew, a.x, a.z).id }); };
-    for (let i = 1; i < loads; i++) pick();
-    assert.equal(a.grime, 0, `gear ${gear}: ${loads - 1} balls`);
-    pick();
-    assert.equal(a.grime, 1, `gear ${gear}: ${loads} balls`);
-    for (let i = 0; i < loads * 2; i++) pick();
-    assert.equal(a.grime, 3);
-    for (let i = 0; i < loads * 2; i++) pick();
-    assert.equal(a.grime, 3, 'capped');
-  }
+test('picking up balls never adds grime: only knockdowns do (council round 3)', () => {
+  const { crew } = makeCrew();
+  openShift(crew);
+  const a = addPlayer(crew, 'A', 30, 30);
+  for (let i = 0; i < 60; i++) { a.pocket = 0; act(crew, a, { t: 'pickup', ball: restingBall(crew, a.x, a.z).id }); }
+  assert.equal(a.grime, 0);
 });
 
 test('pay reflects grime on a Rat\'s own deposits; helpers stay x1', () => {
@@ -891,29 +880,23 @@ test('the turbo nozzle stretches the hose to 9 m', () => {
   assert.equal(hosedAt({}, 8), true, 'within the standard 7 m + 1.5');
 });
 
-test('the spigot: a layer per 2 s at the wash pad, without the wand', () => {
+test('the wand on yourself (look down): a layer per 1.5 s; the spigot is gone', () => {
   const { crew, clock } = makeCrew();
   openShift(crew);
   const a = addPlayer(crew, 'A', ST.x, ST.z);
   a.grime = 2;
-  const rinse = () => { clock.t += 500; return act(crew, a, { t: 'rinse', secs: 0.5 }); };
-  for (let i = 0; i < 3; i++) rinse();
-  assert.equal(a.grime, 2, '1.5 s');
-  rinse();
-  assert.equal(a.grime, 1, '2 s');
-  for (let i = 0; i < 4; i++) rinse();
-  assert.equal(a.grime, 0, '4 s in all');
-  assert.equal(crew.rinse(a, 0.5), false, 'nothing left to rinse');
-
-  a.grime = 2; a.rinseAcc = 0;
-  a.wand = true;
   clock.t += 500;
-  assert.equal(crew.rinse(a, 0.5), false, 'put the wand down first');
-  a.wand = false;
-  a.x = ST.x + 6;
-  clock.t += 500;
-  assert.equal(crew.rinse(a, 0.5), false, 'it is the spigot at the wash pad');
-  assert.equal(a.grime, 2);
+  assert.equal(crew.wash(a, 0.5, 'self'), false, 'no wand, no hose');
+  act(crew, a, { t: 'wand' });
+  const hose = () => { clock.t += 500; return crew.wash(a, 0.5, 'self'); };
+  hose(); hose();
+  assert.equal(a.grime, 2, '1 s');
+  hose();
+  assert.equal(a.grime, 1, '1.5 s');
+  hose(); hose(); hose();
+  assert.equal(a.grime, 0, '3 s in all');
+  assert.equal(hose(), false, 'nothing left to hose');
+  assert.equal(typeof crew.rinse, 'undefined', 'the spigot was merged into the wand');
 });
 
 // ---- the New Hire Kit --------------------------------------------------------------------------
@@ -1103,6 +1086,7 @@ test('ledger: one entry per online Rat, with the shift stats and an award', () =
   const a = addPlayer(m.crew, 'A', STAND.x, STAND.z), b = addPlayer(m.crew, 'B');
   m.crew.join('Ghost');                                // offline: not in the ledger
   openShift(m.crew);
+  a.x = STAND.x; a.z = STAND.z;   // clocked in at the yard; walk to the stand
   a.pocket = 4; a.pocketW = 4;
   act(m.crew, a, { t: 'deposit' });
   m.crew.knockDown(b);

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Crew } from '../server/crew.mjs';
-import { SIM, WASH, KIND_W, KIND_DEBUT, KIND_NAMES, KIND_BLURB, advanceBall, pickKind, mulberry32 } from '../web/js/sim.js';
+import { SIM, WASH, KIND_W, KIND_NAMES, KIND_BLURB, advanceBall, pickKind, mulberry32 } from '../web/js/sim.js';
 
 function makeCrew(save = null, shiftSecs = 100000, seed = 11) {
   const clock = { t: 1_000_000 };
@@ -69,19 +69,6 @@ test('square dropped straight down does not bounce at all', () => {
   assert.equal(b.x, 3); assert.equal(b.z, -7);
 });
 
-test('foam: drifts in +x while airborne, and carries less far than a range ball', () => {
-  const f = { x: 0, y: 6, z: 0, vx: 0, vy: 0, vz: 0, kind: 'foam' };
-  for (let i = 0; i < 60; i++) advanceBall(f, SIM.STEP);        // half a second of fall
-  assert.ok(f.x > 0 && f.vx > 0, `foam should drift +x, got x=${f.x}`);
-  const r = { x: 0, y: 6, z: 0, vx: 0, vy: 0, vz: 0, kind: 'range' };
-  for (let i = 0; i < 60; i++) advanceBall(r, SIM.STEP);
-  assert.equal(r.x, 0, 'a range ball does not drift');
-
-  const foam = fly(shot('foam'), 1 / 60), range = fly(shot('range'), 1 / 60);
-  assert.ok(Math.abs(foam.rest.z) < Math.abs(range.rest.z), `foam z ${foam.rest.z} should fall short of range z ${range.rest.z}`);
-  assert.ok(foam.rest.x > range.rest.x, 'and ends up downwind');
-});
-
 test('bouncy: bounces higher and rolls further than a range ball', () => {
   const bouncy = fly(shot('bouncy'), 1 / 60), range = fly(shot('range'), 1 / 60);
   assert.ok(bouncy.hopPeak > range.hopPeak * 1.5, `peak after landing: bouncy ${bouncy.hopPeak} vs range ${range.hopPeak}`);
@@ -89,7 +76,7 @@ test('bouncy: bounces higher and rolls further than a range ball', () => {
 });
 
 test('every kind comes to rest in finite time', () => {
-  for (const kind of ['range', 'glow', 'lead', 'square', 'gold', 'foam', 'splitter', 'bouncy']) {
+  for (const kind of ['range', 'glow', 'lead', 'square', 'gold', 'splitter', 'bouncy']) {
     const b = shot(kind);
     fly(b, 1 / 20);
     assert.equal(b.rest, true, `${kind} never rested`);
@@ -97,7 +84,7 @@ test('every kind comes to rest in finite time', () => {
 });
 
 test('physics are deterministic across dt: 1/20 and 1/144 steps give the same rest point', () => {
-  for (const kind of ['range', 'square', 'foam', 'bouncy']) {
+  for (const kind of ['range', 'square', 'bouncy']) {
     const a = fly(shot(kind), 1 / 20), b = fly(shot(kind), 1 / 144);
     assert.ok(Math.abs(a.rest.x - b.rest.x) < 1e-6 && Math.abs(a.rest.z - b.rest.z) < 1e-6,
       `${kind}: (${a.rest.x}, ${a.rest.z}) vs (${b.rest.x}, ${b.rest.z})`);
@@ -118,21 +105,21 @@ test('pickKind: days 1 and 2 at the Muni are only range balls', () => {
   for (const day of [1, 2]) assert.deepEqual(sample(day, 0, 50000), { range: 1 });
 });
 
-test('pickKind: day 3 brings square and gold, and gold is rare', () => {
+test('pickKind: day 3 brings gold (rare); the square ball waits for day 5', () => {
   const c = sample(3, 0);
   within(c.gold ?? 0, 0.003, 0.008, 'gold');
-  within(c.square ?? 0, 0.24, 0.31, 'square');
-  assert.deepEqual(Object.keys(c).sort(), ['gold', 'range', 'square']);
-  within(sample(5, 0).gold ?? 0, 0.003, 0.008, 'gold on day 5');
+  assert.deepEqual(Object.keys(c).sort(), ['gold', 'range']);
+  assert.equal(sample(4, 0).square, undefined, 'no square on day 4');
+  const d5 = sample(5, 0);
+  within(d5.square ?? 0, 0.24, 0.31, 'square on day 5');
+  within(d5.gold ?? 0, 0.003, 0.008, 'gold on day 5');
 });
 
-test('pickKind: foam from day 6, splitter from day 7', () => {
-  const d5 = sample(5, 0), d6 = sample(6, 0), d7 = sample(7, 0);
-  assert.equal(d5.foam, undefined);
-  assert.ok(d6.foam > 0.12 && d6.foam < 0.22, `foam ${d6.foam}`);
+test('pickKind: splitter from day 7; the foam ball is cut', () => {
+  const d6 = sample(6, 0), d7 = sample(7, 0);
   assert.equal(d6.splitter, undefined);
   assert.ok(d7.splitter > 0.02 && d7.splitter < 0.06, `splitter ${d7.splitter}`);
-  assert.ok(d7.foam > 0.1, 'foam still around on day 7');
+  for (const day of [6, 9, 15]) assert.equal(sample(day, 2, 50000).foam, undefined, 'no foam, ever');
 });
 
 test('pickKind: bouncy only at venue 1 and up, and never lead or glow', () => {
@@ -149,12 +136,11 @@ test('pickKind: same seed, same sequence', () => {
 test('every kind has a name, and every non-range kind a blurb and a weight', () => {
   for (const k of Object.keys(KIND_W)) assert.ok(KIND_NAMES[k], `name for ${k}`);
   for (const k of Object.keys(KIND_W)) if (k !== 'range') assert.ok(KIND_BLURB[k], `blurb for ${k}`);
-  for (const k of Object.keys(KIND_DEBUT)) assert.ok(k in KIND_W);
 });
 
 // ---- weights, end to end -----------------------------------------------------------
 
-for (const [kind, w] of [['range', 1], ['gold', 10], ['foam', 0.5], ['bouncy', 1.5]]) {
+for (const [kind, w] of [['range', 1], ['gold', 10], ['bouncy', 1.5]]) {
   test(`a ${kind} ball banks ${w} x a range ball (BV 1.5 at Curb 1, clean Rat x1.25)`, () => {
     const { crew } = makeCrew();
     openShift(crew, 0);
@@ -301,11 +287,11 @@ test('debut: the first spawn of each non-range kind emits one debut event, never
   for (const m of crew.mats) m.next = 0;
   assert.equal(crew.debuts.size, 0);
   const seen = debutsOver(crew, run);
-  for (const k of ['square', 'foam', 'splitter', 'bouncy']) assert.equal(seen.filter(x => x === k).length, 1, `${k} debuts once`);
+  for (const k of ['square', 'splitter', 'bouncy']) assert.equal(seen.filter(x => x === k).length, 1, `${k} debuts once`);
   assert.ok(seen.filter(x => x === 'gold').length <= 1, 'gold debuts at most once (it is rare)');
   assert.equal(new Set(seen).size, seen.length, 'no kind debuts twice');
   assert.ok(!seen.includes('range'), 'range never debuts');
-  for (const k of ['square', 'foam', 'splitter', 'bouncy']) assert.ok(seen.includes(k), `${k} appeared`);
+  for (const k of ['square', 'splitter', 'bouncy']) assert.ok(seen.includes(k), `${k} appeared`);
   assert.deepEqual([...crew.debuts].sort(), [...seen].sort());
 });
 

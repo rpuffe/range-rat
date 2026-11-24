@@ -9,11 +9,12 @@
   #log { position: fixed; bottom: 8px; left: 8px; z-index: 100; color: var(--dim); font-size: 14px; white-space: pre; }
 </style></head>
 <body>
-<div id="bar"><button id="open">Open kitchen</button><span>Esc / pad B closes. Plug in a pad for Ⓐ hints.</span></div>
+<div id="bar"><select id="venue"><option value="0">Muni</option><option value="1">Club</option><option value="2" selected>Tiered</option></select> <button id="open">Open kitchen</button><span>Esc / pad B closes. Plug in a pad for Ⓐ hints.</span></div>
 <div id="log"></div>
 <script type="module">
 import { createKitchen } from '../web/js/kitchen.js';
 import { readPad } from '../web/js/pad.js';
+import { menuFor } from '../web/js/menu.js';
 const log = document.getElementById('log'), lines = [];
 let ac;
 const beep = (f, d = 0.08, type = 'square') => { try { ac ??= new AudioContext(); const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = f; g.gain.value = 0.04; g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + d); o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + d); } catch {} };
@@ -23,7 +24,9 @@ const k = createKitchen({
   onSound: n => beep(F[n] ?? 500, n === 'ding' ? 0.3 : 0.07, n === 'ding' ? 'sine' : 'square'),
   onServe: r => { lines.unshift(r.item.toUpperCase().padEnd(7) + ' ' + r.quality.padEnd(8) + JSON.stringify(r)); log.textContent = lines.slice(0, 6).join('\n'); },
 });
-document.getElementById('open').onclick = () => k.open();
+const venueSel = document.getElementById('venue');
+const openK = () => k.open({ menu: menuFor(venueSel ? +venueSel.value : 2) });
+document.getElementById('open').onclick = openK;
 addEventListener('pointerdown', e => { if (e.target.id !== 'open') k.handlePointer('down', e); });
 addEventListener('pointermove', e => k.handlePointer('move', e));
 addEventListener('pointerup', e => k.handlePointer('up', e));
@@ -38,5 +41,5 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
-k.open();
+openK();
 </script></body></html>

@@ -14,6 +14,8 @@
 //
 // No top-level DOM access: the overlay is built lazily on first open().
 
+import { MENU_UNLOCK } from './menu.js';
+
 const W = 640, H = 420;
 const INK = '#fff8ec', DIM = '#e8d6bd', ACCENT = '#ffb347', BAD = '#ff8a7a';
 const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -118,6 +120,8 @@ export function createKitchen({ root, onServe, onSound } = {}) {
   let ptrDownSalted = false;
   let flash = 0;                 // streak-broken flash timer
   let lastItem = 'fries', menuSel = 0, ordered = false;   // remembered pick
+  let menu = ITEMS.slice();      // unlocked items (open({menu})); the rest show as COMING SOON cards
+  const isOpen = it => menu.includes(it);
 
   const snd = n => { try { onSound && onSound(n); } catch { /* sound must never break the shed */ } };
   const isHeld = () => held.key || held.ptr || held.pad;
@@ -136,6 +140,7 @@ export function createKitchen({ root, onServe, onSound } = {}) {
   }
   function openMenu() {
     S = base(null);
+    if (!isOpen(lastItem)) lastItem = menu[0] ?? 'fries';
     menuSel = Math.max(0, ITEMS.indexOf(lastItem));
     resetInputs();
   }
@@ -191,7 +196,7 @@ export function createKitchen({ root, onServe, onSound } = {}) {
   // ---- menu ------------------------------------------------------------------------
   function menuNav(dir) {
     if (!S) return;
-    if (S.stage === 'menu') menuSel = (menuSel + dir + ITEMS.length) % ITEMS.length;
+    if (S.stage === 'menu') { for (let i = 0; i < ITEMS.length; i++) { menuSel = (menuSel + dir + ITEMS.length) % ITEMS.length; if (isOpen(ITEMS[menuSel])) break; } }
     else if (S.stage === 'result' && S.stampT > 0.6) openMenu();
   }
   function cardAt(p) {
@@ -240,7 +245,7 @@ export function createKitchen({ root, onServe, onSound } = {}) {
   // The use button (Space / click / tap / Ⓐ), by edge.
   function usePress(src) {
     if (!S || S.lock > 0) return;
-    if (S.stage === 'menu') { startItem(ITEMS[menuSel]); return; }
+    if (S.stage === 'menu') { if (isOpen(ITEMS[menuSel])) startItem(ITEMS[menuSel]); return; }
     if (S.stage === 'result') { if (S.stampT > 0.9) startItem(S.item); return; }   // same again
     if (S.item === 'fries') {
       if (src === 'ptr' && S.stage === 'serve' && S.salt >= SALT_TAPS) return;   // slide is handled on release
@@ -354,8 +359,8 @@ export function createKitchen({ root, onServe, onSound } = {}) {
     const p = pointerPos(e);
     if (S.stage === 'menu') {
       const i = cardAt(p);
-      if (type === 'move' && i >= 0) menuSel = i;
-      else if (type === 'down' && i >= 0 && S.lock <= 0) { menuSel = i; startItem(ITEMS[i]); }
+      if (type === 'move' && i >= 0) { if (isOpen(ITEMS[i])) menuSel = i; }
+      else if (type === 'down' && i >= 0 && S.lock <= 0 && isOpen(ITEMS[i])) { menuSel = i; startItem(ITEMS[i]); }
       return;                                           // a click on the menu never counts as a held button
     }
     if (type === 'move') {
@@ -710,14 +715,22 @@ export function createKitchen({ root, onServe, onSound } = {}) {
   }
   function drawMenu() {
     for (let i = 0; i < ITEMS.length; i++) {
-      const x = CARD.x(i), sel = i === menuSel, cx = x + CARD.w / 2, bob = sel ? Math.sin(S.t * 5) * 3 : 0;
+      const x = CARD.x(i), locked = !isOpen(ITEMS[i]), sel = !locked && i === menuSel, cx = x + CARD.w / 2, bob = sel ? Math.sin(S.t * 5) * 3 : 0;
       c.save(); c.translate(cx, CARD.y + CARD.h / 2); const k = sel ? 1.05 : 1; c.scale(k, k); c.translate(-cx, -(CARD.y + CARD.h / 2));
       c.fillStyle = sel ? 'rgba(255,179,71,0.22)' : 'rgba(255,248,236,0.07)';
       c.strokeStyle = sel ? ACCENT : 'rgba(255,248,236,0.25)'; c.lineWidth = sel ? 7 : 3;
       rrect(c, x, CARD.y, CARD.w, CARD.h, 18); c.fill(); c.stroke();
+      if (locked) c.globalAlpha = 0.28;
       drawIcon(ITEMS[i], cx, CARD.y + 112 + bob);
-      text(c, ITEM_LABEL[ITEMS[i]], cx, CARD.y + 206, 34, sel ? ACCENT : INK, 'center', CARD.w - 16);
-      if (ordered && ITEMS[i] === lastItem) text(c, 'LAST ORDER', cx, CARD.y + 232, 14, DIM);
+      if (!locked) text(c, ITEM_LABEL[ITEMS[i]], cx, CARD.y + 206, 34, sel ? ACCENT : INK, 'center', CARD.w - 16);
+      if (locked) {
+        c.globalAlpha = 1;
+        c.fillStyle = 'rgba(20,16,30,0.55)'; rrect(c, x, CARD.y, CARD.w, CARD.h, 18); c.fill();
+        text(c, 'COMING SOON', cx, CARD.y + 120, 24, ACCENT, 'center', CARD.w - 16);
+        text(c, '— Corporate', cx, CARD.y + 146, 18, DIM, 'center', CARD.w - 16);
+        text(c, ITEM_LABEL[ITEMS[i]], cx, CARD.y + 206, 34, DIM, 'center', CARD.w - 16);
+        text(c, MENU_UNLOCK[ITEMS[i]] ?? '', cx, CARD.y + 232, 14, DIM, 'center', CARD.w - 12);
+      } else if (ordered && ITEMS[i] === lastItem) text(c, 'LAST ORDER', cx, CARD.y + 232, 14, DIM);
       c.restore();
     }
   }
@@ -1116,7 +1129,10 @@ export function createKitchen({ root, onServe, onSound } = {}) {
     (root || document.body).appendChild(wrapEl);
   }
 
-  function open() {
+  // open({menu: ['fries','hotdog']}): the unlocked items for this venue (default: all three).
+  function open(opts) {
+    const m = opts && Array.isArray(opts.menu) ? opts.menu.filter(x => ITEMS.includes(x)) : ITEMS;
+    menu = m.length ? m : ['fries'];
     if (!built) build();
     opened = true;
     wrapEl.style.display = 'flex';

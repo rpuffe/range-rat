@@ -50,6 +50,9 @@
   #toast { position: fixed; left: 50%; bottom: 12%; transform: translate(-50%, 1em); opacity: 0; transition: 0.25s;
     background: var(--panel); padding: 0.4em 1em; border-radius: 0.6em; pointer-events: none; text-align: center; max-width: calc(100vw - 32px); }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #feed { position: fixed; left: 16px; top: 34%; display: flex; flex-direction: column; gap: 0.25em; pointer-events: none; font-size: 0.8em; max-width: 40vw; }
+  #feed > div { background: rgba(20, 16, 32, 0.55); padding: 0.2em 0.6em; border-radius: 0.3em; color: #fff8ec; animation: feedin 0.2s; }
+  @keyframes feedin { from { opacity: 0; transform: translateX(-0.5em); } }
 
   .sheet { background: var(--panel); padding: 1.2em 2em; border-radius: 1em; min-width: min(calc(100vw - 32px), 22em); text-align: left; }
   .sheet p { display: flex; justify-content: space-between; gap: 2em; margin: 0.3em 0; color: var(--ink); }
@@ -83,8 +86,6 @@
   #report-extra .note { color: var(--dim); }
   #report-extra button { margin-top: 0.5em; }
   #roster li.help { color: var(--dim); font-weight: 500; }
-  #meter { position: absolute; left: 50%; top: 64%; width: min(60vw, 14em); height: 0.7em; transform: translateX(-50%);
-    background: rgba(20, 16, 32, 0.6); border-radius: 0.35em; overflow: hidden; box-shadow: 0 0 0 2px rgba(255, 248, 236, 0.5); }
   #stamina { position: absolute; left: 50%; bottom: 7%; width: min(40vw, 10em); height: 0.35em; transform: translateX(-50%);
     background: rgba(20, 16, 32, 0.5); border-radius: 0.2em; overflow: hidden; }
   #stamina > div { height: 100%; background: #6fcf7c; }
@@ -94,7 +95,6 @@
   #air > div { height: 100%; background: linear-gradient(90deg, #4fc3f7, #b3e5fc); }
   body.underwater canvas { filter: saturate(0.7) hue-rotate(-12deg) brightness(0.85); }
   #storehint { position: absolute; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); font-size: 0.75em; color: var(--dim); text-shadow: 0 0.06em 0.25em #000a; }
-  #meter > div { height: 100%; width: 0; background: linear-gradient(90deg, #6fcf7c, #f2c94c 60%, #e8604c); }
 
   .keys { color: var(--dim); font-weight: 500; font-size: 0.85em; }
   .pad .kb, body:not(.pad) .gp { display: none; }
@@ -125,7 +125,6 @@
   <div id="crewline"><small>Crew</small> <span id="code"></span><ul id="roster"></ul></div>
   <div id="crosshair"></div>
   <div id="prompt"></div>
-  <div id="meter" class="hidden"><div></div></div>
   <div id="swinghud"></div>
   <div id="stamina" class="hidden"><div></div></div>
   <div id="air" class="hidden"><div></div></div>
@@ -169,6 +168,7 @@
   <div id="memo-target"></div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="feed" aria-live="polite"></div>
 
 <script type="module" src="/js/main.js"></script>
 </body>

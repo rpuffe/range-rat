@@ -476,7 +476,7 @@ test('a swing needs a shift, a crew bay, and a ball in your pocket, which it use
   assert.equal(a.pocket, 2, 'no swinging in the lobby');
   assert.equal(crew.balls.size, 0);
 
-  openShift(crew);
+  openShift(crew); a.x = BAYS[0].x; a.z = BAYS[0].z;   // the shift clocks everyone in at the yard
   act(crew, a, SWING);
   assert.equal(a.pocket, 1, 'one ball used');
   assert.equal(crew.balls.size, 1);

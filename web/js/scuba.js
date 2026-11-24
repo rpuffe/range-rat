@@ -3,13 +3,18 @@
 // panic vignette. Everything is instanced / merged: roughly 16 draw calls while diving, and only
 // the lily pads, faint caustics, fish and catfish draw from the shore.
 //
-//   const scuba = createScuba(scene, camera, POND);
+//   const scuba = createScuba(scene, camera, POND, { mode: 'pond', onPing });
+//   scuba.attach({ water: pondWater, bed: pondBed });  // once: carves the Deep End, tints the water
 //   scuba.setUnder(true|false);                       // when scene.userData.under flips
-//   scuba.tick(dt, t, { air01, pumping, depthPos });  // once per frame
+//   scuba.tick(dt, t, { air01, pumping, pumpRate, clarity, glintR, mine });   // once per frame
+//   scuba.setFound(ids); scuba.setTreasure(id, x, z); scuba.plunge(x, z, mine); scuba.surface(x, z, { bag, mine });
+//   scuba.ping(x, z); scuba.placeCase(x, z, yaw); scuba.setMode('pond' | 'eva');
+// (see the block above "public API" for what each does and when to call it)
 //
 // No top-level side effects: everything is built inside createScuba().
 
 import * as THREE from 'three';
+import { POND_DEEP, bedAt, deepness, deepDist, TREASURE, TREASURE_BY_ID, waterLook } from './dive.js';
 
 const TAU = Math.PI * 2;
 
@@ -94,7 +99,7 @@ void main(){
   fade = smoothstep(-1.2, -0.05, vW.y);
 #else
   p = vW.xz * 1.1;
-  mood = 0.7 + 0.3 * sin(vW.x * 0.35 + t) * sin(vW.z * 0.4 - t * 0.8);
+  mood = (0.7 + 0.3 * sin(vW.x * 0.35 + t) * sin(vW.z * 0.4 - t * 0.8)) * (0.25 + 0.75 * smoothstep(-4.4, -1.3, vW.y));
 #endif
   vec2 w = vec2(sin(p.y * 1.3 + t) * 0.25, sin(p.y * 0.9 - t) * 0.2);
   float a = cell(p + w, t, uPer);
@@ -117,13 +122,13 @@ void main(){
   gl_Position = projectionMatrix * p;
 }`;
 const SHAFT_FRAG = `
-uniform float uTime;
+uniform float uTime; uniform float uClar;
 varying vec3 vN; varying vec3 vV; varying float vUy; varying float vK;
 void main(){
   float face = abs(dot(normalize(vN), normalize(vV)));
   float a = pow(face, 1.6) * (0.2 + 0.8 * vUy) * smoothstep(0.0, 0.25, vUy);
   a *= 0.7 + 0.3 * sin(uTime * 0.8 + vK * 20.0 + vUy * 3.0);
-  gl_FragColor = vec4(vec3(0.55, 1.0, 0.8) * a * 0.22, 1.0);
+  gl_FragColor = vec4(vec3(0.55, 1.0, 0.8) * a * 0.22 * (0.25 + 0.75 * uClar), 1.0);
 }`;
 
 const KELP_VERT = `
@@ -164,7 +169,7 @@ void main(){
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
 const SURF_FRAG = `
-uniform float uTime;
+uniform float uTime; uniform vec3 uTint; uniform float uClar;
 varying vec3 vW;
 void main(){
   vec2 q = vW.xz * 1.3;
@@ -181,7 +186,8 @@ void main(){
   vec3 mirror = vec3(0.10, 0.36, 0.34) + vec3(0.25, 0.4, 0.4) * fres;
   vec3 sky = vec3(0.55, 0.85, 0.92) + vec3(0.2) * sh;
   vec3 col = mix(mirror, sky, window * 0.75);
-  float a = mix(0.85, 0.42, window) + sh * 0.15;
+  col = mix(uTint * 0.9, col, 0.35 + 0.65 * uClar);
+  float a = mix(0.85, 0.42 + 0.3 * (1.0 - uClar), window) + sh * 0.15 * uClar;
   gl_FragColor = vec4(col, clamp(a, 0.0, 0.95));
 }`;
 
@@ -201,6 +207,8 @@ void main(){
   gl_PointSize = clamp(aSize * uScale / d, 1.5, 56.0);
 #ifdef MOTE
   vA = (0.25 + 0.2 * sin(uTime * 1.3 + s * 3.0)) * (1.0 - smoothstep(4.0, 9.0, d));
+#elif defined(DROP)
+  vA = aAlpha * (1.0 - smoothstep(30.0, 55.0, d));
 #else
   vA = aAlpha * (1.0 - smoothstep(5.0, 9.0, d));
 #endif
@@ -225,10 +233,52 @@ void main(){
   gl_FragColor = vec4(vec3(0.85, 1.0, 1.0), a);
 }`;
 
+const DROP_FRAG = `
+varying float vA;
+void main(){
+  vec2 c = gl_PointCoord - 0.5;
+  float r = length(c) * 2.0;
+  if (r > 1.0) discard;
+  float a = (1.0 - r * r) * vA;
+  gl_FragColor = vec4(mix(vec3(0.6, 0.85, 1.0), vec3(1.0), 1.0 - r), a);
+}`;
+
+// Treasure glints: twinkling gold four-point stars that only show inside the diver's glint range
+// (6 m, 8 m with the light). Not fogged on purpose: they are what you see in the dark.
+const GLINT_VERT = `
+attribute float aSize; attribute float aPh;
+uniform float uScale; uniform float uTime; uniform float uR; uniform float uGlow;
+varying float vA;
+void main(){
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float d = max(-mv.z, 0.1);
+  float tw = 0.35 + 0.65 * pow(0.5 + 0.5 * sin(uTime * 2.6 + aPh * 6.2831), 3.0);
+  gl_PointSize = clamp(aSize * uScale / d * (0.6 + tw) * (1.0 + uGlow), 3.0, 120.0);
+  vA = tw * (1.0 - smoothstep(uR - 1.5, uR, d)) * (0.55 + 0.45 * uGlow);
+}`;
+const GLINT_FRAG = `
+varying float vA;
+void main(){
+  vec2 c = gl_PointCoord - 0.5;
+  float r = length(c) * 2.0;
+  float core = pow(max(0.0, 1.0 - r), 2.0);
+  float cross = max(exp(-abs(c.x) * 34.0) * (1.0 - smoothstep(0.0, 0.5, abs(c.y))),
+                    exp(-abs(c.y) * 34.0) * (1.0 - smoothstep(0.0, 0.5, abs(c.x))));
+  float a = (core + cross * 0.9) * vA;
+  if (a < 0.01) discard;
+  gl_FragColor = vec4(vec3(1.0, 0.86, 0.42) * a, a);
+}`;
+
 // ---------- the module ----------
 
-export function createScuba(scene, camera, POND) {
-  const rand = seeded(1987);
+const WATER_FOG0 = 0x1f6a5e;
+const PIT_CLEAR = 0.6;   // keep kelp and shelf junk this many metres clear of the Deep End's lip
+
+export function createScuba(scene, camera, POND, opts = {}) {
+  const rand = seeded(opts.seed ?? 1987);
+  let mode = opts.mode === 'eva' ? 'eva' : 'pond';   // 'eva': the Orbital reuse (palette swap; stub)
+  const onPing = typeof opts.onPing === 'function' ? opts.onPing : null;
   const R = POND.r, BED = POND.BOTTOM - 0.06, BED_TOP = BED + 0.02, SURF = 0.03;
   const root = new THREE.Group();
   root.name = 'scuba';
@@ -240,7 +290,11 @@ export function createScuba(scene, camera, POND) {
 
   const disposables = [];
   const keep = o => { disposables.push(o); return o; };
-  const U = { uTime: { value: 0 } };
+  const U = { uTime: { value: 0 }, uClar: { value: 1 } };
+  const PX = POND.x, PZ = POND.z;
+  const pitLocal = { x: POND_DEEP.x - PX, z: POND_DEEP.z - PZ };
+  const nearPit = (x, z, m = PIT_CLEAR) => Math.hypot(x - pitLocal.x, z - pitLocal.z) < POND_DEEP.r + m;
+  const bedY = (lx, lz) => bedAt(lx + PX, lz + PZ) - 0.04;     // resting height of an item at pond-local (lx, lz)
   let under = false, clock = 0, vignette = null, vigOp = -1, padTimer = 0;
 
   // --- caustics (bed: always, faint from above; wall: only underwater) ---
@@ -254,10 +308,72 @@ export function createScuba(scene, camera, POND) {
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: wall ? THREE.BackSide : THREE.FrontSide,
   }));
   const bedMat = causticMat(false);
-  const bedCaustics = new THREE.Mesh(keep(new THREE.CircleGeometry(R - 0.05, 48)), bedMat);
-  bedCaustics.rotation.x = -Math.PI / 2; bedCaustics.position.y = BED_TOP + 0.02; bedCaustics.renderOrder = 1;
-  bedCaustics.frustumCulled = false;
+
+  // --- the bed as a heightfield: the shelf at -1.1 with the Deep End sinkhole (dive.js bedAt) ---
+  // A polar grid, pond-local XZ plus a skirt that closes the sinkhole where it runs into the wall.
+  // `world` bakes pond-centre offsets in (for carving the main.js bed mesh); `colors` adds the silt tint.
+  function bedGeometry({ lift = 0, world = false, colors = false, radius = R }) {
+    const SEG = 96, RINGS = 64, pos = [], col = [], idx = [];
+    const ox = world ? PX : 0, oz = world ? PZ : 0, c = new THREE.Color(), base = new THREE.Color(0x3b3322), dark = new THREE.Color(0x15110a);
+    const h = (lx, lz) => bedAt(lx + PX, lz + PZ) - 0.06 + lift;
+    for (let i = 0; i <= RINGS; i++) {
+      const r = radius * (i / RINGS);
+      for (let j = 0; j <= SEG; j++) {
+        const a = (j % SEG) / SEG * TAU, lx = Math.cos(a) * r, lz = Math.sin(a) * r;
+        pos.push(lx + ox, h(lx, lz), lz + oz);
+        if (colors) {
+          const dn = deepness(lx + PX, lz + PZ), n = 0.82 + 0.3 * (Math.sin(lx * 3.1 + lz * 1.7) * Math.sin(lz * 2.3 - lx * 0.9) * 0.5 + 0.5);
+          c.copy(base).multiplyScalar(n).lerp(dark, dn * 0.8);
+          col.push(c.r, c.g, c.b);
+        }
+      }
+    }
+    for (let i = 0; i < RINGS; i++) for (let j = 0; j < SEG; j++) {
+      const a = i * (SEG + 1) + j, b = a + SEG + 1;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+    // skirt: a vertical strip at the wall from the edge height up to the shelf (zero-area where there is no pit)
+    const top = POND_DEEP.SHELF - 0.06 + lift, s0 = pos.length / 3;
+    for (let j = 0; j <= SEG; j++) {
+      const a = (j % SEG) / SEG * TAU, lx = Math.cos(a) * radius, lz = Math.sin(a) * radius;
+      pos.push(lx + ox, h(lx, lz), lz + oz, lx + ox, top, lz + oz);
+      if (colors) { col.push(dark.r, dark.g, dark.b, base.r * 0.8, base.g * 0.8, base.b * 0.8); }
+    }
+    for (let j = 0; j < SEG; j++) { const a = s0 + j * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    if (colors) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
+    return g;
+  }
+  const bedCaustics = new THREE.Mesh(keep(bedGeometry({ lift: 0.08, radius: R - 0.05 })), bedMat);
+  bedCaustics.renderOrder = 1; bedCaustics.frustumCulled = false;
   root.add(bedCaustics);
+
+  // main.js's flat pond bed hides the sinkhole, so swap its geometry for the carved one (and
+  // remember the water plane so its colour can follow Pond Clarity). Called automatically if the
+  // meshes can be found in the scene; call attach({ water, bed }) to be explicit.
+  let waterMesh = null, bedMesh = null, tintClar = -1;
+  function attach({ water, bed } = {}) {
+    if (water) { waterMesh = water; tintClar = -1; }
+    if (bed && bed !== bedMesh) {
+      bedMesh = bed;
+      bed.updateMatrixWorld(true);
+      const g = bedGeometry({ world: true, colors: true });
+      g.applyMatrix4(new THREE.Matrix4().copy(bed.matrixWorld).invert());
+      bed.geometry.dispose(); bed.geometry = g;
+      bed.material = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      disposables.push(g, bed.material);
+    }
+  }
+  {
+    let w = null, b = null;
+    scene.traverse(o => {
+      if (!o.isMesh || o.geometry?.type !== 'CircleGeometry' || Math.hypot(o.position.x - PX, o.position.z - PZ) > 0.01) return;
+      if (Math.abs(o.position.y - (POND.BOTTOM - 0.06)) < 0.01) b = o; else if (Math.abs(o.position.y - 0.03) < 0.01) w = o;
+    });
+    if (w || b) attach({ water: w, bed: b });
+  }
   const wallCaustics = new THREE.Mesh(keep(new THREE.CylinderGeometry(R - 0.05, R - 0.05, 1.1, 48, 1, true)), causticMat(true));
   wallCaustics.position.y = -0.6; wallCaustics.renderOrder = 1; wallCaustics.frustumCulled = false;
   underOnly.add(wallCaustics);
@@ -265,7 +381,7 @@ export function createScuba(scene, camera, POND) {
   // --- light shafts: 6 soft cones from the surface, one instanced draw ---
   const SHAFTS = 6;
   const shaftMat = keep(new THREE.ShaderMaterial({
-    uniforms: { uTime: U.uTime }, vertexShader: SHAFT_VERT, fragmentShader: SHAFT_FRAG,
+    uniforms: { uTime: U.uTime, uClar: U.uClar }, vertexShader: SHAFT_VERT, fragmentShader: SHAFT_FRAG,
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
   }));
   const shaftGeo = keep(new THREE.CylinderGeometry(0.25, 1.1, 1.2, 14, 1, true));
@@ -303,9 +419,10 @@ export function createScuba(scene, camera, POND) {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3();
     for (let i = 0; i < KELP; i++) {
       const reed = i >= KELP - 7;
-      const a = rand() * TAU, d = reed ? R - 0.7 - rand() * 0.8 : 3.8 + rand() * (R - 4.8);
+      let a = rand() * TAU, d = reed ? R - 0.7 - rand() * 0.8 : 3.8 + rand() * (R - 4.8);
+      for (let g = 0; g < 12 && nearPit(Math.cos(a) * d, Math.sin(a) * d, 0.4); g++) { a = rand() * TAU; d = reed ? R - 0.7 - rand() * 0.8 : 3.8 + rand() * (R - 4.8); }
       const h = reed ? 1.4 + rand() * 0.5 : 0.7 + rand() * 0.7;
-      p.set(Math.cos(a) * d, BED, Math.sin(a) * d);
+      p.set(Math.cos(a) * d, bedY(Math.cos(a) * d, Math.sin(a) * d) - 0.02, Math.sin(a) * d);
       q.setFromEuler(e.set(0, rand() * TAU, 0));
       const w = 0.8 + rand() * 0.6;
       s.set(w, h, w);
@@ -327,6 +444,7 @@ export function createScuba(scene, camera, POND) {
       const a = rand() * TAU, d = Math.sqrt(rand()) * (R - 1.0);
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
       if (z > 5.0 && Math.abs(x) < 2.8) continue;               // keep the dock end clear
+      if (nearPit(x, z, 0)) continue;
       const s = 0.55 + rand() * 0.65;
       if (padData.some(o => Math.hypot(o.x - x, o.z - z) < (o.s + s) * 0.55)) continue;
       padData.push({ x, z, s, rot: rand() * TAU, ph: rand() * TAU });
@@ -433,6 +551,10 @@ export function createScuba(scene, camera, POND) {
       if (rr > lim) { ax -= px / rr * (rr - lim) * 6; az -= pz / rr * (rr - lim) * 6; }
       if (py < ymin) ay += (ymin - py) * 6; else if (py > ymax) ay -= (py - ymax) * 6;
       let fast = 0;
+      { // the catfish scatters the shoal as it passes
+        const dx = px - catfish.position.x, dy = py - catfish.position.y, dz = pz - catfish.position.z, d = Math.hypot(dx, dy, dz);
+        if (d < 2.4 && d > 0.01) { const k = (2.4 - d) * 3 / d; ax += dx * k; ay += dy * k; az += dz * k; fast = 1; }
+      }
       if (flee) {
         const dx = px - cx, dy = py - cy, dz = pz - cz, d = Math.hypot(dx, dy, dz);
         if (d < 3.2 && d > 0.01) { const k = (3.2 - d) * 4 / d; ax += dx * k; ay += dy * k; az += dz * k; fast = 1; }
@@ -452,89 +574,139 @@ export function createScuba(scene, camera, POND) {
     fishMesh.instanceMatrix.needsUpdate = true;
   }
   function stepCat(dt, t) {
-    catAng += dt * 0.17;
-    const rad = 4.3 + Math.sin(t * 0.11) * 1.3;
-    const x = Math.cos(catAng) * rad, z = Math.sin(catAng) * rad;
+    // The catfish circles the Deep End (it has no name; it is not golf's), rising to the shelf now and then.
+    catAng += dt * 0.2;
+    const rad = 1.45 + Math.sin(t * 0.11) * 0.4;
+    const x = pitLocal.x * 0.95 + Math.cos(catAng) * rad, z = pitLocal.z * 0.95 + Math.sin(catAng) * rad;
     const vx = -Math.sin(catAng) * rad, vz = Math.cos(catAng) * rad;
-    catfish.position.set(x, POND.BOTTOM + 0.3 + Math.sin(t * 0.4) * 0.05, z);
+    catfish.position.set(x, POND_DEEP.FLOOR + 1.1 + Math.sin(t * 0.4) * 0.25 + (Math.sin(t * 0.05) * 0.5 + 0.5) * 1.0, z);
     catfish.rotation.set(Math.sin(t * 0.9) * 0.03, Math.atan2(-vz, vx) + Math.sin(t * 1.3) * 0.08, Math.sin(t * 0.6) * 0.03);
     catLook.copy(catfish.position);
   }
 
-  // --- lost and found: one merged draw, plus a gold trophy ---
-  const junk = new Bake(), gold = new Bake();
+  // --- lost and found: the 12 treasures (dive.js TREASURE) plus a toppled shopping cart ---
+  // Each item is built once as merged vertex-coloured geometry (+ a gold part with a glow) lying at
+  // the origin, then instanced as Groups: on the shelf (the old set dressing, hidden once found),
+  // glinting in the Deep End (the active treasure), and in the Lost & Found glass case.
   const baseAt = (x, y, z, yaw, roll, pitch) => new THREE.Matrix4().compose(
     new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch || 0, yaw || 0, roll || 0, 'YXZ')), new THREE.Vector3(1, 1, 1));
-  const spots = [];
-  for (let i = 0; i < 8; i++) {
-    const a = i * 2.399 + rand() * 0.6, d = 1.6 + rand() * (R - 3.4);
-    spots.push([Math.cos(a) * d, Math.sin(a) * d]);
+  const ITEM = {
+    cart(j) {
+      const b = baseAt(0, 0.28, 0, 0.8, 0.9, 0.1), c = 0x9aa0a6;
+      j.add(new THREE.BoxGeometry(0.7, 0.02, 0.45), c, [0, 0, 0], null, null, b);
+      j.add(new THREE.BoxGeometry(0.7, 0.35, 0.02), c, [0, 0.17, 0.22], null, null, b);
+      j.add(new THREE.BoxGeometry(0.7, 0.35, 0.02), c, [0, 0.17, -0.22], null, null, b);
+      j.add(new THREE.BoxGeometry(0.02, 0.35, 0.45), c, [-0.35, 0.17, 0], null, null, b);
+      j.add(new THREE.BoxGeometry(0.04, 0.04, 0.5), 0xc23b2e, [0.4, 0.4, 0], null, null, b);
+      j.add(new THREE.BoxGeometry(0.7, 0.03, 0.45), 0x666b70, [0, -0.2, 0], null, null, b);
+      for (const sx of [-0.3, 0.3]) for (const sz of [-0.18, 0.18])
+        j.add(new THREE.CylinderGeometry(0.06, 0.06, 0.04, 8), 0x222222, [sx, -0.27, sz], [Math.PI / 2, 0, 0], null, b);
+    },
+    club(j) {
+      const b = baseAt(0, 0.03, 0, 2.2, 0, 0);
+      j.add(new THREE.CylinderGeometry(0.012, 0.016, 1.1, 6), 0xc4c8cc, [0, 0, 0], [0, 0, Math.PI / 2], null, b);
+      j.add(new THREE.CylinderGeometry(0.022, 0.02, 0.28, 6), 0x1b1b1b, [0.5, 0, 0], [0, 0, Math.PI / 2], null, b);
+      j.add(new THREE.BoxGeometry(0.12, 0.05, 0.09), 0x8e949a, [-0.58, 0.01, 0.04], [0, 0.2, 0], null, b);
+    },
+    cone(j) {
+      const b = baseAt(0, 0.17, 0, 0.4, 1.35, 0);
+      j.add(new THREE.ConeGeometry(0.17, 0.5, 8), 0xff6a1a, [0, 0.0, 0], null, null, b);
+      j.add(new THREE.CylinderGeometry(0.09, 0.1, 0.07, 8), 0xf2f2f2, [0, 0.03, 0], null, null, b);
+      j.add(new THREE.BoxGeometry(0.4, 0.03, 0.4), 0x2a2a2a, [0, -0.26, 0], null, null, b);
+    },
+    tyre(j) {
+      const b = baseAt(0, 0.2, 0, 1.1, 0.0, 1.2);
+      j.add(new THREE.TorusGeometry(0.3, 0.11, 7, 14), 0x1d1d1d, [0, 0, 0], null, null, b);
+      j.add(new THREE.CylinderGeometry(0.2, 0.2, 0.1, 10), 0x777b7f, [0, 0, 0], [Math.PI / 2, 0, 0], null, b);
+    },
+    trophy(j, g) {
+      const TB = baseAt(0, 0, 0, 0.6, 0.12, 0.05);
+      j.add(new THREE.BoxGeometry(0.34, 0.1, 0.26), 0x4a2f18, [0, 0.05, 0], null, null, TB);
+      g.add(new THREE.CylinderGeometry(0.05, 0.05, 0.03, 8), 0xffffff, [0, 0.115, 0], null, null, TB);
+      g.add(new THREE.CylinderGeometry(0.02, 0.03, 0.16, 8), 0xffd24a, [0, 0.2, 0], null, null, TB);
+      g.add(new THREE.CylinderGeometry(0.13, 0.05, 0.22, 10, 1, true), 0xffd24a, [0, 0.38, 0], null, null, TB);
+      g.add(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 10), 0xffd24a, [0, 0.27, 0], null, null, TB);
+      for (const sx of [-1, 1]) g.add(new THREE.TorusGeometry(0.06, 0.015, 5, 8, Math.PI), 0xffe27a, [sx * 0.14, 0.4, 0], [0, 0, sx > 0 ? -Math.PI / 2 : Math.PI / 2], null, TB);
+      return new THREE.Matrix4().copy(TB).multiply(new THREE.Matrix4().makeTranslation(0, 0.05, 0.132));   // the plaque
+    },
+    shades(j) {
+      const b = baseAt(0, 0.02, 0, 0.5, 0, 0);
+      for (const sx of [-0.075, 0.075]) {
+        j.add(new THREE.TorusGeometry(0.06, 0.012, 5, 10), 0x111111, [sx, 0, 0], [Math.PI / 2, 0, 0], null, b);
+        j.add(new THREE.CylinderGeometry(0.055, 0.055, 0.008, 10), 0x1a2a4a, [sx, 0, 0], null, null, b);
+        j.add(new THREE.BoxGeometry(0.01, 0.01, 0.18), 0x111111, [sx * 1.9, 0.01, -0.09], null, null, b);
+      }
+      j.add(new THREE.BoxGeometry(0.05, 0.012, 0.012), 0x111111, [0, 0, 0], null, null, b);
+    },
+    boot(j) {
+      const b = baseAt(0, 0.13, 0, 3.5, 1.35, 0), c = 0x6b4423;
+      j.add(new THREE.BoxGeometry(0.14, 0.32, 0.14), c, [0, 0.12, 0], null, null, b);
+      j.add(new THREE.BoxGeometry(0.3, 0.1, 0.15), c, [0.09, -0.07, 0], null, null, b);
+      j.add(new THREE.BoxGeometry(0.32, 0.03, 0.16), 0x24180d, [0.09, -0.13, 0], null, null, b);
+    },
+    duck(j) {
+      const b = baseAt(0, 0.07, 0, 4.1, 0.2, 0);
+      j.add(new THREE.SphereGeometry(0.1, 8, 6), 0xffdc2e, [0, 0, 0], null, [1.2, 0.85, 0.9], b);
+      j.add(new THREE.SphereGeometry(0.06, 8, 6), 0xffdc2e, [0.1, 0.11, 0], null, null, b);
+      j.add(new THREE.ConeGeometry(0.03, 0.06, 5), 0xff8a1a, [0.18, 0.11, 0], [0, 0, -Math.PI / 2], null, b);
+      // the necktie: middle management
+      j.add(new THREE.BoxGeometry(0.03, 0.04, 0.012), 0xc23b2e, [0.08, 0.045, 0], [0, 0, -0.25], null, b);
+      j.add(new THREE.ConeGeometry(0.022, 0.07, 4), 0xc23b2e, [0.075, 0.0, 0], [Math.PI, 0, -0.25], null, b);
+    },
+    keys(j, g) {
+      const b = baseAt(0, 0.02, 0, 0.7, 0, 0);
+      j.add(new THREE.TorusGeometry(0.045, 0.008, 5, 12), 0xcfd3d8, [0, 0, 0], [Math.PI / 2, 0, 0], null, b);
+      for (const [yaw, len] of [[0.3, 0.1], [1.4, 0.09], [2.5, 0.11]]) {
+        j.add(new THREE.BoxGeometry(len, 0.006, 0.016), 0xcfd3d8, [Math.cos(yaw) * (0.045 + len / 2), 0, Math.sin(yaw) * (0.045 + len / 2)], [0, -yaw, 0], null, b);
+        j.add(new THREE.CylinderGeometry(0.02, 0.02, 0.006, 8), 0xcfd3d8, [Math.cos(yaw) * (0.045 + len), 0, Math.sin(yaw) * (0.045 + len)], null, null, b);
+      }
+      g.add(new THREE.BoxGeometry(0.1, 0.006, 0.016), 0xffd24a, [-0.1, 0.004, 0.02], [0, 0.5, 0], null, b);
+      j.add(new THREE.BoxGeometry(0.06, 0.025, 0.04), 0x1e4fa3, [0, 0.01, -0.09], null, null, b);   // the Buick fob
+    },
+    pin(j, g) {
+      const b = baseAt(0, 0.012, 0, 0.3, 0, 0);
+      g.add(new THREE.CylinderGeometry(0.05, 0.05, 0.012, 16), 0xffd24a, [0, 0, 0], null, null, b);
+      j.add(new THREE.CylinderGeometry(0.04, 0.04, 0.014, 16), 0xf2c94c, [0, 0.002, 0], null, null, b);
+      j.add(new THREE.BoxGeometry(0.012, 0.016, 0.012), 0x1b1b1b, [-0.016, 0.004, -0.008], null, null, b);   // one good eye
+      j.add(new THREE.BoxGeometry(0.014, 0.016, 0.004), 0x9a2a1e, [0.016, 0.004, -0.008], [0, 0.6, 0], null, b); // one scratched out
+      j.add(new THREE.BoxGeometry(0.03, 0.016, 0.006), 0x1b1b1b, [0, 0.004, 0.016], null, null, b);
+    },
+    memo(j) {
+      const b = baseAt(0, 0.012, 0, 0.9, 0.06, 0.02);
+      j.add(new THREE.BoxGeometry(0.22, 0.008, 0.3), 0xe3dcc0, [0, 0, 0], null, null, b);
+      j.add(new THREE.BoxGeometry(0.2, 0.01, 0.04), 0xb8312a, [0, 0.002, -0.1], null, null, b);   // URGENT
+      for (let k = 0; k < 4; k++) j.add(new THREE.BoxGeometry(0.16 - k * 0.02, 0.01, 0.008), 0x6a6a68, [0, 0.002, -0.03 + k * 0.045], null, null, b);
+    },
+    vhs(j) {
+      const b = baseAt(0, 0.02, 0, 1.0, 0.04, 0);
+      j.add(new THREE.BoxGeometry(0.19, 0.03, 0.105), 0x16161b, [0, 0, 0], null, null, b);
+      j.add(new THREE.BoxGeometry(0.13, 0.032, 0.05), 0xd8d2c0, [-0.01, 0, 0.02], null, null, b);
+      j.add(new THREE.CylinderGeometry(0.016, 0.016, 0.034, 8), 0xeeeeee, [-0.04, 0, -0.03], null, null, b);
+      j.add(new THREE.CylinderGeometry(0.016, 0.016, 0.034, 8), 0xeeeeee, [0.04, 0, -0.03], null, null, b);
+    },
+    scorecard(j, g) {
+      const b = baseAt(0, 0.01, 0, 0.4, 0.05, 0);
+      j.add(new THREE.BoxGeometry(0.2, 0.006, 0.29), 0xf0e6c2, [0, 0, 0], null, null, b);
+      j.add(new THREE.BoxGeometry(0.2, 0.008, 0.045), 0x2f5d3a, [0, 0.001, -0.12], null, null, b);
+      for (let k = 0; k < 5; k++) j.add(new THREE.BoxGeometry(0.17, 0.008, 0.006), 0x5a5a52, [0, 0.001, -0.06 + k * 0.04], null, null, b);
+      j.add(new THREE.BoxGeometry(0.06, 0.009, 0.01), 0xb8312a, [0.04, 0.0015, 0.12], null, null, b);   // LOST BALL
+      g.add(new THREE.BoxGeometry(0.012, 0.012, 0.1), 0xffd24a, [-0.07, 0.01, 0.06], [0, 0.4, 0], null, b); // the founder's pencil
+    },
+  };
+  const itemGeo = {};
+  function geoOf(id) {
+    if (itemGeo[id]) return itemGeo[id];
+    const j = new Bake(), g = new Bake(), plaque = ITEM[id](j, g) || null;
+    const jg = keep(j.build()); jg.computeBoundingBox();
+    const bb = jg.boundingBox, rad = Math.max(0.06, Math.hypot(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) / 2);
+    return (itemGeo[id] = { j: jg, g: g.pos.length ? keep(g.build()) : null, plaque, rad, cy: (bb.max.y + bb.min.y) / 2 });
   }
-  const Y0 = BED_TOP;
-  { // shopping cart, toppled
-    const b = baseAt(spots[0][0], Y0 + 0.28, spots[0][1], 0.8, 0.9, 0.1), c = 0x9aa0a6;
-    junk.add(new THREE.BoxGeometry(0.7, 0.02, 0.45), c, [0, 0, 0], null, null, b);
-    junk.add(new THREE.BoxGeometry(0.7, 0.35, 0.02), c, [0, 0.17, 0.22], null, null, b);
-    junk.add(new THREE.BoxGeometry(0.7, 0.35, 0.02), c, [0, 0.17, -0.22], null, null, b);
-    junk.add(new THREE.BoxGeometry(0.02, 0.35, 0.45), c, [-0.35, 0.17, 0], null, null, b);
-    junk.add(new THREE.BoxGeometry(0.04, 0.04, 0.5), 0xc23b2e, [0.4, 0.4, 0], null, null, b);
-    junk.add(new THREE.BoxGeometry(0.7, 0.03, 0.45), 0x666b70, [0, -0.2, 0], null, null, b);
-    for (const sx of [-0.3, 0.3]) for (const sz of [-0.18, 0.18])
-      junk.add(new THREE.CylinderGeometry(0.06, 0.06, 0.04, 8), 0x222222, [sx, -0.27, sz], [Math.PI / 2, 0, 0], null, b);
-  }
-  { // golf club
-    const b = baseAt(spots[1][0], Y0 + 0.03, spots[1][1], 2.2, 0.0, 0);
-    const sh = new THREE.CylinderGeometry(0.012, 0.016, 1.1, 6);
-    junk.add(sh, 0xc4c8cc, [0, 0, 0], [0, 0, Math.PI / 2], null, b);
-    junk.add(new THREE.CylinderGeometry(0.022, 0.02, 0.28, 6), 0x1b1b1b, [0.5, 0, 0], [0, 0, Math.PI / 2], null, b);
-    junk.add(new THREE.BoxGeometry(0.12, 0.05, 0.09), 0x8e949a, [-0.58, 0.01, 0.04], [0, 0.2, 0], null, b);
-  }
-  { // traffic cone
-    const b = baseAt(spots[2][0], Y0 + 0.17, spots[2][1], 0.4, 1.35, 0);
-    junk.add(new THREE.ConeGeometry(0.17, 0.5, 8), 0xff6a1a, [0, 0.0, 0], null, null, b);
-    junk.add(new THREE.CylinderGeometry(0.09, 0.1, 0.07, 8), 0xf2f2f2, [0, 0.03, 0], null, null, b);
-    junk.add(new THREE.BoxGeometry(0.4, 0.03, 0.4), 0x2a2a2a, [0, -0.26, 0], null, null, b);
-  }
-  { // tyre
-    const b = baseAt(spots[3][0], Y0 + 0.2, spots[3][1], 1.1, 0.0, 1.2);
-    junk.add(new THREE.TorusGeometry(0.3, 0.11, 7, 14), 0x1d1d1d, [0, 0, 0], null, null, b);
-    junk.add(new THREE.CylinderGeometry(0.2, 0.2, 0.1, 10), 0x777b7f, [0, 0, 0], [Math.PI / 2, 0, 0], null, b);
-  }
-  // trophy: gold with a glow (emissive material, no real light); wooden base joins the junk draw
-  const TB = baseAt(spots[4][0] * 0.7, Y0, spots[4][1] * 0.7, 0.6, 0.12, 0.05);
-  junk.add(new THREE.BoxGeometry(0.34, 0.1, 0.26), 0x4a2f18, [0, 0.05, 0], null, null, TB);
-  gold.add(new THREE.CylinderGeometry(0.05, 0.05, 0.03, 8), 0xffffff, [0, 0.115, 0], null, null, TB);
-  gold.add(new THREE.CylinderGeometry(0.02, 0.03, 0.16, 8), 0xffd24a, [0, 0.2, 0], null, null, TB);
-  gold.add(new THREE.CylinderGeometry(0.13, 0.05, 0.22, 10, 1, true), 0xffd24a, [0, 0.38, 0], null, null, TB);
-  gold.add(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 10), 0xffd24a, [0, 0.27, 0], null, null, TB);
-  for (const sx of [-1, 1]) gold.add(new THREE.TorusGeometry(0.06, 0.015, 5, 8, Math.PI), 0xffe27a, [sx * 0.14, 0.4, 0], [0, 0, sx > 0 ? -Math.PI / 2 : Math.PI / 2], null, TB);
-  { // sunglasses
-    const b = baseAt(spots[5][0], Y0 + 0.02, spots[5][1], 0.5, 0, 0);
-    for (const sx of [-0.075, 0.075]) {
-      junk.add(new THREE.TorusGeometry(0.06, 0.012, 5, 10), 0x111111, [sx, 0, 0], [Math.PI / 2, 0, 0], null, b);
-      junk.add(new THREE.CylinderGeometry(0.055, 0.055, 0.008, 10), 0x1a2a4a, [sx, 0, 0], null, null, b);
-      junk.add(new THREE.BoxGeometry(0.01, 0.01, 0.18), 0x111111, [sx * 1.9, 0.01, -0.09], null, null, b);
-    }
-    junk.add(new THREE.BoxGeometry(0.05, 0.012, 0.012), 0x111111, [0, 0, 0], null, null, b);
-  }
-  { // boot
-    const b = baseAt(spots[6][0], Y0 + 0.13, spots[6][1], 3.5, 1.35, 0), c = 0x6b4423;
-    junk.add(new THREE.BoxGeometry(0.14, 0.32, 0.14), c, [0, 0.12, 0], null, null, b);
-    junk.add(new THREE.BoxGeometry(0.3, 0.1, 0.15), c, [0.09, -0.07, 0], null, null, b);
-    junk.add(new THREE.BoxGeometry(0.32, 0.03, 0.16), 0x24180d, [0.09, -0.13, 0], null, null, b);
-  }
-  { // rubber duck
-    const b = baseAt(spots[7][0], Y0 + 0.07, spots[7][1], 4.1, 0.2, 0);
-    junk.add(new THREE.SphereGeometry(0.1, 8, 6), 0xffdc2e, [0, 0, 0], null, [1.2, 0.85, 0.9], b);
-    junk.add(new THREE.SphereGeometry(0.06, 8, 6), 0xffdc2e, [0.1, 0.11, 0], null, null, b);
-    junk.add(new THREE.ConeGeometry(0.03, 0.06, 5), 0xff8a1a, [0.18, 0.11, 0], [0, 0, -Math.PI / 2], null, b);
-  }
-  const junkMesh = new THREE.Mesh(keep(junk.build()), keep(new THREE.MeshLambertMaterial({ vertexColors: true })));
+  const junkMat = keep(new THREE.MeshLambertMaterial({ vertexColors: true }));
   const goldMat = keep(new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0xb07a10, emissiveIntensity: 0.9, side: THREE.DoubleSide }));
-  const goldMesh = new THREE.Mesh(keep(gold.build()), goldMat);
-  underOnly.add(junkMesh, goldMesh);
-  const trophyPos = new THREE.Vector3(POND.x + spots[4][0] * 0.7, BED_TOP + 0.3, POND.z + spots[4][1] * 0.7);
-  { // the plaque: "1987 Club Champion" (canvas texture; skipped if there is no DOM)
+  const ghostMat = keep(new THREE.MeshBasicMaterial({ color: 0x0b1620, transparent: true, opacity: 0.55, depthWrite: false }));
+  let plaqueMat = null;
+  function getPlaqueMat() {   // "1987 Club Champion" (canvas texture; plain gold if there is no DOM)
+    if (plaqueMat) return plaqueMat;
     let map = null;
     if (typeof document !== 'undefined') {
       const cv = document.createElement('canvas'); cv.width = 256; cv.height = 64;
@@ -545,15 +717,86 @@ export function createScuba(scene, camera, POND) {
         g.fillStyle = '#3a2806'; g.textAlign = 'center'; g.textBaseline = 'middle';
         g.font = 'bold 22px serif'; g.fillText('1987', 128, 20);
         g.font = 'bold 20px serif'; g.fillText('CLUB CHAMPION', 128, 44);
-        map = new THREE.CanvasTexture(cv); map.colorSpace = THREE.SRGBColorSpace;
+        map = keep(new THREE.CanvasTexture(cv)); map.colorSpace = THREE.SRGBColorSpace;
       }
     }
-    const plaque = new THREE.Mesh(keep(new THREE.PlaneGeometry(0.3, 0.075)),
-      keep(new THREE.MeshBasicMaterial({ color: map ? 0xbbbbbb : 0xc9a23a, map })));
-    plaque.matrixAutoUpdate = false;
-    plaque.matrix.copy(TB).multiply(new THREE.Matrix4().makeTranslation(0, 0.05, 0.132));
-    underOnly.add(plaque);
-    if (map) keep(map);
+    return (plaqueMat = keep(new THREE.MeshBasicMaterial({ color: map ? 0xbbbbbb : 0xc9a23a, map })));
+  }
+  const plaqueGeo = keep(new THREE.PlaneGeometry(0.3, 0.075));
+  // A fresh Group for an item (shared geometry and materials); ghost = a dark silhouette instead.
+  function makeItem(id, ghost = false) {
+    const G = geoOf(id), grp = new THREE.Group();
+    grp.add(new THREE.Mesh(G.j, ghost ? ghostMat : junkMat));
+    if (G.g) grp.add(new THREE.Mesh(G.g, ghost ? ghostMat : goldMat));
+    if (G.plaque && !ghost) {
+      const pl = new THREE.Mesh(plaqueGeo, getPlaqueMat());
+      pl.matrixAutoUpdate = false; pl.matrix.copy(G.plaque); grp.add(pl);
+    }
+    grp.children.forEach(c => { c.frustumCulled = false; });
+    return grp;
+  }
+
+  // On the shelf: the cart is pure set dressing; the seven classic treasures lie around until found.
+  const SHELF_IDS = ['club', 'cone', 'tyre', 'trophy', 'shades', 'boot', 'duck'];
+  const shelf = {};   // id -> Group
+  const found = new Set();
+  let active = null;  // { id, group, pos: Vector3 (world), glints }
+  const syncShelf = () => { for (const id of SHELF_IDS) shelf[id].visible = !found.has(id) && active?.id !== id; };
+  {
+    const spots = [];
+    for (let i = 0, guard = 0; i < 8 && guard < 200; guard++) {
+      const a = i * 2.399 + rand() * 0.6, d = 1.6 + rand() * (R - 3.4);
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      if (nearPit(x, z, 0.9)) continue;
+      spots.push([x, z]); i++;
+    }
+    while (spots.length < 8) spots.push([-1.5 * spots.length, 2]);
+    const place = (id, k) => {
+      const g = makeItem(id); g.position.set(spots[k][0], bedY(spots[k][0], spots[k][1]), spots[k][1]);
+      underOnly.add(g); return g;
+    };
+    place('cart', 0);
+    SHELF_IDS.forEach((id, i) => { shelf[id] = place(id, i + 1); });
+  }
+  const trophyPos = new THREE.Vector3(PX + shelf.trophy.position.x, shelf.trophy.position.y + 0.3, PZ + shelf.trophy.position.z);
+
+  // --- the active treasure: glinting in the Deep End until a diver carries it off ---
+  const GLINTS = 7;
+  const glintGeo = keep(new THREE.BufferGeometry());
+  {
+    const P = new Float32Array(GLINTS * 3), S = new Float32Array(GLINTS), Ph = new Float32Array(GLINTS);
+    for (let i = 0; i < GLINTS; i++) {
+      const a = rand() * TAU, d = 0.05 + rand() * 0.22;
+      P[i * 3] = Math.cos(a) * d; P[i * 3 + 1] = 0.04 + rand() * 0.32; P[i * 3 + 2] = Math.sin(a) * d;
+      S[i] = 0.05 + rand() * 0.07; Ph[i] = rand();
+    }
+    glintGeo.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    glintGeo.setAttribute('aSize', new THREE.BufferAttribute(S, 1));
+    glintGeo.setAttribute('aPh', new THREE.BufferAttribute(Ph, 1));
+  }
+  const glintU = { uTime: U.uTime, uScale: { value: 800 }, uR: { value: 6 }, uGlow: { value: 0 } };
+  const glintMat = keep(new THREE.ShaderMaterial({
+    uniforms: glintU, vertexShader: GLINT_VERT, fragmentShader: GLINT_FRAG,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+  }));
+  const glints = new THREE.Points(glintGeo, glintMat);
+  glints.frustumCulled = false; glints.renderOrder = 6; glints.visible = false;
+  underOnly.add(glints);
+  const fitScale = id => Math.max(1, 0.2 / geoOf(id).rad);   // small items are blown up so a diver can find them
+  // Put (or clear) the treasure that is currently lying in the Deep End. (x, z) are world coordinates;
+  // use dive.js treasureSpot() so every client agrees. setTreasure(null) when it is carried off.
+  function setTreasure(id, x, z) {
+    if (active) { underOnly.remove(active.group); active = null; }
+    glints.visible = false;
+    if (id && TREASURE_BY_ID[id] && ITEM[id]) {
+      const lx = x - PX, lz = z - PZ, g = makeItem(id), sc = fitScale(id);
+      g.scale.setScalar(sc); g.position.set(lx, bedY(lx, lz), lz);
+      underOnly.add(g);
+      glints.position.set(lx, bedY(lx, lz), lz);
+      glints.visible = true;
+      active = { id, group: g, pos: new THREE.Vector3(x, bedY(lx, lz), z), pinged: false };
+    }
+    syncShelf();
   }
 
   // --- air hose from the dock ---
@@ -634,7 +877,7 @@ export function createScuba(scene, camera, POND) {
 
   // --- the surface from below ---
   const surfMat = keep(new THREE.ShaderMaterial({
-    uniforms: { uTime: U.uTime }, vertexShader: SURF_VERT, fragmentShader: SURF_FRAG,
+    uniforms: { uTime: U.uTime, uTint: { value: new THREE.Color(WATER_FOG0) }, uClar: U.uClar }, vertexShader: SURF_VERT, fragmentShader: SURF_FRAG,
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
   }));
   const surf = new THREE.Mesh(keep(new THREE.CircleGeometry(R, 48)), surfMat);
@@ -663,32 +906,299 @@ export function createScuba(scene, camera, POND) {
     el.style.display = op > 0.001 ? 'block' : 'none';
   }
 
+  // --- the Lost & Found glass case: 12 slots, one per treasure, dark silhouettes until found ---
+  const caseG = new THREE.Group();
+  caseG.name = 'lost-and-found-case';
+  root.add(caseG);
+  const CASE = { W: 1.9, H: 1.7, D: 0.55, BASE: 0.5, COLS: 4, ROWS: 3, DX: 0.44, DY: 0.52 };
+  const caseSlots = [];     // { id, real: Group, ghost: Group }
+  let signCtx = null, signTex = null;
+  {
+    const wood = keep(new THREE.MeshLambertMaterial({ color: 0x5a3a1e })), brass = keep(new THREE.MeshLambertMaterial({ color: 0xc9a23a, emissive: 0x3a2a05 }));
+    const glass = keep(new THREE.MeshLambertMaterial({ color: 0xbfe8ff, transparent: true, opacity: 0.13, depthWrite: false, side: THREE.DoubleSide }));
+    const felt = keep(new THREE.MeshLambertMaterial({ color: 0x1f3a2a }));
+    const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(keep(new THREE.BoxGeometry(w, h, d)), m); o.position.set(x, y, z); caseG.add(o); return o; };
+    box(CASE.W + 0.14, CASE.BASE, CASE.D + 0.14, wood, 0, CASE.BASE / 2, 0);
+    box(CASE.W + 0.14, 0.1, CASE.D + 0.14, wood, 0, CASE.BASE + CASE.H + 0.05, 0);
+    box(CASE.W, 0.03, CASE.D, felt, 0, CASE.BASE + 0.015, 0);
+    for (let r = 1; r < CASE.ROWS; r++) box(CASE.W, 0.03, CASE.D, felt, 0, CASE.BASE + r * CASE.DY + 0.015, 0);
+    const gl = new THREE.Mesh(keep(new THREE.BoxGeometry(CASE.W, CASE.H, CASE.D)), glass);
+    gl.position.set(0, CASE.BASE + CASE.H / 2, 0); gl.renderOrder = 5; caseG.add(gl);
+    const edges = new THREE.LineSegments(keep(new THREE.EdgesGeometry(gl.geometry)), keep(new THREE.LineBasicMaterial({ color: 0xc9a23a })));
+    edges.position.copy(gl.position); caseG.add(edges);
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) box(0.05, CASE.H, 0.05, brass, sx * CASE.W / 2, CASE.BASE + CASE.H / 2, sz * CASE.D / 2);
+    // the brass sign on the base, with the count
+    let signMat;
+    if (typeof document !== 'undefined') {
+      const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128;
+      signCtx = cv.getContext('2d');
+      if (signCtx) { signTex = keep(new THREE.CanvasTexture(cv)); signTex.colorSpace = THREE.SRGBColorSpace; }
+    }
+    signMat = keep(new THREE.MeshBasicMaterial({ color: signTex ? 0xffffff : 0xc9a23a, map: signTex }));
+    const sign = new THREE.Mesh(keep(new THREE.PlaneGeometry(1.5, 0.375)), signMat);
+    sign.position.set(0, CASE.BASE / 2, CASE.D / 2 + 0.075); caseG.add(sign);
+    TREASURE.forEach((t, i) => {
+      const col = i % CASE.COLS, row = CASE.ROWS - 1 - Math.floor(i / CASE.COLS);
+      const sx = (col - (CASE.COLS - 1) / 2) * CASE.DX, sy = CASE.BASE + row * CASE.DY + 0.03;
+      const sc = Math.min(2.5, Math.max(0.25, 0.17 / geoOf(t.id).rad));
+      const mk = ghost => {
+        const g = makeItem(t.id, ghost); g.scale.setScalar(sc); g.position.set(sx, sy, 0);
+        g.visible = ghost; caseG.add(g); return g;
+      };
+      caseSlots.push({ id: t.id, real: mk(false), ghost: mk(true), sc });
+    });
+  }
+  function drawSign() {
+    if (!signCtx) return;
+    const g = signCtx, n = found.size;
+    g.fillStyle = '#6b4d10'; g.fillRect(0, 0, 512, 128);
+    g.fillStyle = '#c9a23a'; g.fillRect(6, 6, 500, 116);
+    g.fillStyle = '#3a2806'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 54px serif'; g.fillText('LOST & FOUND', 256, 44);
+    g.font = 'bold 40px serif'; g.fillText(`${n} / ${TREASURE.length}`, 256, 94);
+    signTex.needsUpdate = true;
+  }
+  drawSign();
+  caseG.position.set(POND.DOCK.x - PX + 3.4, 0, POND.DOCK.z - PZ + 1.2);
+  caseG.rotation.y = 0;   // front faces +z, towards the stand
+
+  // Where the case stands (world x, z and the yaw its front faces; 0 = facing +z). Call once at
+  // startup with the stand's position if the case should sit there instead of by the dock.
+  function placeCase(x, z, yaw = 0, y = 0) { caseG.position.set(x - PX, y, z - PZ); caseG.rotation.y = yaw; }
+
+  function setFound(ids) {
+    found.clear();
+    for (const id of ids ?? []) if (Object.hasOwn(TREASURE_BY_ID, id)) found.add(id);
+    for (const sl of caseSlots) { const f = found.has(sl.id); sl.real.visible = f; sl.ghost.visible = !f; }
+    if (active && found.has(active.id)) setTreasure(null);
+    syncShelf(); drawSign();
+  }
+  function animateCase(T) {
+    for (let i = 0; i < caseSlots.length; i++) if (caseSlots[i].real.visible) caseSlots[i].real.rotation.y = T * 0.5 + i;
+  }
+
+  // --- rings: splash rings on the surface, gold sonar rings on the bed ---
+  function ringPool(parent, n, color) {
+    const geo = keep(new THREE.RingGeometry(0.82, 1, 44)); geo.rotateX(-Math.PI / 2);
+    const pool = [];
+    for (let i = 0; i < n; i++) {
+      const mat = keep(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      const m = new THREE.Mesh(geo, mat); m.visible = false; m.frustumCulled = false; m.renderOrder = 4;
+      parent.add(m); pool.push({ m, age: 9, dur: 1, r0: 0.1, r1: 1, a: 1, delay: 0 });
+    }
+    let c = 0;
+    return {
+      fire(x, y, z, r0, r1, dur, a = 1, delay = 0) {
+        const o = pool[c++ % n]; o.m.position.set(x, y, z); o.age = -delay; o.dur = dur; o.r0 = r0; o.r1 = r1; o.a = a;
+      },
+      step(dt) {
+        for (const o of pool) {
+          if (o.age >= o.dur) continue;
+          o.age += dt;
+          if (o.age < 0) { o.m.visible = false; continue; }
+          const u = Math.min(1, o.age / o.dur), e = 1 - (1 - u) * (1 - u);
+          o.m.visible = u < 1; o.m.scale.setScalar(o.r0 + (o.r1 - o.r0) * e); o.m.material.opacity = o.a * (1 - u) * (1 - u);
+        }
+      },
+    };
+  }
+  const splashRings = ringPool(root, 6, 0xdff8ff);
+  const sonarRings = ringPool(underOnly, 5, 0xffd86a);
+
+  // --- spray: droplets thrown up from a plunge or a surfacing (visible from the shore too) ---
+  const ND = 110;
+  const dropGeo = keep(new THREE.BufferGeometry());
+  const dP = new Float32Array(ND * 3), dS = new Float32Array(ND), dA = new Float32Array(ND), dV = new Float32Array(ND * 3), dOn = new Uint8Array(ND);
+  for (let i = 0; i < ND; i++) dP[i * 3 + 1] = -50;
+  dropGeo.setAttribute('position', new THREE.BufferAttribute(dP, 3).setUsage(THREE.DynamicDrawUsage));
+  dropGeo.setAttribute('aSize', new THREE.BufferAttribute(dS, 1).setUsage(THREE.DynamicDrawUsage));
+  dropGeo.setAttribute('aAlpha', new THREE.BufferAttribute(dA, 1).setUsage(THREE.DynamicDrawUsage));
+  const drops = new THREE.Points(dropGeo, keep(new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime, uScale: { value: 800 } }, defines: { DROP: 1 },
+    vertexShader: POINT_VERT, fragmentShader: DROP_FRAG, transparent: true, depthWrite: false,
+  })));
+  drops.frustumCulled = false; drops.renderOrder = 7;
+  root.add(drops);
+  let dCursor = 0, dLive = 0;
+  function spray(lx, lz, n, up, out) {
+    for (let k = 0; k < n; k++) {
+      const i = dCursor++ % ND, a = Math.random() * TAU, v = out * (0.3 + Math.random() * 0.7);
+      dOn[i] = 1; dLive++;
+      dP[i * 3] = lx + Math.cos(a) * 0.15 * Math.random(); dP[i * 3 + 1] = SURF + 0.05; dP[i * 3 + 2] = lz + Math.sin(a) * 0.15 * Math.random();
+      dV[i * 3] = Math.cos(a) * v; dV[i * 3 + 1] = up * (0.55 + Math.random() * 0.6); dV[i * 3 + 2] = Math.sin(a) * v;
+      dS[i] = 0.03 + Math.random() * 0.05; dA[i] = 0.9;
+    }
+  }
+  function stepDrops(dt) {
+    if (!dLive) return;
+    for (let i = 0; i < ND; i++) {
+      if (!dOn[i]) continue;
+      dV[i * 3 + 1] -= 9.8 * dt;
+      dP[i * 3] += dV[i * 3] * dt; dP[i * 3 + 1] += dV[i * 3 + 1] * dt; dP[i * 3 + 2] += dV[i * 3 + 2] * dt;
+      dA[i] *= 1 - 0.35 * dt;
+      if (dP[i * 3 + 1] < SURF - 0.02 && dV[i * 3 + 1] < 0) { dOn[i] = 0; dA[i] = 0; dP[i * 3 + 1] = -50; dLive--; }
+    }
+    dropGeo.attributes.position.needsUpdate = true; dropGeo.attributes.aSize.needsUpdate = true; dropGeo.attributes.aAlpha.needsUpdate = true;
+  }
+
+  // --- screen effects (mine only): a camera dip, a damped wobble, a flare, a floating bag count ---
+  const fx = { dipFrom: 0, dipT: 9, dipDur: 0.6, wobT: 9, wobDur: 1.2, wobAmp: 0, flashT: 9, flashDur: 0.8, flashA: 0 };
+  let flashEl = null, canvasEl = null, wobbling = false;
+  function ensureFlash() {
+    if (flashEl || typeof document === 'undefined') return flashEl;
+    flashEl = document.getElementById('scuba-flash');
+    if (!flashEl) {
+      flashEl = document.createElement('div'); flashEl.id = 'scuba-flash';
+      flashEl.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:29;opacity:0;display:none;';
+      document.body.appendChild(flashEl);
+    }
+    return flashEl;
+  }
+  function flash(kind, a, dur) {
+    const el = ensureFlash(); if (!el) return;
+    el.style.background = kind === 'sun'
+      ? 'radial-gradient(ellipse at 50% -5%, rgba(255,250,215,0.98) 0%, rgba(210,255,245,0.55) 38%, rgba(255,255,255,0) 78%)'
+      : 'radial-gradient(ellipse at 50% 50%, rgba(220,250,255,0.0) 20%, rgba(190,240,255,0.55) 70%, rgba(255,255,255,0.85) 100%)';
+    fx.flashT = 0; fx.flashDur = dur; fx.flashA = a;
+  }
+  function floatText(text) {
+    if (typeof document === 'undefined') return;
+    const el = document.createElement('div');
+    el.textContent = text;
+    el.style.cssText = 'position:fixed;left:50%;top:40%;pointer-events:none;z-index:31;font:800 2.6em/1 system-ui,sans-serif;color:#fff;' +
+      'text-shadow:0 0 14px rgba(120,230,255,0.95),0 2px 0 rgba(0,60,80,0.8);opacity:0;white-space:nowrap;';
+    document.body.appendChild(el);
+    const done = () => el.remove();
+    if (el.animate) {
+      const an = el.animate([
+        { opacity: 0, transform: 'translate(-50%, 18px) scale(0.7)' },
+        { opacity: 1, transform: 'translate(-50%, 0) scale(1.15)', offset: 0.18 },
+        { opacity: 1, transform: 'translate(-50%, -26px) scale(1)', offset: 0.7 },
+        { opacity: 0, transform: 'translate(-50%, -70px) scale(1)' },
+      ], { duration: 1700, easing: 'ease-out' });
+      an.onfinish = done;
+    } else setTimeout(done, 1700);
+  }
+  function applyFx(dt, T) {
+    if (fx.dipT < fx.dipDur) {
+      fx.dipT += dt;
+      const u = Math.min(1, fx.dipT / fx.dipDur), e = u * u * (3 - 2 * u);
+      camera.position.y += fx.dipFrom * (1 - e);
+    }
+    if (fx.wobT < fx.wobDur) {
+      fx.wobT += dt;
+      const k = Math.max(0, 1 - fx.wobT / fx.wobDur), kk = k * k, a = fx.wobAmp;
+      camera.rotation.z += Math.sin(fx.wobT * 13) * 0.04 * a * kk;
+      if (!canvasEl && typeof document !== 'undefined') canvasEl = document.querySelector('canvas');
+      if (canvasEl) {
+        canvasEl.style.transform = `translate(${(Math.sin(fx.wobT * 19) * 5 * a * kk).toFixed(2)}px, ${(Math.cos(fx.wobT * 15) * 4 * a * kk).toFixed(2)}px) scale(${(1 + 0.03 * a * kk).toFixed(4)})`;
+        wobbling = true;
+      }
+    } else if (wobbling) { if (canvasEl) canvasEl.style.transform = ''; wobbling = false; }
+    if (fx.flashT < fx.flashDur && flashEl) {
+      fx.flashT += dt;
+      const u = Math.min(1, fx.flashT / fx.flashDur);
+      flashEl.style.opacity = String(fx.flashA * (1 - u) * (1 - u));
+      flashEl.style.display = u < 1 ? 'block' : 'none';
+    }
+  }
+
   // --- public API ---
+  // Plunge: a Rat stepped off the dock edge (call on the { t: 'dive', on: true } event, for ANY
+  // player; x, z = where they went in, `mine` = it is the local player). Everyone sees the splash
+  // ring and spray; the local player also gets the dip through the surface, a wobble and a flash.
+  function plunge(x, z, mine = false) {
+    const lx = x - PX, lz = z - PZ;
+    splashRings.fire(lx, SURF + 0.02, lz, 0.2, 1.9, 0.95, 0.9);
+    splashRings.fire(lx, SURF + 0.02, lz, 0.1, 1.2, 0.7, 0.6, 0.08);
+    spray(lx, lz, mine ? 34 : 26, 3.6, 1.4);
+    if (mine) {
+      fx.dipFrom = 1.15; fx.dipT = 0; fx.dipDur = 0.6;
+      fx.wobT = 0; fx.wobDur = 1.0; fx.wobAmp = 1;
+      flash('water', 0.4, 0.5);
+      for (let i = 0; i < 46; i++) spawn(lx + (Math.random() - 0.5) * 0.9, -0.1 - Math.random() * 1.0, lz + (Math.random() - 0.5) * 0.9, 0.03 + Math.random() * 0.08, 0.9 + Math.random() * 1.4, 0.18);
+    }
+  }
+  // Surfacing (call on { t: 'dive', on: false } and { t: 'gasp' }): spray, a light flare, a float
+  // showing the bag count ({ bag: 12 } -> "+12"), and the camera bursting up through the surface.
+  function surface(x, z, o = {}) {
+    const lx = x - PX, lz = z - PZ;
+    splashRings.fire(lx, SURF + 0.02, lz, 0.2, 2.3, 1.1, 1);
+    splashRings.fire(lx, SURF + 0.02, lz, 0.1, 1.5, 0.8, 0.7, 0.1);
+    spray(lx, lz, o.mine ? 70 : 44, 5.2, 2.2);
+    if (o.mine) {
+      fx.dipFrom = -1.25; fx.dipT = 0; fx.dipDur = 0.55;
+      fx.wobT = 0; fx.wobDur = 1.4; fx.wobAmp = 1.4;
+      flash('sun', 0.85, 0.9);
+      if (o.bag > 0) floatText(`+${o.bag}`);
+    }
+  }
+  // A sonar ping at a treasure (world x, z): two gold rings spreading over the bed. tick() fires
+  // this itself when the active treasure comes inside glint range; call it directly for effect.
+  function ping(x, z) {
+    const lx = x - PX, lz = z - PZ, y = bedY(lx, lz) + 0.06;
+    sonarRings.fire(lx, y, lz, 0.2, 3.2, 1.5, 0.9);
+    sonarRings.fire(lx, y, lz, 0.1, 2.2, 1.2, 0.6, 0.18);
+  }
+
   function setUnder(v) {
     under = !!v;
     underOnly.visible = under;
-    bedMat.uniforms.uAmt.value = under ? 1.0 : 0.22;
+    refreshAmt();
     if (!under) setVignette(0);
   }
+  function setMode(m) { mode = m === 'eva' ? 'eva' : 'pond'; tintClar = -1; }
 
-  const cdir = new THREE.Vector3();
+  // --- pond clarity: the water, the underside, the fog and the light all follow one number ---
+  let clarTgt = 1, clarCur = 1, clarSet = false;
+  function refreshAmt() { bedMat.uniforms.uAmt.value = (under ? 1.0 : 0.22) * (0.4 + 0.6 * clarCur); }
+  function setClarity(c, snap = false) {
+    clarTgt = Math.max(0, Math.min(1, c));
+    if (snap || !clarSet) { clarCur = clarTgt; clarSet = true; }
+  }
+  const lookFor = (clar, wx, wz) => mode === 'eva'
+    ? { surface: 0x05070f, fog: 0x02030a, far: 22, near: 0.5 }
+    : waterLook(clar, wx, wz);
+  function applyTint() {
+    if (Math.abs(tintClar - clarCur) < 0.004) return;
+    tintClar = clarCur;
+    const look = lookFor(clarCur);
+    if (waterMesh?.material?.color) waterMesh.material.color.setHex(look.surface);
+    surfMat.uniforms.uTint.value.setHex(look.fog);
+    U.uClar.value = clarCur;
+    refreshAmt();
+  }
+
+  const cdir = new THREE.Vector3(), tv = new THREE.Vector3();
   function tick(dt, t, state) {
     dt = Math.min(Math.max(dt || 0, 0), 0.05);
     clock += dt;
     const T = typeof t === 'number' ? t : clock;
     const s = state || {};
-    const air01 = s.air01 ?? 1, dp = s.depthPos && typeof s.depthPos === 'object' ? s.depthPos : null;
-    const cx = (dp?.x ?? camera.position.x) - POND.x, cy = dp?.y ?? camera.position.y, cz = (dp?.z ?? camera.position.z) - POND.z;
-    // From the shore and far away there is nothing to animate.
-    if (!under && Math.hypot(cx, cz) > R + 70) return;
+    if (typeof s.clarity === 'number') setClarity(s.clarity);
+    if (clarCur !== clarTgt) clarCur += (clarTgt - clarCur) * Math.min(1, dt * 1.6);
+    if (Math.abs(clarCur - clarTgt) < 0.002) clarCur = clarTgt;
+    applyTint();
     U.uTime.value = T;
-    if (typeof innerHeight === 'number') scaleU.value = innerHeight * 0.85;
+    animateCase(T);
+    splashRings.step(dt); sonarRings.step(dt); stepDrops(dt);
+    const air01 = s.air01 ?? 1, dp = s.depthPos && typeof s.depthPos === 'object' ? s.depthPos : null;
+    const cx = (dp?.x ?? camera.position.x) - PX, cy = dp?.y ?? camera.position.y, cz = (dp?.z ?? camera.position.z) - PZ;
+    // From the shore and far away there is nothing else to animate.
+    if (!under && Math.hypot(cx, cz) > R + 70) { applyFx(dt, T); return; }
+    if (typeof innerHeight === 'number') { scaleU.value = innerHeight * 0.85; glintU.uScale.value = innerHeight * 0.85; }
 
     padTimer += dt;
     if (padTimer > 0.066) { padTimer = 0; updatePads(T); }
-    stepFish(dt, T, under, cx, cy, cz);
     stepCat(dt, T);
-    if (!under) return;
+    stepFish(dt, T, under, cx, cy, cz);
+    if (!under) { applyFx(dt, T); return; }
+
+    // The water gets darker and thicker down the Deep End, and murkier with Pond Clarity.
+    if (scene.fog) {
+      const look = lookFor(clarCur, cx + PX, cz + PZ);
+      scene.fog.color.setHex(look.fog); scene.fog.near = look.near; scene.fog.far = look.far;
+    }
 
     // shafts sway slowly
     const e = new THREE.Euler(), q = new THREE.Quaternion(), p = new THREE.Vector3(), sc = new THREE.Vector3(), m = new THREE.Matrix4();
@@ -702,7 +1212,23 @@ export function createScuba(scene, camera, POND) {
 
     goldMat.emissiveIntensity = 0.75 + 0.25 * Math.sin(T * 1.7);
 
-    // bubbles: calm breathing, panic below 30% air, and the pump column
+    // treasure glints: only within range (6 m, 8 m with the dive light); a soft ping the first time you get there
+    const gr = s.glintR ?? 6;
+    glintU.uR.value = gr; glintU.uGlow.value = s.light ? 1 : 0;
+    if (active) {
+      const d = camera.position.distanceTo(tv.set(active.pos.x, active.pos.y + 0.2, active.pos.z));
+      if (d < gr && !active.pinged) {
+        active.pinged = true; ping(active.pos.x, active.pos.z);
+        if (onPing) {
+          camera.getWorldDirection(cdir);
+          const dx = active.pos.x - camera.position.x, dz = active.pos.z - camera.position.z, dl = Math.hypot(dx, dz) || 1;
+          onPing({ id: active.id, dist: d, pan: Math.max(-1, Math.min(1, (dx * -cdir.z + dz * cdir.x) / dl)) });
+        }
+      } else if (d > gr + 1.5) active.pinged = false;
+      active.group.rotation.y = Math.sin(T * 0.3) * 0.2;
+    }
+
+    // bubbles: calm breathing, panic below 30% air, and the pump column (boils faster as the crank speeds up)
     camera.getWorldDirection(cdir);
     const mx = cx + cdir.x * 0.38, my = cy - 0.16 + cdir.y * 0.38, mz = cz + cdir.z * 0.38;
     const panic = air01 < 0.3 ? (0.3 - Math.max(air01, 0)) / 0.3 : 0;
@@ -713,11 +1239,12 @@ export function createScuba(scene, camera, POND) {
       spawn(mx + (r - 0.5) * 0.08, my, mz + (Math.random() - 0.5) * 0.08, 0.012 + Math.random() * (0.014 + panic * 0.02), 0.4 + Math.random() * 0.3, 0.05 + panic * 0.12);
     }
     if (s.pumping) {
-      pumpAcc += 42 * dt;
+      const rate = Math.max(0, Math.min(1, s.pumpRate ?? 0.6));
+      pumpAcc += (12 + 52 * rate) * dt;
       while (pumpAcc >= 1) {
         pumpAcc -= 1;
         spawn(hoseAt.x + (Math.random() - 0.5) * 0.3, BED_TOP + 0.05, hoseAt.z + (Math.random() - 0.5) * 0.3,
-          0.03 + Math.random() * 0.06, 0.8 + Math.random() * 0.8, 0.15);
+          0.03 + Math.random() * 0.06, 0.8 + Math.random() * (0.8 + rate), 0.15);
       }
     } else pumpAcc = 0;
     stepBubbles(dt, T);
@@ -727,15 +1254,25 @@ export function createScuba(scene, camera, POND) {
       const k = (0.25 - Math.max(air01, 0)) / 0.25;
       setVignette(Math.min(1, (0.35 + 0.65 * k) * (0.6 + 0.4 * Math.sin(T * (5 + k * 8)))));
     } else setVignette(0);
+    applyFx(dt, T);
   }
 
   function dispose() {
     scene.remove(root);
     for (const o of disposables) o.dispose?.();
     padMesh.dispose(); petalMesh.dispose(); heartMesh.dispose(); fishMesh.dispose(); kelp.dispose(); shafts.dispose();
-    vignette?.remove(); vignette = null;
+    vignette?.remove(); vignette = null; flashEl?.remove(); flashEl = null;
+    if (canvasEl) canvasEl.style.transform = '';
   }
 
   setUnder(false);
-  return { setUnder, tick, dispose, group: root, trophyPos };
+  return {
+    // the original API
+    setUnder, tick, dispose, group: root, trophyPos,
+    // Scuba v2
+    attach, setClarity, setFound, setTreasure, plunge, surface, ping, placeCase, setMode,
+    caseGroup: caseG,
+    get mode() { return mode; },
+    get activeTreasure() { return active ? active.id : null; },
+  };
 }

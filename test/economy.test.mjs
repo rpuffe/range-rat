@@ -144,6 +144,7 @@ test('players on the same crew carry different amounts', () => {
   const a = addPlayer(crew, 'A', 10, -20), b = addPlayer(crew, 'B', 10, -20);
   a.gear = 2;
   openShift(crew);
+  for (const p of [a, b]) { p.x = 10; p.z = -20; }   // clocked in at the yard; walk out
   for (const p of [a, b]) for (let i = 0; i < 30; i++) act(crew, p, { t: 'pickup', ball: restingBall(crew, 10, -20).id });
   assert.equal(a.pocket, 25);
   assert.equal(b.pocket, 3);

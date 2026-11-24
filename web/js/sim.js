@@ -104,9 +104,13 @@ export function mulberry32(a) {
 // Seconds until a customer hits their next ball.
 export const swingGap = rng => 4 + rng() * 8;
 
+// Day lengths (council round 3): a short first day, then a full one.
+export const shiftSecsFor = day => (day <= 1 ? 240 : day === 2 ? 360 : 420);
+
 // A customer's shot from a mat: ~30–140 m carries, a bit of spray.
-export function launch(mat, rng) {
-  const speed = 16 + rng() * 22, loft = 0.25 + rng() * 0.35, aim = (rng() - 0.5) * 0.35;
+// Day 1 is the beginners' clinic: carries ×0.7, so balls land closer.
+export function launch(mat, rng, { beginner = false } = {}) {
+  const speed = (16 + rng() * 22) * (beginner ? 0.7 : 1), loft = 0.25 + rng() * 0.35, aim = (rng() - 0.5) * 0.35;
   const h = speed * Math.cos(loft);
   return { x: mat.x, y: 0.1, z: -0.4, vx: Math.sin(aim) * h, vy: speed * Math.sin(loft), vz: -Math.cos(aim) * h };
 }
@@ -123,11 +127,9 @@ export function spill(x, z, n, rng) {
 
 // One fixed physics step. Returns true on the step the ball comes to rest.
 // How each ball type flies and lands (same on server and client).
-//   square: stops dead where it lands.  foam: light, drifts in the breeze.
-//   bouncy: springy and rolls on and on.
+//   square: stops dead where it lands.  bouncy: springy and rolls on and on.
 export const KIND_PHYS = {
   square: { bounce: 0, stick: true },
-  foam: { bounce: 0.2, drift: 1.6, drag: 0.35 },
   bouncy: { bounce: 0.78, keep: 0.92, roll: 1.2 },
 };
 function stepOnce(b) {
@@ -307,27 +309,24 @@ export const WASH = {
 //   Gear   = the cart: 1 + 0.25 × cleanliness; people ×1 (gear grime comes later)
 export const VENUES = [{ name: 'Muni Range', rate: 1 }, { name: 'Range Club', rate: 5 }, { name: 'Tiered Entertainment Range', rate: 25 },
   { name: 'Stadium Range', rate: 100 }, { name: 'County Range', rate: 500 }, { name: 'Orbital Range', rate: 2500 }];
-export const KIND_W = { range: 1, glow: 2, lead: 3, square: 1, gold: 10, foam: 0.5, splitter: 1, bouncy: 1.5 };
+export const KIND_W = { range: 1, glow: 2, lead: 3, square: 1, gold: 10, splitter: 1, bouncy: 1.5 };
 
 // Which kind a customer's next ball is (lead and glow are chosen elsewhere).
-// Debuts by day, per council round 1: square and gold day 3, foam day 6,
-// splitter day 7, bouncy at the Club (venue 1+).
-export const KIND_DEBUT = { glow: 2, square: 3, gold: 3, lead: 4, foam: 6, splitter: 7 };
+// Debuts by day: gold day 3, square day 5 (council round 3), splitter day 7,
+// bouncy at the Club (venue 1+). The foam ball was cut in round 3.
 export function pickKind(day, venue, rng) {
   const r = rng();
   if (day >= 3 && r < 0.005) return 'gold';
   if (day >= 7 && r < 0.045) return 'splitter';
   if (venue >= 1 && r < 0.10) return 'bouncy';
-  if (day >= 6 && r < 0.18) return 'foam';
-  if (day >= 3 && r < 0.28) return 'square';
+  if (day >= 5 && r < 0.28) return 'square';
   return 'range';
 }
-export const KIND_NAMES = { range: 'range ball', glow: 'glow ball', lead: 'lead ball', square: 'square ball', gold: 'GOLD BALL', foam: 'foam ball', splitter: 'splitter', bouncy: 'super-bouncy ball' };
+export const KIND_NAMES = { range: 'range ball', glow: 'glow ball', lead: 'lead ball', square: 'square ball', gold: 'GOLD BALL', splitter: 'splitter', bouncy: 'super-bouncy ball' };
 export const KIND_BLURB = {
   square: "It doesn't roll. Corporate calls this \"efficiency\".",
   gold: 'Worth ×10. Dimples is watching you pick it up.',
   lead: 'Worth ×3. It always ends up in the pond.',
-  foam: 'Worth ×0.5. It drifts. It has no respect for anyone.',
   splitter: 'Pick one up and it becomes three.',
   bouncy: 'Worth ×1.5. It does not want to be picked up.',
   glow: 'Worth ×2. Only at Last Call.',
@@ -407,7 +406,6 @@ export const POND = {
 export const FRIES = {
   SHED: { x: 42, z: 6 }, REACH: 2.4,   // where you stand at the counter (inside the walkable field)
   MAX: 20,                    // baskets in stock: Fry Satisfaction = stock / MAX
-  PEEL_SECS: 3,               // seconds of peeling per basket, by hand
   EAT_EVERY: 8,               // customer swings per basket eaten
   SERVE_MIN_SECS: 4,          // the kitchen minigame: at most one serve this often per Rat
 };

@@ -355,7 +355,7 @@ test('no swing, no scuff: a full field leaves the mat clean', () => {
 // ---- ball weights, end to end ------------------------------------------------------
 
 test('KIND_W: the council weights for every ball type', () => {
-  assert.deepEqual(KIND_W, { range: 1, glow: 2, lead: 3, square: 1, gold: 10, foam: 0.5, splitter: 1, bouncy: 1.5 });
+  assert.deepEqual(KIND_W, { range: 1, glow: 2, lead: 3, square: 1, gold: 10, splitter: 1, bouncy: 1.5 });
 });
 
 test('a player\'s pocket carries weights: a range, glow and lead ball bank for 6 x BV', () => {

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dimple Creek demo</title>
+<style>
+  :root { --ink: #fff8ec; --panel: rgba(28, 22, 40, 0.82); --accent: #ffb347; }
+  html, body { margin: 0; height: 100%; background: #9fc8e8; color: var(--ink); font: 600 15px system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #bar { position: fixed; top: 8px; left: 8px; z-index: 5; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 2px solid var(--accent); background: var(--panel); color: var(--ink); cursor: pointer; }
+  button.on { background: var(--accent); color: #2a1d10; }
+  #hint { background: var(--panel); padding: 6px 10px; border-radius: 8px; }
+  .lbl { position: fixed; z-index: 4; transform: translate(-50%, -100%); padding: 1px 6px; border-radius: 6px; background: var(--panel); font-size: 12px; pointer-events: none; white-space: nowrap; }
+</style>
+<script type="importmap">{ "imports": { "three": "../web/lib/three.module.min.js" } }</script>
+</head><body>
+<div id="bar">
+  <button data-v="0">Venue 0 · Muni (dry)</button><button data-v="1">Venue 1 · Club (water on)</button><button data-v="3">Venue 3</button>
+  <button id="view">View: field / bridge / top</button>
+  <span id="hint">drag = orbit · wheel = zoom · right-drag or shift-drag = pan</span>
+</div>
+<div id="labels"></div>
+<script type="module">
+import * as THREE from 'three';
+import { createTerrain } from '../web/js/terrain.js';
+import { MAP } from '../web/js/map.js';
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fc8e8);
+scene.fog = new THREE.Fog(0x9fc8e8, 160, 420);
+scene.add(new THREE.HemisphereLight(0xdfeaff, 0x5a7a3a, 1.1));
+const sun = new THREE.DirectionalLight(0xfff0d0, 1.6); sun.position.set(40, 80, 30); scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), new THREE.MeshLambertMaterial({ color: 0x5f8f3a }));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+
+// context: the mats, the side and back nets, the pond (Club+), the Mower Shed spot
+const ctx = new THREE.Group(); scene.add(ctx);
+const mat = new THREE.MeshLambertMaterial({ color: 0x2f6b2a });
+for (let i = 0; i < 10; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 1.6), mat); m.position.set(-18 + i * 4, 0.02, 0); ctx.add(m); }
+const netMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18, side: THREE.DoubleSide });
+for (const sx of [-1, 1]) { const n = new THREE.Mesh(new THREE.PlaneGeometry(200, 12), netMat); n.rotation.y = Math.PI / 2; n.position.set(sx * MAP.NETS.side, 6, -90); ctx.add(n); }
+{ const n = new THREE.Mesh(new THREE.PlaneGeometry(130, 12), netMat); n.position.set(0, 6, MAP.NETS.back); ctx.add(n); }
+const pond = new THREE.Mesh(new THREE.CircleGeometry(MAP.POND.r, 40), new THREE.MeshLambertMaterial({ color: 0x2f6f73, transparent: true, opacity: 0.78 }));
+pond.rotation.x = -Math.PI / 2; pond.position.set(MAP.POND.x, 0.03, MAP.POND.z); scene.add(pond);
+
+const terrain = createTerrain({ scene });
+let venue = 0;
+function setVenue(v) {
+  venue = v; terrain.setVenue(v); pond.visible = v >= 1;
+  document.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', +b.dataset.v === v));
+  buildLabels();
+}
+document.querySelectorAll('[data-v]').forEach(b => b.onclick = () => setVenue(+b.dataset.v));
+
+// a small orbit camera (no OrbitControls dependency)
+const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 900);
+const orbit = { tx: 0, ty: 0, tz: -90, yaw: 0.35, pitch: 0.75, dist: 190 };
+const VIEWS = [{ tx: 0, ty: 0, tz: -90, yaw: 0.35, pitch: 0.75, dist: 190 }, { tx: 18, ty: 0, tz: -99, yaw: 0.6, pitch: 0.4, dist: 22 }, { tx: 0, ty: 0, tz: -95, yaw: 0, pitch: 1.5, dist: 230 }];
+let vi = 0;
+document.getElementById('view').onclick = () => { vi = (vi + 1) % VIEWS.length; Object.assign(orbit, VIEWS[vi]); };
+let drag = null;
+const el = renderer.domElement;
+el.addEventListener('contextmenu', e => e.preventDefault());
+el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, pan: e.button === 2 || e.shiftKey }; el.setPointerCapture(e.pointerId); });
+el.addEventListener('pointerup', () => drag = null);
+el.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) { const k = orbit.dist * 0.0016; orbit.tx -= (Math.cos(orbit.yaw) * dx + Math.sin(orbit.yaw) * dy) * k; orbit.tz -= (-Math.sin(orbit.yaw) * dx + Math.cos(orbit.yaw) * dy) * k; }
+  else { orbit.yaw -= dx * 0.006; orbit.pitch = Math.max(0.08, Math.min(1.55, orbit.pitch + dy * 0.006)); }
+});
+el.addEventListener('wheel', e => { e.preventDefault(); orbit.dist = Math.max(6, Math.min(420, orbit.dist * Math.exp(e.deltaY * 0.0012))); }, { passive: false });
+
+const labels = document.getElementById('labels'); let lblEls = [];
+function buildLabels() {
+  labels.innerHTML = ''; lblEls = terrain.landmarkLabels().map(l => { const d = document.createElement('div'); d.className = 'lbl'; d.textContent = l.name; labels.appendChild(d); return { l, d, v: new THREE.Vector3() }; });
+}
+
+function resize() { renderer.setSize(innerWidth, innerHeight, false); cam.aspect = innerWidth / innerHeight; cam.updateProjectionMatrix(); }
+addEventListener('resize', resize); resize();
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  terrain.tick(dt, now / 1000);
+  cam.position.set(orbit.tx + Math.sin(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist, orbit.ty + Math.sin(orbit.pitch) * orbit.dist, orbit.tz + Math.cos(orbit.yaw) * Math.cos(orbit.pitch) * orbit.dist);
+  cam.lookAt(orbit.tx, orbit.ty, orbit.tz);
+  renderer.render(scene, cam);
+  for (const o of lblEls) {
+    o.v.set(o.l.x, o.l.y, o.l.z).project(cam);
+    const on = o.v.z < 1 && Math.abs(o.v.x) < 1.1 && Math.abs(o.v.y) < 1.1;
+    o.d.style.display = on ? '' : 'none';
+    if (on) { o.d.style.left = ((o.v.x + 1) / 2 * innerWidth) + 'px'; o.d.style.top = ((1 - o.v.y) / 2 * innerHeight) + 'px'; }
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+setVenue(0);
+window.__demo = { setVenue, orbit, terrain };
+</script></body></html>
