@@ -75,6 +75,25 @@ conveyors and sloped gutters → vacuums → drones → orbital.
 a time (a helper, then a machine, then a factory). Upgrade costs scale with
 how many crew are playing, so balance holds at 4.
 
+## The upgrade shop (built)
+
+The shop is open before the first shift and overnight, never mid-shift.
+Anyone can buy from the crew's one wallet, and everyone sees a toast for each
+purchase. Prices scale with crew size (×1 solo, ×2.2 for four). The catalog
+lives in `web/js/sim.js` (`SHOP`, `perks`).
+
+| Item | Tiers (solo price) |
+| --- | --- |
+| Carrying gear | Bare hands (3) → retriever tube $20 (8, longer reach) → range bucket $75 (25) → push picker $250 (60, scoops up whatever you walk over) |
+| Hired help | One to four teenagers: $60, $150, $400, $1000. Each one walks to the nearest unclaimed ball, fills up with the crew's gear (up to a bucket), and banks at the stand. They get knocked down too. At closing they turn in what they carry. |
+| Ball washer | $1 a ball → $2 ($40) → $3 ($160) |
+| Advertising | Customers hit 25% / 55% / 100% more balls ($30 / $90 / $250) |
+| Shoes | Walk 15% / 30% / 45% faster ($15 / $45 / $120) |
+| Hard hats | Knockdowns last 1 s instead of 2.2 ($35) |
+
+Still to come: the caged cart, range expansions (cash plus stars), and the
+side jobs.
+
 ## Jobs (anyone, anytime)
 
 | Job | By hand | Absurd endgame |

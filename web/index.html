@@ -52,6 +52,20 @@
   .sheet { background: var(--panel); padding: 1.2em 2em; border-radius: 1em; min-width: min(calc(100vw - 32px), 22em); text-align: left; }
   .sheet p { display: flex; justify-content: space-between; gap: 2em; margin: 0.3em 0; color: var(--ink); }
   .sheet h2 { margin: 0 0 0.4em; }
+  .card { overflow-y: auto; place-content: safe center; }
+  .split { display: flex; gap: 1em; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
+  .shop { width: min(calc(100vw - 32px), 30em); font-size: 0.85em; padding: 1em 1.4em; }
+  .shop h3 { margin: 0 0 0.5em; display: flex; justify-content: space-between; gap: 1em; }
+  .shop h3 span { color: var(--accent); }
+  .shop .note { display: block; color: var(--dim); font-weight: 500; margin: -0.3em 0 0.5em; }
+  .shop ul { list-style: none; margin: 0; padding: 0; }
+  .shop li { display: flex; justify-content: space-between; align-items: center; gap: 1em; padding: 0.45em 0; border-top: 1px solid rgba(255, 248, 236, 0.12); }
+  .shop small { display: block; color: var(--dim); font-weight: 500; }
+  .shop i { font-style: normal; color: var(--ink); }
+  .shop button { padding: 0.35em 0.9em; min-width: 4.5em; }
+  .shop button:disabled { background: rgba(255, 248, 236, 0.15); color: var(--dim); cursor: default; }
+  .shop .max { color: #6fcf7c; min-width: 4.5em; text-align: center; }
+  #roster li.help { color: var(--dim); font-weight: 500; }
 
   .keys { color: var(--dim); font-weight: 500; font-size: 0.85em; }
   .pad .kb, body:not(.pad) .gp { display: none; }
@@ -89,12 +103,16 @@
   <div class="big" id="lobby-code"></div>
   <p>Friends join with this code, from any browser (Edge on Xbox too). Up to 6.</p>
   <div class="row"><button id="start">Open the range</button></div>
+  <div class="sheet shop"></div>
 </div>
 
 <div id="report" class="card hidden">
-  <div class="sheet" id="report-body"></div>
+  <div class="split">
+    <div class="sheet" id="report-body"></div>
+    <div class="sheet shop"></div>
+  </div>
   <div class="row"><button id="next">Next shift</button></div>
-  <p class="keys">Anyone on the crew can start the next shift.</p>
+  <p class="keys">Anyone on the crew can buy, and anyone can start the next shift. It's one wallet.</p>
 </div>
 
 <div id="pause" class="card hidden">

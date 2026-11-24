@@ -28,6 +28,7 @@ const UNLOAD_MS = 10 * 60_000;   // a crew with nobody online for this long is s
 const MAX_CREWS = 200;
 const BODY_MAX = 4096;
 const SHIFT_SECS = Number(process.env.SHIFT_SECS) || SIM.SHIFT_SECS;  // shorter for local testing
+const DEV_START_CASH = Number(process.env.DEV_START_CASH) || 0;       // local shop testing only; never in the manifest
 
 const store = newStore(process.env.STORAGE_BUCKET);
 const crews = new Map();         // code -> { crew, subs: Set<{p, res}>, savedAt, saving }
@@ -115,6 +116,7 @@ async function api(req, res, url) {
     if (!code) return send(res, 503, { error: 'Could not find a free crew code.' });
     const c = { crew: new Crew(code, null, { shiftSecs: SHIFT_SECS }), subs: new Set(), savedAt: Date.now() };
     crews.set(code, c);
+    c.crew.cash = DEV_START_CASH;
     const p = c.crew.join(body.name);
     saveCrew(c);   // so the code can be rejoined even before the first shift ends
     return send(res, 200, { code, p: p.id, k: p.token });

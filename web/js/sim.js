@@ -15,7 +15,8 @@ export const SIM = {
   WALK: 4.2,           // m/s
   FIELD: { xMin: -150, xMax: 150, zMin: -290, zMax: 9 },
   MAX_PLAYERS: 6,
-  MAX_BALLS: 400,
+  MAX_BALLS: 800,      // when the field is this full, customers wait for a clean mat
+  HELPER_WALK: 3.4,    // m/s, hired help is in no hurry
   SHIFT_SECS: 420,     // one day: opening to sunset
   KNOCK_SECS: 2.2,     // flat on your back after a ball hit
   HIT_R: 0.45,         // m, a player's body radius for ball hits
@@ -99,7 +100,73 @@ export function ballHitsPlayer(x0, y0, z0, b, p) {
   return Math.hypot(cx - p.x, cz - p.z) < SIM.HIT_R && cy < SIM.HIT_H;
 }
 
-export const atStand = p => Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < SIM.STAND_REACH;
+// ---- the upgrade shop ------------------------------------------------------
+// Bought overnight (or before the first shift) from the crew's shared cash.
+// Tier 0 of each item is what you start with; buying moves up one tier.
+
+export const SHOP = [
+  { id: 'gear', title: 'Carrying gear', tiers: [
+    { name: 'Bare hands', desc: 'Your pockets. Holds 3.' },
+    { name: 'Ball retriever tube', cost: 20, desc: 'Click, click, click. Holds 8 and reaches a bit further.' },
+    { name: 'Range bucket', cost: 75, desc: 'Holds 25. You look like you work here.' },
+    { name: 'Push picker', cost: 250, desc: 'Walk over balls and it scoops them up. Holds 60.' },
+  ] },
+  { id: 'helpers', title: 'Hired help', tiers: [
+    { name: 'Nobody', desc: 'It is just the crew.' },
+    { name: 'One teenager', cost: 60, desc: 'Picks up balls and banks them, with the crew\'s gear (up to a bucket). Paid in pizza.' },
+    { name: 'Two teenagers', cost: 150, desc: 'They walk out together. They walk back together.' },
+    { name: 'Three teenagers', cost: 400, desc: 'One of them brought a speaker.' },
+    { name: 'Four teenagers', cost: 1000, desc: 'A union is forming.' },
+  ] },
+  { id: 'washer', title: 'Ball washer', tiers: [
+    { name: 'Muddy balls', desc: 'A ball banks for $1.' },
+    { name: 'Hand-crank washer', cost: 40, desc: 'Clean balls: $2 each.' },
+    { name: 'Electric washer', cost: 160, desc: 'Sparkling balls: $3 each.' },
+  ] },
+  { id: 'ads', title: 'Advertising', tiers: [
+    { name: 'Word of mouth', desc: 'Customers trickle in.' },
+    { name: 'A sign by the road', cost: 30, desc: 'Customers hit 25% more balls.' },
+    { name: 'Radio spot', cost: 90, desc: 'Customers hit 55% more balls.' },
+    { name: 'A blimp', cost: 250, desc: 'Customers hit twice as many balls.' },
+  ] },
+  { id: 'shoes', title: 'Shoes', tiers: [
+    { name: 'Range-issue loafers', desc: 'They squeak.' },
+    { name: 'Sneakers', cost: 15, desc: 'Walk 15% faster.' },
+    { name: 'Running shoes', cost: 45, desc: 'Walk 30% faster.' },
+    { name: 'Carbon spikes', cost: 120, desc: 'Walk 45% faster.' },
+  ] },
+  { id: 'hardhat', title: 'Hard hats', tiers: [
+    { name: 'No hats', desc: `A ball hit floors you for ${SIM.KNOCK_SECS} seconds.` },
+    { name: 'Hard hats for everyone', cost: 35, desc: 'Back up in 1 second. Goes BONK.' },
+  ] },
+];
+export const SHOP_BY_ID = Object.fromEntries(SHOP.map(i => [i.id, i]));
+export const HELPER_NAMES = ['Kyle', 'Madison', 'Tanner', 'Brayden'];
+
+// Prices scale with crew size (balanced for 4): ×1 solo, ×2.2 for four.
+export const priceScale = crewSize => 1 + 0.4 * (Math.max(1, crewSize) - 1);
+export function nextPrice(id, up, crewSize) {
+  const item = SHOP_BY_ID[id], lvl = up?.[id] ?? 0;
+  const t = item?.tiers[lvl + 1];
+  return t ? Math.round(t.cost * priceScale(crewSize)) : null;   // null: maxed out
+}
+
+// What the crew's upgrades add up to.
+export function perks(up = {}) {
+  const g = up.gear ?? 0;
+  return {
+    pocket: [3, 8, 25, 60][g],
+    reach: [SIM.REACH, 2.0, 2.0, 2.2][g],
+    scoop: g >= 3 ? 1.1 : 0,                         // push picker: auto-pickup radius
+    helpers: up.helpers ?? 0,
+    price: SIM.BALL_PRICE + (up.washer ?? 0),
+    swingGapMult: [1, 0.8, 0.645, 0.5][up.ads ?? 0],
+    walk: SIM.WALK * (1 + 0.15 * (up.shoes ?? 0)),
+    knockSecs: up.hardhat ? 1 : SIM.KNOCK_SECS,
+  };
+}
+
+export const atStand = p =>Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < SIM.STAND_REACH;
 
 export function clampToField(p) {
   const F = SIM.FIELD;

@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
-import { SIM, MATS, advanceBall, atStand, clampToField } from './sim.js';
+import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, priceScale, perks } from './sim.js';
 import * as NET from './net.js';
 
 const EYE = 1.65;
@@ -61,26 +61,75 @@ stand.position.set(SIM.STAND.x, 0, SIM.STAND.z);
 scene.add(stand);
 
 // ---------------------------------------------------------------- balls
-const ballGeo = new THREE.SphereGeometry(SIM.BALL_R, 12, 8);
-const ballMat = lambert(0xf4f1e8);
-const balls = new Map();            // id -> { id, x, y, z, vx, vy, vz, rest, acc, mesh, hidden }
+// Every ball on the field is one instance of one mesh: hundreds of balls, one draw call.
+const ballMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(SIM.BALL_R, 12, 8), lambert(0xf4f1e8), SIM.MAX_BALLS + 64);
+ballMesh.castShadow = true;
+ballMesh.frustumCulled = false;
+ballMesh.count = 0;
+scene.add(ballMesh);
+const balls = new Map();            // id -> { id, x, y, z, vx, vy, vz, rest, acc, hidden }
 const pending = new Set();          // ball ids I grabbed that the server hasn't confirmed yet
 
 function addBall(b) {
   if (balls.has(b.id)) return;
-  const mesh = new THREE.Mesh(ballGeo, ballMat);
-  mesh.castShadow = true;
-  scene.add(mesh);
-  balls.set(b.id, { ...b, acc: 0, mesh, hidden: false });
+  balls.set(b.id, { ...b, acc: 0, hidden: false });
 }
 function removeBall(id) {
-  const b = balls.get(id);
-  if (!b) return;
-  scene.remove(b.mesh);
   balls.delete(id);
   pending.delete(id);
 }
+const ballM = new THREE.Matrix4(), ballQ = new THREE.Quaternion(), ballP = new THREE.Vector3(), ballS = new THREE.Vector3();
+function drawBalls() {
+  let i = 0;
+  for (const b of balls.values()) {
+    if (b.hidden || i >= ballMesh.instanceMatrix.count) continue;
+    // A real ball is sub-pixel past ~40 m; grow far ones so the field reads as dots.
+    const s = Math.max(1, Math.hypot(b.x - me.x, b.z - me.z) / 25);
+    ballM.compose(ballP.set(b.x, b.y, b.z), ballQ, ballS.set(s, s, s));
+    ballMesh.setMatrixAt(i++, ballM);
+  }
+  ballMesh.count = i;
+  ballMesh.instanceMatrix.needsUpdate = true;
+}
 function clearBalls() { for (const id of [...balls.keys()]) removeBall(id); }
+
+// ---------------------------------------------------------------- carrying gear
+// Built for a body: hand-held things at hand height on the right, the push
+// picker rolling on the grass in front. Origin is the person's feet, facing -z.
+const steel = lambert(0x9aa3ad), wire = new THREE.MeshBasicMaterial({ color: 0xc9d1d9, wireframe: true });
+function gearModel(level) {
+  const g = new THREE.Group();
+  if (level === 1) {           // ball retriever tube
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.0, 8), steel);
+    tube.position.set(0.38, 0.55, -0.25); tube.rotation.x = -0.5; g.add(tube);
+    const cage = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), wire);
+    cage.position.set(0.38, 0.1, -0.5); g.add(cage);
+  } else if (level === 2) {    // range bucket
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.15, 0.3, 14, 1, true),
+      new THREE.MeshLambertMaterial({ color: 0x2f6fbf, side: THREE.DoubleSide }));
+    b.position.set(0.42, 0.62, -0.05); g.add(b);
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.012, 6, 16, Math.PI), steel);
+    handle.position.set(0.42, 0.77, -0.05); g.add(handle);
+  } else if (level >= 3) {     // push picker: a wire drum on an axle, a long handle
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 12, 3, true), wire);
+    drum.rotation.z = Math.PI / 2; drum.position.set(0, 0.28, -1.6); drum.name = 'drum'; g.add(drum);
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.55, 6), steel);
+    handle.position.set(0, 0.62, -0.9); handle.rotation.x = 1.12; g.add(handle);
+  }
+  return g;
+}
+let gearLevel = -1;
+const myGear = new THREE.Group();   // my own picker, placed in the world at my feet each frame
+scene.add(myGear);
+const fpGear = new THREE.Group();   // hand-held gear, hung off the camera so it sits in view
+fpGear.position.set(0.05, -1.12, -0.85);
+camera.add(fpGear);
+scene.add(camera);
+function setMyGear(level) {
+  myGear.clear(); fpGear.clear();
+  (level >= 3 ? myGear : fpGear).add(gearModel(level));
+  gearLevel = level;
+}
 
 // ---------------------------------------------------------------- crew mates
 const others = new Map();           // id -> { g, to: {x, z, yaw}, down }
@@ -109,9 +158,15 @@ function addMate(p) {
   brim.position.set(0, 1.6, -0.25); body.add(brim);
   g.add(body);
   const tag = nameTag(p.name, p.color); tag.position.y = 2.15; g.add(tag);
+  if (p.helper) { torso.scale.setScalar(0.85); head.position.y = 1.4; cap.position.y = 1.45; brim.position.y = 1.45; tag.position.y = 1.95; }
   g.position.set(p.x, 0, p.z);
   scene.add(g);
-  others.set(p.id, { g, body, tag, to: { x: p.x, z: p.z, yaw: p.yaw }, down: 0 });
+  others.set(p.id, { g, body, tag, gear: null, gearLevel: -1, helper: !!p.helper, to: { x: p.x, z: p.z, yaw: p.yaw }, down: 0 });
+}
+function setMateGear(o, level) {
+  if (o.gearLevel === level) return;
+  if (o.gear) o.body.remove(o.gear);
+  o.gear = gearModel(level); o.body.add(o.gear); o.gearLevel = level;
 }
 function removeMate(id) { const o = others.get(id); if (o) { scene.remove(o.g); others.delete(id); } }
 
@@ -145,7 +200,15 @@ function onEvent(e) {
     case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false }); break;
     case 'rest': { const b = balls.get(e.id); if (b) { b.x = e.x; b.z = e.z; b.y = SIM.BALL_R; b.vx = b.vy = b.vz = 0; b.rest = true; } break; }
     case 'gone': removeBall(e.id); break;
-    case 'cash': toast(e.by === me.id ? `+$${e.cash}` : `${nameOf(e.by)} banked $${e.cash}`); break;
+    case 'cash':
+      if (e.by === me.id) toast(`+$${e.cash}`);
+      else if (!String(e.by).startsWith('h')) toast(`${nameOf(e.by)} banked $${e.cash}`);   // helpers bank quietly
+      break;
+    case 'buy': {
+      const item = SHOP.find(i => i.id === e.id);
+      toast(`${e.by === me.id ? 'You' : nameOf(e.by)} bought: ${item?.tiers[e.level]?.name ?? e.id}`, 2.2);
+      break;
+    }
     case 'knock':
       if (e.id === me.id) toast('BONK. You got knocked flat.', 2.4);
       else toast(`${nameOf(e.id)} got knocked flat`);
@@ -161,24 +224,64 @@ function onEvent(e) {
   }
 }
 
+let my = perks();                   // what the crew's upgrades add up to
 function applySnapshot(s) {
   crew = s;
+  my = perks(s.up);
+  const gear = s.up?.gear ?? 0;
+  if (gear !== gearLevel) setMyGear(gear);
   const seen = new Set();
-  for (const p of s.players) {
+  const people = [...s.players, ...(s.helpers ?? []).map(h => ({ ...h, helper: true, color: '#b9c0c8', online: true }))];
+  for (const p of people) {
     seen.add(p.id);
     if (p.id === me.id) { me.pocket = p.pocket; me.down = p.down; continue; }
     if (!others.has(p.id)) addMate(p);
     const o = others.get(p.id);
     o.to = { x: p.x, z: p.z, yaw: p.yaw }; o.down = p.down;
     o.g.visible = p.online || p.down > 0;
+    setMateGear(o, p.helper ? 0 : gear);
   }
   for (const id of [...others.keys()]) if (!seen.has(id)) removeMate(id);
   renderRoster();
+  renderShop();
 }
 
+// ---------------------------------------------------------------- the shop
+// Rendered into the lobby and the overnight report. Only re-rendered when
+// something it shows changes, so controller focus survives the 10 Hz ticks.
+let shopKey = '';
+function renderShop() {
+  const size = crew.players.length;
+  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase]);
+  if (key === shopKey) return;
+  shopKey = key;
+  const focused = document.activeElement?.dataset?.buy;
+  const scale = priceScale(size);
+  const html = `<h3>${crew.phase === 'report' ? 'Overnight shop' : 'Shop'} <span>$${crew.cash} to spend</span></h3>
+    ${size > 1 ? `<p class="note">Prices are ×${scale.toFixed(1)} for a crew of ${size}.</p>` : ''}
+    <ul>${SHOP.map(item => {
+      const lvl = crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
+      const price = nextPrice(item.id, crew.up, size);
+      return `<li>
+        <div><b>${item.title}</b>: ${now.name}${next ? `<small>Next: <i>${next.name}</i>. ${next.desc}</small>` : `<small>${now.desc} (maxed out)</small>`}</div>
+        ${next ? `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>$${price}</button>` : '<span class="max">✓</span>'}
+      </li>`;
+    }).join('')}</ul>`;
+  for (const el of document.querySelectorAll('.shop')) el.innerHTML = html;
+  if (focused) {
+    const root = menuRoot();
+    const again = root?.querySelector(`[data-buy="${focused}"]:not([disabled])`);
+    (again ?? navTargets(root)[0])?.focus();
+  }
+}
+document.addEventListener('click', e => {
+  const id = e.target.closest?.('[data-buy]')?.dataset.buy;
+  if (id && link) link.act({ t: 'buy', id });
+});
+
 // ---------------------------------------------------------------- actions
-function nearestBall() {
-  let best = null, bd = SIM.REACH;
+function nearestBall(reach = my.reach) {
+  let best = null, bd = reach;
   for (const b of balls.values()) {
     if (b.hidden || b.y > 0.4) continue;
     const d = Math.hypot(b.x - me.x, b.z - me.z);
@@ -192,11 +295,23 @@ const playing = () => link && crew.phase !== 'lobby' && !paused && !menuOpen();
 function act() {
   if (!playing() || me.down > 0) return;
   if (atStand(me) && carrying() > 0) { link.act({ t: 'deposit' }); return; }
-  if (carrying() >= SIM.POCKET) { toast('Pocket full: take them to the bucket stand'); return; }
+  if (carrying() >= my.pocket) { toast('Full: take them to the bucket stand'); return; }
   const b = nearestBall();
   if (!b) return;
+  grab(b);
+}
+function grab(b) {
   b.hidden = true; pending.add(b.id);
   link.act({ t: 'pickup', ball: b.id });
+}
+// The push picker scoops up whatever you roll over, no button needed.
+function scoop() {
+  if (!my.scoop || !playing() || me.down > 0) return;
+  for (let n = 0; n < 4 && carrying() < my.pocket; n++) {
+    const b = nearestBall(my.scoop);
+    if (!b) return;
+    grab(b);
+  }
 }
 const startShift = () => link?.act({ t: 'start' });
 
@@ -216,10 +331,38 @@ function go() {
   link?.close();
   me.placed = false;
   link = NET.connect(seat, onMsg, status => {
-    $('net').textContent = status === 'online' ? '' : status === 'kicked' ? 'This crew is gone. Reload to start over.' : 'Reconnecting…';
+    if (status === 'lost' || status === 'kicked') rejoin();
+    else $('net').textContent = status === 'online' ? '' : 'Reconnecting…';
   });
   $('title').classList.add('hidden');
   $('hud').classList.remove('hidden');
+}
+
+// After a deploy or a long nap the server may not have this crew loaded (or
+// may have dropped this player). Joining again loads the crew from its save
+// and gets a seat, the same one if it still exists.
+let rejoining = null;
+function rejoin() {
+  if (rejoining) return rejoining;
+  $('net').textContent = 'Reconnecting…';
+  rejoining = (async () => {
+    for (let i = 0; i < 5; i++) {
+      try {
+        seat = await NET.joinCrew(seat.code, NET.lastUsed().name ?? '');
+        go();
+        return;
+      } catch (e) {
+        if (/No crew/.test(e.message)) break;
+        await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+      }
+    }
+    link?.close(); link = null;
+    $('net').textContent = '';
+    $('hud').classList.add('hidden');
+    $('title').classList.remove('hidden');
+    $('join-error').textContent = `Couldn't get back into crew ${seat.code}. It may have closed.`;
+  })().finally(() => { rejoining = null; });
+  return rejoining;
 }
 
 function showPhase() {
@@ -231,6 +374,7 @@ function showPhase() {
       <p>Balls picked up <b>${report.picked}</b></p>
       <p>Balls banked <b>${report.deposited}</b></p>
       <p>Cash earned <b>$${report.cash}</b></p>
+      ${report.helped ? `<p>Banked by hired help <b>${report.helped}</b></p>` : ''}
       <p>Knockdowns <b>${report.knockdowns}</b></p>
       <p>Balls left out there <b>${report.left}</b></p>
       <p>In the bank <b>$${report.bank}</b></p>`;
@@ -251,7 +395,7 @@ $('leave').addEventListener('click', () => { link?.close(); link = null; try { s
   if (last.name) $('name').value = last.name;
   if (last.code) $('join-code').value = last.code;
   const s = NET.seatInTab();
-  if (s) { seat = s; go(); }           // a reload: straight back in
+  if (s) { seat = s; rejoin(); }       // a reload: back into the same seat
 }
 
 // ---------------------------------------------------------------- input
@@ -325,21 +469,23 @@ function toast(msg, secs = 1.6) { $('toast').textContent = msg; $('toast').class
 function renderRoster() {
   $('roster').innerHTML = crew.players.map(p => `<li style="--c:${p.color}" class="${p.online ? '' : 'off'}">
     <span class="dot"></span>${esc(p.name)}${p.id === me.id ? ' <i>(you)</i>' : ''}
-    <span class="pk">${p.down > 0 ? '💫' : '●'.repeat(p.pocket)}</span></li>`).join('');
+    <span class="pk">${p.down > 0 ? '💫' : p.pocket > 3 ? p.pocket : '●'.repeat(p.pocket)}</span></li>`).join('')
+    + (crew.helpers?.length ? `<li class="help">${crew.helpers.map(h => esc(h.name) + (h.down > 0 ? ' 💫' : '')).join(', ')} <i>(hired)</i></li>` : '');
 }
 const esc = s => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
 function hud() {
   $('cash').textContent = `$${crew.cash}`;
-  const n = carrying();
-  $('pocket').textContent = '●'.repeat(Math.min(n, SIM.POCKET)) + '○'.repeat(Math.max(0, SIM.POCKET - n));
+  const n = carrying(), cap = my.pocket;
+  $('pocket').textContent = cap <= 8 ? '●'.repeat(Math.min(n, cap)) + '○'.repeat(Math.max(0, cap - n)) : `${n} / ${cap}`;
   const left = Math.max(0, crew.shiftSecs - crew.shiftT);
   $('clock').textContent = crew.phase === 'shift' ? `Day ${crew.day} · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : `Day ${crew.day}`;
   const btn = document.body.classList.contains('pad') ? GLYPH.A : 'E';
   $('prompt').textContent = !playing() ? ''
     : me.down > 0 ? 'Seeing stars…'
     : atStand(me) && n ? `${btn}  Drop ${n} in the bucket`
-    : n < SIM.POCKET && nearestBall() ? `${btn}  Pick up` : '';
+    : n < cap && !my.scoop && nearestBall() ? `${btn}  Pick up`
+    : n >= cap ? 'Full: head to the bucket stand' : '';
 }
 
 // ---------------------------------------------------------------- loop
@@ -359,8 +505,9 @@ function frame(now) {
     let fz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0) + py;
     const m = Math.hypot(fx, fz); if (m > 1) { fx /= m; fz /= m; }
     const sy = Math.sin(me.yaw), cy = Math.cos(me.yaw);
-    me.x += (fx * cy + fz * sy) * SIM.WALK * dt;
-    me.z += (-fx * sy + fz * cy) * SIM.WALK * dt;
+    me.x += (fx * cy + fz * sy) * my.walk * dt;
+    me.z += (-fx * sy + fz * cy) * my.walk * dt;
+    if (m > 0.05) { const drum = myGear.getObjectByName('drum'); if (drum) drum.rotation.x -= m * my.walk * dt / 0.28; }
     clampToField(me);
     me.yaw += ((keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)) * 2.2 * dt;
     me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch + ((keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0)) * 1.5 * dt));
@@ -368,13 +515,13 @@ function frame(now) {
   if (link && me.placed) link.move(me.x, me.z, me.yaw);
   if (crew.phase === 'shift') crew.shiftT += dt;        // smooth between server ticks
 
-  for (const b of balls.values()) {
-    advanceBall(b, dt);
-    b.mesh.visible = !b.hidden;
-    b.mesh.position.set(b.x, b.y, b.z);
-    // A real ball is sub-pixel past ~40 m; grow far ones so the field reads as dots.
-    b.mesh.scale.setScalar(Math.max(1, Math.hypot(b.x - me.x, b.z - me.z) / 25));
-  }
+  for (const b of balls.values()) advanceBall(b, dt);
+  scoop();
+  drawBalls();
+  // My own gear: hand-held things hang below the view, the picker rolls ahead.
+  myGear.position.set(me.x, 0, me.z);
+  myGear.rotation.set(0, me.yaw, 0);
+  myGear.visible = fpGear.visible = me.down <= 0;
 
   const k = 1 - Math.exp(-dt * 12);
   for (const o of others.values()) {

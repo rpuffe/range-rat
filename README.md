@@ -23,10 +23,16 @@ The design lives in [design/game-design.md](design/game-design.md).
   pocket.
 - **End of day:** the shift ends in a report for everyone, then anyone starts
   the next day.
-- **Saves:** day, cash and totals save to S3, so a crew can come back to
-  their range.
+- **Saves:** day, cash, totals and upgrades save to S3, so a crew can come
+  back to their range.
+- **The upgrade shop:** open before the first shift and overnight, with one
+  shared wallet:
+  - carrying gear: tube, then bucket, then a push picker that scoops up
+    whatever you walk over
+  - hired helpers, who walk the field and bank balls on their own
+  - a ball washer, advertising, shoes, and hard hats
 
-Next: the upgrade shop, the tool ladder, and the side jobs.
+Next: the caged cart, range expansions, and the side jobs.
 
 ## Controls
 
@@ -64,7 +70,7 @@ browser while the server decides where every ball really is.
 | `POST /api/crew` | `{name}` | `{code, p, k}`: a new crew, with you on it |
 | `POST /api/crew/:code/join` | `{name, p?, k?}` | `{code, p, k}`: joins, or rejoins with an old `p`/`k` |
 | `GET /api/crew/:code/stream?p=&k=` | | Server-sent events: one `welcome`, then `tick`s at 10 Hz |
-| `POST /api/crew/:code/input` | `{p, k, x, z, yaw, a: [{t: 'pickup', ball} \| {t: 'deposit'} \| {t: 'start'}]}` | `{denied: [ballIds]}` |
+| `POST /api/crew/:code/input` | `{p, k, x, z, yaw, a: [{t: 'pickup', ball} \| {t: 'deposit'} \| {t: 'start'} \| {t: 'buy', id}]}` | `{denied: [ballIds]}` |
 
 ## Running it locally
 
@@ -73,6 +79,7 @@ There are zero npm dependencies. You need Node 20 or newer.
 ```sh
 node server/server.mjs                 # http://localhost:8080
 SHIFT_SECS=90 node server/server.mjs   # short days, for testing
+DEV_START_CASH=500 node server/server.mjs  # new crews start with cash, to try the shop
 ./test.sh                              # or: node --test test/
 ```
 
