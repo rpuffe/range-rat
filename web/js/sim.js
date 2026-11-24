@@ -180,6 +180,12 @@ export const SHOP = [
     { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 300, unloads itself at the stand, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
     { name: 'Wide gang reels', cost: 1500, desc: 'Scoops a lane almost twice as wide, holds 600, a bit faster.' },
   ] },
+  { id: 'shed', title: 'Snack shed', tiers: [
+    { name: 'Boarded up', desc: 'The old shed. Something smells like fryer oil.' },
+    { name: 'Snack shed', cost: 200, desc: 'Reopens the shed: peel potatoes by hand for Fry Satisfaction (Upkeep up to +50%).' },
+    { name: 'Electric peeler', cost: 600, desc: 'Peels on its own: a basket every 10 s. Nobody asked how.' },
+    { name: 'Fry conveyor', cost: 2000, desc: 'A basket every 3 s. Corporate does not explain why a driving range needs this many fries.' },
+  ] },
   { id: 'helpers', title: 'Hired help', tiers: [
     { name: 'Nobody', desc: 'It is just the crew.' },
     { name: 'One teenager', cost: 60, desc: 'Picks up balls with a beat-up tube (8 at a time) and banks them. Paid in pizza.' },
@@ -250,6 +256,8 @@ export function perks(up = {}) {
     cartCap: [0, 300, 600][up.cart ?? 0],
     cartReel: [0, 2.4, 4.2][up.cart ?? 0],
     cartSpeed: [0, 9, 11][up.cart ?? 0],
+    shed: up.shed ?? 0,
+    autoFry: [0, 0, 10, 3][up.shed ?? 0],          // seconds per basket, 0 = by hand only
   };
 }
 
@@ -324,6 +332,15 @@ export const POND = {
   REACH: 2.2,
   SWIM: 0.6,                      // walking speed underwater
 };
+// The snack shed: peel potatoes into baskets of fries; customers eat them.
+export const FRIES = {
+  SHED: { x: 42, z: 6 }, REACH: 2.4,   // where you stand at the counter (inside the walkable field)
+  MAX: 20,                    // baskets in stock: Fry Satisfaction = stock / MAX
+  PEEL_SECS: 3,               // seconds of peeling per basket, by hand
+  EAT_EVERY: 8,               // customer swings per basket eaten
+};
+export const atShed = p => Math.hypot(p.x - FRIES.SHED.x, p.z - FRIES.SHED.z) < FRIES.REACH;
+
 export const inPond = p => Math.hypot(p.x - POND.x, p.z - POND.z) < POND.r;
 export const onDock = p => Math.hypot(p.x - POND.DOCK.x, p.z - POND.DOCK.z) < POND.DOCK_R;
 export const pondClarity = sunk => Math.max(0, 1 - sunk / POND.CLEAR_AT);

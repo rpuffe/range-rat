@@ -9,7 +9,7 @@ import * as THREE from 'three';
 import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
 import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, priceScale, perks,
-  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock } from './sim.js';
+  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed } from './sim.js';
 import * as NET from './net.js';
 import * as SFX from './sfx.js';
 import { createBoard } from './board.js';
@@ -121,6 +121,26 @@ pondWall.position.set(POND.x, POND.BOTTOM / 2, POND.z); scene.add(pondWall);
 const diveLight = new THREE.SpotLight(0xd8ffe8, 0, 10, 0.5, 0.5, 1);
 camera.add(diveLight); camera.add(diveLight.target); diveLight.target.position.set(0, 0, -3);
 const surfaceFog = { color: new THREE.Color(), near: 0, far: 0 };
+
+// The snack shed: a little hut with a counter, a sack of potatoes, and a fryer.
+const shedSign = (() => {
+  const g = new THREE.Group();
+  const hut = new THREE.Mesh(new THREE.BoxGeometry(3, 2.4, 2.4), lambert(0xc9b48a)); hut.position.y = 1.2; hut.castShadow = true; g.add(hut);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.4, 1, 4), lambert(0x8a3b2e)); roof.position.y = 2.9; roof.rotation.y = Math.PI / 4; g.add(roof);
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 0.6), lambert(0x8b6b45)); counter.position.set(0, 1.0, -1.45); g.add(counter);
+  const sack = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 8), lambert(0x9c7b4b)); sack.scale.y = 0.8; sack.position.set(-1.6, 0.35, -1.4); g.add(sack);
+  const fries = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.4, 0.4), lambert(0xf2c94c)); fries.position.set(0.7, 1.28, -1.45); g.add(fries);
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const x = c.getContext('2d'); x.fillStyle = '#8a3b2e'; x.fillRect(0, 0, 256, 64); x.fillStyle = '#fff8ec';
+  x.font = 'bold 34px system-ui, sans-serif'; x.textAlign = 'center'; x.fillText('SNACK SHED', 128, 44);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.5), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
+  sign.position.set(0, 2.15, -1.22); sign.rotation.y = Math.PI; g.add(sign);
+  const boards = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 0.05), lambert(0x6b5a45)); boards.position.set(0, 1.45, -1.23); g.add(boards);
+  g.position.set(FRIES.SHED.x, 0, FRIES.SHED.z + 2.25);   // the counter faces the range; you stand in front of it
+  scene.add(g);
+  return { fries, boards };
+})();
 
 // Last Call floodlights: on for the final minute of a shift.
 const floods = [-14, 0, 14].map(x => {
@@ -455,6 +475,9 @@ function onEvent(e) {
         ? `Gary is satisfied. +${e.gained} commendation${e.gained > 1 ? 's' : ''}${e.huddle ? ' (the huddle doubled it)' : ''}: Rate +${e.gained * 5}% for good`
         : `Gary found ${e.fails} problems. "We'll circle back." No commendation.`, 5);
       break;
+    case 'fries':
+      if (e.by === me.id) { SFX.scoop(); toast(`A basket of fries (${e.stock}/${FRIES.MAX})`, 1); }
+      break;
     case 'memo':
       showMemo(e.text, e.target);
       break;
@@ -517,13 +540,15 @@ function applySnapshot(s) {
   const mine = s.players.find(p => p.id === me.id);
   me.gear = mine?.gear ?? 0; me.wand = !!mine?.wand;
   me.diving = !!mine?.diving; me.air = mine?.air ?? POND.AIR; me.bag = mine?.bag ?? 0;
+  shedSign.boards.visible = !s.fries?.open;
+  shedSign.fries.scale.y = Math.max(0.05, (s.fries?.stock ?? 0) / FRIES.MAX);
   gp = gearPerks(me.gear);
   const held = me.wand ? 'wand' : me.gear;
   if (held !== gearLevel) setMyGear(held);
   applyCart(s.cart);
   paintFixtures(s.fixtures);
   const v = s.value ?? {};
-  board.update({ bv: v.bv, rate: v.rate, upkeep: v.upkeep, hustle: v.hustle, curb: v.curb, pond: s.pond?.unlocked ? v.pond ?? 0 : null, fries: v.fries ?? null,
+  board.update({ bv: v.bv, rate: v.rate, upkeep: v.upkeep, hustle: v.hustle, curb: v.curb, pond: s.pond?.unlocked ? v.pond ?? 0 : null, fries: s.fries?.open ? v.fries ?? 0 : null,
     quota: s.quota?.target ?? null, outstanding: s.outstanding, lastCall: s.lastCall, title: s.title, silo: s.silo,
     gary: s.gary?.phase === 'warn' ? `GARY FROM REGIONAL · 0:${String(Math.ceil(s.gary.t)).padStart(2, '0')}` : s.gary?.phase === 'drive' ? 'GARY IS INSPECTING' : null });
   if (s.gary && s.gary.phase !== 'warn') {
@@ -652,16 +677,17 @@ function act() {
 const SWING_FULL = 1.0;
 let charging = null;                 // performance.now() when the wind-up started
 let spraying = false, washSecs = 0, washSent = 0;
-let pumping = false;
+let pumping = false, peeling = false, peelSecs = 0, peelSent = 0;
 function pressAct() {
   SFX.unlock();
+  if (playing() && crew.fries?.open && atShed(me) && !me.wand) { peeling = true; return; }
   if (playing() && onDock(me) && !me.diving && crew.players.some(p => p.diving && p.id !== me.id)) { pumping = true; link.act({ t: 'pump', on: true }); return; }
   if (me.wand && playing() && me.down <= 0) { spraying = true; return; }
   if (playing() && me.down <= 0 && canSwing()) { charging = performance.now(); return; }
   act();
 }
 function releaseAct() {
-  spraying = false;
+  spraying = false; peeling = false;
   if (pumping) { pumping = false; link.act({ t: 'pump', on: false }); }
   if (charging === null) return;
   const power = Math.min(1, (performance.now() - charging) / 1000 / SWING_FULL);
@@ -902,7 +928,7 @@ const esc = s => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 function hud() {
   $('cash').textContent = money(crew.cash);
   const v = crew.value;
-  $('value').textContent = v ? `BV ${money(v.bv)}${v.hustle > 1 ? ` ×${v.hustle}` : ''} · curb ${Math.round((v.curb ?? 0) * 100)}%${crew.pond?.unlocked ? ` · pond ${Math.round((v.pond ?? 0) * 100)}%` : ''}${crew.quota ? ` · target ${money(crew.quota.target)}` : ''}${crew.cart ? ` · cart ${(crew.cart.mud ?? 0) < 0.05 ? 'spotless ✨' : (crew.cart.mud ?? 0) < 0.4 ? 'dusty' : 'MUDDY'}` : ''}${crew.lastCall ? ' · LAST CALL' : ''}` : '';
+  $('value').textContent = v ? `BV ${money(v.bv)}${v.hustle > 1 ? ` ×${v.hustle}` : ''} · curb ${Math.round((v.curb ?? 0) * 100)}%${crew.pond?.unlocked ? ` · pond ${Math.round((v.pond ?? 0) * 100)}%` : ''}${crew.fries?.open ? ` · fries ${Math.round((v.fries ?? 0) * 100)}%` : ''}${crew.quota ? ` · target ${money(crew.quota.target)}` : ''}${crew.cart ? ` · cart ${(crew.cart.mud ?? 0) < 0.05 ? 'spotless ✨' : (crew.cart.mud ?? 0) < 0.4 ? 'dusty' : 'MUDDY'}` : ''}${crew.lastCall ? ' · LAST CALL' : ''}` : '';
   const n = carrying(), cap = gp.pocket, pad = document.body.classList.contains('pad');
   const btn = pad ? GLYPH.A : 'Click';          // use: pick up, swing
   const ibtn = pad ? GLYPH.X : 'E';             // the bucket stand
@@ -919,6 +945,8 @@ function hud() {
     : me.diving ? `${nearestBall(POND.REACH) ? `${btn}  Grab` : 'Feel around for balls'} · bag ${me.bag}/${POND.BAG} · air ${Math.ceil(me.air ?? 0)}s`
     : onDock(me) && crew.players.some(p => p.diving && p.id !== me.id) ? `Hold ${btn} to pump air to your diver`
     : onDock(me) ? 'Walk into the pond to dive for sunk balls'
+    : atShed(me) && crew.fries?.open ? `${peeling ? 'Peeling…' : `Hold ${btn} to peel potatoes`} · fries ${crew.fries.stock}/${crew.fries.max}`
+    : atShed(me) ? 'The snack shed is boarded up (Tab: the shop can reopen it)'
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
     : me.wand ? `Hold ${btn} to spray the cart · ${ibtn} put the wand back`
@@ -1031,6 +1059,8 @@ function frame(now) {
   myGear.visible = fpGear.visible = me.down <= 0 && !drivingNow;
   if (!sprayHiss && me.wand) sprayHiss = SFX.sprayLoop?.() ?? null;
   updateSpray(dt, now);
+  if (peeling && playing() && atShed(me) && me.down <= 0) peelSecs += dt; else peeling = peeling && atShed(me);
+  if (peelSecs > 0 && now - peelSent > 250) { link.act({ t: 'peel', secs: +peelSecs.toFixed(3) }); peelSecs = 0; peelSent = now; }
 
   // The cart: my own pose while I drive, otherwise eased toward the server's.
   if (cartView && crew.cart) {

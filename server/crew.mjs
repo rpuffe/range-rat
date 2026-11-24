@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall, ballHitsPlayer, atStand, clampToField,
   SHOP_BY_ID, nextPrice, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
   gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT, FIXTURES, FIXTURE_BY_ID, KIND_W, BALLS_OUTSTANDING, payFor,
-  upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch } from '../web/js/sim.js';
+  upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed } from '../web/js/sim.js';
 
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: codes get read aloud
 export const CODE_LEN = 4;
@@ -67,6 +67,8 @@ export class Crew {
     this.commendations = Math.max(0, Math.min(10, Math.floor(Number(save?.commendations) || 0)));
     this.stamps = Math.max(0, Math.floor(Number(save?.stamps) || 0));
     this.quota = null;               // { q, target } once a shift sets it
+    this.fries = Math.max(0, Math.min(FRIES.MAX, Number(save?.fries) || 0));   // baskets in stock
+    this.swingsToEat = FRIES.EAT_EVERY; this.autoFryT = 0;
     this.fixtures = {};              // fixture id -> mud 0..1 (Curb Appeal)
     this.perks = perks(this.up);
     this.helpers = [];
@@ -126,7 +128,8 @@ export class Crew {
   }
   valueNow() {
     return ballValue({ perks: this.perks, mult: this.mult, cart: this.cart, curb: this.curb(), commendations: this.commendations,
-      pond: this.day >= POND.FROM_DAY ? pondClarity(this.sunkCount()) : null });
+      pond: this.day >= POND.FROM_DAY ? pondClarity(this.sunkCount()) : null,
+      fries: this.perks.shed ? this.fries / FRIES.MAX : null });
   }
   ballPrice() { return this.valueNow().value; }
   title() { return this.stamps >= 6 ? 'Senior Range Rat' : this.stamps >= 3 ? 'Range Rat II' : 'Range Rat'; }
@@ -172,6 +175,7 @@ export class Crew {
     for (const a of Array.isArray(msg.a) ? msg.a.slice(0, 8) : []) {
       if (a?.t === 'pickup') { if (!(a.cart ? this.cartPickup(p, a.ball) : a.pond ? this.pondPickup(p, a.ball) : this.pickup(p, a.ball))) denied.push(a.ball); }
       else if (a?.t === 'pump') p.pumping = !!a.on && onDock(p) && !p.diving;
+      else if (a?.t === 'peel') this.peel(p, a.secs);
       else if (a?.t === 'deposit') this.deposit(p);
       else if (a?.t === 'start') this.startShift();
       else if (a?.t === 'buy') this.buy(p, a.id);
@@ -423,15 +427,32 @@ export class Crew {
     for (const [id, b] of this.balls) if (!b.sunk) { this.balls.delete(id); this.events.push({ t: 'gone', id }); }
     this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false;
     this.gary = null;
-    if (this.day > 1) this.morningMud();
+    if (this.day > 1) { this.morningMud(); this.fries = Math.floor(this.fries / 2); }   // the fries went cold overnight
     // Corporate's memo: today's Ball Value target, set after the shop so a purchase can't move the goalposts.
-    const v = this.valueNow(), q = quotaQ(this.day, upkeepCeiling({ pond: this.day >= POND.FROM_DAY ? 1 : null }));
+    const v = this.valueNow(), q = quotaQ(this.day, upkeepCeiling({ pond: this.day >= POND.FROM_DAY ? 1 : null, fries: this.perks.shed ? 1 : null }));
     this.quota = q == null ? null : { q, target: cents(v.rate * (1 + q)) };
     this.events.push({ t: 'memo', day: this.day, target: this.quota?.target ?? null, text: memoText(this.day, this.quota, this.rng) });
     if (this.cart) { this.cart.boostT = 0; if (!this.cart.driver) Object.assign(this.cart, CART.PARK, { v: 0 }); }
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'shift', day: this.day });
+  }
+
+  // ---- the snack shed ------------------------------------------------------------
+  peel(p, secs) {
+    const now = this.now();
+    if (!this.perks.shed || !atShed(p) || p.down > 0 || this.driving(p) || !Number.isFinite(secs) || secs <= 0) return false;
+    const s = Math.min(secs, 0.5, (now - (p.peelAt ?? 0)) / 1000 + 0.1);
+    p.peelAt = now;
+    p.peeled = (p.peeled ?? 0) + s;
+    while (p.peeled >= FRIES.PEEL_SECS) { p.peeled -= FRIES.PEEL_SECS; this.addFries(1, p.id); }
+    return true;
+  }
+  addFries(n, by) {
+    if (this.fries >= FRIES.MAX) return;
+    this.fries = Math.min(FRIES.MAX, this.fries + n);
+    this.stats.fries = (this.stats.fries ?? 0) + n; this.dirty = true;
+    this.events.push({ t: 'fries', by, stock: this.fries });
   }
 
   // ---- the pond ----------------------------------------------------------------
@@ -576,6 +597,7 @@ export class Crew {
           const lead = !lastCall && this.day >= POND.FROM_DAY && this.rng() < POND.LEAD_CHANCE;
           const b = this.addBall(lead ? { ...leadLaunch(m, this.rng), kind: 'lead' } : { ...launch(m, this.rng), kind: lastCall ? 'glow' : 'range' });
           m.next = swingGap(this.rng) * this.perks.swingGapMult / (lastCall ? LAST_CALL.SWING : 1);
+          if (this.perks.shed && --this.swingsToEat <= 0) { this.swingsToEat = FRIES.EAT_EVERY; this.fries = Math.max(0, this.fries - 1); }
           const id = 'mat' + m.i;
           if (b) this.fixtures[id] = Math.min(1, this.fixtures[id] + 0.006);   // every swing scuffs the mat
         }
@@ -585,6 +607,7 @@ export class Crew {
     this.stepHelpers(dt);
     this.stepGary(dt);
     this.stepPond(dt);
+    if (this.phase === 'shift' && this.perks.autoFry && (this.autoFryT += dt) >= this.perks.autoFry) { this.autoFryT = 0; this.addFries(1, 'machine'); }
 
     const c = this.cart;
     for (const b of this.balls.values()) {
@@ -681,6 +704,7 @@ export class Crew {
       silo: this.stats.deposited, lastCall: this.lastCall(),
       gary: this.gary && { phase: this.gary.phase, t: +this.gary.t.toFixed(1), x: +this.gary.x.toFixed(2), z: +this.gary.z.toFixed(2), yaw: +this.gary.yaw.toFixed(3) },
       pond: { sunk: this.sunkCount(), unlocked: this.day >= POND.FROM_DAY },
+      fries: { stock: this.fries, max: FRIES.MAX, open: !!this.perks.shed },
       fixtures: Object.fromEntries(Object.entries(this.fixtures).map(([k, v]) => [k, +v.toFixed(2)])),
       helpers: this.helpers.map(h => ({ id: h.id, name: h.name, x: +h.x.toFixed(2), z: +h.z.toFixed(2), yaw: +h.yaw.toFixed(3), pocket: h.pocket, down: +h.down.toFixed(2) })),
       cart: c && { x: +c.x.toFixed(2), z: +c.z.toFixed(2), yaw: +c.yaw.toFixed(3), driver: c.driver, load: c.load, boost: +c.boostT.toFixed(1), mud: +c.mud.toFixed(3) },
@@ -706,7 +730,7 @@ export class Crew {
   toSave() {
     // `day` is the next day to play: a finished shift has been banked.
     const day = this.phase === 'report' ? this.day + 1 : this.day;
-    return { v: 1, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, gear: this.gearByName, commendations: this.commendations, stamps: this.stamps, pondSunk: this.sunkCount(), savedAt: new Date(this.now()).toISOString() };
+    return { v: 1, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, gear: this.gearByName, commendations: this.commendations, stamps: this.stamps, pondSunk: this.sunkCount(), fries: this.fries, savedAt: new Date(this.now()).toISOString() };
   }
 }
 
