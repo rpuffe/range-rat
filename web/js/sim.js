@@ -209,8 +209,14 @@ export const SHOP = [
   ] },
   { id: 'washer', title: 'Ball washer', tiers: [
     { name: 'Muddy balls', desc: 'A ball banks for $1.' },
-    { name: 'Hand-crank washer', cost: 40, desc: 'Clean balls: $2 each.' },
-    { name: 'Electric washer', cost: 160, desc: 'Sparkling balls: $3 each.' },
+    { name: 'Hand-crank washer', cost: 40, desc: 'Clean balls: $2 each, once someone cranks them through the ball washer by the stand.' },
+    { name: 'Electric washer', cost: 160, desc: 'Sparkling balls: $3 each, and it washes 1 ball a second on its own.' },
+    { name: 'Industrial ball wash', cost: 6000, minVenue: 1, desc: 'Washes 5 balls a second on its own. A ball car wash. It has a name. The name is Brent.' },
+  ] },
+  { id: 'amen', title: 'Club amenities', minVenue: 1, tiers: [
+    { name: 'None', desc: 'The members have noticed.' },
+    { name: 'Turbo nozzle', cost: 3000, desc: 'The pressure washer cleans twice as fast and reaches 9 m. Corporate approved this nozzle after a brief incident.' },
+    { name: 'Covered bays', cost: 8000, desc: 'Mats get no morning mud and scuff half as fast. The members do not like to see dirt. Or you.' },
   ] },
   { id: 'ads', title: 'Advertising', tiers: [
     { name: 'Word of mouth', desc: 'Customers trickle in.' },
@@ -235,12 +241,12 @@ export const HELPER_NAMES = ['Kyle', 'Madison', 'Tanner', 'Brayden'];
 // Crew upgrades scale with crew size (balanced for 4): ×1 solo, ×2.2 for four.
 // Personal gear doesn't: everyone buys their own at the catalog price.
 export const priceScale = crewSize => 1 + 0.4 * (Math.max(1, crewSize) - 1);
-export function nextPrice(id, up, crewSize, gearLevel = 0) {
-  const item = SHOP_BY_ID[id];
-  if (!item) return null;
+export function nextPrice(id, up, crewSize, gearLevel = 0, venue = 0) {
+  const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
+  if (!item || (item.minVenue ?? 0) > venue) return null;
   const lvl = item.personal ? gearLevel : up?.[id] ?? 0;
   const t = item.tiers[lvl + 1];
-  if (!t) return null;                                 // maxed out
+  if (!t || (t.minVenue ?? 0) > venue) return null;    // maxed out, or not at this venue yet
   return item.personal ? t.cost : Math.round(t.cost * priceScale(crewSize));
 }
 
@@ -262,7 +268,11 @@ export const sprintSecs = shoes => 1.5 + 1.25 * (shoes ?? 0);   // 1.5 s in loaf
 export function perks(up = {}) {
   return {
     helpers: up.helpers ?? 0,
-    price: SIM.BALL_PRICE + (up.washer ?? 0),
+    price: SIM.BALL_PRICE + Math.min(2, up.washer ?? 0),
+    washer: up.washer ?? 0,
+    washAuto: [0, 0, 1, 5][up.washer ?? 0],          // balls a second the ball washer cleans on its own
+    turbo: (up.amen ?? 0) >= 1,
+    covered: (up.amen ?? 0) >= 2,
     swingGapMult: [1, 0.8, 0.645, 0.5][up.ads ?? 0],
     walk: SIM.WALK * (1 + 0.15 * (up.shoes ?? 0)),
     knockSecs: up.hardhat ? 1 : SIM.KNOCK_SECS,
@@ -352,15 +362,38 @@ export function quotaQ(day, ceiling) {
 }
 export const LAST_CALL = { SECS: 60, FROM_DAY: 2, SWING: 1.5 };
 
+// ---- promotion and the venue ladder (council round 2, §4.1–4.2) -------------
+export const VENUE_RULES = [
+  { name: 'Muni Range', title: 'Range Rat' },
+  { name: 'Range Club', title: 'Club Retrieval Associate', fee: 2500, writeOff: 1_200_000_000, memo: "1,200,000,000 balls have been reclassified as members' property.", pa: 'club', eatEvery: 5 },
+  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 40000, writeOff: 1_500_000_000, memo: '1,500,000,000 balls have been reclassified as experiential.', pa: 'tiered', eatEvery: 5 },
+  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 200000, writeOff: 800_000_000, memo: '800,000,000 balls have been sold to fans as souvenirs.', pa: 'stadium', eatEvery: 5 },
+  { name: 'County Range', title: 'County Retrieval Director', fee: 1_000_000, writeOff: 712_000_000, memo: '712,000,000 balls have been reclassified as the county.', pa: 'county', eatEvery: 5 },
+  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 5_000_000, writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 5 },
+];
+export const PROMO_STAMPS = 3;
+export const ONE_YEAR = 1958;
+// Quota from the Club on: a share of the headroom, growing with days at the venue.
+// Softened from the council's 0.45..0.8 so a casual crew makes quota without every chore covered.
+export const venueQuotaF = vd => Math.min(0.7, [0.35, 0.4, 0.45, 0.5][vd - 1] ?? 0.5 + 0.025 * (vd - 4));
+
+// ---- the ball washer station (council round 2, §4.4) ------------------------
+export const WASHER = { x: 21.5, z: 6, REACH: 1.8, CRANK_MAX: 2.5 };
+export const WASHER_HANDLES = { L: { x: 20.1, z: 6 }, R: { x: 22.9, z: 6 } };
+export const atHandle = (p, side) => Math.hypot(p.x - WASHER_HANDLES[side].x, p.z - WASHER_HANDLES[side].z) < WASHER.REACH;
+
+// ---- gear grime (council round 2, §4.7) ------------------------------------
+export const gearGrimeFactor = grime => 1 + 0.25 * (1 - Math.max(0, Math.min(3, grime ?? 0)) / 3);
+
 // The pond (council round 1, #5): balls that land in it sink and stay overnight.
 // Pond Clarity counts toward Upkeep from day 4, when lead balls start arriving.
 export const POND = {
   x: -12, z: -78, r: 8,
   DOCK: { x: -12, z: -68.5 },     // the jetty on the near shore: pump air from here
   DOCK_R: 2.2,
-  FROM_DAY: 4,                    // Pond Clarity and lead balls
+  FROM_VENUE: 1,                  // the pond (and lead balls) open with the Range Club
   LEAD_CHANCE: 0.06,
-  CLEAR_AT: 30,                   // clarity = 1 - sunk / CLEAR_AT
+  CLEAR_AT: 80,                   // clarity = 1 - sunk / CLEAR_AT (softened from 30: a crew that skips the pond for a shift still makes quota)
   MAX_SUNK: 60,
   BOTTOM: -1.1,                   // where sunk balls rest
   AIR: 20,                        // seconds of air (mask)

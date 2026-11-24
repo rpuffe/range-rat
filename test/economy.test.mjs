@@ -253,17 +253,17 @@ test('banking pays weights x BV, in whole cents', () => {
   assert.deepEqual(ev.map(e => e.cash), [4.44, 10.36]);
 });
 
-test('a player depositing at the stand is paid at Gear 1, whatever the cart looks like', () => {
+test('a player depositing at the stand is paid at their own grime Gear (clean = x1.25), whatever the cart looks like', () => {
   const { crew } = makeCrew({ up: { cart: 1 } });
   const a = addPlayer(crew, 'A', SIM.STAND.x, SIM.STAND.z);
   crew.cart.mud = 0;
-  a.pocket = 4;
+  a.pocket = 4; a.pocketW = 4;
   act(crew, a, { t: 'deposit' });
-  assert.equal(crew.cash, 6);
+  assert.equal(crew.cash, 7.5, '4 x BV 1.5 x 1.25');
   crew.cart.mud = 1;
   a.pocket = 10; a.pocketW = 10;   // deposit() zeroes pocketW; real pickups keep both in step
   act(crew, a, { t: 'deposit' });
-  assert.equal(crew.cash, 21);
+  assert.equal(crew.cash, 26.25, '+ 10 x 1.5 x 1.25: the muddy cart changes nothing for a Rat');
 });
 
 // ---- mud from driving ---------------------------------------------------------
@@ -403,17 +403,17 @@ test('a wash is capped at 0.5 s', () => {
   assert.equal(crew.stats.washed, 0.5);
 });
 
-test('a wash is capped at the time since the last wash plus 0.1 s', () => {
+test('a wash is capped at the time since the last wash (x1.15 jitter room, never free time)', () => {
   const { crew, clock, p } = washSetup(0.8);
   crew.wash(p, 0.5);                                  // sets washAt = now
   const m1 = crew.cart.mud;
-  crew.wash(p, 0.5);                                  // no time passed: only 0.1 s counts
-  near(m1 - crew.cart.mud, WASH.RATE * 0.1);
+  crew.wash(p, 0.5);                                  // no time passed: nothing counts
+  near(m1 - crew.cart.mud, 0);
   clock.t += 300;
   const m2 = crew.cart.mud;
-  crew.wash(p, 0.5);                                  // 0.3 s + 0.1 s
-  near(m2 - crew.cart.mud, WASH.RATE * 0.4);
-  clock.t += 100;
+  crew.wash(p, 0.5);                                  // 0.3 s x 1.15
+  near(m2 - crew.cart.mud, WASH.RATE * 0.345);
+  clock.t += 200;
   const m3 = crew.cart.mud;
   crew.wash(p, 0.15);                                 // the caller's smaller figure wins
   near(m3 - crew.cart.mud, WASH.RATE * 0.15);
@@ -422,7 +422,7 @@ test('a wash is capped at the time since the last wash plus 0.1 s', () => {
 test('no spraying faster than real time: a flood of washes adds up to about the clock', () => {
   const { crew, p } = washSetup(1);
   for (let i = 0; i < 8; i++) act(crew, p, { t: 'wash', secs: 0.5 });   // 8 messages in one instant
-  near(crew.cart.mud, 1 - WASH.RATE * 0.5 - 7 * WASH.RATE * 0.1);
+  near(crew.cart.mud, 1 - WASH.RATE * 0.5);           // only the first counts: no time passed for the rest
 });
 
 test('washing needs the wand', () => {

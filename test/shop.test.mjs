@@ -88,9 +88,15 @@ test('the washer makes every banked ball worth more', () => {
   const { crew } = makeCrew({ up: { washer: 2 } });
   const a = crew.join('A');
   crew.input(a, { a: [{ t: 'start' }] });
-  a.pocket = 3; a.x = SIM.STAND.x; a.z = SIM.STAND.z;
+  a.pocket = 3; a.pocketW = 3; a.x = SIM.STAND.x; a.z = SIM.STAND.z;
   crew.input(a, { a: [{ t: 'deposit' }] });
-  assert.equal(crew.cash, 13.5, 'washer 2: rate $3, BV $4.5 at Curb 1, people have Gear 1');
+  // washer 2: rate $3, BV $4.5 at Curb 1, a clean Rat x1.25 = $16.88 in all. The muddy third is paid now.
+  assert.equal(crew.cash, 5.63, 'the muddy price (full / 3) is paid at the stand');
+  assert.equal(crew.hopper.n, 3);
+  assert.equal(crew.hopper.credit, 11.25, 'the premium waits in the hopper');
+  crew.washBalls(3, a.id);
+  assert.equal(crew.cash, 16.88, 'washed: every ball pays the full washer price');
+  assert.equal(crew.hopper.n, 0);
 });
 
 test('advertising: customers hit more balls', () => {
@@ -129,7 +135,11 @@ test('at closing, helpers turn in what they carry and it counts today', () => {
   run(6);
   assert.equal(crew.phase, 'report');
   assert.equal(crew.report.helped, 4);
-  assert.equal(crew.report.cash, 12, '4 balls x BV $3 (rate 2 x Upkeep 1.5), helpers have Gear 1');
+  // 4 balls x BV $3 (rate 2 x Upkeep 1.5), helpers have Gear 1 = $12: $6 muddy now, $6 waiting.
+  // The bell washes half of what is left (2 balls) at half pay: $6 x 0.5 x 0.5 = $1.50.
+  assert.equal(crew.report.cash, 7.5, 'muddy $6 + the night crew $1.50');
+  assert.equal(crew.report.unwashed, 2);
+  assert.equal(crew.report.lostPremium, 4.5);
   assert.equal(crew.helpers[0].pocket, 0);
 });
 
@@ -158,6 +168,6 @@ test('upgrades and helpers survive a save', () => {
 
 test('a tampered save cannot give tiers that do not exist', () => {
   const { crew } = makeCrew({ up: { gear: 99, helpers: -3, bogus: 2, washer: 99 }, gear: { A: 99, B: -2 } });
-  assert.deepEqual(crew.up, { washer: 2 }, 'personal gear is not a crew upgrade');
+  assert.deepEqual(crew.up, { washer: 3 }, 'personal gear is not a crew upgrade');
   assert.deepEqual(crew.gearByName, { A: 3 });
 });

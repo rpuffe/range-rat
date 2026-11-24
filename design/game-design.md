@@ -235,3 +235,14 @@ Three only, and each player picks their own:
 
 - Inside jokes: which ones besides power washing and potatoes?
 - How long a shift really is, after a playtest.
+
+## Tuning decisions (play-test, 2026-11-24)
+
+- **Pond Clarity is gentler.** Clarity is `1 − sunk / 80` (the council had /30),
+  and the Club-and-up quota is `q = (ceiling − 1) × f` with f = 0.35, 0.40, 0.45,
+  0.50, then +0.025 a day up to 0.70 (the council had 0.45 → 0.80). Why: in a
+  play-test the pond fell to 30% within minutes and dragged Ball Value under the
+  target. A casual crew of 4 that skips the pond for a shift should still make
+  quota with clean fixtures and fries; diving is a bonus, not a tax.
+- **The pond waits for the Range Club** (owner's call): no pond, no lead balls and
+  no Pond Clarity dial at the Muni.

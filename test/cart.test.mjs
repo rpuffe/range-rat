@@ -354,9 +354,11 @@ test('pulling up to the stand banks the load at the ball price', () => {
   c.x = SIM.STAND.x + 2; c.z = SIM.STAND.z + 2; c.mud = 0;   // spotless cart: Gear 1.25
   run(0.25);
   assert.equal(c.load, 0);
-  assert.equal(crew.cash, 18.75, 'washer tier 1: rate $2, BV $3 at Curb 1, x 1.25 Gear for a spotless cart');
+  assert.equal(crew.cash, 9.38, 'washer tier 1: rate $2, BV $3 at Curb 1, x 1.25 Gear = $18.75 in all; the muddy half (/ price 2) is paid now');
+  assert.equal(crew.hopper.n, 5);
+  assert.equal(crew.hopper.credit, 9.37, 'the rest waits in the hopper');
   assert.equal(crew.stats.deposited, 5);
-  assert.equal(crew.stats.cash, 18.75);
+  assert.equal(crew.stats.cash, 9.38);
   const ev = crew.flush().ev.find(e => e.t === 'cash' && e.kind === 'cart');
   assert.ok(ev);
   assert.equal(ev.n, 5);
@@ -683,7 +685,7 @@ test('mult raises the multiplier, caps at MAX_MULT, and multiplies banked cash',
 
   crew.cart.mud = 0;
   assert.equal(crew.ballPrice(), 1.5 * CART.MAX_MULT, 'BV $1.5 x Hustle 2; the cart Gear is applied at the deposit, not in the headline');
-  crew.cart.load = 4;
+  crew.cart.load = 4; crew.cart.loadW = 4;
   const before = crew.cash;
   crew.cart.x = SIM.STAND.x + 2; crew.cart.z = SIM.STAND.z + 2;
   run(0.25);
@@ -791,7 +793,7 @@ test('endShift banks any cart load into the report', () => {
   openShift(crew);
   const d = addPlayer(crew, 'D', CART.PARK.x - 1, CART.PARK.z);
   act(crew, d, { t: 'board' });
-  crew.cart.load = 7;
+  crew.cart.load = 7; crew.cart.loadW = 7;
   crew.mult = 2;
   crew.cart.mud = 0;
   crew.cart.boostT = 9;
@@ -809,7 +811,7 @@ test('endShift banks any cart load into the report', () => {
 test('endShift banks a driverless cart\'s load too', () => {
   const { crew, run } = makeCrew({ up: { cart: 1 } }, 5);
   openShift(crew);
-  crew.cart.load = 3;
+  crew.cart.load = 3; crew.cart.loadW = 3;
   run(6);
   assert.equal(crew.cash, 5.63, '3 balls x BV 1.5 x Gear 1.25 = 5.625, to cents (spotless cart)');
   assert.equal(crew.report.deposited, 3);

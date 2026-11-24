@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Crew } from '../server/crew.mjs';
 import { SIM, CART, WASH, FIXTURES, FIXTURE_BY_ID, KIND_W, VENUES, LAST_CALL, BALLS_OUTSTANDING,
-  perks, ballValue, payFor, quotaQ, upkeepCeiling } from '../web/js/sim.js';
+  perks, ballValue, payFor, quotaQ, upkeepCeiling, VENUE_RULES } from '../web/js/sim.js';
 
 // A crew on a fake clock. `run(secs)` steps 20 ticks a second.
 function makeCrew(save = null, shiftSecs = 600, seed = 11) {
@@ -370,13 +370,13 @@ test('a player\'s pocket carries weights: a range, glow and lead ball bank for 6
   act(crew, a, { t: 'deposit' });
   assert.equal(a.pocket, 0);
   assert.equal(a.pocketW, 0);
-  assert.equal(crew.cash, 9, '6 x BV 1.5, people have Gear 1');
+  assert.equal(crew.cash, 11.25, '6 x BV 1.5, a clean Rat (grime 0) has Gear 1.25');
   assert.equal(crew.stats.deposited, 3, 'the count is balls, not weight');
-  assert.equal(crew.stats.cash, 9);
+  assert.equal(crew.stats.cash, 11.25);
   const ev = crew.flush().ev.find(e => e.t === 'cash');
   assert.equal(ev.n, 3);
-  assert.equal(ev.cash, 9);
-  assert.equal(ev.per, 3);
+  assert.equal(ev.cash, 11.25);
+  assert.equal(ev.per, 3.75);
 });
 
 test('a ball of no known kind weighs 1', () => {
@@ -402,7 +402,7 @@ test('a knock-down spills the pocket and resets its weight', () => {
   act(crew, a, { t: 'pickup', ball: restingBall(crew, a.x, a.z, 'range').id });
   assert.equal(a.pocketW, 1, 'only the new ball counts');
   act(crew, a, { t: 'deposit' });
-  assert.equal(crew.cash, 1.5);
+  assert.equal(crew.cash, 1.75, 'BV 1.5 x Gear 1.1667: the knock-down left one layer of grime');
 });
 
 test('the cart\'s load carries weights, and a cart deposit adds Gear 1 + 0.25 x cleanliness', () => {
@@ -588,7 +588,8 @@ test('no quota on day 1: the memo says welcome, the report has no quota', () => 
 test('the day-2 target is Rate x (1 + 0.15), set at the start of the shift', () => {
   const { crew } = makeCrew({ day: 2 }, 600);
   crew.startShift();
-  assert.deepEqual(crew.quota, { q: 0.15, target: 1.15 });
+  assert.deepEqual(crew.quota, { q: 0.15 }, 'the quota stores only q; the target follows the live Rate');
+  assert.equal(crew.quotaTarget(), 1.15);
   assert.deepEqual(crew.snapshot().quota, { q: 0.15, target: 1.15 });
   const memo = crew.flush().ev.find(e => e.t === 'memo');
   assert.equal(memo.day, 2);
@@ -597,24 +598,26 @@ test('the day-2 target is Rate x (1 + 0.15), set at the start of the shift', () 
 
   const { crew: b } = makeCrew({ day: 2, up: { washer: 1 }, commendations: 4 }, 600);
   b.startShift();
-  assert.equal(b.quota.target, 2.76, 'rate 2 x 1.2 = 2.4, x 1.15');
+  assert.equal(b.quotaTarget(), 2.76, 'rate 2 x 1.2 = 2.4, x 1.15');
   assert.match(b.flush().ev.find(e => e.t === 'memo').text, /\$2\.76/);
 
   assert.equal(makeCrew({ day: 3 }).crew.quota, null, 'nothing before the shift starts');
   const d3 = makeCrew({ day: 3 }).crew; d3.startShift();
-  assert.deepEqual(d3.quota, { q: 0.2, target: 1.2 });
+  assert.deepEqual(d3.quota, { q: 0.2 });
+  assert.equal(d3.quotaTarget(), 1.2);
   const d6 = makeCrew({ day: 6 }).crew; d6.startShift();
-  assert.equal(d6.quota.target, 1.4);
+  assert.equal(d6.quotaTarget(), 1.4);
 });
 
-test('the target ignores curb, and a purchase before the bell cannot move it', () => {
+test('the target ignores curb; a purchase moves the target WITH the Rate, so it cannot buy the quota', () => {
   const { crew } = makeCrew({ day: 2 }, 600);
   crew.startShift();
-  assert.equal(crew.quota.target, 1.15, 'the morning mud does not change the goalposts');
+  assert.equal(crew.quotaTarget(), 1.15, 'the morning mud does not change the goalposts');
   crew.cash = 1000;
   const p = addPlayer(crew, 'A', 0, 0);
   act(crew, p, { t: 'buy', id: 'washer' });
-  assert.equal(crew.quota.target, 1.15);
+  assert.equal(crew.quota.q, 0.15, 'q is fixed for the shift');
+  assert.equal(crew.quotaTarget(), 2.3, 'Rate 2 x (1 + 0.15): the red line rides up with the purchase');
 });
 
 test('hitting the quota: bonus of 15% of the day\'s cash, a stamp, a quota event, in the report', () => {
@@ -646,8 +649,8 @@ test('a third stamp makes you Range Rat II, in the report', () => {
   crew.bank(1, 'x');
   run(6);
   assert.equal(crew.stamps, 3);
-  assert.equal(crew.report.quota.title, 'Range Rat II');
-  assert.equal(crew.title(), 'Range Rat II');
+  assert.equal(crew.report.quota.title, 'Range Rat', 'titles come from the venue now, not from stamps');
+  assert.equal(crew.title(), 'Range Rat');
 });
 
 test('missing the quota: no bonus, no stamp, still an event and a report entry', () => {
@@ -712,15 +715,12 @@ test('a day with no deposits is a MISS even when BV beats the target', () => {
   assert.equal(crew.flush().ev.filter(e => e.t === 'quota' && !e.hit).length, 1);
 });
 
-test('titles: Range Rat, Range Rat II at 3 stamps, Senior Range Rat at 6', () => {
-  const title = stamps => makeCrew({ stamps }).crew.title();
-  assert.equal(title(0), 'Range Rat');
-  assert.equal(title(2), 'Range Rat');
-  assert.equal(title(3), 'Range Rat II');
-  assert.equal(title(5), 'Range Rat II');
-  assert.equal(title(6), 'Senior Range Rat');
-  assert.equal(title(40), 'Senior Range Rat');
-  assert.equal(makeCrew({ stamps: 3 }).crew.snapshot().title, 'Range Rat II');
+test('titles come from the venue, never from stamps; endless mode is Owner', () => {
+  const title = save => makeCrew(save).crew.title();
+  for (const stamps of [0, 2, 3, 5, 6, 40]) assert.equal(title({ stamps }), 'Range Rat', 'stamps ' + stamps);
+  VENUE_RULES.forEach((r, v) => assert.equal(title({ venue: v }), r.title, 'venue ' + v));
+  assert.equal(title({ venue: 5, endless: true }), 'Owner');
+  assert.equal(makeCrew({ stamps: 3 }).crew.snapshot().title, 'Range Rat');
   assert.equal(makeCrew({ stamps: 3 }).crew.snapshot().stamps, 3);
 });
 
@@ -734,7 +734,7 @@ test('stamps and commendations are saved and restored', () => {
   const { crew: back } = makeCrew(save);
   assert.equal(back.stamps, 4);
   assert.equal(back.commendations, 3);
-  assert.equal(back.title(), 'Range Rat II');
+  assert.equal(back.title(), 'Range Rat');
   const s = back.snapshot();
   assert.equal(s.stamps, 4);
   assert.equal(s.commendations, 3);
@@ -748,7 +748,8 @@ test('a stamp earned today is in the save', () => {
   run(6);
   assert.equal(crew.toSave().stamps, 3);
   assert.equal(crew.toSave().day, 3);
-  assert.equal(makeCrew(crew.toSave()).crew.title(), 'Range Rat II');
+  assert.equal(makeCrew(crew.toSave()).crew.stamps, 3);
+  assert.equal(makeCrew(crew.toSave()).crew.title(), 'Range Rat');
 });
 
 test('junk stamps and commendations in a save are cleaned', () => {
@@ -798,7 +799,7 @@ test('outstanding does not double count today once the shift is banked into the 
   assert.equal(crew.phase, 'report');
   assert.equal(crew.totals.deposited, 5);
   assert.equal(crew.snapshot().outstanding, BALLS_OUTSTANDING - 5,
-    'REAL BUG: endShift adds the day to totals.deposited but stats.deposited is only reset at the next startShift, so the report-phase snapshot subtracts today twice');
+    'the report-phase snapshot must not subtract today twice (outstanding is a stored field now)');
   openShift(crew, 0);
   assert.equal(crew.snapshot().outstanding, BALLS_OUTSTANDING - 5, 'next morning it is right again');
 });
@@ -818,7 +819,7 @@ test('a memo fires at every shift start, with text, and a target from day 2', ()
     if (d === 1) assert.equal(memos[0].target, null);
     else {
       assert.equal(typeof memos[0].target, 'number');
-      assert.equal(memos[0].target, crew.quota.target);
+      assert.equal(memos[0].target, crew.quotaTarget());
       assert.match(memos[0].text, new RegExp('\\$' + memos[0].target.toFixed(2).replace('.', '\\.')));
     }
     seen.push(memos[0].text);

@@ -17,11 +17,11 @@ import { readPad } from '../web/js/pad.js';
 const log = document.getElementById('log'), lines = [];
 let ac;
 const beep = (f, d = 0.08, type = 'square') => { try { ac ??= new AudioContext(); const o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.value = f; g.gain.value = 0.04; g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + d); o.connect(g).connect(ac.destination); o.start(); o.stop(ac.currentTime + d); } catch {} };
-const F = { peel: 600, chop: 160, 'sizzle-on': 900, 'sizzle-off': 300, ding: 1320, salt: 1000, serve: 440 };
+const F = { peel: 600, chop: 160, 'sizzle-on': 900, 'sizzle-off': 300, ding: 1320, salt: 1000, serve: 440, grill: 700, roll: 380, squirt: 520, pour: 260, clink: 1500 };
 const k = createKitchen({
   root: document.body,
   onSound: n => beep(F[n] ?? 500, n === 'ding' ? 0.3 : 0.07, n === 'ding' ? 'sine' : 'square'),
-  onServe: r => { lines.unshift(JSON.stringify(r)); log.textContent = lines.slice(0, 6).join('\n'); },
+  onServe: r => { lines.unshift(r.item.toUpperCase().padEnd(7) + ' ' + r.quality.padEnd(8) + JSON.stringify(r)); log.textContent = lines.slice(0, 6).join('\n'); },
 });
 document.getElementById('open').onclick = () => k.open();
 addEventListener('pointerdown', e => { if (e.target.id !== 'open') k.handlePointer('down', e); });

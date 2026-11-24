@@ -2,12 +2,17 @@
 // players could fight over (balls, pockets, the cart, cash, the shift clock);
 // a player's own position (and the cart's, while they drive it) is theirs to
 // report, clamped to a plausible speed.
+//
+// Design records: design/council-round1.md (story, Ball Value, the first five
+// features) and design/council-round2.md (promotion, the PA, the ball washer,
+// grime, Ready Up, the ledger, records, the venues, the Last Bucket).
 
 import crypto from 'node:crypto';
 import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall, ballHitsPlayer, atStand, clampToField,
   SHOP_BY_ID, nextPrice, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
   gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT, FIXTURES, FIXTURE_BY_ID, KIND_W, BALLS_OUTSTANDING, payFor,
-  upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed, pickKind } from '../web/js/sim.js';
+  upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed, pickKind,
+  VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor } from '../web/js/sim.js';
 
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: codes get read aloud
 export const CODE_LEN = 4;
@@ -15,9 +20,16 @@ const COLORS = ['#e8604c', '#4c9be8', '#f2c94c', '#6fcf7c', '#b07ce8', '#f29e4c'
 const GRACE_MS = 60_000;          // an offline player keeps their spot this long (page reloads)
 const DRIVER_GRACE_MS = 5_000;    // an offline driver gives up the cart this fast
 const NAME_MAX = 16;
+const READY_SECS = 20;            // Ready Up: the next shift starts this long after the first Rat is ready
+const REVEAL_SECS = 6;            // a venue reveal holds the clock this long
+const PA_CAP = 3, PA_GAP_MS = 20_000;
+const HUDDLE_R = 8;
 
 // What a ping on the cage pays out, and how often.
 export const PING_PRIZES = [['jackpot', 0.4], ['boost', 0.3], ['mult', 0.3]];
+// PA lines that ignore the per-shift cap and the gap (venue reveals and the ending).
+const PA_BIG = new Set(['club', 'tiered', 'stadium', 'county', 'orbital', 'one', 'last', 'endless']);
+const DEBUT_PA = { glow: 'glow', square: 'square', gold: 'gold', lead: 'lead', foam: 'foam', splitter: 'splitter', bouncy: 'bouncy' };
 
 export const newCode = () => Array.from(crypto.randomBytes(CODE_LEN), b => CODE_CHARS[b % CODE_CHARS.length]).join('');
 export const validCode = c => typeof c === 'string' && c.length === CODE_LEN && [...c].every(ch => CODE_CHARS.includes(ch));
@@ -27,8 +39,11 @@ export function cleanName(s) {
   return [...s].slice(0, NAME_MAX).join('').trim();
 }
 
-const freshStats = () => ({ picked: 0, deposited: 0, cash: 0, knockdowns: 0, helped: 0, carted: 0, swings: 0, pings: 0, runOver: 0, washed: 0 });
+const freshStats = () => ({ picked: 0, deposited: 0, cash: 0, knockdowns: 0, helped: 0, carted: 0, swings: 0, pings: 0, runOver: 0, washed: 0,
+  scrubbed: 0, unwashed: 0, lostPremium: 0 });
+const freshShift = () => ({ banked: 0, cash: 0, knockdowns: 0, dived: 0, cooked: 0, scrubbed: 0, hosed: 0, pings: 0 });
 const cents = v => Math.round(v * 100) / 100;
+const int = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.floor(Number(v) || 0)));
 
 // Only known items, only whole tiers inside the catalog.
 function cleanUpgrades(up) {
@@ -61,23 +76,38 @@ export class Crew {
     this.nextBall = 1;
     this.day = save?.day ?? 1;
     this.cash = save?.cash ?? 0;
-    this.totals = { ...freshStats(), ...(save?.totals ?? {}) };
+    this.totals = { ...freshStats(), stamps: 0, ...(save?.totals ?? {}) };
     this.up = cleanUpgrades(save?.up);
     this.gearByName = cleanGear(save?.gear);
-    this.commendations = Math.max(0, Math.min(10, Math.floor(Number(save?.commendations) || 0)));
-    this.venue = Math.max(0, Math.min(5, Math.floor(Number(save?.venue) || 0)));
+    this.commendations = int(save?.commendations, 0, 10);
+    this.venue = int(save?.venue, 0, 5);
+    this.venueDay = int(save?.venueDay, 0, 10_000);
+    this.endless = !!save?.endless;
     this.debuts = new Set(Array.isArray(save?.debuts) ? save.debuts.filter(k => typeof k === 'string').slice(0, 20) : []);
-    this.stamps = Math.max(0, Math.floor(Number(save?.stamps) || 0));
-    this.quota = null;               // { q, target } once a shift sets it
+    this.voiced = new Set(Array.isArray(save?.voiced) ? save.voiced.filter(k => typeof k === 'string').slice(0, 40) : []);
+    this.stamps = int(save?.stamps, 0, 100);
+    this.records = { cash: Number(save?.records?.cash) || 0, banked: int(save?.records?.banked, 0, 1e9), day: int(save?.records?.day, 0, 1e6) };
+    // Balls Outstanding is a stored count (write-offs live here). Old saves derive it.
+    this.outstanding = Number.isFinite(save?.outstanding) ? Math.max(0, Math.floor(save.outstanding)) : BALLS_OUTSTANDING - (this.totals.deposited ?? 0);
+    const pr = Math.floor(Number(save?.pendingReveal));
+    this.pendingReveal = pr >= 1 && pr <= 5 ? pr : 0;
+    this.quota = null;               // { q } once a shift sets it; the target follows the live Rate
     this.fries = Math.max(0, Math.min(FRIES.MAX, Number(save?.fries) || 0));   // baskets in stock
     this.swingsToEat = FRIES.EAT_EVERY; this.autoFryT = 0;
     this.fixtures = {};              // fixture id -> mud 0..1 (Curb Appeal)
+    this.hopper = { n: 0, credit: 0, frac: 0 };            // the ball washer: dirty balls and the premium they'll pay
+    this.washBatch = new Map();      // who washed how much, flushed as events every 0.5 s
+    this.washFlushT = 0;
+    this.signed = new Set(); this.ready = new Set(); this.readyAt = 0;
+    this.revealT = 0;
+    this.lastBucket = null;          // the ending: { phase: 'falling' | 'down' | 'carried', t, id, by }
+    this.paShift = 0; this.paAt = 0;
     this.perks = perks(this.up);
     this.helpers = [];
     this.cart = null;
-    this.mult = 1;                 // Hit the Cart's price multiplier, for the rest of the shift
+    this.mult = 1;                   // Hustle (Hit the Cart), for the rest of the shift
     this.applyUpgrades();
-    this.phase = 'lobby';          // lobby -> shift -> report -> shift ...
+    this.phase = 'lobby';            // lobby -> shift -> report -> shift ...
     this.shiftT = 0;
     this.stats = freshStats();
     this.report = null;
@@ -86,7 +116,7 @@ export class Crew {
     this.dirty = false;
     this.lastActive = now();
     this.morningMud();
-    const sunk = Math.max(0, Math.min(POND.MAX_SUNK, Math.floor(Number(save?.pondSunk) || 0)));
+    const sunk = this.pondOpen() ? int(save?.pondSunk, 0, POND.MAX_SUNK) : 0;
     for (let i = 0; i < sunk; i++) this.sinkNew('range');
   }
 
@@ -101,10 +131,15 @@ export class Crew {
       name: cleanName(name) || `Rat ${this.players.size + 1}`,
       color: COLORS.find(c => !used.has(c)) ?? COLORS[0],
       x: SIM.STAND.x - 3 - this.players.size * 1.2, z: SIM.STAND.z - 4, yaw: Math.PI / 2,
-      pocket: 0, down: 0, online: 0, seenAt: this.now(), movedAt: this.now(), swungAt: 0,
-      gear: 0, wand: false, washAt: 0, diving: false, air: POND.AIR, bag: 0, bagW: 0, pumping: false,
+      pocket: 0, pocketW: 0, down: 0, online: 0, seenAt: this.now(), movedAt: this.now(), swungAt: 0,
+      gear: 0, wand: false, washAt: 0, diving: false, air: POND.AIR, bag: 0, bagW: 0, bagKinds: [], pumping: false,
+      grime: 0, loadsSince: 0, hoseAcc: 0, rinseAcc: 0, crankAt: 0, one: false, shift: freshShift(),
     };
-    p.gear = this.gearByName[p.name] ?? 0;
+    if (Object.hasOwn(this.gearByName, p.name)) p.gear = this.gearByName[p.name];
+    else if (this.day > 1) {         // the New Hire Kit (council round 2, §4.5)
+      p.gear = this.gearByName[p.name] = this.venue >= 1 ? 2 : 1;
+      this.events.push({ t: 'kit', id: p.id, level: p.gear });
+    }
     this.players.set(p.id, p);
     this.events.push({ t: 'join', id: p.id, name: p.name });
     return p;
@@ -120,7 +155,22 @@ export class Crew {
   connect(p) { p.online++; p.seenAt = this.now(); this.lastActive = this.now(); }
   disconnect(p) { p.online = Math.max(0, p.online - 1); p.seenAt = this.now(); }
   onlineCount() { let n = 0; for (const p of this.players.values()) if (p.online > 0) n++; return n; }
+  online() { return [...this.players.values()].filter(p => p.online > 0); }
   driving(p) { return !!this.cart && this.cart.driver === p.id; }
+  pondOpen() { return this.venue >= POND.FROM_VENUE; }
+
+  // ---- the Corporate PA (council round 2, §4.3) --------------------------------
+  // The server picks the moment; every client speaks the same line. Rare by rule.
+  pa(id, { once = false, chance = 1 } = {}) {
+    const now = this.now(), big = PA_BIG.has(id);
+    if (once && this.voiced.has(id)) return false;
+    if (!big && (this.paShift >= PA_CAP || now - this.paAt < PA_GAP_MS)) return false;
+    if (chance < 1 && this.voiced.has(id) && this.rng() > chance) return false;
+    this.voiced.add(id); this.dirty = true;
+    if (!big) { this.paShift++; this.paAt = now; }
+    this.events.push({ t: 'pa', id });
+    return true;
+  }
 
   // ---- money -------------------------------------------------------------------
 
@@ -130,27 +180,64 @@ export class Crew {
   }
   valueNow() {
     return ballValue({ perks: this.perks, mult: this.mult, cart: this.cart, curb: this.curb(), commendations: this.commendations,
-      pond: this.day >= POND.FROM_DAY ? pondClarity(this.sunkCount()) : null,
+      venue: this.venue,
+      pond: this.pondOpen() ? pondClarity(this.sunkCount()) : null,
       fries: this.perks.shed ? this.fries / FRIES.MAX : null });
   }
   ballPrice() { return this.valueNow().value; }
-  title() { return this.stamps >= 6 ? 'Senior Range Rat' : this.stamps >= 3 ? 'Range Rat II' : 'Range Rat'; }
+  title() { return this.endless ? 'Owner' : VENUE_RULES[this.venue].title; }
+  ceiling() { return upkeepCeiling({ pond: this.pondOpen() ? 1 : null, fries: this.perks.shed ? 1 : null }); }
 
-  // n balls (count) worth w (summed weights). Carrier gear: the cart pays for its cleanliness.
+  // n balls (count) worth w (summed weights). The carrier's gear factor: the cart
+  // pays for its cleanliness, a Rat for theirs (grime), helpers never.
+  // With a ball washer, the muddy price is paid now and the washer's share waits
+  // in the hopper as credit, paid out as balls are washed (council round 2, §4.4).
   bank(n, by, kind = null, w = n) {
     if (n <= 0) return;
     const v = this.valueNow();
-    const gear = kind === 'cart' ? v.cartGear : 1;
-    const cash = payFor(w, v, gear);
-    this.cash = cents(this.cash + cash); this.stats.deposited += n; this.stats.cash = cents(this.stats.cash + cash); this.dirty = true;
+    const who = kind == null ? this.players.get(by) : null;
+    const gear = kind === 'cart' ? v.cartGear : who ? gearGrimeFactor(who.grime) : 1;
+    const full = payFor(w, v, gear);
+    const muddy = this.perks.washer ? cents(full / this.perks.price) : full;
+    const credit = cents(full - muddy);
+    if (credit > 0) { this.hopper.n += n; this.hopper.credit = cents(this.hopper.credit + credit); }
+    this.cash = cents(this.cash + muddy); this.stats.deposited += n; this.stats.cash = cents(this.stats.cash + muddy); this.dirty = true;
     if (kind === 'helper') this.stats.helped += n;
-    this.events.push({ t: 'cash', by, n, cash, kind, per: cents(cash / Math.max(1, n)) });
+    if (who) { who.shift.banked += n; who.shift.cash = cents(who.shift.cash + muddy); }
+    this.countDown(n);
+    this.events.push({ t: 'cash', by, n, cash: muddy, credit, kind, per: cents(muddy / Math.max(1, n)), clean: who ? who.grime === 0 : undefined });
+  }
+
+  // Balls Outstanding: down with every banked ball. At the Orbital Range it
+  // stops at 1, and reaching 1 starts the Last Bucket. In endless mode it's live.
+  countDown(n) {
+    if (this.venue === 5 && !this.endless) {
+      this.outstanding = Math.max(1, this.outstanding - n);
+      if (this.outstanding === 1 && !this.lastBucket) this.beginLastBucket();
+    } else this.outstanding = Math.max(0, this.outstanding - n);
+  }
+
+  // Washing x balls pays the waiting credit for them (cranked, or the electric washer).
+  washBalls(x, by) {
+    const h = this.hopper;
+    x = Math.min(x, h.n);
+    if (x <= 0) return 0;
+    const pay = cents(h.credit * x / h.n);
+    h.n -= x; h.credit = cents(h.credit - pay);
+    if (h.n === 0) h.credit = 0;
+    this.cash = cents(this.cash + pay); this.stats.cash = cents(this.stats.cash + pay); this.stats.scrubbed += x; this.dirty = true;
+    const p = this.players.get(by);
+    if (p) { p.shift.scrubbed += x; p.shift.cash = cents(p.shift.cash + pay); }
+    const b = this.washBatch.get(by) ?? { n: 0, cash: 0 };
+    b.n += x; b.cash = cents(b.cash + pay); this.washBatch.set(by, b);
+    return x;
   }
 
   // Overnight the mud comes back: the sign, the stand, and some of the mats.
   morningMud() {
     for (const fx of FIXTURES) this.fixtures[fx.id] = 0;
     this.fixtures.sign = 0.9; this.fixtures.stand = 0.5;
+    if (this.perks?.covered) return;     // covered bays: the members never see a muddy mat
     const mats = FIXTURES.filter(x => x.id.startsWith('mat'));
     for (let i = 0; i < 5; i++) this.fixtures[mats[Math.floor(this.rng() * mats.length)].id] = 0.85;
   }
@@ -180,13 +267,18 @@ export class Crew {
       else if (a?.t === 'peel') this.peel(p, a.secs);
       else if (a?.t === 'serve') this.serve(p, a);
       else if (a?.t === 'deposit') this.deposit(p);
-      else if (a?.t === 'start') this.startShift();
+      else if (a?.t === 'start') this.readyUp(p);
       else if (a?.t === 'buy') this.buy(p, a.id);
       else if (a?.t === 'board') this.board(p);
       else if (a?.t === 'leave') this.leaveCart(p);
       else if (a?.t === 'swing') this.swing(p, a);
       else if (a?.t === 'wand') this.toggleWand(p);
       else if (a?.t === 'wash') this.wash(p, a.secs, a.target);
+      else if (a?.t === 'rinse') this.rinse(p, a.secs);
+      else if (a?.t === 'crank') this.crank(p, a.side, a.turns);
+      else if (a?.t === 'sign') this.sign(p, !!a.on);
+      else if (a?.t === 'cctv') { if (this.venue >= 1) this.pa('cctv', { once: true }); }
+      else if (a?.t === 'mark') this.mark(p, a);
     }
     return { denied };
   }
@@ -194,28 +286,40 @@ export class Crew {
   pickup(p, id) {
     const b = this.balls.get(id);
     const g = gearPerks(p.gear);
-    if (!b || p.down > 0 || this.driving(p) || p.pocket >= g.pocket || this.phase === 'lobby') return false;
+    if (!b || p.down > 0 || this.driving(p) || this.phase === 'lobby') return false;
     if (b.y > 0.4 || b.sunk) return false;                 // still in the air, or at the bottom of the pond
     if (Math.hypot(b.x - p.x, b.z - p.z) > g.reach + 1) return false;  // slack for a rolling ball
+    if (b.kind === 'one') {                                // Ball No. 1 rides in your hands, outside the pocket
+      if (p.one || p.diving) return false;
+      this.balls.delete(id); p.one = true;
+      if (this.lastBucket) { this.lastBucket.phase = 'carried'; this.lastBucket.by = p.id; }
+      this.events.push({ t: 'gone', id, by: p.id }, { t: 'lastbucket', phase: 'carried', by: p.id });
+      return true;
+    }
+    if (p.pocket >= g.pocket) return false;
     this.balls.delete(id);
     p.pocket++; p.pocketW = (p.pocketW ?? 0) + (KIND_W[b.kind] ?? 1); this.stats.picked++; this.dirty = true;
     this.events.push({ t: 'gone', id, by: p.id });
     if (b.kind === 'splitter') for (const s of spill(b.x, b.z, 2, this.rng)) this.addBall({ ...s, y: 0.3, vy: 2.5, kind: 'range' });
+    // Grime: a layer every four loads, whatever the gear (council round 2, §4.7).
+    if (++p.loadsSince >= g.pocket * 4) { p.loadsSince = 0; this.addGrime(p, 1); }
     return true;
   }
 
   deposit(p) {
-    if (p.pocket <= 0 || p.down > 0 || !atStand(p)) return;
+    if (p.down > 0 || !atStand(p)) return;
+    if (p.one) return this.depositOne(p);
+    if (p.pocket <= 0) return;
     const n = p.pocket, w = p.pocketW ?? n;
     p.pocket = 0; p.pocketW = 0;
     this.bank(n, p.id, null, w);
   }
 
-  // The shop is open any time (Tab / D-pad up mid-shift): the range keeps going while you browse.
+  // The shop is open any time (Tab / D-pad up): the range keeps going while you browse.
   buy(p, id) {
     const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
     if (!item) return false;
-    const price = nextPrice(id, this.up, this.players.size, p.gear);
+    const price = nextPrice(id, this.up, this.onlineCount(), p.gear, this.venue);
     if (price === null || price > this.cash) return false;
     this.cash = cents(this.cash - price);
     let level;
@@ -223,6 +327,7 @@ export class Crew {
     else { level = this.up[id] = (this.up[id] ?? 0) + 1; this.applyUpgrades(); }
     this.dirty = true;
     this.events.push({ t: 'buy', by: p.id, id, level, price, personal: !!item.personal });
+    if (id === 'cart' && level === 1) this.pa('cart', { once: true });
     return true;
   }
 
@@ -230,15 +335,67 @@ export class Crew {
     this.perks = perks(this.up);
     this.hireHelpers();
     if (this.perks.cart && !this.cart) {
-      this.cart = { ...CART.PARK, v: 0, driver: null, load: 0, boostT: 0, movedAt: this.now(), mud: 0 };
+      this.cart = { ...CART.PARK, v: 0, driver: null, load: 0, loadW: 0, boostT: 0, movedAt: this.now(), mud: 0 };
     }
+  }
+
+  // ---- promotion (council round 2, §4.1) ------------------------------------------
+  promoInfo() {
+    const next = VENUE_RULES[this.venue + 1];
+    if (!next || this.endless) return null;
+    const fee = Math.round(next.fee * (1 + 0.4 * (Math.max(1, this.onlineCount()) - 1)));
+    return { next: next.name, fee, stamps: this.stamps, need: PROMO_STAMPS,
+      ready: this.stamps >= PROMO_STAMPS && this.cash >= fee, signed: [...this.signed] };
+  }
+
+  // The franchise agreement: every online Rat signs at the report, then it executes.
+  sign(p, on) {
+    const info = this.promoInfo();
+    if (!info || this.phase !== 'report' || !info.ready) return false;
+    if (on) this.signed.add(p.id); else this.signed.delete(p.id);
+    const online = this.online();
+    for (const id of [...this.signed]) if (!online.some(o => o.id === id)) this.signed.delete(id);
+    this.events.push({ t: 'sign', by: p.id, on, n: this.signed.size, of: online.length });
+    if (online.length && online.every(o => this.signed.has(o.id))) this.promote();
+    return true;
+  }
+
+  promote() {
+    const info = this.promoInfo();
+    if (!info?.ready) return false;
+    const to = this.venue + 1, rules = VENUE_RULES[to];
+    this.cash = cents(this.cash - info.fee);
+    this.totals.stamps = (this.totals.stamps ?? 0) + this.stamps;
+    this.stamps = 0;
+    this.venue = to; this.venueDay = 0;
+    const before = this.outstanding;
+    this.outstanding = rules.writeOff === 'rest' ? ONE_YEAR : Math.max(ONE_YEAR + 1, this.outstanding - rules.writeOff);
+    this.pendingReveal = to;
+    if (to === 1 && !this.up.shed) { this.up.shed = 1; this.applyUpgrades(); }   // the members expect fries
+    this.signed.clear();
+    this.dirty = true;
+    this.events.push({ t: 'promoted', venue: to, fee: info.fee, writeOff: before - this.outstanding, title: this.title() });
+    return true;
+  }
+
+  // ---- Ready Up (council round 2, §5.1) -----------------------------------------
+  // From the lobby the range opens at once; at the report the next shift starts
+  // when every online Rat is ready, or 20 s after the first one is.
+  readyUp(p) {
+    if (this.phase === 'lobby') return this.startShift();
+    if (this.phase !== 'report') return;
+    this.ready.add(p.id);
+    if (!this.readyAt) this.readyAt = this.now();
+    const online = this.online();
+    this.events.push({ t: 'ready', n: this.ready.size, of: online.length, t0: READY_SECS });
+    if (online.every(o => this.ready.has(o.id))) this.startShift();
   }
 
   // ---- the cart --------------------------------------------------------------
 
   board(p) {
     const c = this.cart;
-    if (!c || c.driver || p.down > 0 || Math.hypot(c.x - p.x, c.z - p.z) > CART.BOARD_REACH) return false;
+    if (!c || c.driver || p.down > 0 || p.one || Math.hypot(c.x - p.x, c.z - p.z) > CART.BOARD_REACH) return false;
     c.driver = p.id; c.movedAt = this.now(); c.v = 0;
     p.x = c.x; p.z = c.z;
     this.events.push({ t: 'board', by: p.id });
@@ -283,21 +440,24 @@ export class Crew {
     }
   }
 
+  // A splitter through the cart, the jackpot, a helper or the pond loads as three.
+  loadOf(b) { return b.kind === 'splitter' ? 3 : 1; }
+
   cartPickup(p, id) {
     const c = this.cart, b = this.balls.get(id);
     if (!b || !c || c.driver !== p.id || c.load >= this.perks.cartCap || this.phase === 'lobby') return false;
-    if (b.y > 0.4) return false;
+    if (b.y > 0.4 || b.kind === 'one') return false;
     const rx = c.x - Math.sin(c.yaw) * CART.REEL_AHEAD, rz = c.z - Math.cos(c.yaw) * CART.REEL_AHEAD;
     if (Math.hypot(b.x - rx, b.z - rz) > this.perks.cartReel / 2 + 1.5) return false;   // slack for lag
     this.balls.delete(id);
-    c.load++; c.loadW = (c.loadW ?? 0) + (KIND_W[b.kind] ?? 1); this.stats.picked++; this.stats.carted++; this.dirty = true;
+    const k = this.loadOf(b);
+    c.load += k; c.loadW = (c.loadW ?? 0) + (KIND_W[b.kind] ?? 1) * (k === 3 ? 3 : 1); this.stats.picked += k; this.stats.carted += k; this.dirty = true;
     this.events.push({ t: 'gone', id, by: p.id });
     return true;
   }
 
   // ---- power washing ---------------------------------------------------------
-  // Grab the wand at the station, then spray the cart while it's in reach.
-  // The client says how long it sprayed on target; the server checks reach.
+  // Grab the wand at the station, then spray the cart, a fixture or a crewmate.
 
   toggleWand(p) {
     if (p.wand) { p.wand = false; return true; }
@@ -306,23 +466,72 @@ export class Crew {
     return true;
   }
 
-  // target: 'cart' (default) or a fixture id (the sign, the stand, a mat).
+  // target: 'cart' (default), a fixture id (the sign, the stand, a mat), or 'p:<id>' (Hose a Friend).
   wash(p, secs, target = 'cart') {
     const now = this.now();
     if (!p.wand || p.down > 0 || !Number.isFinite(secs) || secs <= 0) return false;
+    const reach = WASH.RANGE * (this.perks.turbo ? 9 / 7 : 1) + 1.5;
+    const s = Math.min(secs, 0.5, (now - p.washAt) / 1000 * 1.15);
+    if (typeof target === 'string' && target.startsWith('p:')) {
+      const o = this.players.get(target.slice(2));
+      if (!o || o === p || Math.hypot(o.x - p.x, o.z - p.z) > reach) return false;
+      p.washAt = now;
+      if (s <= 0) return false;
+      o.hoseAcc += s;
+      const d = Math.max(0.01, Math.hypot(o.x - p.x, o.z - p.z));
+      if (o.hoseAcc >= 0.5) {
+        o.hoseAcc = 0;
+        if (o.grime > 0) { this.addGrime(o, -1); p.shift.hosed++; }
+        this.events.push({ t: 'hosed', id: o.id, by: p.id, dx: (o.x - p.x) / d * 0.5, dz: (o.z - p.z) / d * 0.5 });
+      }
+      return true;
+    }
     const isCart = target === 'cart' || target == null;
     const where = isCart ? this.cart : Object.hasOwn(FIXTURE_BY_ID, target) ? FIXTURE_BY_ID[target] : null;
-    if (!where || Math.hypot(where.x - p.x, where.z - p.z) > WASH.RANGE + 1.5 + (where.r ?? 0)) return false;
-    const s = Math.min(secs, 0.5, (now - p.washAt) / 1000 + 0.1);
+    if (!where || Math.hypot(where.x - p.x, where.z - p.z) > reach + (where.r ?? 0)) return false;
     p.washAt = now;
     if (s <= 0) return false;
+    const rate = WASH.RATE * (isCart ? 1 : 1.6) * (this.perks.turbo ? 2 : 1);   // fixtures are smaller than a cart
     const before = isCart ? this.cart.mud : this.fixtures[target];
-    const after = Math.max(0, before - WASH.RATE * (isCart ? 1 : 1.6) * s);   // fixtures are smaller than a cart
+    const after = Math.max(0, before - rate * s);
     const done = before > 0.05 && after <= 0.05;
     if (isCart) this.cart.mud = done ? 0 : after; else this.fixtures[target] = done ? 0 : after;
     this.stats.washed = Math.round((this.stats.washed + s) * 10) / 10;
     if (done) this.events.push({ t: 'spotless', by: p.id, target: isCart ? 'cart' : target });
     this.dirty = true;
+    return true;
+  }
+
+  // The spigot by the wash pad: rinse your own gear, a layer every 2 s.
+  rinse(p, secs) {
+    const now = this.now();
+    if (p.wand || p.down > 0 || !Number.isFinite(secs) || secs <= 0 || p.grime <= 0) return false;
+    if (Math.hypot(p.x - WASH.STATION.x, p.z - WASH.STATION.z) > WASH.GRAB + 1) return false;
+    p.rinseAcc += Math.min(secs, 0.5, (now - (p.rinseAt ?? 0)) / 1000 * 1.15);
+    p.rinseAt = now;
+    if (p.rinseAcc >= 2) { p.rinseAcc = 0; this.addGrime(p, -1); }
+    return true;
+  }
+
+  addGrime(p, d) {
+    const v = Math.max(0, Math.min(3, p.grime + d));
+    if (v === p.grime) return;
+    p.grime = v; this.dirty = true;
+    this.events.push({ t: 'grime', id: p.id, v });
+  }
+
+  // ---- the ball washer (council round 2, §4.4) ---------------------------------------
+  crank(p, side, turns) {
+    const now = this.now();
+    if ((side !== 'L' && side !== 'R') || !this.perks.washer || p.down > 0 || !atHandle(p, side) || !Number.isFinite(turns) || turns <= 0) return false;
+    const dt = Math.min(1, (now - (p.crankAt || now - 250)) / 1000);
+    p.crankAt = now;
+    const t = Math.min(turns, WASHER.CRANK_MAX * dt * 1.15);   // a little jitter room, never free turns at dt = 0
+    p.crankFrac = (p.crankFrac ?? 0) + t;
+    const whole = Math.floor(p.crankFrac);
+    p.crankFrac -= whole;
+    if (whole > 0) this.washBalls(whole, p.id);
+    this.cranking = this.cranking ?? {}; this.cranking[side] = { id: p.id, at: now, rate: t / Math.max(dt, 0.05) };
     return true;
   }
 
@@ -336,7 +545,7 @@ export class Crew {
     if (now - p.swungAt < SIM.SWING_COOLDOWN * 1000) return false;
     const bay = BAYS.find(b => Math.hypot(p.x - b.x, p.z - b.z) < BAY_REACH);
     if (!bay || ![a.yaw, a.pitch, a.power].every(Number.isFinite)) return false;
-    p.pocket--; p.swungAt = now;
+    p.pocket--; p.pocketW = Math.max(0, (p.pocketW ?? 1) - 1); p.swungAt = now;
     this.stats.swings++;
     const curve = Number.isFinite(a.curve) ? Math.max(-1, Math.min(1, a.curve)) : 0;
     const b = this.addBall({ ...swingLaunch(bay, a.yaw, a.pitch, a.power), curve });
@@ -353,26 +562,39 @@ export class Crew {
       return;
     }
     this.stats.pings++; this.dirty = true;
+    const shooter = this.players.get(b.by);
+    if (shooter) shooter.shift.pings++;
     let r = this.rng(), prize = PING_PRIZES[PING_PRIZES.length - 1][0];
     for (const [name, w] of PING_PRIZES) { if (r < w) { prize = name; break; } r -= w; }
     let n = 0;
     if (prize === 'jackpot') {
       for (const o of [...this.balls.values()]) {
         if (c.load >= this.perks.cartCap) break;
-        if (!o.rest || o.sunk || Math.hypot(o.x - c.x, o.z - c.z) > CART.JACKPOT_R) continue;
-        this.balls.delete(o.id); c.load++; c.loadW = (c.loadW ?? 0) + (KIND_W[o.kind] ?? 1); n++;
-        this.stats.picked++; this.stats.carted++;
+        if (!o.rest || o.sunk || o.kind === 'one' || Math.hypot(o.x - c.x, o.z - c.z) > CART.JACKPOT_R) continue;
+        const k = this.loadOf(o);
+        this.balls.delete(o.id); c.load += k; c.loadW = (c.loadW ?? 0) + (KIND_W[o.kind] ?? 1) * (k === 3 ? 3 : 1); n += k;
+        this.stats.picked += k; this.stats.carted += k;
         this.events.push({ t: 'gone', id: o.id, by: c.driver });
       }
+      if (!this.jackpotSaid) { this.jackpotSaid = this.pa('jackpot', { chance: 0.25 }); }
     } else if (prize === 'boost') c.boostT = CART.BOOST_SECS;
     else this.mult = Math.min(CART.MAX_MULT, this.mult + CART.MULT_STEP);
     this.events.push({ t: 'ping', by: b.by, prize, n, mult: this.mult });
   }
 
+  // Corporate CCTV (council round 2, §4.6): a flag the whole crew sees for 10 s.
+  mark(p, a) {
+    if (this.venue < 1 || !Number.isFinite(a.x) || !Number.isFinite(a.z)) return false;
+    const now = this.now();
+    if (now - (p.markAt ?? 0) < 2000) return false;
+    p.markAt = now;
+    this.events.push({ t: 'mark', by: p.id, x: +a.x.toFixed(1), z: +a.z.toFixed(1), color: p.color });
+    return true;
+  }
+
   // ---- hired help ----------------------------------------------------------
-  // Helpers walk to the nearest ball nobody else is after, fill up (with the
-  // crew's gear, up to a bucket), walk them to the bucket stand, and bank
-  // them. They get hit too.
+  // Helpers walk to the nearest ball nobody else is after, fill up (a beat-up
+  // tube), walk them to the bucket stand, and bank them. They get hit too.
 
   hireHelpers() {
     while (this.helpers.length < this.perks.helpers) {
@@ -384,10 +606,10 @@ export class Crew {
 
   stepHelpers(dt) {
     const claimed = new Set(this.helpers.map(h => h.target).filter(Boolean));
-    const cap = HELPER_POCKET;                      // a beat-up tube
+    const cap = HELPER_POCKET;
     for (const h of this.helpers) {
       if (h.down > 0) continue;
-      const working = this.phase === 'shift';
+      const working = this.phase === 'shift' && !this.paused();
       let goal = null;
       if (h.pocket >= cap || (h.pocket > 0 && !working)) goal = SIM.STAND;
       else if (working) {
@@ -397,7 +619,7 @@ export class Crew {
           h.target = null; b = null;
           let bd = Infinity;
           for (const c of this.balls.values()) {
-            if (!c.rest || c.sunk || claimed.has(c.id)) continue;
+            if (!c.rest || c.sunk || c.kind === 'one' || claimed.has(c.id)) continue;
             const d = Math.hypot(c.x - h.x, c.z - h.z);
             if (d < bd) { bd = d; b = c; }
           }
@@ -415,7 +637,8 @@ export class Crew {
       }
       if (goal !== SIM.STAND && d < 0.5) {
         this.balls.delete(goal.id);
-        h.pocket++; h.pocketW = (h.pocketW ?? 0) + (KIND_W[goal.kind] ?? 1); h.target = null; this.stats.picked++; this.dirty = true;
+        const k = this.loadOf(goal);
+        h.pocket += k; h.pocketW = (h.pocketW ?? 0) + (KIND_W[goal.kind] ?? 1) * (k === 3 ? 3 : 1); h.target = null; this.stats.picked += k; this.dirty = true;
         this.events.push({ t: 'gone', id: goal.id, by: h.id });
         continue;
       }
@@ -428,20 +651,39 @@ export class Crew {
   startShift() {
     if (this.phase === 'shift') return;
     if (this.phase === 'report') this.day++;
-    // The night crew clears the field: every morning starts clean.
+    this.venueDay++;
+    // The night crew clears the field: every morning starts clean (the pond keeps what sank).
     for (const [id, b] of this.balls) if (!b.sunk) { this.balls.delete(id); this.events.push({ t: 'gone', id }); }
     this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false;
-    this.gary = null;
+    this.gary = null; this.paShift = 0; this.jackpotSaid = false;
+    this.ready.clear(); this.readyAt = 0; this.signed.clear();
+    this.hopper = { n: 0, credit: 0, frac: 0 };
+    for (const p of this.players.values()) { p.shift = freshShift(); p.grime = 0; p.loadsSince = 0; }   // the locker room
     if (this.day > 1) { this.morningMud(); this.fries = Math.floor(this.fries / 2); }   // the fries went cold overnight
-    // Corporate's memo: today's Ball Value target, set after the shop so a purchase can't move the goalposts.
-    const v = this.valueNow(), q = quotaQ(this.day, upkeepCeiling({ pond: this.day >= POND.FROM_DAY ? 1 : null, fries: this.perks.shed ? 1 : null }));
-    this.quota = q == null ? null : { q, target: cents(v.rate * (1 + q)) };
-    this.events.push({ t: 'memo', day: this.day, target: this.quota?.target ?? null, text: memoText(this.day, this.quota, this.rng) });
+    // Corporate's memo and today's quota. Judged on Upkeep, so a mid-shift purchase can't buy it.
+    if (this.endless) this.quota = null;
+    else if (this.venue === 0) { const q = quotaQ(this.day, this.ceiling()); this.quota = q == null ? null : { q }; }
+    else this.quota = { q: (this.ceiling() - 1) * venueQuotaF(this.venueDay) };
+    this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaTarget() : null, text: memoText(this.day, this.quota && this.quotaTarget(), this.endless, this.rng) });
     if (this.cart) { this.cart.boostT = 0; if (!this.cart.driver) Object.assign(this.cart, CART.PARK, { v: 0 }); }
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
+    this.revealT = 0;
+    if (this.pendingReveal) {        // a promotion: the next morning plays the reveal
+      const v = this.pendingReveal;
+      this.pendingReveal = 0; this.revealT = REVEAL_SECS;
+      this.events.push({ t: 'reveal', venue: v, memo: VENUE_RULES[v].memo, title: this.title() });
+      this.pa(VENUE_RULES[v].pa);
+    }
+    if (this.endlessFresh) { this.endlessFresh = false; this.events.push({ t: 'reveal', venue: 6, memo: 'Under New Management.', title: 'Owner' }); }
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'shift', day: this.day });
+    if (this.day === 1 || !this.voiced.has('welcome')) this.pa('welcome', { once: true });
   }
+
+  quotaTarget() { return this.quota ? cents(this.valueNow().rate * (1 + this.quota.q)) : null; }
+
+  // The clock holds for venue reveals and for the Last Bucket's moment.
+  paused() { return this.revealT > 0 || (this.lastBucket && this.lastBucket.phase !== 'done'); }
 
   // Super-bouncy balls don't want to be picked up: get close and they hop away.
   stepBouncy() {
@@ -462,23 +704,25 @@ export class Crew {
   peel(p, secs) {
     const now = this.now();
     if (!this.perks.shed || !atShed(p) || p.down > 0 || this.driving(p) || !Number.isFinite(secs) || secs <= 0) return false;
-    const s = Math.min(secs, 0.5, (now - (p.peelAt ?? 0)) / 1000 + 0.1);
+    const s = Math.min(secs, 0.5, (now - (p.peelAt ?? 0)) / 1000 * 1.15);
     p.peelAt = now;
     p.peeled = (p.peeled ?? 0) + s;
     while (p.peeled >= FRIES.PEEL_SECS) { p.peeled -= FRIES.PEEL_SECS; this.addFries(1, p.id); }
     return true;
   }
-  // The kitchen minigame (peel, slice, fry, serve): the client plays it, the server rate-limits it.
+  // The kitchen minigame: fries, hot dogs and beer. The client plays it, the server rate-limits it.
   serve(p, a) {
     const now = this.now();
     if (!this.perks.shed || !atShed(p) || p.down > 0 || this.driving(p)) return false;
     if (now - (p.servedAt ?? 0) < FRIES.SERVE_MIN_SECS * 1000) return false;
     p.servedAt = now;
+    const item = ['fries', 'hotdog', 'beer'].includes(a.item) ? a.item : 'fries';
     const q = ['perfect', 'good', 'burnt'].includes(a.quality) ? a.quality : 'burnt';
-    const n = q === 'perfect' ? 3 + (a.onePeel ? 1 : 0) : q === 'good' ? 2 : 0;
+    const n = q === 'perfect' ? 3 + (item === 'fries' && a.onePeel ? 1 : 0) : q === 'good' ? 2 : 0;
     this.stats.served = (this.stats.served ?? 0) + 1;
-    this.events.push({ t: 'served', by: p.id, quality: q, n });
-    if (n) this.addFries(n, p.id);
+    if (item === 'beer') this.stats.beers = (this.stats.beers ?? 0) + (q === 'burnt' ? 0 : 1);   // counted for the Tiered deck (overserving, later)
+    this.events.push({ t: 'served', by: p.id, item, quality: q, n });
+    if (n) { this.addFries(n, p.id); p.shift.cooked += n; }
     return true;
   }
   addFries(n, by) {
@@ -488,7 +732,7 @@ export class Crew {
     this.events.push({ t: 'fries', by, stock: this.fries });
   }
 
-  // ---- the pond ----------------------------------------------------------------
+  // ---- the pond (opens with the Range Club) ------------------------------------------
   sunkCount() { let n = 0; for (const b of this.balls.values()) if (b.sunk) n++; return n; }
 
   sink(b) {
@@ -512,27 +756,30 @@ export class Crew {
     if (!b || !b.sunk || !p.diving || p.down > 0 || p.bag >= POND.BAG) return false;
     if (Math.hypot(b.x - p.x, b.z - p.z) > POND.REACH + 1) return false;
     this.balls.delete(id);
-    p.bag++; p.bagW += KIND_W[b.kind] ?? 1; this.stats.picked++; this.stats.dived = (this.stats.dived ?? 0) + 1; this.dirty = true;
+    const k = this.loadOf(b);
+    p.bag += k; p.bagW += (KIND_W[b.kind] ?? 1) * k; for (let i = 0; i < k; i++) p.bagKinds.push(k === 3 ? 'range' : b.kind ?? 'range');
+    this.stats.picked++; this.stats.dived = (this.stats.dived ?? 0) + 1; p.shift.dived++; this.dirty = true;
     this.events.push({ t: 'gone', id, by: p.id });
     return true;
   }
 
   stepPond(dt) {
+    if (!this.pondOpen()) { for (const p of this.players.values()) p.diving = false; return; }
     const pumping = [...this.players.values()].some(p => p.pumping && p.online > 0 && onDock(p));
     for (const p of this.players.values()) {
-      const wet = inPond(p) && !this.driving(p);
+      const wet = inPond(p) && !this.driving(p) && !p.one;
       if (wet !== p.diving) {
         p.diving = wet;
         if (!wet && p.bag > 0) {   // surfaced with the bag: it's yours to bank
-          p.pocket += p.bag; p.pocketW = (p.pocketW ?? 0) + p.bagW; p.bag = 0; p.bagW = 0;
+          p.pocket += p.bag; p.pocketW = (p.pocketW ?? 0) + p.bagW; p.bag = 0; p.bagW = 0; p.bagKinds = [];
         }
         this.events.push({ t: 'dive', id: p.id, on: wet });
       }
       if (p.diving) {
         p.air = Math.min(POND.AIR, p.air - dt + (pumping ? POND.PUMP * dt : 0));
-        if (p.air <= 0) {          // out of air: pop up coughing on the dock, the bag spills back down
-          for (let i = 0; i < p.bag; i++) this.sinkNew('range', p);
-          p.bag = 0; p.bagW = 0; p.air = POND.AIR * 0.5; p.diving = false;
+        if (p.air <= 0) {          // out of air: pop up coughing on the dock, the bag spills back down (kinds kept)
+          for (const k of p.bagKinds) this.sinkNew(k, p);
+          p.bag = 0; p.bagW = 0; p.bagKinds = []; p.air = POND.AIR * 0.5; p.diving = false;
           p.x = POND.DOCK.x; p.z = POND.DOCK.z + 1.5; p.movedAt = this.now();
           this.events.push({ t: 'gasp', id: p.id }, { t: 'dive', id: p.id, on: false });
         }
@@ -541,13 +788,20 @@ export class Crew {
   }
 
   // ---- Gary from Regional --------------------------------------------------------
+  garyStops() {
+    const stops = [...GARY.STOPS];
+    if (this.venue >= 1) stops.splice(stops.length - 1, 0, { id: 'kitchen', x: FRIES.SHED.x, z: FRIES.SHED.z + 0.5 });
+    return stops;
+  }
+
   stepGary(dt) {
-    if (this.phase !== 'shift' || this.day < GARY.FROM_DAY) return;
+    if (this.phase !== 'shift' || this.endless || this.day < GARY.FROM_DAY || this.paused()) return;
     const g = this.gary;
     if (!g) {
       if (this.shiftT >= this.shiftSecs * GARY.AT) {
         this.gary = { phase: 'warn', t: GARY.WARN_SECS, x: GARY.START.x, z: GARY.START.z, yaw: Math.PI / 2, stop: 0, pause: 0, fails: 0, checks: [] };
         this.events.push({ t: 'gary', phase: 'warn' });
+        this.pa('gary', { once: true });
       }
       return;
     }
@@ -557,8 +811,9 @@ export class Crew {
     }
     if (g.phase !== 'drive') return;
     if (g.pause > 0) { g.pause -= dt; return; }
-    let stop = GARY.STOPS[g.stop];
-    if (stop?.id === 'cart' && !this.cart) { g.stop++; stop = GARY.STOPS[g.stop]; }
+    const stops = this.garyStops();
+    let stop = stops[g.stop];
+    if (stop?.id === 'cart' && !this.cart) { g.stop++; stop = stops[g.stop]; }
     if (!stop) return;
     const tx = stop.id === 'cart' ? this.cart.x + 3 : stop.x, tz = stop.id === 'cart' ? this.cart.z + 3 : stop.z;
     const dx = tx - g.x, dz = tz - g.z, d = Math.hypot(dx, dz), step = GARY.SPEED * dt;
@@ -579,13 +834,14 @@ export class Crew {
     g.pause = GARY.PAUSE; g.stop++;
     if (stop.id === 'stand') {
       const fails = g.fails + (ok ? 0 : 1);
-      const online = [...this.players.values()].filter(p => p.online > 0);
+      const online = this.online();
       const huddle = online.length > 0 && online.every(p => Math.hypot(p.x - 26, p.z - 6) < GARY.HUDDLE_R);
       const gained = fails <= 1 ? Math.min(10 - this.commendations, huddle ? 2 : 1) : 0;
       this.commendations += gained;
       g.phase = 'done';
       this.dirty = true;
       this.events.push({ t: 'verdict', fails, huddle, gained, commendations: this.commendations });
+      if (gained && huddle) this.pa('huddle', { chance: 1 / 3 });
     }
   }
 
@@ -594,6 +850,7 @@ export class Crew {
     if (id === 'sign') return f.sign <= GARY.CLEAN;
     if (id === 'stand') return f.stand <= GARY.CLEAN;
     if (id === 'cart') return !this.cart || this.cart.mud <= GARY.CLEAN;
+    if (id === 'kitchen') return this.fries >= FRIES.MAX * 0.5;
     if (id === 'mats') {
       const mats = Object.entries(f).filter(([k]) => k.startsWith('mat'));
       return mats.filter(([, v]) => v <= GARY.CLEAN).length >= mats.length * 0.8;
@@ -603,6 +860,44 @@ export class Crew {
 
   lastCall() {
     return this.phase === 'shift' && this.day >= LAST_CALL.FROM_DAY && this.shiftT >= this.shiftSecs - LAST_CALL.SECS;
+  }
+
+  // ---- the Last Bucket (council round 2, §4.8) -------------------------------------------
+  beginLastBucket() {
+    this.lastBucket = { phase: 'falling', t: 3 };
+    this.events.push({ t: 'lastbucket', phase: 'falling' });
+    this.pa('one', { once: true });
+    this.dirty = true;
+  }
+
+  stepLastBucket(dt) {
+    const lb = this.lastBucket;
+    if (!lb) return;
+    if (lb.phase === 'falling' && (lb.t -= dt) <= 0 && !lb.id) {
+      // Ball No. 1 comes home: high above the field, landing 90–120 m out, away from the pond.
+      const tx = (this.rng() - 0.5) * 70, tz = -(90 + this.rng() * 30), secs = 6;
+      const vy = (0 - 120 + 0.5 * SIM.G * secs * secs) / secs;
+      const b = this.addBall({ x: tx, y: 120, z: tz + 8, vx: 0, vy, vz: -8 / secs, kind: 'one' });
+      if (b) { lb.id = b.id; lb.phase = 'down'; }
+    }
+  }
+
+  // Banking Ball No. 1 needs the whole crew at the stand.
+  depositOne(p) {
+    const online = this.online();
+    const near = online.filter(o => Math.hypot(o.x - SIM.STAND.x, o.z - SIM.STAND.z) < HUDDLE_R).length;
+    if (near < online.length) { this.events.push({ t: 'huddle', n: near, of: online.length, by: p.id }); return false; }
+    p.one = false;
+    const v = this.valueNow();
+    const pay = cents(ONE_YEAR * v.bv);
+    this.cash = cents(this.cash + pay); this.stats.cash = cents(this.stats.cash + pay); this.stats.deposited++;
+    this.outstanding = 0;
+    this.lastBucket = { phase: 'done', by: p.id };
+    this.endless = true; this.endlessFresh = true; this.endlessArmed = true;
+    this.events.push({ t: 'lastbucket', phase: 'banked', by: p.id, cash: pay });
+    this.pa('last', { once: true });
+    this.endShift(true);
+    return true;
   }
 
   // ---- the clock -------------------------------------------------------------
@@ -617,24 +912,35 @@ export class Crew {
 
   tick(dt) {
     const now = this.now();
+    if (this.revealT > 0) this.revealT = Math.max(0, this.revealT - dt);
+    this.stepLastBucket(dt);
+    const paused = this.paused();
     const lastCall = this.lastCall();
     if (lastCall && !this.lastCallRung) { this.lastCallRung = true; this.events.push({ t: 'lastcall' }); }
-    if (this.phase === 'shift') {
+    if (this.phase === 'shift' && !paused) {
       this.shiftT += dt;
       this.fixtures.sign = Math.min(1, this.fixtures.sign + dt * 0.0008);    // dust off the road
       this.fixtures.stand = Math.min(1, this.fixtures.stand + dt * 0.0006);
       const n = activeMats(this.onlineCount());
+      const eatEvery = VENUE_RULES[this.venue].eatEvery ?? FRIES.EAT_EVERY;
       for (let i = 0; i < n; i++) {
         const m = this.mats[i];
         if ((m.next -= dt) <= 0 && this.balls.size < SIM.MAX_BALLS) {
-          const lead = !lastCall && this.day >= POND.FROM_DAY && this.rng() < POND.LEAD_CHANCE;
+          const lead = !lastCall && this.pondOpen() && this.rng() < POND.LEAD_CHANCE;
           const kind = lead ? 'lead' : lastCall ? 'glow' : pickKind(this.day, this.venue, this.rng);
           const b = this.addBall(lead ? { ...leadLaunch(m, this.rng), kind } : { ...launch(m, this.rng), kind });
-          if (b && kind !== 'range' && !this.debuts.has(kind)) { this.debuts.add(kind); this.dirty = true; this.events.push({ t: 'debut', kind }); }
+          if (b && kind !== 'range' && !this.debuts.has(kind)) {
+            this.debuts.add(kind); this.dirty = true; this.events.push({ t: 'debut', kind });
+            if (DEBUT_PA[kind]) this.pa(DEBUT_PA[kind], { once: true });
+          }
+          if (b && this.endless) {     // Under New Management: Balls Outstanding is a live count
+            this.outstanding++;
+            if (this.endlessArmed) { this.endlessArmed = false; this.outstanding = 1; this.pa('endless', { once: true }); }
+          }
           m.next = swingGap(this.rng) * this.perks.swingGapMult / (lastCall ? LAST_CALL.SWING : 1);
-          if (this.perks.shed && --this.swingsToEat <= 0) { this.swingsToEat = FRIES.EAT_EVERY; this.fries = Math.max(0, this.fries - 1); }
+          if (this.perks.shed && --this.swingsToEat <= 0) { this.swingsToEat = eatEvery; this.fries = Math.max(0, this.fries - 1); }
           const id = 'mat' + m.i;
-          if (b) this.fixtures[id] = Math.min(1, this.fixtures[id] + 0.006);   // every swing scuffs the mat
+          if (b) this.fixtures[id] = Math.min(1, this.fixtures[id] + 0.006 * (this.perks.covered ? 0.5 : 1));   // every swing scuffs the mat
         }
       }
     }
@@ -643,24 +949,35 @@ export class Crew {
     this.stepGary(dt);
     this.stepPond(dt);
     this.stepBouncy();
-    if (this.phase === 'shift' && this.perks.autoFry && (this.autoFryT += dt) >= this.perks.autoFry) { this.autoFryT = 0; this.addFries(1, 'machine'); }
+    if (this.phase === 'shift' && !paused && this.perks.autoFry && (this.autoFryT += dt) >= this.perks.autoFry) { this.autoFryT = 0; this.addFries(1, 'machine'); }
+    // The electric / industrial ball washer works through the hopper on its own.
+    if (this.phase === 'shift' && this.perks.washAuto && this.hopper.n > 0) {
+      this.hopper.frac += this.perks.washAuto * dt;
+      const k = Math.floor(this.hopper.frac);
+      if (k > 0) { this.hopper.frac -= k; this.washBalls(k, 'machine'); }
+    }
+    if ((this.washFlushT += dt) >= 0.5) {
+      this.washFlushT = 0;
+      for (const [by, b] of this.washBatch) this.events.push({ t: 'washed', by, n: b.n, cash: b.cash, left: this.hopper.n });
+      this.washBatch.clear();
+    }
 
     const c = this.cart;
     for (const b of this.balls.values()) {
       if (b.rest) continue;
       const x0 = b.x, y0 = b.y, z0 = b.z;
       const stopped = advanceBall(b, dt);
-      if (c && !b.pinged && ballHitsCart(x0, y0, z0, b, c)) { this.ping(b); continue; }
+      if (c && b.kind !== 'one' && !b.pinged && ballHitsCart(x0, y0, z0, b, c)) { this.ping(b); continue; }
       for (const p of [...this.players.values(), ...this.helpers]) {
         if (!p.helper && this.driving(p)) continue;            // the cage keeps the driver safe
-        if (b.by === p.id) continue;                           // your own swing leaves from your feet
+        if (b.by === p.id || b.kind === 'one') continue;       // your own swing leaves from your feet
         if (!ballHitsPlayer(x0, y0, z0, b, p)) continue;
         this.knockDown(p);
         b.vx *= -0.25; b.vz *= -0.25; b.vy = Math.abs(b.vy) * 0.3;  // it bounces off you
         break;
       }
-      if (b.y <= SIM.BALL_R + 0.05 && inPond(b)) { this.sink(b); continue; }
-      if (stopped) this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z });
+      if (this.pondOpen() && b.kind !== 'one' && b.y <= SIM.BALL_R + 0.05 && inPond(b)) { this.sink(b); continue; }
+      if (stopped) this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z, ...(b.kind === 'one' ? { one: true } : {}) });
     }
 
     if (c) {
@@ -680,6 +997,8 @@ export class Crew {
     }
     for (const h of this.helpers) if (h.down > 0) h.down = Math.max(0, h.down - dt);
 
+    // Ready Up: 20 s after the first Rat is ready, the next shift starts anyway.
+    if (this.phase === 'report' && this.readyAt && now - this.readyAt >= READY_SECS * 1000) this.startShift();
     if (this.phase === 'shift' && this.shiftT >= this.shiftSecs) this.endShift();
   }
 
@@ -687,59 +1006,108 @@ export class Crew {
     p.down = this.perks.knockSecs;
     if (p.helper) p.target = null;
     this.stats.knockdowns++; this.dirty = true;
+    if (p.shift) p.shift.knockdowns++;
     this.events.push({ t: 'knock', id: p.id, by });
     // Whatever you were carrying goes everywhere.
     for (const s of spill(p.x, p.z, p.pocket, this.rng)) this.addBall(s);
     p.pocket = 0; p.pocketW = 0;
+    if (p.one) {                     // Ball No. 1 drops at your feet. It doesn't fly.
+      p.one = false;
+      const b = this.addBall({ x: p.x + 0.4, y: SIM.BALL_R, z: p.z, vx: 0, vy: 0, vz: 0, kind: 'one' });
+      if (b) { b.rest = true; this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z, one: true }); }
+      if (this.lastBucket) { this.lastBucket.phase = 'down'; this.lastBucket.id = b?.id; }
+    }
+    if (!p.helper) this.addGrime(p, 1);   // you landed in the mud
   }
 
   removePlayer(p) {
     if (this.driving(p)) { this.cart.driver = null; this.cart.v = 0; }
     for (const s of spill(p.x, p.z, p.pocket, this.rng)) this.addBall(s);
+    if (p.one) { const b = this.addBall({ x: p.x, y: SIM.BALL_R, z: p.z, vx: 0, vy: 0, vz: 0, kind: 'one' }); if (b) b.rest = true; }
     this.players.delete(p.id);
+    this.signed.delete(p.id); this.ready.delete(p.id);
     this.events.push({ t: 'leave', id: p.id });
   }
 
-  endShift() {
+  endShift(ending = false) {
     this.phase = 'report';
     // Closing time: hired help and the cart turn in what they're carrying, so it counts today.
     for (const h of this.helpers) { this.bank(h.pocket, h.id, 'helper', h.pocketW ?? h.pocket); h.pocket = 0; h.pocketW = 0; h.target = null; }
     if (this.cart) { this.bank(this.cart.load, this.cart.driver ?? 'cart', 'cart', this.cart.loadW ?? this.cart.load); this.cart.load = 0; this.cart.loadW = 0; this.cart.boostT = 0; }
-    // The performance review: BV at the bell against Corporate's target.
+    // The ball washer at the bell: the night crew washes half of what's left at half pay; the rest goes dirty.
+    if (this.hopper.n > 0) {
+      const half = Math.floor(this.hopper.n / 2), payHalf = cents(this.hopper.credit * 0.5 * 0.5);
+      this.stats.unwashed = this.hopper.n - half;
+      this.stats.lostPremium = cents(this.hopper.credit - payHalf);
+      this.cash = cents(this.cash + payHalf); this.stats.cash = cents(this.stats.cash + payHalf);
+      this.hopper = { n: 0, credit: 0, frac: 0 };
+    }
+    // The performance review: Upkeep at the bell against Corporate's target (council round 2, §1.2).
     let quota = null;
-    if (this.quota) {
-      // Corporate reviews a crew that worked: no banked balls, no stamp, whatever the BV says.
-      const bv = this.valueNow().bv, hit = this.stats.deposited > 0 && bv + 1e-9 >= this.quota.target;
+    if (this.quota && !ending) {
+      const v = this.valueNow(), target = this.quotaTarget();
+      const hit = this.stats.deposited > 0 && v.bv / v.rate + 1e-9 >= 1 + this.quota.q;
       const bonus = hit ? cents(this.stats.cash * 0.15) : 0;
       if (hit) { this.stamps++; this.cash = cents(this.cash + bonus); }
-      quota = { target: this.quota.target, bv, hit, bonus, stamps: this.stamps, title: this.title() };
+      quota = { target, bv: v.bv, hit, bonus, stamps: this.stamps, title: this.title() };
       this.events.push({ t: 'quota', ...quota });
     }
+    // Crew records (from day 3).
+    let record = null;
+    if (this.day >= 3 && this.stats.cash > this.records.cash) {
+      record = { cash: this.stats.cash, was: this.records.cash };
+      this.records = { cash: this.stats.cash, banked: this.stats.deposited, day: this.day };
+      this.pa('record');
+    }
     for (const k of Object.keys(this.stats)) this.totals[k] = (this.totals[k] ?? 0) + this.stats[k];
-    this.report = { day: this.day, ...this.stats, left: this.balls.size, bank: this.cash, quota, tomorrow: tomorrowText(this.day + 1) };
+    this.report = { day: this.day, ...this.stats, left: this.balls.size, bank: this.cash, quota, record,
+      ledger: this.ledger(), promo: this.promoInfo(), venue: this.venue, title: this.title(),
+      tomorrow: tomorrowText(this.day + 1, this.venue, this.endless) };
+    if (ending) this.report.ending = { days: this.day, banked: this.totals.deposited, commendations: this.commendations, quotas: this.totals.stamps + this.stamps };
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'report', day: this.day, report: this.report });
+  }
+
+  // Employee of the Shift and the personal ledger (council round 2, §5.2).
+  ledger() {
+    const rats = this.online().length ? this.online() : [...this.players.values()];
+    const AWARDS = [['Employee of the Shift', 'banked'], ['Most Horizontal Associate', 'knockdowns'], ['Department of Wet', 'dived'],
+      ['Fry Laureate', 'cooked'], ['Crank Operator of the Shift', 'scrubbed'], ['Hydration Officer', 'hosed'], ['Enthusiasm (Noted)', 'pings']];
+    const award = new Map();
+    for (const [name, key] of AWARDS) {
+      const best = rats.filter(r => !award.has(r.id) && (key === 'banked' || r.shift[key] > 0))
+        .sort((a, b) => b.shift[key] - a.shift[key])[0];
+      if (best) award.set(best.id, name);
+    }
+    return rats.map(r => ({ id: r.id, name: r.name, color: r.color, ...r.shift, award: award.get(r.id) ?? 'Present' }));
   }
 
   // ---- what goes over the wire ----------------------------------------------
 
   snapshot() {
-    const c = this.cart;
+    const c = this.cart, now = this.now();
+    const cr = this.cranking ?? {};
+    const rateOf = s => (cr[s] && now - cr[s].at < 400 ? +cr[s].rate.toFixed(2) : 0);
     return {
       phase: this.phase, day: this.day, shiftT: Math.round(this.shiftT * 10) / 10, shiftSecs: this.shiftSecs, cash: this.cash,
-      mult: this.mult,
+      mult: this.mult, venue: this.venue, venueDay: this.venueDay, endless: this.endless,
       players: [...this.players.values()].map(p => ({
         id: p.id, name: p.name, color: p.color, x: +p.x.toFixed(2), z: +p.z.toFixed(2), yaw: +p.yaw.toFixed(3),
         pocket: p.pocket, down: +p.down.toFixed(2), online: p.online > 0, gear: p.gear, wand: p.wand,
-        diving: p.diving, air: +p.air.toFixed(1), bag: p.bag, pumping: p.pumping,
+        diving: p.diving, air: +p.air.toFixed(1), bag: p.bag, pumping: p.pumping, grime: p.grime, one: p.one,
+        ready: this.ready.has(p.id), signed: this.signed.has(p.id),
       })),
       value: this.valueNow(),
-      quota: this.quota, stamps: this.stamps, title: this.title(), commendations: this.commendations,
-      // After the bell, today is already folded into the totals.
-      outstanding: BALLS_OUTSTANDING - (this.totals.deposited ?? 0) - (this.phase === 'report' ? 0 : this.stats.deposited),
+      quota: this.quota && { q: +this.quota.q.toFixed(4), target: this.quotaTarget() },
+      stamps: this.stamps, title: this.title(), commendations: this.commendations,
+      outstanding: this.outstanding, records: this.records,
       silo: this.stats.deposited, lastCall: this.lastCall(),
+      promo: this.promoInfo(), revealT: +this.revealT.toFixed(1),
+      lastBucket: this.lastBucket && { phase: this.lastBucket.phase, by: this.lastBucket.by ?? null },
+      washer: this.perks.washer ? { n: this.hopper.n, credit: this.hopper.credit, auto: this.perks.washAuto,
+        L: cr.L && now - cr.L.at < 400 ? cr.L.id : null, R: cr.R && now - cr.R.at < 400 ? cr.R.id : null, rateL: rateOf('L'), rateR: rateOf('R') } : null,
       gary: this.gary && { phase: this.gary.phase, t: +this.gary.t.toFixed(1), x: +this.gary.x.toFixed(2), z: +this.gary.z.toFixed(2), yaw: +this.gary.yaw.toFixed(3) },
-      pond: { sunk: this.sunkCount(), unlocked: this.day >= POND.FROM_DAY },
+      pond: { sunk: this.sunkCount(), unlocked: this.pondOpen() },
       fries: { stock: this.fries, max: FRIES.MAX, open: !!this.perks.shed },
       fixtures: Object.fromEntries(Object.entries(this.fixtures).map(([k, v]) => [k, +v.toFixed(2)])),
       helpers: this.helpers.map(h => ({ id: h.id, name: h.name, x: +h.x.toFixed(2), z: +h.z.toFixed(2), yaw: +h.yaw.toFixed(3), pocket: h.pocket, down: +h.down.toFixed(2) })),
@@ -766,7 +1134,11 @@ export class Crew {
   toSave() {
     // `day` is the next day to play: a finished shift has been banked.
     const day = this.phase === 'report' ? this.day + 1 : this.day;
-    return { v: 1, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, gear: this.gearByName, commendations: this.commendations, stamps: this.stamps, pondSunk: this.sunkCount(), fries: this.fries, venue: this.venue, debuts: [...this.debuts], savedAt: new Date(this.now()).toISOString() };
+    return { v: 2, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, gear: this.gearByName,
+      commendations: this.commendations, stamps: this.stamps, pondSunk: this.sunkCount(), fries: this.fries,
+      venue: this.venue, venueDay: this.venueDay, outstanding: this.outstanding, pendingReveal: this.pendingReveal,
+      endless: this.endless, records: this.records, voiced: [...this.voiced], debuts: [...this.debuts],
+      savedAt: new Date(this.now()).toISOString() };
   }
 }
 
@@ -778,14 +1150,17 @@ const MEMOS = [
   'Smiling is not required, but it is tracked.',
   'Dimples asks that you keep the mats clean. Dimples is a golf ball.',
 ];
-function memoText(day, quota, rng) {
+const RAT_MEMOS = ["Today's target: whatever. — the Rats", 'Reminder: we are Corporate now. Please do not tell us.', 'Fries are free. For us. — the Rats'];
+function memoText(day, target, endless, rng) {
+  if (endless) return RAT_MEMOS[Math.floor(rng() * RAT_MEMOS.length)];
   const line = MEMOS[Math.floor(rng() * MEMOS.length)];
-  if (!quota) return 'Welcome to the Muni Range. Pick up balls. Bank them. Corporate pays per ball. ' + line;
-  return "Today's Ball Value target is $" + quota.target.toFixed(2) + ' at the closing bell. ' + line;
+  if (target == null) return 'Welcome to the Muni Range. Pick up balls. Bank them. Corporate pays per ball. ' + line;
+  return "Today's Ball Value target is $" + target.toFixed(2) + ' at the closing bell. ' + line;
 }
-function tomorrowText(day) {
+function tomorrowText(day, venue, endless) {
+  if (endless) return 'Tomorrow: Range Rats LLC opens as usual. The job never ends.';
   if (day === 2) return 'Tomorrow: Corporate sets your first Ball Value target. Last Call begins at dusk.';
-  if (day === 4) return 'Tomorrow: lead balls (×3) arrive. They always land in the pond. Pond Clarity now counts.';
   if (day === 3) return 'Tomorrow: Gary from Regional inspects. Clean the sign, the mats, the cart and the stand, and huddle at the stand when he arrives.';
+  if (venue === 0) return 'Tomorrow: three review stamps and the franchise fee earn a promotion to the Range Club.';
   return 'Tomorrow: more balls. Corporate thanks you for your continued compliance.';
 }

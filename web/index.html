@@ -76,6 +76,12 @@
   #memo-target { font-size: 1.4em; font-weight: 800; color: #b3261e; }
   .sheet p.stamp b { color: inherit; } .sheet p.stamp.hit { color: #6fcf7c; } .sheet p.stamp.miss { color: #ff8a7a; }
   .sheet p.dim { color: var(--dim); font-weight: 500; display: block; }
+  #report-extra { display: flex; flex-direction: column; gap: 1em; }
+  #report-extra .ledger, #report-extra .promo { width: min(calc(100vw - 32px), 30em); font-size: 0.85em; }
+  #report-extra .ledger p { display: flex; justify-content: space-between; gap: 1em; }
+  #report-extra .ledger b { color: var(--accent); font-weight: 600; }
+  #report-extra .note { color: var(--dim); }
+  #report-extra button { margin-top: 0.5em; }
   #roster li.help { color: var(--dim); font-weight: 500; }
   #meter { position: absolute; left: 50%; top: 64%; width: min(60vw, 14em); height: 0.7em; transform: translateX(-50%);
     background: rgba(20, 16, 32, 0.6); border-radius: 0.35em; overflow: hidden; box-shadow: 0 0 0 2px rgba(255, 248, 236, 0.5); }
@@ -138,6 +144,7 @@
 <div id="report" class="card hidden">
   <div class="split">
     <div class="sheet" id="report-body"></div>
+    <div id="report-extra"></div>
     <div class="sheet shop"></div>
   </div>
   <div class="row"><button id="next">Next shift</button></div>

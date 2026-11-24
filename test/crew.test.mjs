@@ -75,13 +75,13 @@ test('dropping balls in the bucket stand pays the whole crew', () => {
   const { crew } = makeCrew();
   const a = crew.join('A');
   crew.input(a, { a: [{ t: 'start' }] });
-  a.pocket = 3;
+  a.pocket = 3; a.pocketW = 3;   // deposit() reads the weight; real pickups keep both in step
   standOn(crew, a, 0, -40);
   crew.input(a, { a: [{ t: 'deposit' }] });
   assert.equal(crew.cash, 0, 'not at the stand');
   standOn(crew, a, SIM.STAND.x, SIM.STAND.z - 1);
   crew.input(a, { a: [{ t: 'deposit' }] });
-  assert.equal(crew.cash, 3 * 1.5 * SIM.BALL_PRICE, 'BV = rate 1 x Upkeep 1.5 (Curb 1)');
+  assert.equal(crew.cash, 5.63, 'BV = rate 1 x Upkeep 1.5 (Curb 1), x 1.25 for a clean Rat: 5.625 to cents');
   assert.equal(a.pocket, 0);
 });
 
