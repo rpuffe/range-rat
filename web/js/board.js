@@ -7,6 +7,7 @@
 //   b.floatText(x, y, z, 'text', '#fff');  // rises ~1.5 m and fades over 1.6 s
 //   b.tick(dt);                            // call every frame (flip animation + float labels)
 import * as THREE from 'three';
+import { BOARD_YAW } from './signs.js';
 
 const W = 1024, H = 512;
 const MONO = '"Courier New", ui-monospace, Menlo, Consolas, monospace';
@@ -77,7 +78,7 @@ export function createBoard(scene, { x, z }) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, BOTTOM + 0.2, 0.16), frameMat);
     post.position.set(sx, (BOTTOM + 0.2) / 2, 0); root.add(post);
   }
-  root.position.set(x, 0, z);
+  root.position.set(x, 0, z); root.rotation.y = BOARD_YAW;   // faces the path and the mats (signs.js)
   disposables.push(boardMat, frameMat, front.geometry, back.geometry, frame.geometry);
 
   let s = null;                // last state

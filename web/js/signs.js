@@ -38,6 +38,7 @@ export const VIEWERS = {
 };
 
 // ---- fixed placements the builders share ------------------------------------------------------------------------
+export const BOARD_YAW = 35 * Math.PI / 180;   // the Board over the stand, turned toward the gate and the path
 export const WASHER_YAW = Math.PI;   // the washer's front (window, drum, UNWASHED board) faces the field (-z)
 const SHED_Z = FRIES.SHED.z + 2.25;  // main.js shedSign: the hut's centre (its counter side faces -z)
 const GATE = { x: -3, z: 9.5 };      // mirrors scenery.js ENTRANCE.gate
@@ -55,9 +56,11 @@ export const SIGNS = [
   { id: 'arch.out', file: 'scenery.js', pos: { x: GATE.x, y: 5.45, z: GATE.z + 0.16 }, normal: NORTH, viewers: ['lotPath'] },
   { id: 'arch.in', file: 'scenery.js', pos: { x: GATE.x, y: 5.45, z: GATE.z - 0.16 }, normal: SOUTH, viewers: ['walkway', 'teeCentre'] },
   // The Board over the stand (DAYS WITHOUT AN INCIDENT and the slogans ride its banner).
-  { id: 'board.front', file: 'board.js', pos: { x: SIM.STAND.x, y: 5, z: SIM.STAND.z + 1.26 }, normal: NORTH, viewers: ['reveal'] },
-  { id: 'board.back', file: 'board.js', pos: { x: SIM.STAND.x, y: 5, z: SIM.STAND.z + 1.14 }, normal: SOUTH,
-    viewers: ['spawn', 'standFront', 'fieldBack'] },
+  // Turned 35° toward the gate (playtest: it was edge-on to anyone walking the path from the lot); it
+  // now also reads far better from the middle of the mat line.
+  { id: 'board.front', file: 'board.js', pos: { x: SIM.STAND.x, y: 5, z: SIM.STAND.z + 1.26 }, normal: facing(BOARD_YAW), viewers: ['reveal'] },
+  { id: 'board.back', file: 'board.js', pos: { x: SIM.STAND.x, y: 5, z: SIM.STAND.z + 1.14 }, normal: facing(BOARD_YAW + Math.PI),
+    viewers: ['spawn', 'standFront', 'fieldBack', 'path', 'teeCentre'] },
   // The ball washer: BALL WASHER angled toward the path and the drop-in spot, a back face for anyone behind it,
   // and the UNWASHED board on the front of the post.
   { id: 'washer.sign', file: 'washer.js', pos: { x: WASHER.x, y: 2.3, z: WASHER.z }, normal: facing(Math.PI + 0.55),
