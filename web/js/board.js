@@ -3,6 +3,7 @@
 //
 //   const b = createBoard(scene, { x, z });
 //   b.update(state);                       // ~10x/s; redraws only when displayed values change
+//     state: { bv, rate, upkeep, hustle, curb, pond, fries, kpiLabel, kpi, slogan, quota, outstanding, lastCall, gary, title, silo }
 //   b.floatText(x, y, z, 'text', '#fff');  // rises ~1.5 m and fades over 1.6 s
 //   b.tick(dt);                            // call every frame (flip animation + float labels)
 import * as THREE from 'three';
@@ -137,19 +138,22 @@ export function createBoard(scene, { x, z }) {
     g.fillStyle = '#6fd36f'; g.fillText(`+${money(st.rate)}/s`, 40, 284);
     g.fillStyle = '#e06a5a'; g.fillText(`UPKEEP -${money(st.upkeep)}/s`, 250, 284);
 
-    // gauges (right column)
+    // gauges (right column). Three rows at 58 px at the Muni and the Club; from Tiered on, a fourth row for the
+    // current venue's own KPI (VENUE_RULES[v].kpi), so four at 44 px (council round 4, §3.0).
     const gx = 612, gw = 388;
     const gauges = [['CURB APPEAL', st.curb, '#6fd36f'], ['POND CLARITY', st.pond, '#4fb3e8'], ['FRY SATISFACTION', st.fries, '#f0a93a']];
+    if (st.kpiLabel) gauges.push([String(st.kpiLabel).toUpperCase(), st.kpi, '#c77dff']);
+    const four = gauges.length > 3, rowH = four ? 44 : 58, lab = four ? 17 : 20, barY = four ? 20 : 24, barH = four ? 18 : 24;
     gauges.forEach(([label, v, color], i) => {
-      const gy = 98 + i * 58;
-      g.textAlign = 'left'; g.font = `600 20px ${SANS}`;
+      const gy = 98 + i * rowH;
+      g.textAlign = 'left'; g.font = `600 ${lab}px ${SANS}`;
       g.fillStyle = v == null ? '#4a4f5a' : '#cfc8b0'; g.textBaseline = 'alphabetic';
-      g.fillText(label, gx, gy + 18);
-      if (v != null) { g.textAlign = 'right'; g.font = `700 20px ${MONO}`; g.fillText(Math.round(clamp01(v) * 100) + '%', gx + gw, gy + 18); }
-      bar(gx, gy + 24, gw, 24, v == null ? 0 : v, color);
+      g.fillText(label, gx, gy + lab - 2);
+      if (v != null) { g.textAlign = 'right'; g.font = `700 ${lab}px ${MONO}`; g.fillText(Math.round(clamp01(v) * 100) + '%', gx + gw, gy + lab - 2); }
+      bar(gx, gy + barY, gw, barH, v == null ? 0 : v, color);
       if (v == null) {
-        g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#6b7180'; g.font = `600 15px ${SANS}`;
-        g.fillText('COMING SOON — CORPORATE', gx + gw / 2, gy + 36);
+        g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#6b7180'; g.font = `600 ${four ? 13 : 15}px ${SANS}`;
+        g.fillText('COMING SOON — CORPORATE', gx + gw / 2, gy + barY + barH / 2);
       }
     });
 
@@ -177,6 +181,10 @@ export function createBoard(scene, { x, z }) {
     let banner = '', bcol = '#e8b04a', bg = '#1b1f27', fg = '#8f98a8';
     if (st.lastCall) { banner = 'LAST CALL'; bg = '#d98a12'; fg = '#1a1203'; }
     else if (st.gary) { banner = String(st.gary); bg = '#9c1f1f'; fg = '#ffe9e6'; }
+    else if (st.slogan) {         // a venue view's slogan (round 4), e.g. DAYS WITHOUT AN INCIDENT
+      const sl = typeof st.slogan === 'string' ? { text: st.slogan } : st.slogan;
+      banner = String(sl.text ?? ''); if (sl.bg) bg = sl.bg; if (sl.fg) fg = sl.fg;
+    }
     else { banner = 'EVERY BALL MATTERS.™'; }
     void bcol;
     g.fillStyle = bg; g.fillRect(24, 444, W - 48, 50);
@@ -189,7 +197,8 @@ export function createBoard(scene, { x, z }) {
   }
   const hustleShown = st => st.hustle > 1;
 
-  function bannerOf(st) { return st.lastCall ? 'LAST CALL' : st.gary ? String(st.gary) : 'SLOGAN'; }
+  const sloganText = sl => (sl == null ? '' : typeof sl === 'string' ? sl : String(sl.text ?? '') + '|' + (sl.bg ?? '') + '|' + (sl.fg ?? ''));
+  function bannerOf(st) { return st.lastCall ? 'LAST CALL' : st.gary ? String(st.gary) : st.slogan ? 'S:' + sloganText(st.slogan) : 'SLOGAN'; }
 
   // ---------- The Ball Silo ----------
   const SILO_H = 2.5, SILO_R = 0.5;
@@ -269,7 +278,8 @@ export function createBoard(scene, { x, z }) {
       state.pond == null ? 'x' : Math.round(clamp01(state.pond) * 100),
       state.fries == null ? 'x' : Math.round(clamp01(state.fries) * 100),
       state.quota == null ? 'x' : money(state.quota), commas(state.outstanding),
-      state.lastCall ? 'L' : '', state.gary || '', state.title || ''
+      state.lastCall ? 'L' : '', state.gary || '', state.title || '',
+      state.kpiLabel || '', state.kpi == null ? 'x' : Math.round(clamp01(state.kpi) * 100), sloganText(state.slogan),
     ].join('|');
     if (k === key) return;
     key = k;

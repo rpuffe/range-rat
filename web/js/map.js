@@ -49,7 +49,41 @@ export const MAP = {
     { id: 'backnet', name: 'the Back Net', x: 0, z: -190, y: 6, kind: 'net' },
     { id: 'delta', name: 'the Delta', x: -17, z: -72, y: 2.2, kind: 'creek', minVenue: 1 },
     { id: 'grate', name: 'the Grate', x: 63, z: -114, y: 2.4, kind: 'creek', minVenue: 1 },
+    // Round 4 (council-round4.md §3): each venue's new places enter the vocabulary with the venue.
+    { id: 'bowlA', name: 'Bowl A', x: -4, z: -48, y: 3, kind: 'bowl', minVenue: 2 },
+    { id: 'bowlB', name: 'Bowl B', x: 26, z: -76, y: 3, kind: 'bowl', minVenue: 2 },
+    { id: 'bowlC', name: 'Bowl C', x: -6, z: -140, y: 3, kind: 'bowl', minVenue: 2 },
+    { id: 'track', name: 'the Track', x: 0, z: -12, y: 2, kind: 'track', minVenue: 3 },
+    { id: 'turn', name: 'the Turn', x: -32, z: -24, y: 2, kind: 'track', minVenue: 3 },
+    { id: 'yard1', name: 'Yard 1', x: 80, z: -50, y: 2.4, kind: 'yard', minVenue: 4 },
+    { id: 'yard2', name: 'Yard 2', x: 80, z: -90, y: 2.4, kind: 'yard', minVenue: 4 },
+    { id: 'yard3', name: 'Yard 3', x: 80, z: -130, y: 2.4, kind: 'yard', minVenue: 4 },
+    { id: 'yard4', name: 'Yard 4', x: 80, z: -170, y: 2.4, kind: 'yard', minVenue: 4 },
+    { id: 'gnome', name: 'the Gnome', x: 84, z: -128, y: 1.6, kind: 'yard', minVenue: 4 },
+    { id: 'lift', name: 'the Lift', x: -44, z: 5, y: 4, kind: 'lift', minVenue: 5 },
   ],
+
+  // ---- round 4: world-dependent geometry (council-round4.md §3.0). Every rule that reads these checks the
+  // venue first, so venues 0-1 behave exactly as before (pinned by test/seam.test.mjs's goldens). ----------
+  // Tiered (2+): three Target Greens, flat "rest inside r -> cup" rules (web/js/tiered.js owns the rule).
+  BOWLS: [
+    { id: 'A', flag: 'red', x: -4, z: -48, r: 7, cup: 1.0 },
+    { id: 'B', flag: 'yellow', x: 26, z: -76, r: 8, cup: 1.0 },
+    { id: 'C', flag: 'blue', x: -6, z: -140, r: 9, cup: 1.0 },
+  ],
+  BOWLS_FROM: 2,
+  // Stadium (3+): the Ping Track, a painted oval. Centreline half-axes a x b, w wide; the cart is x MUL on it.
+  TRACK: { x: 0, z: -24, a: 32, b: 12, w: 5, MUL: 1.3, FROM: 3 },
+  // County (4+): the right net moves out to NET_X and four back yards open between the kerb and it.
+  YARDS: {
+    xMin: 64.5, xMax: 96, zMin: -189, zMax: -30, NET_X: 96.5, FROM: 4,
+    FENCES: [-70, -110, -150],                                     // picket fences (open gates), across x
+    MAILBOXES: [{ x: 90, z: -50 }, { x: 90, z: -90 }, { x: 90, z: -130 }, { x: 90, z: -170 }],
+    GNOME: { x: 84, z: -128 }, POOL: { x: 78, z: -124, r: 2.2 },  // Yard 3: the paddling pool and the Gnome
+  },
+  KERB_X: 64.5,                                                    // County Ordinance 1971: no vehicles past it
+  // Orbital (5): the Lift, a 2.6 m platform beside the Mower Shed. TOP is the car's height at the top.
+  LIFT: { x: -44, z: 5, r: 1.3, TOP: 120, FROM: 5 },
 };
 
 // ---- constants mirrored from sim.js (pinned equal by the test) ---------------------------------------------
@@ -154,11 +188,45 @@ export function wadeFactor(x, z, world) {
   return s === 'gravel' || s === 'mud' ? 0.8 : s === 'water' ? 0.5 : 1;
 }
 
+// ---- the field, per venue (round 4) ------------------------------------------------------------------------
+// What walkers are held inside. From the County (4) on, the right net comes down and walkers may go out to
+// x 96 (the Yards); vehicles stay behind the kerb (cartBlocked). Constant objects: callers must not mutate them.
+const FIELD_COUNTY = Object.freeze({ ...MAP.FIELD, xMax: MAP.YARDS.xMax });
+export const fieldFor = world => (venueOf(world) >= MAP.YARDS.FROM ? FIELD_COUNTY : MAP.FIELD);
+
+// Where the ball nets hang: { left, right, back }. The right one moves to x 96.5 at the County.
+const NETS_BASE = Object.freeze({ left: -MAP.NETS.side, right: MAP.NETS.side, back: MAP.NETS.back });
+const NETS_COUNTY = Object.freeze({ ...NETS_BASE, right: MAP.YARDS.NET_X });
+export const netsFor = world => (venueOf(world) >= MAP.YARDS.FROM ? NETS_COUNTY : NETS_BASE);
+
+// The County kerb: x past KERB_X - 0.5 (the cart's half-width) is a lawn. Only from venue 4.
+export const kerbBlocked = (x, z, world) => venueOf(world) >= MAP.YARDS.FROM && x > MAP.KERB_X - 0.5;
+
+// ---- the Ping Track (Stadium, 3+) -----------------------------------------------------------------------------
+// Distance from (x, z) to the Track's centreline ellipse (a few Newton steps on the angle; exact to ~1 mm).
+export function trackDist(x, z) {
+  const T = MAP.TRACK, a = T.a, b = T.b, px = Math.abs(x - T.x), pz = Math.abs(z - T.z);
+  let t = Math.atan2(a * pz, b * px);
+  for (let i = 0; i < 8; i++) {
+    const c = Math.cos(t), s = Math.sin(t), dx = a * c - px, dz = b * s - pz;
+    const f = -dx * a * s + dz * b * c;
+    const fp = a * a * s * s - a * c * dx + b * b * c * c - b * s * dz;
+    if (Math.abs(fp) < 1e-9) break;
+    t = Math.max(0, Math.min(Math.PI / 2, t - f / fp));
+  }
+  return Math.hypot(a * Math.cos(t) - px, b * Math.sin(t) - pz);
+}
+// On the painted Track (geometry only; whether it is painted yet is the venue's business): within w/2 + pad.
+export const onTrack = (x, z, pad = 0) => trackDist(x, z) <= MAP.TRACK.w / 2 + pad;
+// The cart's top-speed multiplier here: x1.3 on the Track from the Stadium on, x1 everywhere else.
+export const cartSpeedAt = (x, z, world) => (venueOf(world) >= MAP.TRACK.FROM && onTrack(x, z) ? MAP.TRACK.MUL : 1);
+
 // ---- the cart: the same rule wet or dry --------------------------------------------------------------------
 // Blocked when: within HW + 1.0 of the creek and off the Cart Bridge's deck; within the pond (or the mud flat)
 // + 1 m; within a rock or box + 1.2 m; outside the field (the cart's z limit is zMax + 6, the parking spot).
-// `world` is accepted for symmetry and deliberately ignored: what the driver learns on day 4 stays true.
-export function cartBlocked(x, z, world) {   // eslint-disable-line no-unused-vars
+// Wet or dry makes no difference: what the driver learns on day 4 stays true. The venue adds only new
+// obstacles: the County kerb (4+) and the Lift's platform (5). Venues 0-3 are identical.
+export function cartBlocked(x, z, world) {
   const F = MAP.FIELD;
   if (x < F.xMin || x > F.xMax || z < F.zMin || z > F.zMax + 6) return true;
   if (inPondArea(x, z, 1)) return true;
@@ -168,10 +236,13 @@ export function cartBlocked(x, z, world) {   // eslint-disable-line no-unused-va
     const br = onBridge(x, z);
     if (!(br && br.cart)) return true;
   }
+  if (kerbBlocked(x, z, world)) return true;
+  if (venueOf(world) >= MAP.LIFT.FROM && Math.hypot(x - MAP.LIFT.x, z - MAP.LIFT.z) < MAP.LIFT.r + 1.2) return true;
   return false;
 }
 
-// Clamp a walker or cart (anything with x, z) to the field. Returns true if it moved.
+// Clamp a cart (anything with x, z) to the netted field, MAP.FIELD at every venue: vehicles never leave it.
+// Walkers use sim.js clampToField(p, world), which follows fieldFor(world). Returns true if it moved.
 export function keepInField(p, zPad = 0) {
   const F = MAP.FIELD;
   const x = Math.max(F.xMin, Math.min(F.xMax, p.x)), z = Math.max(F.zMin, Math.min(F.zMax + zPad, p.z));
@@ -181,12 +252,13 @@ export function keepInField(p, zPad = 0) {
 }
 
 // ---- balls: nets and obstacles ----------------------------------------------------------------------------------
-// The nets catch everything. A ball past x = +-64.5 or z = -190 is put back on the net; its normal velocity
-// reverses at x0.1 and everything else (tangential, and vy) is kept at x0.4, so it drops. Returns true if hit.
-export function netClamp(b) {
-  const { side, back } = MAP.NETS;
+// The nets catch everything. A ball past the side nets (x = +-64.5; the right one is 96.5 at the County) or
+// z = -190 is put back on the net; its normal velocity reverses at x0.1 and everything else (tangential, and
+// vy) is kept at x0.4, so it drops. Returns true if hit.
+export function netClamp(b, world) {
+  const { left, right, back } = netsFor(world);
   let hit = false;
-  if (b.x > side || b.x < -side) { b.x = b.x > 0 ? side : -side; b.vx *= -0.1; b.vz *= 0.4; b.vy *= 0.4; hit = true; }
+  if (b.x > right || b.x < left) { b.x = b.x > right ? right : left; b.vx *= -0.1; b.vz *= 0.4; b.vy *= 0.4; hit = true; }
   if (b.z < back) { b.z = back; b.vz *= -0.1; b.vx *= 0.4; b.vy *= 0.4; hit = true; }
   return hit;
 }
@@ -221,9 +293,9 @@ export function obstacleBounce(b) {
   return hit;
 }
 
-// One call per physics step, after the position update: nets, then obstacles.
-export function ballFeatures(b) {
-  const n = netClamp(b), o = obstacleBounce(b);
+// One call per physics step, after the position update: nets (where they hang at this venue), then obstacles.
+export function ballFeatures(b, world) {
+  const n = netClamp(b, world), o = obstacleBounce(b);
   return n || o;
 }
 

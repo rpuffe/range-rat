@@ -290,3 +290,92 @@ Source: `design/council-round3.md`. What changed in the build:
 - **Gary** counts only the mats in play (`activeMats`).
 - **MOW-E.** Lanes are [-24, -36, -120, -156, -166, -178] (the Short Grass, Short of Red, the Tractor, the Rock, the Long Grass, the Back Net), clear of the rock, tractor and Tiered bowls. The Board and toast name the lane; two orange-and-white cones mark it at x +-64 during the warning.
 - **Shop hint** fires at cash >= $20 (hinter `cash` context); the old `nudged` toast in `hud()` is gone. The 1958 scorecard needs venue 4.
+
+## Round 4 venue seam (build item 3): how to add a venue module
+
+The seam is built once in the core files so that each venue (council-round4.md §3.1–3.4) is **new files only**.
+Nothing changes at the Muni or the Club: `test/seam.test.mjs` pins golden fingerprints (landings, `cartBlocked`,
+`clampToField`, BV, and a whole seeded crew) recorded before the seam existed.
+
+**What a venue build touches (and nothing else in the core):**
+1. `server/venues/<id>.mjs` (new) and **one** import + **one** entry in `server/venues/index.mjs` (`MODULES`).
+2. `web/js/views/<id>.js` (new) and **one** import + **one** entry in `web/js/views/index.js` (`VIEWS`).
+3. Pure shared rules in `web/js/<id>.js` (new; testable in node, no THREE). If it holds a shop row, it must import
+   nothing from `sim.js` (the `dive.js` rule: a cycle is a TDZ crash). Then uncomment **its own** pre-written
+   import and `SHOP` line in `sim.js` (`GUTTERS_ROW`, `DRONES_ROW`, `TETHER_ROW`).
+4. Its own `test/<id>.test.mjs`. Plus the files §5.2 assigns (`kitchen.js` to the deck, `scuba.js` to the
+   Orbital, one-line `pa.js` adds).
+
+The commented slots in both registries (and in `sim.js`) are pre-written in venue order with a blank comment line
+between them, so parallel builds edit different lines. Uncomment yours; don't reorder or reformat the others.
+
+**Server module** (`export default {...}`; every hook optional; `st` is what `init` returned, `{}` without it):
+
+| Hook | Signature | When |
+| --- | --- | --- |
+| `id` | `'tiered'` | unique, `/^[a-z][a-z0-9]{0,15}$/`; also its save key and its `s.mods` key |
+| `venue` | `2` | active at this venue **and every later one** (the bowls stay at the Stadium) |
+| `init` | `(crew, saved) -> st` | once, at the end of the `Crew` constructor; `saved` is your last `toSave` or `undefined` (validate it) |
+| `startShift` | `(crew, st)` | each morning after the reset (balls cleared, Rats placed, mud), before the quota is set |
+| `tick` | `(crew, st, dt)` | every server tick, any phase; `crew.working()` means "the shift clock is running" |
+| `endShift` | `(crew, st, ending)` | at the bell, after helpers, cart and tube bank, before the quota and the report |
+| `serve` | `(crew, st, p, {item, quality, n})` | after a kitchen serve went through (`n` = fry baskets it made) |
+| `ping` | `(crew, st, b, {prize, n, cart})` | a **paid** ping only: a crew ball (`b.by`) on a driven cart, during the shift |
+| `knockDown` | `(crew, st, p, by)` | anyone (a Rat, or a helper: `p.helper`) knocked flat; `by` is `'cart'`, `'gary'`, `'mower'`, yours, or null (a ball) |
+| `input` | `(crew, st, p, a) -> true` | an action type `crew.input` doesn't know (`{t: 'lift'}`); return `true` if it was yours |
+| `launchMod` | `(crew, st, shot, {mat, kind, lead}) -> shot` | every customer shot before it spawns; return a new shot or mutate it (`shot.curve` is the slice) |
+| `onRest` | `(crew, st, b)` | a ball came to rest (flight physics, or the end of a creek drift), after its `'rest'` event; move or delete it and emit your own event |
+| `clamp` | `(crew, st, p) -> true` | replaces `clampToField(p, world)` for a walker you placed yourself (the EVA) |
+| `inspect` | `(crew, st, stopId) -> false` | veto one of Gary's stops (`'kitchen'` during an incident) |
+| `signal` | `(crew, st, name, data)` | messages between modules: send with `crew.mods.signal('target', {...})` |
+| `awards` | `(crew, st) -> [[title, shiftKey]]` | extra ledger awards, keyed on a counter you keep in `p.shift[shiftKey]` |
+| `kpi` | `(crew, st) -> 0..1 or null` | this venue's Board gauge. Read **only** when `module.venue === crew.venue`; it is called often, so return a stored number |
+| `snapshot` | `(crew, st) -> json` | every tick, as `s.mods[id]` (keep it small) |
+| `toSave` | `(crew, st) -> json or undefined` | kept as `save.mods[id]`: the module's one save key |
+
+Unknown hook names throw (`checkModule`), so a typo fails the tests. Modules below their venue get only `init`.
+Keys in `save.mods` for modules a build doesn't have are carried through untouched.
+
+**Crew helpers for modules:** `crew.working()`, `crew.world()`, `crew.venue`, `crew.rng` (seeded: use it, never
+`Math.random`), `crew.events.push({t: ...})` (your own event types), `crew.bank(n, by, kind, w, gear)` (balls to
+the stand at today's BV; `gear` 1 is "at gear ×1"), `crew.payCash(amount, by)` (a tab or a fine; never below $0;
+returns the change; emit your own event), `crew.addBall(spec)`, `crew.balls` (delete, then push `{t: 'gone', id}`),
+`crew.knockDown(p, by)`, `crew.pa(id, {once: true, big: true})` (`big` skips the per-shift cap: once-ever lines),
+`crew.mult` with `CART.MAX_MULT` and `CART.MULT_STEP` (Hustle), `crew.stats.<x>` (summed into totals and the report),
+`p.shift.<x>` (the ledger), `crew.mods.state(id)` (another module's state; read-only by convention).
+
+**The fourth gauge.** `ballValue({..., kpi})` adds `0.5 × kpi` to Upkeep and `upkeepCeiling({..., kpi})` gains the
+slot (3.0 with all four; the quota scales with it). From Tiered on, the Board shows a fourth row labelled
+`VENUE_RULES[v].kpi` (BAY UTILIZATION, CROWD SENTIMENT, ZONING COMPLIANCE, ORBITAL DEBRIS) at 44 px; until the
+venue's module exists it reads COMING SOON and the ceiling stays 2.5. `VENUE_RULES[v].howto` is the reveal's second
+memo card (`revealCards`).
+
+**World geometry (`map.js`; every rule checks the venue, so 0–1 are identical):** `MAP.BOWLS` (A, B, C;
+`BOWLS_FROM` 2); `MAP.TRACK` with `onTrack(x, z, pad)`, `trackDist(x, z)` and `cartSpeedAt(x, z, world)` (×1.3 on
+it from venue 3); `MAP.YARDS` (fences, mailboxes, the Gnome, the pool, `NET_X` 96.5; from 4); `MAP.KERB_X` 64.5
+(`kerbBlocked`, inside `cartBlocked`); `MAP.LIFT` (−44, 5; r 1.3; `TOP` 120; a cart obstacle at 5).
+`fieldFor(world)` is the walkers' box (x to 96 from the County); `netsFor(world)` is `{left, right, back}` and
+`netClamp(b, world)` / `ballFeatures(b, world)` use it; `clampToField(p, world)` is called with the world everywhere;
+carts stay in `MAP.FIELD` (`keepInField`). Landmarks for the new places (Bowl A–C, the Track, the Turn, Yard 1–4,
+the Gnome, the Lift) are already in `MAP.LANDMARKS` with their `minVenue`.
+
+**Client view** (`web/js/views/<id>.js`): `export default { id, venue, create(ctx) { return instance; } }`. `create`
+runs once, the first time the crew is at `venue` or later (endless counts as 5); build meshes there. Instance
+methods, all optional: `show(on)` (the crew's venue crossed your line), `onSnapshot(s, mine)` (`mine` is
+`s.mods?.[id]`), `onEvent(e)` (every server event), `tick(dt, t)` (each frame, after the camera is placed),
+`prompt(btn, ibtn) -> string` (ahead of the generic prompts), `use() -> true` (click, Space, Ⓐ), `interact() -> true`
+(E, Ⓧ), `clamp(me) -> true`, `speedMul(me) -> number`, `capturing() -> true` (freeze walking),
+`camera(cam, dt) -> true`, `banner(s) -> string or {text, bg, fg}` (the Board's slogan when there's no Last Call or
+Gary), `amb(s) -> {crowd, ...}` (ambience overrides), `reportLines(r) -> [string]`. The first non-null answer wins,
+in `VIEWS` order. `ctx` is `{ scene, camera, me, board, SFX, keys, terrain, sky, rightNet (the scenery's right side
+net mesh), cartPose, world(), nameOf, toast, feed, showMemo, venues (venues.js parts: deck, stands.left/right,
+crowd[], crowdBob, jumbo, car, carY, debris, groups), crew(), balls(), pad(), act(msg), playing(), driving() }`.
+Send your own actions with `ctx.act({t: 'lift'})`. The kitchen gets `state()` (the live snapshot) for the mug meter.
+
+**venues.js, done here:** the Tiered deck is x ±20 (stairs x −25 to −20; `parts.deck`); the Stadium stands are
+`parts.stands.left` and `.right` (the County view hides the right one); the Orbital Lift stands at `MAP.LIFT` and
+its car rests on the platform at `parts.carY` (the Orbital view raises it); `jumbo` and `crowd` are exposed.
+
+**Tests:** a module's own test builds a crew with `new Crew(code, save, { modules: [mine], seed, now })`; see the
+dummy module in `test/seam.test.mjs` (it is never in `MODULES`). Views can be tested through
+`web/js/views/registry.js` (`createViews(ctx, [view])`) if their `create` avoids THREE.

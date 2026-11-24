@@ -13,7 +13,8 @@ import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall
   gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT, FIXTURES, FIXTURE_BY_ID, KIND_W, BALLS_OUTSTANDING, payFor,
   upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed, pickKind,
   VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor } from '../web/js/sim.js';
-import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor } from '../web/js/map.js';
+import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor, cartSpeedAt } from '../web/js/map.js';
+import { VenueHooks, MODULES } from './venues/index.mjs';
 import { newMat, openShift as openMats, stepMat, matReady, shoot, matWire } from '../web/js/customers.js';
 import { mowerDue, newMower, stepMower, mowerSnap } from '../web/js/mowe.js';
 import { menuFor, yieldFor, garyEats } from '../web/js/menu.js';
@@ -83,7 +84,7 @@ function cleanDive(g) {
 }
 
 export class Crew {
-  constructor(code, save = null, { shiftSecs = null, now = Date.now, seed } = {}) {
+  constructor(code, save = null, { shiftSecs = null, now = Date.now, seed, modules = MODULES } = {}) {
     this.code = code;
     this.shiftOverride = shiftSecs;      // the env override wins over the day lengths
     this.shiftSecs = shiftSecs ?? SIM.SHIFT_SECS;
@@ -143,6 +144,8 @@ export class Crew {
     this.morningMud();
     const sunk = this.pondOpen() ? int(save?.pondSunk, 0, POND.MAX_SUNK) : 0;
     for (let i = 0; i < sunk; i++) this.sinkNew('range');
+    // The venue seam (council round 4): venue modules (server/venues/), each with its own save key.
+    this.mods = new VenueHooks(this, modules, save?.mods);
   }
 
   // ---- membership ----------------------------------------------------------
@@ -186,12 +189,13 @@ export class Crew {
   online() { return [...this.players.values()].filter(p => p.online > 0); }
   world() { return { venue: this.venue }; }   // what the map's rules depend on (Dimple Creek: dry or running)
   driving(p) { return !!this.cart && this.cart.driver === p.id; }
+  working() { return this.phase === 'shift' && !this.paused(); }   // the shift clock is running
   pondOpen() { return this.venue >= POND.FROM_VENUE; }
 
   // ---- the Corporate PA (council round 2, §4.3) --------------------------------
   // The server picks the moment; every client speaks the same line. Rare by rule.
-  pa(id, { once = false, chance = 1 } = {}) {
-    const now = this.now(), big = PA_BIG.has(id);
+  pa(id, { once = false, chance = 1, big: bigOpt = false } = {}) {
+    const now = this.now(), big = PA_BIG.has(id) || bigOpt;   // a venue module's once-ever line passes big: true
     if (once && this.voiced.has(id)) return false;
     if (!big && (this.paShift >= PA_CAP || now - this.paAt < PA_GAP_MS)) return false;
     if (chance < 1 && this.voiced.has(id) && this.rng() > chance) return false;
@@ -211,11 +215,12 @@ export class Crew {
     return ballValue({ perks: this.perks, mult: this.mult, cart: this.cart, curb: this.curb(), commendations: this.commendations,
       venue: this.venue,
       pond: this.pondOpen() ? pondClarity(this.sunkCount()) : null,
-      fries: this.perks.shed ? this.fries / FRIES.MAX : null });
+      fries: this.perks.shed ? this.fries / FRIES.MAX : null,
+      kpi: this.mods.kpi() });
   }
   ballPrice() { return this.valueNow().value; }
   title() { return this.endless ? 'Owner' : VENUE_RULES[this.venue].title; }
-  ceiling() { return upkeepCeiling({ pond: this.pondOpen() ? 1 : null, fries: this.perks.shed ? 1 : null }); }
+  ceiling() { return upkeepCeiling({ pond: this.pondOpen() ? 1 : null, fries: this.perks.shed ? 1 : null, kpi: this.mods.kpi() == null ? null : 1 }); }
 
   // n balls (count) worth w (summed weights). The carrier's gear factor: the cart
   // pays for its cleanliness, a Rat for theirs (grime), helpers never.
@@ -235,6 +240,17 @@ export class Crew {
     if (who) { who.shift.banked += n; who.shift.cash = cents(who.shift.cash + muddy); }
     this.countDown(n);
     this.events.push({ t: 'cash', by, n, cash: muddy, credit, kind, per: cents(muddy / Math.max(1, n)), clean: who ? who.grime === 0 : undefined });
+  }
+
+  // Cash in (a bar tab) or out (a fine) that isn't banked balls: never takes the crew below $0. Returns the change.
+  // The caller emits its own event. `by` is a player id (their ledger gets the income) or null.
+  payCash(amount, by = null) {
+    if (!Number.isFinite(amount) || amount === 0) return 0;
+    const d = cents(Math.max(-this.cash, amount));
+    this.cash = cents(this.cash + d); this.stats.cash = cents(this.stats.cash + d); this.dirty = true;
+    const who = by != null ? this.players.get(by) : null;
+    if (who && d > 0) who.shift.cash = cents(who.shift.cash + d);
+    return d;
   }
 
   // Balls Outstanding: down with every banked ball. At the Orbital Range it
@@ -285,7 +301,8 @@ export class Crew {
       let dx = msg.x - p.x, dz = msg.z - p.z;
       const d = Math.hypot(dx, dz);
       if (d > max) { dx *= max / d; dz *= max / d; }
-      p.x += dx; p.z += dz; clampToField(p);
+      p.x += dx; p.z += dz;
+      if (!this.mods.first('clamp', p)) clampToField(p, this.world());
       p.movedAt = now;
     }
     if (Number.isFinite(msg.yaw) && !this.driving(p)) p.yaw = msg.yaw;
@@ -310,6 +327,7 @@ export class Crew {
       else if (a?.t === 'sign') this.sign(p, !!a.on);
       else if (a?.t === 'cctv') { if (this.venue >= 1) this.pa('cctv', { once: true }); }
       else if (a?.t === 'mark') this.mark(p, a);
+      else if (a && typeof a.t === 'string') this.mods.first('input', p, a);   // a venue module's own action
     }
     return { denied };
   }
@@ -438,7 +456,8 @@ export class Crew {
     if (!c || c.driver !== p.id) return false;
     c.driver = null; c.v = 0;
     // Step out on the driver's side.
-    p.x = c.x - Math.cos(c.yaw) * 1.4; p.z = c.z + Math.sin(c.yaw) * 1.4; clampToField(p);
+    p.x = c.x - Math.cos(c.yaw) * 1.4; p.z = c.z + Math.sin(c.yaw) * 1.4;
+    if (!this.mods.first('clamp', p)) clampToField(p, this.world());
     p.yaw = c.yaw; p.movedAt = this.now();
     this.events.push({ t: 'unboard', by: p.id });
     return true;
@@ -449,7 +468,7 @@ export class Crew {
     const c = this.cart;
     if (!pose || !Number.isFinite(pose.x) || !Number.isFinite(pose.z)) return;
     const dt = Math.min(1, Math.max(0.05, (now - c.movedAt) / 1000));
-    const vmax = this.perks.cartSpeed * (c.boostT > 0 ? CART.BOOST : 1);
+    const vmax = this.perks.cartSpeed * (c.boostT > 0 ? CART.BOOST : 1) * cartSpeedAt(c.x, c.z, this.world());   // x1.3 on the Ping Track
     const max = vmax * 1.3 * dt + 0.6;
     let dx = pose.x - c.x, dz = pose.z - c.z;
     const d = Math.hypot(dx, dz);
@@ -614,6 +633,7 @@ export class Crew {
     } else if (prize === 'boost') c.boostT = CART.BOOST_SECS;
     else this.mult = Math.min(CART.MAX_MULT, this.mult + CART.MULT_STEP);
     this.events.push({ t: 'ping', by: b.by, prize, n, mult: this.mult });
+    this.mods.call('ping', b, { prize, n, cart: c });
   }
 
   // Corporate CCTV (council round 2, §4.6): a flag the whole crew sees for 10 s.
@@ -702,6 +722,7 @@ export class Crew {
       p.x = 18 + (slot++ % 6) * 2.4; p.z = 4; p.yaw = 0;
     }
     if (this.day > 1) { this.morningMud(); this.fries = Math.floor(this.fries / 2); }   // the fries went cold overnight
+    this.mods.call('startShift');      // venue modules' mornings: after the reset, before the quota is set
     // Corporate's memo and today's quota. Judged on Upkeep, so a mid-shift purchase can't buy it.
     if (this.endless) this.quota = null;
     else if (this.venue === 0) { const q = quotaQ(this.day, this.ceiling()); this.quota = q == null ? null : { q }; }
@@ -762,6 +783,7 @@ export class Crew {
     if (item === 'beer') this.stats.beers = (this.stats.beers ?? 0) + (q === 'burnt' ? 0 : 1);   // counted for the Tiered deck (overserving, later)
     this.events.push({ t: 'served', by: p.id, item, quality: q, n });
     if (n) { this.addFries(n, p.id); p.shift.cooked += n; }
+    this.mods.call('serve', p, { item, quality: q, n });
     return true;
   }
   addFries(n, by) {
@@ -1046,7 +1068,9 @@ export class Crew {
     if (r.phaseChange) this.events.push({ t: 'mower', phase: r.phaseChange, lane: this.mower.lane });
   }
 
-  inspect(id) {
+  // A stop passes on its own rule, unless a venue module vetoes it (the Upper Deck incident fails the kitchen).
+  inspect(id) { return this.inspectBase(id) && !this.mods.veto('inspect', id); }
+  inspectBase(id) {
     const f = this.fixtures;
     if (id === 'sign') return f.sign <= GARY.CLEAN;
     if (id === 'stand') return f.stand <= GARY.CLEAN;
@@ -1142,7 +1166,9 @@ export class Crew {
         if (this.balls.size < SIM.MAX_BALLS) {
           const lead = !lastCall && this.pondOpen() && this.rng() < POND.LEAD_CHANCE;
           const kind = lead ? 'lead' : lastCall ? 'glow' : pickKind(this.day, this.venue, this.rng);
-          const b = this.addBall(lead ? { ...leadLaunch(m, this.rng), kind } : { ...launch(m, this.rng, { beginner: this.day === 1 && this.venue === 0 }), kind });
+          let shot = lead ? { ...leadLaunch(m, this.rng), kind } : { ...launch(m, this.rng, { beginner: this.day === 1 && this.venue === 0 }), kind };
+          shot = this.mods.pipe('launchMod', shot, { mat: m, kind, lead });   // the County slice, orbit shots
+          const b = this.addBall(shot);
           if (b && kind !== 'range' && !this.debuts.has(kind)) {
             this.debuts.add(kind); this.dirty = true; this.events.push({ t: 'debut', kind });
             if (DEBUT_PA[kind]) this.pa(DEBUT_PA[kind], { once: true });
@@ -1165,6 +1191,7 @@ export class Crew {
     this.stepMowe(dt);
     this.stepPond(dt);
     this.stepBouncy();
+    this.mods.call('tick', dt);
     if (this.phase === 'shift' && !paused && this.perks.autoFry && (this.autoFryT += dt) >= this.perks.autoFry) { this.autoFryT = 0; this.addFries(1, 'machine'); }
     // The electric / industrial ball washer works through the hopper on its own.
     if (this.phase === 'shift' && this.perks.washAuto && this.hopper.n > 0) {
@@ -1200,14 +1227,14 @@ export class Crew {
         break;
       }
       if (this.pondOpen() && b.kind !== 'one' && b.y <= SIM.BALL_R + 0.05 && inPond(b)) { this.sink(b); continue; }
-      if (stopped) this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z, ...(b.kind === 'one' ? { one: true } : {}) });
+      if (stopped) { this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z, ...(b.kind === 'one' ? { one: true } : {}) }); this.mods.call('onRest', b); }
     }
     // The creek carries balls: inflow to the Delta (they sink: the diver's pile), outflow to the Grate (the cart's pile).
     for (const b of this.balls.values()) {
       if (!b.drifting) continue;
       const end = stepDrift(b, dt);
       if (end === 'sink') this.sink(b);
-      else if (end === 'rest') this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z });
+      else if (end === 'rest') { this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z }); this.mods.call('onRest', b); }
     }
 
     if (c) {
@@ -1248,6 +1275,7 @@ export class Crew {
       if (this.lastBucket) { this.lastBucket.phase = 'down'; this.lastBucket.id = b?.id; }
     }
     if (!p.helper) this.addGrime(p, 1);   // you landed in the mud
+    this.mods.call('knockDown', p, by);
   }
 
   removePlayer(p) {
@@ -1275,6 +1303,7 @@ export class Crew {
       this.cash = cents(this.cash + payHalf); this.stats.cash = cents(this.stats.cash + payHalf);
       this.hopper = { n: 0, credit: 0, frac: 0 };
     }
+    this.mods.call('endShift', ending);   // venue modules settle up before the review reads the gauges
     // The performance review: Upkeep at the bell against Corporate's target (council round 2, §1.2).
     let quota = null;
     if (this.quota && !ending) {
@@ -1305,7 +1334,8 @@ export class Crew {
   ledger() {
     const rats = this.online().length ? this.online() : [...this.players.values()];
     const AWARDS = [['Employee of the Shift', 'banked'], ['Most Horizontal Associate', 'knockdowns'], ['Department of Wet', 'dived'],
-      ['Fry Laureate', 'cooked'], ['Crank Operator of the Shift', 'scrubbed'], ['Hydration Officer', 'hosed'], ['Enthusiasm (Noted)', 'pings'], ['Mown Down (Twice)', 'mowed']];
+      ['Fry Laureate', 'cooked'], ['Crank Operator of the Shift', 'scrubbed'], ['Hydration Officer', 'hosed'], ['Enthusiasm (Noted)', 'pings'], ['Mown Down (Twice)', 'mowed'],
+      ...this.mods.collect('awards')];   // venue modules' awards key off their own p.shift counters
     const award = new Map();
     for (const [name, key] of AWARDS) {
       const best = rats.filter(r => !award.has(r.id) && (key === 'banked' || r.shift[key] > 0))
@@ -1350,6 +1380,7 @@ export class Crew {
       helpers: this.helpers.map(h => ({ id: h.id, name: h.name, x: +h.x.toFixed(2), z: +h.z.toFixed(2), yaw: +h.yaw.toFixed(3), pocket: h.pocket, down: +h.down.toFixed(2) })),
       cart: c && { x: +c.x.toFixed(2), z: +c.z.toFixed(2), yaw: +c.yaw.toFixed(3), driver: c.driver, load: c.load, boost: +c.boostT.toFixed(1), mud: +c.mud.toFixed(3) },
       up: this.up,
+      mods: this.mods.snapshot(),      // { [module id]: its snapshot } (round 4 venue modules)
     };
   }
 
@@ -1371,11 +1402,13 @@ export class Crew {
   toSave() {
     // `day` is the next day to play: a finished shift has been banked.
     const day = this.phase === 'report' ? this.day + 1 : this.day;
+    const mods = this.mods.toSave();
     return { v: 3, code: this.code, day, cash: this.cash, totals: this.totals, up: this.up, gear: this.gearByName,
       diveByName: this.diveByName, lostFound: this.lostFound,
       commendations: this.commendations, stamps: this.stamps, pondSunk: this.sunkCount(), fries: this.fries,
       venue: this.venue, venueDay: this.venueDay, outstanding: this.outstanding, pendingReveal: this.pendingReveal,
       endless: this.endless, records: this.records, voiced: [...this.voiced], debuts: [...this.debuts],
+      ...(mods ? { mods } : {}),       // one key per venue module, only when one has something to keep
       savedAt: new Date(this.now()).toISOString() };
   }
 }

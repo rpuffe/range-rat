@@ -9,7 +9,8 @@ import * as THREE from 'three';
 import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
 import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, priceScale, perks,
-  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB } from './sim.js';
+  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB,
+  VENUE_RULES } from './sim.js';
 import * as NET from './net.js';
 import * as SFX from './sfx.js';
 import { createBoard } from './board.js';
@@ -25,10 +26,12 @@ import { setupRound2 } from './round2.js';
 import { createScuba } from './scuba.js';
 import { diveTiers, eyeY, bedAt, TREASURE_BY_ID, atTube, hasTube, PUMP } from './dive.js';
 let r2 = null;           // round-2 features, set up at the end of this file
+let views = null;        // round-4 venue views (views/index.js), set up at the end of this file
 import { buildPerson, animatePerson, personAddress, SWING_IMPACT, SWING_SECS } from './people.js';
 import { createCrowd } from './crowd.js';
 import { createTerrain } from './terrain.js';
-import { wadeFactor, stepDrift } from './map.js';
+import { wadeFactor, stepDrift, cartSpeedAt, MAP } from './map.js';
+import { createViews } from './views/index.js';
 import { createPerf } from './perf.js';
 import { setHeavyRate } from './venues.js';
 
@@ -97,6 +100,9 @@ scene.add(stand);
 // Scenery: nets, trees, hills, the parking lot and entrance, the clubhouse, props.
 const scenery = createScenery(scene, { lowDetail: perf.low });
 let sceneT = 0;
+// The right side net, handed to the venue views (the County takes it down). Found, not owned: scenery.js builds it.
+let rightNet = null;
+scene.getObjectByName('scenery')?.traverse(o => { if (!rightNet && o.isMesh && !o.isInstancedMesh && o.position.x === MAP.NETS.side && o.position.y === 8) rightNet = o; });
 
 // The Board (Ball Value, KPIs, quota, Balls Outstanding) and the ball silo, on the stand.
 const board = createBoard(scene, { x: SIM.STAND.x, z: SIM.STAND.z + 1.2 });
@@ -484,6 +490,7 @@ function onMsg(m) {
 
 function onEvent(e) {
   r2?.onEvent(e);
+  views?.onEvent(e);
   switch (e.t) {
     case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, kind: e.kind, curve: e.curve ?? 0 }); customerSwing(e.x, e.z); break;
     case 'sink': {
@@ -665,6 +672,7 @@ function applySnapshot(s) {
   paintFixtures(s.fixtures);
   const v = s.value ?? {};
   board.update({ bv: v.bv, rate: v.rate, upkeep: v.upkeep, hustle: v.hustle, curb: v.curb, pond: s.pond?.unlocked ? v.pond ?? 0 : null, fries: s.fries?.open ? v.fries ?? 0 : null,
+    kpiLabel: VENUE_RULES[s.venue ?? 0]?.kpi ?? null, kpi: v.kpi ?? null, slogan: views?.banner(s) ?? null,   // round 4: the venue's own gauge
     quota: s.quota?.target ?? null, outstanding: s.outstanding, lastCall: s.lastCall, title: s.title, silo: s.silo,
     gary: s.gary?.phase === 'warn' ? `GARY FROM REGIONAL · 0:${String(Math.ceil(s.gary.t)).padStart(2, '0')}` : s.gary?.phase === 'drive' ? 'GARY IS INSPECTING' : mowerBoard(s.mower) });
   if (s.gary && s.gary.phase !== 'warn') {
@@ -688,6 +696,7 @@ function applySnapshot(s) {
   renderRoster();
   renderShop();
   r2?.onSnapshot(s);
+  views?.onSnapshot(s);     // after r2: venues.js has built this venue's parts by now
 }
 
 // The cart from the server. While I drive, my own pose is the truth and the
@@ -767,6 +776,7 @@ const canSwing = () => crew.phase === 'shift' && atBay(me) && me.pocket > 0 && !
 //   cart   (F / Ⓨ): get in or out of the cart (it parks right by the washer)
 function interact(only = null) {
   if (!playing() || me.down > 0) return;
+  if (only !== 'cart' && views?.interact()) return;      // a venue view's own action (ride the Lift, ...)
   if (only !== 'bucket') {
     if (driving()) { link.act({ t: 'leave' }); return; }
     if (nearCart()) { link.act({ t: 'board' }); return; }
@@ -809,6 +819,7 @@ const swing = createSwing({ canvas, onStrike(strike) {
 // The snack shed's kitchen (kitchen.js): peel, slice, fry, serve. Each serve is baskets of fries.
 const SIZZLE = { on: null };
 const kitchen = createKitchen({
+  state: () => crew,   // the live snapshot, for venue additions to the kitchen (the Upper Deck mug meter reads state().mods?.deck)
   root: document.body,
   onServe({ item, quality, onePeel }) { link?.act({ t: 'serve', item: item ?? 'fries', quality, onePeel: !!onePeel }); },
   onSound(name) {
@@ -830,6 +841,7 @@ let pumping = false;
 function pressAct(fromPad = false) {
   SFX.unlock();
   if (fromPad && r2?.unlatch()) return;                  // a latched crank or pump: this tap lets go
+  if (playing() && me.down <= 0 && views?.use()) return; // a venue view's own use (grab debris, ...)
   if (playing() && crew.fries?.open && atShed(me) && !me.wand) { openKitchen(); return; }
   if (playing() && dockOpen(me) && !me.diving && crew.players.some(p => p.diving && p.id !== me.id)) { pumping = true; r2?.pumpBegin(fromPad); return; }   // round2.js cranks (mouse or right stick) and sends {t:'pump', turns}
   if (me.wand && playing() && me.down <= 0) { spraying = true; return; }
@@ -849,7 +861,7 @@ function releaseBucket() { r2?.haulEnd(); }
 function driveCart(dt, px, py, lt, rt) {
   const throttle = Math.max(-1, Math.min(1, (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) + rt - lt - py));
   const steer = Math.max(-1, Math.min(1, (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + px));
-  const vmax = my.cartSpeed * ((crew.cart?.boost ?? 0) > 0 ? CART.BOOST : 1);
+  const vmax = my.cartSpeed * ((crew.cart?.boost ?? 0) > 0 ? CART.BOOST : 1) * cartSpeedAt(cartPose.x, cartPose.z, world());   // x1.3 on the Ping Track
   stepCart(cartPose, throttle, steer, dt, vmax, world());
   me.x = cartPose.x; me.z = cartPose.z;
   // The gang reels scoop whatever they roll over.
@@ -1164,6 +1176,7 @@ function hud() {
   $('prompt').textContent = !playing() ? ''
     : me.down > 0 ? 'Seeing stars…'
     : me.one ? 'Ball No. 1: carry it to the stand. Everyone to the stand.'
+    : views?.prompt(btn, ibtn) ? views.prompt(btn, ibtn)
     : r2?.prompt(btn) ? r2.prompt(btn)
     : me.diving ? `${crew.pond?.treasure && !me.treasure && Math.hypot(crew.pond.treasure.x - me.x, crew.pond.treasure.z - me.z) <= POND.REACH + 0.5 ? `${btn}  Take the ${TREASURE_BY_ID[crew.pond.treasure.id]?.name ?? 'treasure'}` : nearestBall(POND.REACH) ? `${btn}  Grab` : 'Feel around for balls'}${me.bag > 0 ? `  ·  ${ibtn}  Send the bag up (${me.bag})` : ''} · bag ${me.bag}/${diveTiers(me.dive).bag} · air ${Math.ceil(me.air ?? 0)}s`
     : dockOpen(me) && (crew.pond?.line ?? 0) > 0 ? `Hold ${ibtn}  Haul up the bag (${crew.pond.line})`
@@ -1254,7 +1267,7 @@ function frame(now) {
   const drivingNow = driving();
   if (drivingNow && playing()) driveCart(dt, px, py, pad?.lt ?? 0, pad?.rt ?? 0);
   else if (engine) engine.set(0);
-  if (!drivingNow && playing() && me.down <= 0 && !r2?.capturing()) {
+  if (!drivingNow && playing() && me.down <= 0 && !r2?.capturing() && !views?.capturing()) {
     let fx = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0) + px;
     let fz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0) + py;
     const m = Math.hypot(fx, fz); if (m > 1) { fx /= m; fz /= m; }
@@ -1267,11 +1280,11 @@ function frame(now) {
     if (wantSprint && stamina > 0) { stamina = Math.max(0, stamina - dt); restT = 0; if (!stamina) padSprint = false; }
     else if ((restT += dt) > SPRINT.REGEN_DELAY) stamina = Math.min(maxStam, stamina + dt * maxStam / 3);
     sprinting = wantSprint && stamina > 0;
-    const speed = my.walk * (sprinting ? SPRINT.SPEED : 1) * (wetPond(me) ? diveTiers(me.dive).swim : wadeFactor(me.x, me.z, world()));
+    const speed = my.walk * (sprinting ? SPRINT.SPEED : 1) * (wetPond(me) ? diveTiers(me.dive).swim : views?.speedMul(me) ?? wadeFactor(me.x, me.z, world()));
     me.x += (fx * cy + fz * sy) * speed * dt;
     me.z += (-fx * sy + fz * cy) * speed * dt;
     if (m > 0.05) { const drum = myGear.getObjectByName('drum'); if (drum) drum.rotation.x -= m * my.walk * dt / 0.28; }
-    clampToField(me);
+    if (!views?.clamp(me)) clampToField(me, world());
     me.yaw += ((keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)) * 2.2 * dt;
     me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch + ((keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0)) * 1.5 * dt));
   }
@@ -1354,6 +1367,8 @@ function frame(now) {
     scuba.tick(dt, now / 1000, { air01: (me.air ?? tier.air) / tier.air, pumping: crew.players?.some(p => p.pumping),
       pumpRate: r2?.pumpRate?.() ?? 0.6, clarity: crew.pond?.clarity ?? 1, glintR: tier.glintR, light: tier.light });
   }
+  views?.tick(dt, sceneT);  // round-4 venue views, after the camera is placed
+  views?.camera(camera, dt);
   r2?.tick(dt, now);       // after the camera: CCTV and the venue reveal drive it when active
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
   hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen(), venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: showHint,
@@ -1368,7 +1383,7 @@ function frame(now) {
   if (ambOn && (ambT -= dt) <= 0) {
     ambT = 0.3;
     AMB.setAmbience({ timeOfDay01: crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0.1, lastCall: !!crew.lastCall,
-      underwater: !!scene.userData.under, nearField: me.z < -5 ? 1 : 0, crowd: crew.phase === 'shift' ? 0.6 : 0 });
+      underwater: !!scene.userData.under, nearField: me.z < -5 ? 1 : 0, crowd: crew.phase === 'shift' ? 0.6 : 0, ...views?.amb(crew) });
   }
   if (garyView?.g.visible && garyView.to) {
     const kg = 1 - Math.exp(-dt * 8);
@@ -1387,6 +1402,14 @@ r2 = setupRound2({
   scene, camera, $, toast, board, SFX, nameOf, me, keys, floods, showMemo, pondMeshes, terrain,
   get sign() { return signRef; },
   link: () => link, crew: () => crew, report: () => report, driving, pad: () => pad, balls: () => balls,
+  views: () => views,
+});
+// Round 4: the venue views (views/index.js). Everything a view may touch comes in through this ctx.
+views = createViews({
+  scene, camera, me, board, SFX, keys, terrain, sky, rightNet, cartPose, world, nameOf, toast, feed, showMemo,
+  venues: r2.venueParts,     // venues.js parts: the deck, both stands and crowds (crowdBob), the jumbotron, the Lift car (carY)
+  crew: () => crew, balls: () => balls, pad: () => pad, act: msg => link?.act(msg),
+  playing: () => !!playing(), driving: () => !!driving(),
 });
 perf.attach({ sun: sky.sun, crowd, scuba, ballMesh, venueRate: setHeavyRate, toast: m => toast(m, 3) });
 SET.set({});   // re-apply saved settings now the PA exists

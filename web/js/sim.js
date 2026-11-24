@@ -3,8 +3,15 @@
 // flights look smooth between server ticks (the server's word wins at rest).
 // The map (Dimple Creek: the creek, its crossings, the nets, the landmarks)
 // lives in map.js; world-dependent physics takes `world` ({venue}) as an argument.
-import { groundContact, ballFeatures, startDrift, cartBlocked, keepInField } from './map.js';
+import { groundContact, ballFeatures, startDrift, cartBlocked, keepInField, fieldFor } from './map.js';
 import { DIVE_ROW, POND_ROW } from './dive.js';
+// Venue shop rows (council round 4, wave C): each venue build uncomments ITS OWN import here and its row in
+// SHOP below, nothing else. The row's file must import nothing from sim.js (see dive.js: a cycle is a TDZ crash).
+// import { GUTTERS_ROW } from './tiered.js';
+//
+// import { DRONES_ROW } from './county.js';
+//
+// import { TETHER_ROW } from './orbit.js';
 
 export const SIM = {
   G: 9.81,
@@ -146,7 +153,7 @@ function stepOnce(b, world) {
     if (h > 1) { const a = 6 * b.curve * dt / h, vx = b.vx; b.vx -= b.vz * a; b.vz += vx * a; }
   }
   b.x += b.vx * dt; b.y += b.vy * dt; b.z += b.vz * dt;
-  ballFeatures(b);                         // the nets, Dimples Rock, the Old Tractor
+  ballFeatures(b, world);                  // the nets (where they hang at this venue), Dimples Rock, the Old Tractor
   if (b.y < R) {
     const r = groundContact(b, world, k);  // fairway, gravel, mud, or the creek's water
     if (r === 'rest') return true;
@@ -225,6 +232,11 @@ export const SHOP = [
   ] },
   DIVE_ROW,    // personal: the dive gear ladder (Scuba v2), kept by name as diveByName
   POND_ROW,    // crew: the pneumatic ball tube and the pond pump
+  // GUTTERS_ROW,   // Tiered (2): the ball-return gutters
+  //
+  // DRONES_ROW,    // County (4): drones
+  //
+  // TETHER_ROW,    // Orbital (5): the orbital tether winch
   { id: 'ads', title: 'Advertising', tiers: [
     { name: 'Word of mouth', desc: 'Customers trickle in.' },
     { name: 'A sign by the road', cost: 30, desc: 'Customers hit 25% more balls.' },
@@ -309,7 +321,9 @@ export const WASH = {
 //   pay per deposit = Σ ball weights × BV × Hustle × Gear(carrier)
 //   BV     = Rate × Upkeep                  the big number on the Board
 //   Rate   = venue rate × (1 + washer tier) × (1 + 0.05 × commendations)
-//   Upkeep = 1 + 0.5 × (Curb + Pond + Fries)  each 0..1; a locked KPI counts 0
+//   Upkeep = 1 + 0.5 × (Curb + Pond + Fries + KPI)  each 0..1; a locked KPI counts 0. KPI is the
+//            current venue's own gauge (round 4: Bay Utilization, Crowd Sentiment, Zoning Compliance,
+//            Orbital Debris); only the current venue's counts, and it is null at the Muni and the Club.
 //   Hustle = Hit the Cart: 1 + 0.25 a ping, max ×2, resets each morning
 //   Gear   = the cart: 1 + 0.25 × cleanliness; people ×1 (gear grime comes later)
 export const VENUES = [{ name: 'Muni Range', rate: 1 }, { name: 'Range Club', rate: 5 }, { name: 'Tiered Entertainment Range', rate: 25 },
@@ -340,15 +354,18 @@ export const BALLS_OUTSTANDING = 4_213_377_019;   // down to Ball No. 1, hit int
 const clamp01 = v => Math.max(0, Math.min(1, v ?? 0));
 const c2 = v => Math.round(v * 100) / 100;
 
-export function ballValue({ perks: k, mult = 1, cart = null, curb = 0.5, pond = null, fries = null, commendations = 0, venue = 0 }) {
+export function ballValue({ perks: k, mult = 1, cart = null, curb = 0.5, pond = null, fries = null, kpi = null, commendations = 0, venue = 0 }) {
   const rate = VENUES[venue].rate * k.price * (1 + 0.05 * Math.min(10, commendations));
-  const upkeep = 1 + 0.5 * (clamp01(curb) + (pond == null ? 0 : clamp01(pond)) + (fries == null ? 0 : clamp01(fries)));
+  const upkeep = 1 + 0.5 * (clamp01(curb) + (pond == null ? 0 : clamp01(pond)) + (fries == null ? 0 : clamp01(fries)) + (kpi == null ? 0 : clamp01(kpi)));
   const bv = c2(rate * upkeep);
   const cartGear = cart ? 1 + 0.25 * (1 - clamp01(cart.mud)) : 1;
-  return { value: c2(bv * mult), bv, rate: c2(rate), upkeep, hustle: mult, cartGear, curb: clamp01(curb), pond, fries };
+  const v = { value: c2(bv * mult), bv, rate: c2(rate), upkeep, hustle: mult, cartGear, curb: clamp01(curb), pond, fries };
+  if (kpi != null) v.kpi = clamp01(kpi);     // only when the venue has one: the Muni and the Club are byte-identical
+  return v;
 }
 export const payFor = (w, v, gear = 1) => c2(w * v.bv * v.hustle * gear);
-export const upkeepCeiling = ({ pond = null, fries = null }) => 1 + 0.5 * (1 + (pond == null ? 0 : 1) + (fries == null ? 0 : 1));
+// The most Upkeep can be: 1.5 with Curb alone, +0.5 per unlocked gauge. 3.0 with all four (Tiered and up).
+export const upkeepCeiling = ({ pond = null, fries = null, kpi = null }) => 1 + 0.5 * (1 + (pond == null ? 0 : 1) + (fries == null ? 0 : 1) + (kpi == null ? 0 : 1));
 
 // Curb Appeal: the things customers see. Each gets muddy; the wand cleans them.
 export const FIXTURES = [
@@ -370,11 +387,18 @@ export const LAST_CALL = { SECS: 60, FROM_DAY: 2, SWING: 1.5 };
 export const VENUE_RULES = [
   { name: 'Muni Range', title: 'Range Rat' },
   { name: 'Range Club', title: 'Club Retrieval Associate', fee: 2500, writeOff: 1_200_000_000, memo: "1,200,000,000 balls have been reclassified as members' property.", pa: 'club', eatEvery: 5 },
-  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 40000, writeOff: 1_500_000_000, memo: '1,500,000,000 balls have been reclassified as experiential.', pa: 'tiered', eatEvery: 5 },
-  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 200000, writeOff: 800_000_000, memo: '800,000,000 balls have been sold to fans as souvenirs.', pa: 'stadium', eatEvery: 5 },
-  { name: 'County Range', title: 'County Retrieval Director', fee: 1_000_000, writeOff: 712_000_000, memo: '712,000,000 balls have been reclassified as the county.', pa: 'county', eatEvery: 5 },
-  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 5_000_000, writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 5 },
+  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 40000, writeOff: 1_500_000_000, memo: '1,500,000,000 balls have been reclassified as experiential.', pa: 'tiered', eatEvery: 5,
+    kpi: 'BAY UTILIZATION', howto: 'New: Target Greens. Balls in a cup block the sensors. Bay Utilization is now on the Board. The Upper Deck is now serving.' },
+  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 200000, writeOff: 800_000_000, memo: '800,000,000 balls have been sold to fans as souvenirs.', pa: 'stadium', eatEvery: 5,
+    kpi: 'CROWD SENTIMENT', howto: 'New: the Ping Track. The crowd grades you now. The crowd has never played golf.' },
+  { name: 'County Range', title: 'County Retrieval Director', fee: 1_000_000, writeOff: 712_000_000, memo: '712,000,000 balls have been reclassified as the county.', pa: 'county', eatEvery: 5,
+    kpi: 'ZONING COMPLIANCE', howto: 'New: the Yards. Your customers now hit into the county. The county has noticed.' },
+  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 5_000_000, writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 5,
+    kpi: 'ORBITAL DEBRIS', howto: 'New: the Lift. Some customers now hit into orbit. Orbital Debris is now on the Board. Weight limit: one Rat, one bag, no opinions.' },
 ];
+// Round 4: VENUE_RULES[v].kpi is the Board's fourth gauge label (only the current venue's KPI is graded),
+// and .howto is the reveal's second memo card.
+export const revealCards = (venue, memo) => [memo, VENUE_RULES[venue]?.howto].filter(Boolean);
 export const PROMO_STAMPS = 3;
 export const ONE_YEAR = 1958;
 // Quota from the Club on: a share of the headroom, growing with days at the venue.
@@ -447,8 +471,10 @@ export const money = v => `$${Number.isInteger(v) ? v : v.toFixed(2)}`;
 
 export const atStand = p =>Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < SIM.STAND_REACH;
 
-export function clampToField(p) {
-  const F = SIM.FIELD;
+// Hold a walker inside the field at this venue (fieldFor: the County opens the Yards to x 96). Every caller
+// passes its world; a missing world is venue 0.
+export function clampToField(p, world) {
+  const F = fieldFor(world);
   p.x = Math.max(F.xMin, Math.min(F.xMax, p.x));
   p.z = Math.max(F.zMin, Math.min(F.zMax, p.z));
 }

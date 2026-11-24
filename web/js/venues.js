@@ -2,7 +2,10 @@
 // Muni -> Club -> Tiered -> Stadium -> County -> Orbital, plus endless.
 // Groups are built lazily the first time a venue needs them and are cumulative.
 // Everything outside the field (x -60..60, z -150..0) or above head height / behind the mats.
+// Round 4 (council-round4.md §3.0): the venue modules' views (views/*.js) reach the pieces they animate through
+// `parts` (createVenues(...).parts): the Tiered deck, both Stadium stands and crowds, the jumbotron, the Lift car.
 import * as THREE from 'three';
+import { MAP } from './map.js';
 
 export const SIGN_TEXT = [
   { title: 'MUNI RANGE', sub: 'a Fairway Holdings property', tag: 'Every Ball Matters.™' },
@@ -62,7 +65,10 @@ export function setHeavyRate(hz) { heavyHz = Number.isFinite(hz) && hz > 0 ? hz 
 export function createVenues(scene) {
   const built = {};
   const groups = {};
-  const live = { flags: [], neon: null, crowd: [], car: null, blinkers: null, debris: [], jumbo: null };
+  // parts: what the venue views may drive. crowdBob is the stand crowd's bob height (the Stadium view sets it from
+  // Crowd Sentiment); carY is the Lift car's height (the Orbital view sets it during a ride; it rests on the platform).
+  const live = { flags: [], neon: null, crowd: [], car: null, blinkers: null, debris: [], jumbo: null,
+    deck: null, stands: { left: null, right: null }, crowdBob: 0.35, carY: 1.5, groups };
   let venue = 0, endless = false, blinkMat = null;
 
   function grp(name) { const g = new THREE.Group(); g.name = 'venue_' + name; g.visible = false; scene.add(g); groups[name] = g; return g; }
@@ -94,25 +100,28 @@ export function createVenues(scene) {
       }
     },
     tiered() {
+      // The Upper Deck: x +-20 (it used to run to 23.5, over the ball washer at 21.5), z 2..6, top y 3.
+      // The stairs climb from x -25 to the deck's left end at -20. The deck loungers stand at its rail (z 2.4).
       const g = grp('tiered');
       const conc = lambert(0x8d8f96), dark = lambert(0x23252d);
-      g.add(box(47, 0.3, 4, conc, 0, 2.85, 4));                    // floor slab z 2..6, top y 3
-      g.add(box(47, 3.2, 0.3, dark, 0, 4.6, 6.1));                 // back wall
-      const legs = []; for (let i = 0; i <= 10; i++) legs.push([-22 + i * 4.4, 1.35, 3.9, 0.35, 2.7, 0.35]);
+      g.add(box(40, 0.3, 4, conc, 0, 2.85, 4));                    // floor slab x -20..20, z 2..6, top y 3
+      g.add(box(40, 3.2, 0.3, dark, 0, 4.6, 6.1));                 // back wall
+      const legs = []; for (let i = 0; i <= 10; i++) legs.push([-19.6 + i * 3.92, 1.35, 3.9, 0.35, 2.7, 0.35]);
       g.add(boxes(legs, conc, true));
       // 10 bay openings: pillars between bays on the deck front, rail across the top
       const pil = []; for (let i = 0; i <= 10; i++) pil.push([-20 + i * 4, 3.9, 2.15, 0.25, 1.8, 0.25]);
       g.add(boxes(pil, lambert(0xf4f1e8), true));
-      g.add(box(44, 0.12, 0.2, lambert(0xf4f1e8), 0, 4.85, 2.15));
-      g.add(box(44, 0.1, 0.1, dark, 0, 3.5, 2.1));                 // low rail
-      // stairs at the left end, rising toward +x
-      const st = []; for (let i = 0; i < 6; i++) st.push([-27.5 + i * 0.9, (i + 1) * 0.5 - 0.25, 4, 0.9, (i + 1) * 0.5, 3]);
+      g.add(box(40, 0.12, 0.2, lambert(0xf4f1e8), 0, 4.85, 2.15));
+      g.add(box(40, 0.1, 0.1, dark, 0, 3.5, 2.1));                 // low rail
+      // stairs at the left end, rising toward +x onto the deck
+      const st = []; for (let i = 0; i < 6; i++) st.push([-24.55 + i * 0.9, (i + 1) * 0.5 - 0.25, 4, 0.9, (i + 1) * 0.5, 3]);
       g.add(boxes(st, conc, true));
+      live.deck = { group: g, xMin: -20, xMax: 20, y: 3, zRail: 2.4, stairsX: -24.55 };
       // neon strips: one instanced mesh, per-instance colour cycled in tick
       const nm = new THREE.InstancedMesh(BOX, new THREE.MeshBasicMaterial({ color: 0xffffff }), 11);
       const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), p = new THREE.Vector3(), s = new THREE.Vector3();
       for (let i = 0; i < 10; i++) { p.set(-18 + i * 4, 2.6, 1.95); s.set(3.4, 0.08, 0.08); nm.setMatrixAt(i, m4.compose(p, q, s)); nm.setColorAt(i, new THREE.Color(0xff00aa)); }
-      p.set(0, 5.1, 2.15); s.set(44, 0.08, 0.08); nm.setMatrixAt(10, m4.compose(p, q, s)); nm.setColorAt(10, new THREE.Color(0x00ffee));
+      p.set(0, 5.1, 2.15); s.set(40, 0.08, 0.08); nm.setMatrixAt(10, m4.compose(p, q, s)); nm.setColorAt(10, new THREE.Color(0x00ffee));
       nm.instanceMatrix.needsUpdate = true; nm.frustumCulled = false;
       g.add(nm); live.neon = nm;
     },
@@ -122,10 +131,14 @@ export function createVenues(scene) {
       const crowdGeo = new THREE.SphereGeometry(0.4, 6, 5);
       const per = 140;
       for (const side of [-1, 1]) {
+        // Each stand is its own group (parts.stands.left / .right): the County hides the right one ("relocated to
+        // the County Fair") because the Yards are where it stood.
+        const sg = new THREE.Group(); sg.name = side < 0 ? 'stand_left' : 'stand_right'; g.add(sg);
+        live.stands[side < 0 ? 'left' : 'right'] = sg;
         // 3 stepped tiers; fronts face the field
         for (let t = 0; t < 3; t++) {
           const w = 9 - t * 2.6, x = side * (75 + w / 2 + t * 2.6);
-          g.add(box(w, 2.2 + t * 2.2, 100, t % 2 ? seat : conc, x, (2.2 + t * 2.2) / 2, -70));
+          sg.add(box(w, 2.2 + t * 2.2, 100, t % 2 ? seat : conc, x, (2.2 + t * 2.2) / 2, -70));
         }
         const im = new THREE.InstancedMesh(crowdGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), per);
         const base = [];
@@ -135,8 +148,8 @@ export function createVenues(scene) {
           base.push([x, y, zz, Math.random() * 6.28]);
           im.setColorAt(i, new THREE.Color().setHSL(Math.random(), 0.6, 0.55));
         }
-        im.frustumCulled = false; g.add(im);
-        live.crowd.push({ im, base, m: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1.2, 1), p: new THREE.Vector3() });
+        im.frustumCulled = false; sg.add(im);
+        live.crowd.push({ im, base, side: side < 0 ? 'left' : 'right', stand: sg, m: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1.2, 1), p: new THREE.Vector3() });
       }
       // jumbotron frame behind the stand (stand 26,6; board at z 7.2)
       const fr = lambert(0x2a2d33), j = new THREE.Group();
@@ -170,16 +183,19 @@ export function createVenues(scene) {
       sg.position.set(-119, 0, -30); g.add(sg);
     },
     orbital() {
+      // The Lift (MAP.LIFT, beside the Mower Shed): a 2.6 m platform, the tower just behind it (+z), and the car,
+      // which rests on the platform and rises only with riders (parts.carY; the Orbital view drives it).
       const g = grp('orbital');
+      const L = MAP.LIFT, tz = L.z + 1.9;
       const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 400, 10), lambert(0xc8ccd6));
-      cyl.position.set(32, 200, 18); g.add(cyl);
-      g.add(new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 0.6, 12), lambert(0x555a66)).translateX(32).translateY(0.3).translateZ(18));
+      cyl.position.set(L.x, 200, tz); g.add(cyl);
+      g.add(new THREE.Mesh(new THREE.CylinderGeometry(L.r, L.r + 0.2, 0.3, 16), lambert(0x555a66)).translateX(L.x).translateY(0.15).translateZ(L.z));
       const car = new THREE.Group();
       car.add(box(2, 2.4, 2, lambert(0xf4f1e8), 0, 0, 0)); car.add(box(2.1, 0.5, 2.1, lambert(0x1d6b3a), 0, 1.4, 0));
-      car.position.set(32, 4, 18); g.add(car); live.car = car;
+      car.position.set(L.x, live.carY, L.z); g.add(car); live.car = car;
       // blinking lights up the tower: one instanced mesh, one shared material that toggles
       blinkMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
-      const lights = []; for (let y = 20; y <= 380; y += 30) lights.push([32, y, 18 + 0.6, 0.35, 0.35, 0.35]);
+      const lights = []; for (let y = 20; y <= 380; y += 30) lights.push([L.x, y, tz + 0.6, 0.35, 0.35, 0.35]);
       const bl = boxes(lights, blinkMat); g.add(bl); live.blinkers = bl;
       // floating ball debris: sprites, high up
       const c = document.createElement('canvas'); c.width = c.height = 64;
@@ -223,19 +239,20 @@ export function createVenues(scene) {
       live.neon.instanceColor.needsUpdate = true;
     }
     if (heavy && venue >= 3) for (const c of live.crowd) {
+      if (!c.stand.visible) continue;              // a hidden stand (the County's right one) costs nothing
       for (let i = 0; i < c.base.length; i++) {
         const b = c.base[i];
-        c.p.set(b[0], b[1] + Math.max(0, Math.sin(t * 3 + b[3])) * 0.35, b[2]);
+        c.p.set(b[0], b[1] + Math.max(0, Math.sin(t * 3 + b[3])) * live.crowdBob, b[2]);
         c.im.setMatrixAt(i, c.m.compose(c.p, c.q, c.s));
       }
       c.im.instanceMatrix.needsUpdate = true;
     }
     if (venue >= 5) {
-      if (live.car) live.car.position.y = 60 + 56 * Math.sin(t * 0.12);
+      if (live.car) live.car.position.y = live.carY;
       if (blinkMat) blinkMat.color.setHex(Math.sin(t * 5) > 0 ? 0xff2200 : 0x330800);
       for (const d of live.debris) { d.s.position.y = d.y0 + Math.sin(t * 0.7 + d.ph) * 2; d.s.material.rotation = t * 0.2; }
     }
   }
 
-  return { setVenue, tick };
+  return { setVenue, tick, parts: live };
 }

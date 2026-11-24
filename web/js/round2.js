@@ -5,7 +5,7 @@
 // main.js hands over a context of the things it owns and calls these hooks.
 
 import * as THREE from 'three';
-import { WASHER_HANDLES, atHandle, WASH, VENUE_RULES, gearGrimeFactor, money, FIXTURES, SIM, POND } from './sim.js';
+import { WASHER_HANDLES, atHandle, WASH, VENUE_RULES, gearGrimeFactor, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
 import { createPA } from './pa.js';
 import { createWasher, createCrank } from './washer.js';
 import { createVenues, paintSign } from './venues.js';
@@ -169,7 +169,10 @@ export function setupRound2(ctx) {
     camera.quaternion.copy(r.from.quat).slerp(tmpQ, w);
     if (!r.waterOn && r.t > 1.5) { r.waterOn = true; ctx.terrain?.setVenue(r.venue === 6 ? 5 : r.venue); }   // the water comes back on
     if (!r.flipped && r.t > 1) { r.flipped = true; const c = crew(); venues.setVenue(r.venue === 6 ? 5 : r.venue, r.venue === 6 || !!c.endless); repaintSign(r.venue); SFX.cash(10); }
-    if (r.t > 3 && !r.memoShown) { r.memoShown = true; ctx.showMemo(r.memo, null); }
+    if (r.t > 3 && !r.memoShown) {
+      r.memoShown = true;
+      revealCards(r.venue, r.memo).forEach((text, i) => ctx.showMemo(text, null, i ? 10 : 9));   // round 4: a second card says what's new (memos queue)
+    }
     if (r.t >= 6) {
       reveal = null;
       const c = crew();
@@ -194,6 +197,7 @@ export function setupRound2(ctx) {
         '<p style="color:' + l.color + '"><span>' + esc(l.name) + ' · banked ' + l.banked + ' · ' + money(l.cash) + (l.hosed ? ' · hosed ' + l.hosed : '') + ' · flat ' + l.knockdowns + '</span><b>' + esc(l.award) + ' — Corporate</b></p>').join('') + '</div>';
     }
     if (r.record) html += '<p class="note">Crew record! Best shift: ' + money(r.record.cash) + ' (was ' + money(r.record.was) + ').</p>';
+    for (const line of ctx.views?.()?.reportLines(r) ?? []) html += '<p class="note">' + esc(line) + '</p>';   // round 4: venue report lines
     if (promo) {
       const dots = '●'.repeat(Math.min(promo.stamps, promo.need)) + '○'.repeat(Math.max(0, promo.need - promo.stamps));
       const signedN = promo.signed.length;
@@ -280,6 +284,7 @@ export function setupRound2(ctx) {
 
   return {
     pa, onEvent, onSnapshot, press, release, unlatch, latched: () => latched, capturing, mouseMove, wheel, toggleCCTV, tick, hudLine, prompt,
+    venueParts: venues.parts,   // round 4: what the venue views animate (venues.js parts)
     pumpBegin, pumpEnd, haulBegin, haulEnd, pumpRate: () => (pumpOn ? pumpRateNow : 0.6),
     get cctvOn() { return cctv.isOn; }, get revealing() { return !!reveal; },
     setMouseDown(v) { mouse.down = v; if (v) mouse.click = true; },
