@@ -341,7 +341,7 @@ export const WASH = {
 //   Gear   = the cart: 1 + 0.25 × cleanliness; people ×1 (gear grime comes later)
 export const VENUES = [{ name: 'Muni Range', rate: 1 }, { name: 'Range Club', rate: 5 }, { name: 'Tiered Entertainment Range', rate: 25 },
   { name: 'Stadium Range', rate: 100 }, { name: 'County Range', rate: 500 }, { name: 'Orbital Range', rate: 2500 }];
-export const KIND_W = { range: 1, glow: 2, lead: 3, square: 1, gold: 10, splitter: 1, bouncy: 1.5, debris: 3 };
+export const KIND_W = { range: 1, glow: 2, lead: 3, square: 2, gold: 10, splitter: 1, bouncy: 1.5, debris: 3 };
 
 // Which kind a customer's next ball is (lead and glow are chosen elsewhere).
 // Debuts by day: gold day 3, square day 5 (council round 3), splitter day 7,
@@ -351,12 +351,12 @@ export function pickKind(day, venue, rng) {
   if (day >= 3 && r < 0.005) return 'gold';
   if (day >= 7 && r < 0.045) return 'splitter';
   if (venue >= 1 && r < 0.10) return 'bouncy';
-  if (day >= 5 && r < 0.28) return 'square';
+  if (day >= 5 && r < 0.15) return 'square';      // round 6 #8: fewer (was 0.28), worth ×2, and the reels can't take them
   return 'range';
 }
 export const KIND_NAMES = { range: 'range ball', glow: 'glow ball', lead: 'lead ball', square: 'square ball', gold: 'GOLD BALL', splitter: 'splitter', bouncy: 'super-bouncy ball', debris: 'orbital debris' };
 export const KIND_BLURB = {
-  square: "It doesn't roll. Corporate calls this \"efficiency\".",
+  square: "Worth ×2. The reels can't take it.",
   gold: 'Worth ×10. Dimples is watching you pick it up.',
   lead: 'Worth ×3. It always ends up in the pond.',
   splitter: 'Pick one up and it becomes three.',
@@ -392,12 +392,16 @@ export const FIXTURES = [
 export const FIXTURE_BY_ID = Object.fromEntries(FIXTURES.map(f => [f.id, f]));
 
 // The daily quota: BV at the closing bell must reach Rate × (1 + q). None on day 1.
+// Council round 6 #1: a floor of 0.3, so an idle Muni crew misses day 2 (it must hose before the bell).
 export function quotaQ(day, ceiling) {
   if (day <= 1) return null;
   const q = [0.15, 0.2, 0.3, 0.35][day - 2] ?? 0.35 + 0.05 * (day - 5);
-  return Math.min(q, 0.8 * (ceiling - 1));
+  return Math.min(Math.max(0.3, q), 0.8 * (ceiling - 1));
 }
 export const LAST_CALL = { SECS: 60, FROM_DAY: 2, SWING: 1.5 };
+// Council round 6 #2: from Tiered on, the bell's review also needs the venue gauge at or above this.
+// The Muni and the Club have no gauge (kpi null), so their rule is unchanged.
+export const QUOTA_KPI = 0.5;
 
 // ---- promotion and the venue ladder (council round 2, §4.1–4.2) -------------
 export const VENUE_RULES = [

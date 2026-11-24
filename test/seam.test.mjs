@@ -99,15 +99,16 @@ test('GOLDEN: cartBlocked, fieldFor, clampToField and BV are unchanged at venues
   assert.equal('kpi' in ballValue({ perks: perks({}), curb: 1 }), false, 'no kpi key unless a venue has one');
 });
 
+// Club golden re-recorded for council round 6 #8 (squares: x2, 0.15 share, and the reels refuse them); the Muni run is day 1.
 test('GOLDEN: a whole seeded crew plays out identically at the Muni and the Club (no modules)', () => {
   assert.equal(fnv(crewRun(null)), '10b46ff0');
-  assert.equal(fnv(crewRun(CLUB_SAVE)), '4a2e71f4');
+  assert.equal(fnv(crewRun(CLUB_SAVE)), '71c4c5b');
 });
 
 test('GOLDEN: a module that lives at venue 2+ changes nothing at venues 0-1', () => {
   const noisy = { id: 'noisy', venue: 2, kpi: () => 0, launchMod: (c, st, shot) => ({ ...shot, vx: shot.vx + 9 }), tick: c => { c.cash += 1000; } };
   assert.equal(fnv(crewRun(null, { modules: [noisy] })), '10b46ff0');
-  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), '4a2e71f4');
+  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), '71c4c5b');
 });
 
 // ---- the fourth gauge ------------------------------------------------------------------------------------------------

@@ -56,10 +56,12 @@ export default {
   onRest(crew, st, b) {
     if (b.kind === 'one' || b.sunk || b.drifting) return;
     delete b.cup;
-    const bowl = inBowl(b.x, b.z);
-    if (!bowl) return;
     const shooter = b.by != null ? crew.players.get(b.by) : null;
-    if (shooter && crew.phase === 'shift') {
+    const target = !!shooter && crew.phase === 'shift';
+    // The forgiving lip (council round 6, #4): a crew ball within r + LIP is a TARGET; customer balls cup inside r only.
+    const bowl = inBowl(b.x, b.z, MAP.BOWLS, target ? TARGET.LIP : 0);
+    if (!bowl) return;
+    if (target) {
       // TARGET! Flush the cup (and this ball) to the shooter at gear x1.
       const cup = cupBalls(crew, bowl.id);
       let n = ballCount(b), w = ballWeight(b);

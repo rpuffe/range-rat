@@ -653,3 +653,102 @@ see and hit; the Tiered deck never fires for a careful crew; the venue KPIs neve
   overnight report hides the promotion panel until the first stamp, says "Promoted!" after signing,
   keeps "Next shift" pinned on screen, and its shop shows names and prices only. Hints wait for
   toasts. Golden fingerprints re-recorded for the day-1 mats and the stand reach.
+
+## Council round 6 build
+
+- **#6 The Upper Deck orders** (builder D). From Tiered on, a lounger orders every 30 s of working shift time (20 s
+  once the deck is amber at 4 Drinks): WOOO, and they hold their mug high. One order is open at a time, for 20 s. A
+  good or perfect beer while it's open pays a bar tab of **10 × BV** (an unordered beer still pays 5 × BV) and +1
+  Drink, as before. An unfilled order lapses quietly. Sobering is slower: −1 Drink every **60 s** (was 30). Drinks
+  still rise only from beer the crew pours. A crew that fills every order with no food has its first incident at
+  ~275 s; one hot dog each time it turns amber keeps it under all shift. While an order is open, the kitchen's BEER
+  card glows gold with a 20 s timer ring, which also shows on the pour screen. The deck hint now fires on the
+  first order: "Fill their orders. Six beers: someone falls." Rules are in `deck.js` (`stepDeck` returns
+  `{ sobered, order, expired }`, plus `fillOrder`). Events are `deckOrder {seat}` and `deckTab {order: true}`, and
+  the snapshot has `mods.deck.order {seat, left}`.
+- **#7 The one-text pack** (builder D). Only your own banks float over you (`payfloat.js`). Helpers, drones, the
+  night crew, gutters, the tether and a driverless cart roll into one "+$1,240 · 31" over the stand every 2 s.
+  Another Rat's bank shows only as a feed line in their colour, and only when it's ≥ 20 balls. The endless Board
+  replaces BALLS OUTSTANDING with TODAY $X · RECORD $Y (from `snapshot().pace`). The report's promotion panel
+  (`promopanel.js`) shows the stamps from the first one and the franchise fee only from 2 (or once ready).
+- **#10 Day-2 suggestions** (builder D). On the Muni's day 2, each online Rat is dealt one different line, round
+  the crew: hose the mats, the far field, the stand, then the washer crank (or "the shop: get a washer" without
+  one). The line shows in the checklist's slot with the checklist's yellow arrow. A late joiner gets the next in
+  the pool. A line clears once that Rat has done it, or after 45 s of working time (counted from 10 s in, after
+  the memo). Nothing rewards it. The day-1 checklist keeps precedence: while an unfinished checklist is up,
+  nothing is dealt, and the client waits for "You know the job" to pass. The rules are in `nudge.js`, dealt by a
+  venue-0 module, `server/venues/nudge.mjs` (no `crew.mjs` lines), and sent as `mods.nudge {playerId: id}`. Hints
+  also wait while your line is up.
+
+- **The Muni stamps are earned (#1).** `quotaQ` has a floor of 0.3 from day 2 (0.30 / 0.30 / 0.30 / 0.35 / 0.40,
+  still capped at 0.8 × (ceiling − 1)), so day 2 asks Upkeep 1.30. A seeded 4P day 2 with no hosing ends at 1.17
+  (miss); hosing every fixture once in the morning ends at 1.37 (hit). Day 1's tomorrow line is "Tomorrow: a target.
+  Hose before the bell."
+- **The venue gauge decides the stamp (#2).** From Tiered on, the review needs Upkeep ≥ target *and* the venue gauge
+  ≥ `QUOTA_KPI` (0.5, `sim.js`). The Muni and the Club have no gauge, so their rule and quota entry are byte-identical.
+  `CUP_FULL` is 30 (15 balls in cups is the line). The quota entry (report and event) gains `gauge`, `gaugeOk`, and on
+  a gauge miss `why`, a ≤ 8-word line from `GAUGE_MISS` in `web/js/rally.js` ("Missed: the bowls were full." …). The
+  ending shift still has no review.
+- **The Closing Bell, server half (#3).** `web/js/rally.js` is pure: `shortfall({ value, quota, kpi, fixtures, venue,
+  endless })` returns one `RALLY_LINES` line: the gauge first (under 0.5), then, if Upkeep is under target, the term
+  costing most (the dirtiest fixture: mats, sign or stand; fries under 0.5; pond under 0.6), else "On target. Hold it
+  till the bell." Endless and review-less days give null. The `lastcall` event carries it as `need`; the client plays
+  the horn and toasts it once the PA card and memo are clear, and holds the report card 2 s for the stamp.
+- **Square balls jam the reels (#8).** `cartPickup` refuses `kind === 'square'` and the client reel scan skips them;
+  walkers, teenagers and drones still fetch them. `KIND_W.square = 2`, `pickKind`'s square threshold is 0.15 (about
+  14.5% at the Muni on days 5–6, 10.5% from day 7 once splitters take their share, 5% at the Club and up). Blurb:
+  "Worth ×2. The reels can't take it." The Club seam golden was re-recorded for this.
+- **Target Greens you can see and hit (#4).** `web/js/aim.js` is pure: `predictRest({ bay, yaw, pitch, power }, world)`
+  runs a scratch ball through `swingLaunch` → `advanceBall` one fixed step at a time (the server's exact sequence; it
+  matches `Crew.swing`'s rest spot, null if the ball drifts down the creek). `createAimer` re-predicts at most 10 Hz
+  (5 Hz on the low tier) and only when power moves > 0.01 or aim > 0.5°. The Tiered view draws a 1.2 m ground ring
+  in your colour (the bowl's colour, brighter, while it sits within the crew lip) whenever you stand at a crew bay with
+  balls: the backswing's power while you wind up, your last swing's power (0.7 before the first) otherwise; main.js
+  feeds the views' new `aim(input|null)` hook each frame. Each bowl's pin is 10 m × 0.25 m with a 2.6 m flag facing the
+  midpoint of both bays (`flagNormal`, pinned in `signs.test.mjs`); the flag's canvas (64 px, 32 on low) shows that
+  cup's count and only redraws when it changes, going red at `cupWarn()` = CUP_FULL × (1 − QUOTA_KPI) / 3 (5 today).
+  One additive `InstancedMesh` raises a 30 m light pillar over all three pins. The forgiving lip: `TARGET.LIP = 1.5`
+  and `inBowl(x, z, bowls, pad)`; `onRest` pads only crew balls during the shift, so customers still cup inside r.
+  Measured: a predict costs ~0.1 ms median, 0.4 ms worst (≤ 1,560 steps) on the dev PC; the Edge number is for the
+  playtest.
+- **The Closing Bell, client half (#3).** Pure rules in `web/js/closingbell.js` (`crossing`, `gaugeRed`, `stampFor`,
+  `BELL`). The Board flashes its target bar green for 0.4 s when BV crosses the target (`SFX.cash` ding via the
+  Board's `onCross`) and amber when it falls back, at most once every 3 s and only while a shift is live. The fourth
+  (venue) gauge has a white tick at 50% and fills red while under it during Last Call. At the bell: `SFX.bell()` (a
+  synthesised two-strike bronze bell), then 0.45 s later `board.stamp()`: the one centre element, APPROVED in red ink
+  with `SFX.jackpot` and confetti over the Board (160 points, 60 on low), or DENIED in grey with `SFX.trombone()` and
+  the server's `why` (≤ 8 words) under it, for 1.5 s; the Board wears the stamp too. The report card waits 2 s.
+  Confetti is `web/js/confetti.js`: one pooled `THREE.Points` (400 slots, a ring buffer) shared through
+  `sharedConfetti(scene)`, ticked once a frame by main.js; the huddle (#5) bursts into the same pool.
+- **The huddle beat (#5, builder C).** When the carrier of Ball No. 1 reaches the stand (`atStand`), `lastBucket.phase`
+  becomes `'huddle'` (`crew.mjs` `stepHuddle`, run from `stepLastBucket`). There is one ring slot per online Rat
+  within `HUDDLE_R` (8 m). Every Rat holds Use (Ⓐ / Space / click, sent as `{t:'hold', on}` while inside the ring).
+  While every slot is in the ring and held, a 3.0 s sweep (`HUDDLE_HOLD`) fills, and at 3.0 s `depositOne` banks,
+  crediting the carrier as before. These reset the sweep: any release, a Rat leaving the ring, a join, a leave or a
+  disconnect (the slot list changed). A Rat who is down doesn't count as holding. A Rat idle for 60 s counts as present
+  *and* holding. A knockdown of the carrier drops the ball (`dropOne` → `'down'`). The carrier leaving the ring or going
+  offline returns the phase to `'carried'`. The self-heal also covers `'huddle'`. The bucket button alone no longer banks.
+  The snapshot's `lastBucket` adds `sweep, slots, in, held` during the huddle. The banner reads "HOLD Ⓐ TOGETHER · 3 / 4"
+  (SPACE on a keyboard), and the bottom prompt clears. The ring (`web/js/huddle.js`) is one `InstancedMesh` of 48 arc
+  ticks plus 48 gold sweep ticks (1 draw call). The sweep runs on locally between snapshots (`huddlerules.js`
+  `sweepNow`). The bank fires two 160-point confetti cannons into the shared pool (80 each on low) and a synthesised
+  crowd roar (noise burst, then the bed held ~4 s). Then the $∞ finale plays.
+  Gary: during his warning and drive, the same ring shows with no hold. A slot fills inside 8 m, his verdict's
+  unchanged rule. The snapshot's `gary.to` names his next stop, and the Board counts "GARY 3", "GARY 3 · 2",
+  "GARY 3 · 2 · 1" on his last leg (`garyCountdown`). On a huddle verdict he salutes: his hat lifts and an arm
+  rises (~1.2 s, new hat and arm on `buildGary`), with a 60-point puff. If the huddle isn't full, he just leaves
+  as before. Tests: `test/ending.test.mjs` (the softlock set: joins, leaves, disconnects, AFK, a real ball hitting
+  the carrier, walking out, release at 2.9 s, solo, self-heal), `test/huddle.test.mjs` (the pure rules) and
+  `test/round2.test.mjs` (the Gary flag is unchanged by the ring).
+- **Scuba you can follow from the dock (#9, builder C).** The pure bits are in `web/js/scubafollow.js`.
+  - **Boil:** every diver gets a surface boil: 8 procedural bubbles rising and popping in a 0.6 m ring. It's one
+    `Points` on the pond root, so it shows from the shore, using the bubble shader with the spray's long fade.
+    main.js passes the divers from each snapshot (`scuba.setMates`).
+  - **Bag:** on `sent`, a wireframe net bag climbs a line from the diver to where the line is tied off by the
+    hose, over 1.6 s (`bagAt`), with a splash ring where it breaks the surface.
+  - **Glints:** while diving, sunk lead and gold within 6 m and inside the torch cone (0.5 rad, the dive light's
+    angle) twinkle with the treasure's GLINT shader. The selection is `pickGlints`, at most 20, refreshed at
+    10 Hz. They are off on the low tier.
+  - **Case:** on a treasure `banked` event, its Lost & Found slot spins three turns with a pop for 2 s under a
+    10-point sparkle (`caseSpin`, `scuba.reveal`).
+  - Cost: +2 draw calls near the pond (boil, glints), plus the bag and line only while a bag rises.

@@ -326,6 +326,33 @@ export function horn(who = 'gary') {
   }
 }
 
+// The Closing Bell (council round 6, #3): a struck bronze bell. Inharmonic partials (hum, prime, tierce, quint,
+// nominal...) with long, staggered decays, struck twice like a shop's closing bell. Synthesised like horn().
+export const BELL_PARTIALS = [[0.5, 0.10, 2.6], [1, 0.16, 2.2], [1.19, 0.07, 1.6], [1.5, 0.05, 1.3], [2, 0.08, 1.1], [2.52, 0.04, 0.8], [3.01, 0.03, 0.6]];
+export function bell(f0 = 587) {
+  const c = live();
+  if (!c) return;
+  const d = hornDest(c);
+  for (const t of [0, 0.55]) {
+    for (const [r, vol, dur] of BELL_PARTIALS) tone(c, { freq: f0 * r, t, dur, vol: vol * (t ? 0.8 : 1), attack: 0.002, dest: d });
+    burst(c, { t, dur: 0.02, vol: 0.12, type: 'highpass', f: 3500 });   // the clapper's strike
+  }
+}
+
+// DENIED: the sad two-note trombone (wah... wahhh), a muted sawtooth through a low-pass that sags on the second note.
+export const TROMBONE_NOTES = [[233, 233, 0, 0.42], [220, 196, 0.45, 0.95]];   // [from Hz, to Hz, start s, length s]
+export function trombone() {
+  const c = live();
+  if (!c) return;
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 2;
+  lp.connect(master);
+  for (const [f, to, t, dur] of TROMBONE_NOTES) {
+    tone(c, { freq: f, endFreq: to !== f ? to : undefined, type: 'sawtooth', t, dur, vol: 0.16, attack: 0.06, dest: lp });
+    tone(c, { freq: f * 2, endFreq: to !== f ? to * 2 : undefined, type: 'triangle', t, dur, vol: 0.04, attack: 0.06, dest: lp });
+  }
+  setTimeout(() => lp.disconnect(), 1800);
+}
+
 // Drone buzz: call every frame with how many drones are flying. Never more than MAX_DRONE_VOICES
 // detuned buzz voices however many drones; fades itself out if the caller stops calling.
 let buzz = null;

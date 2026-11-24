@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { tagSign } from './signs.js';
 import { POND_DEEP, bedAt, deepness, deepDist, TREASURE, TREASURE_BY_ID, waterLook } from './dive.js';
+import { FOLLOW, boilBubble, bagAt, pickGlints, caseSpin } from './scubafollow.js';   // round 6 #9
 
 const TAU = Math.PI * 2;
 
@@ -974,9 +975,47 @@ export function createScuba(scene, camera, POND, opts = {}) {
     if (active && found.has(active.id)) setTreasure(null);
     syncShelf(); drawSign();
   }
-  function animateCase(T) {
-    for (let i = 0; i < caseSlots.length; i++) if (caseSlots[i].real.visible) caseSlots[i].real.rotation.y = T * 0.5 + i;
+  function animateCase(T, dt = 0) {
+    for (let i = 0; i < caseSlots.length; i++) {
+      const sl = caseSlots[i];
+      let cs = null;
+      if (reveals.has(sl.id)) {   // round 6 #9: a treasure just banked spins for 2 s under a sparkle
+        const t = reveals.get(sl.id) + dt;
+        cs = caseSpin(t);
+        if (cs) reveals.set(sl.id, t); else { reveals.delete(sl.id); sl.real.scale.setScalar(sl.sc); }
+      }
+      if (sl.real.visible) sl.real.rotation.y = T * 0.5 + i + (cs ? cs.turn : 0);
+      if (cs) sl.real.scale.setScalar(sl.sc * cs.pop);
+    }
+    sparkle.visible = reveals.size > 0;
   }
+  // The reveal (call on the { t: 'treasure', phase: 'banked' } event).
+  const reveals = new Map();   // treasure id -> seconds into its reveal
+  function reveal(id) {
+    const sl = caseSlots.find(o => o.id === id);
+    if (!sl) return;
+    reveals.set(id, 0);
+    sparkle.position.copy(sl.real.position); sparkle.position.y += 0.12;
+  }
+  const SPARKS = 10;
+  const sparkGeo = keep(new THREE.BufferGeometry());
+  {
+    const P = new Float32Array(SPARKS * 3), S = new Float32Array(SPARKS), Ph = new Float32Array(SPARKS);
+    for (let i = 0; i < SPARKS; i++) {
+      const a = rand() * TAU, d = 0.06 + rand() * 0.18;
+      P[i * 3] = Math.cos(a) * d; P[i * 3 + 1] = rand() * 0.3 - 0.05; P[i * 3 + 2] = Math.sin(a) * d * 0.5;
+      S[i] = 0.03 + rand() * 0.04; Ph[i] = rand();
+    }
+    sparkGeo.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    sparkGeo.setAttribute('aSize', new THREE.BufferAttribute(S, 1));
+    sparkGeo.setAttribute('aPh', new THREE.BufferAttribute(Ph, 1));
+  }
+  const sparkle = new THREE.Points(sparkGeo, keep(new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime, uScale: glintU.uScale, uR: { value: 40 }, uGlow: { value: 1 } }, vertexShader: GLINT_VERT, fragmentShader: GLINT_FRAG,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+  })));
+  sparkle.frustumCulled = false; sparkle.visible = false; sparkle.renderOrder = 6;
+  caseG.add(sparkle);
 
   // --- rings: splash rings on the surface, gold sonar rings on the bed ---
   function ringPool(parent, n, color) {
@@ -1040,6 +1079,104 @@ export function createScuba(scene, camera, POND, opts = {}) {
       if (dP[i * 3 + 1] < SURF - 0.02 && dV[i * 3 + 1] < 0) { dOn[i] = 0; dA[i] = 0; dP[i * 3 + 1] = -50; dLive--; }
     }
     dropGeo.attributes.position.needsUpdate = true; dropGeo.attributes.aSize.needsUpdate = true; dropGeo.attributes.aAlpha.needsUpdate = true;
+  }
+
+  // --- council round 6 #9: scuba you can follow from the dock ----------------------------------------------
+  // 1. The surface boil over every diver, drawn for everyone (it lives on root, not underOnly): one Points of
+  //    procedural bubbles (scubafollow.js boilBubble), the bubble shader with the spray's long fade.
+  const BOILS = FOLLOW.BOIL_N * FOLLOW.MAX_DIVERS;
+  const boilGeo = keep(new THREE.BufferGeometry());
+  const boP = new Float32Array(BOILS * 3), boS = new Float32Array(BOILS), boA = new Float32Array(BOILS);
+  boilGeo.setAttribute('position', new THREE.BufferAttribute(boP, 3).setUsage(THREE.DynamicDrawUsage));
+  boilGeo.setAttribute('aSize', new THREE.BufferAttribute(boS, 1).setUsage(THREE.DynamicDrawUsage));
+  boilGeo.setAttribute('aAlpha', new THREE.BufferAttribute(boA, 1).setUsage(THREE.DynamicDrawUsage));
+  const boil = new THREE.Points(boilGeo, keep(new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime, uScale: scaleU }, defines: { DROP: 1 },
+    vertexShader: POINT_VERT, fragmentShader: BUBBLE_FRAG, transparent: true, depthWrite: false,
+  })));
+  boil.frustumCulled = false; boil.visible = false; boil.renderOrder = 7;
+  root.add(boil);
+  let mates = [];
+  // The divers to boil over: [{ id, x, z }] in world coordinates (main.js, from each snapshot).
+  function setMates(divers) {
+    mates = (divers ?? []).slice(0, FOLLOW.MAX_DIVERS).map(d => ({ x: d.x - PX, z: d.z - PZ }));
+    boil.visible = mates.length > 0;
+    boilGeo.setDrawRange(0, mates.length * FOLLOW.BOIL_N);
+  }
+  function stepBoil(T) {
+    if (!mates.length) return;
+    let i = 0;
+    mates.forEach((m, j) => {
+      for (let k = 0; k < FOLLOW.BOIL_N; k++, i++) {
+        const b = boilBubble(m.x, m.z, k, j, T);
+        boP[i * 3] = b.x; boP[i * 3 + 1] = SURF + 0.01 + b.rise * 0.07; boP[i * 3 + 2] = b.z;
+        boS[i] = b.size; boA[i] = b.alpha;
+      }
+    });
+    boilGeo.attributes.position.needsUpdate = true; boilGeo.attributes.aSize.needsUpdate = true; boilGeo.attributes.aAlpha.needsUpdate = true;
+  }
+
+  // 2. The bag rises: a net bag climbs its line from the diver to the dock, with a splash at the top. Everyone sees it.
+  const lineTop = new THREE.Vector3(hoseAt.x, 0.28, hoseAt.z + 1.6);    // where the bag line is tied off (by the hose)
+  const netBag = new THREE.Mesh(keep(new THREE.IcosahedronGeometry(0.2, 1)), keep(new THREE.MeshBasicMaterial({ color: 0x9fe8b0, wireframe: true })));
+  netBag.visible = false; netBag.frustumCulled = false; root.add(netBag);
+  const bagLineGeo = keep(new THREE.BufferGeometry());
+  bagLineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3).setUsage(THREE.DynamicDrawUsage));
+  const bagLine = new THREE.Line(bagLineGeo, keep(new THREE.LineBasicMaterial({ color: 0xe8c32a })));
+  bagLine.visible = false; bagLine.frustumCulled = false; root.add(bagLine);
+  let bag = null;
+  // Call on the { t: 'sent' } event with the diver's world (x, z).
+  function sendBag(x, z) {
+    const lx = x - PX, lz = z - PZ;
+    bag = { t: 0, from: { x: lx, y: bedY(lx, lz) + 0.25, z: lz }, to: { x: lineTop.x, y: lineTop.y, z: lineTop.z }, splashed: false };
+  }
+  function stepBag(dt) {
+    if (!bag) return;
+    bag.t += dt;
+    const p = bagAt(bag.from, bag.to, bag.t / FOLLOW.BAG_SECS);
+    if (!p) { bag = null; netBag.visible = bagLine.visible = false; return; }
+    netBag.visible = bagLine.visible = true;
+    netBag.position.set(p.x, p.y, p.z); netBag.rotation.y += dt * 2;
+    const L = bagLineGeo.attributes.position.array;
+    L[0] = p.x; L[1] = p.y; L[2] = p.z; L[3] = lineTop.x; L[4] = lineTop.y; L[5] = lineTop.z;
+    bagLineGeo.attributes.position.needsUpdate = true;
+    if (!bag.splashed && p.y >= SURF) {
+      bag.splashed = true;
+      splashRings.fire(p.x, SURF + 0.02, p.z, 0.15, 1.3, 0.8, 0.8);
+      spray(p.x, p.z, 18, 2.6, 1);
+    }
+  }
+
+  // 3. Lead and gold glint in your torch: the sunk ones within 6 m and inside the cone (scubafollow.js pickGlints),
+  //    with the treasure's GLINT shader, at most 20 points, only while diving. Low tier: off.
+  const TG = FOLLOW.GLINT_MAX;
+  const tgGeo = keep(new THREE.BufferGeometry());
+  const tgP = new Float32Array(TG * 3);
+  {
+    const S = new Float32Array(TG), Ph = new Float32Array(TG);
+    for (let i = 0; i < TG; i++) { S[i] = 0.025 + rand() * 0.025; Ph[i] = rand(); }
+    tgGeo.setAttribute('position', new THREE.BufferAttribute(tgP, 3).setUsage(THREE.DynamicDrawUsage));
+    tgGeo.setAttribute('aSize', new THREE.BufferAttribute(S, 1));
+    tgGeo.setAttribute('aPh', new THREE.BufferAttribute(Ph, 1));
+    tgGeo.setDrawRange(0, 0);
+  }
+  const torchGlints = new THREE.Points(tgGeo, keep(new THREE.ShaderMaterial({
+    uniforms: { uTime: U.uTime, uScale: glintU.uScale, uR: { value: FOLLOW.GLINT_R }, uGlow: glintU.uGlow },
+    vertexShader: GLINT_VERT, fragmentShader: GLINT_FRAG, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+  })));
+  torchGlints.frustumCulled = false; torchGlints.renderOrder = 6;
+  underOnly.add(torchGlints);
+  let tgAcc = 0;
+  const eyeW = new THREE.Vector3(), dirW = new THREE.Vector3();
+  function stepTorchGlints(dt, balls) {
+    if ((tgAcc += dt) < 0.1) return;   // the selection runs at 10 Hz; the twinkle is in the shader
+    tgAcc = 0;
+    if (lowDetail || !balls) { tgGeo.setDrawRange(0, 0); return; }
+    camera.getWorldPosition(eyeW); camera.getWorldDirection(dirW);
+    const got = pickGlints(typeof balls.values === 'function' ? balls.values() : balls, eyeW, dirW);
+    got.forEach((b, i) => { tgP[i * 3] = b.x - PX; tgP[i * 3 + 1] = (b.y ?? bedAt(b.x, b.z)) + 0.03; tgP[i * 3 + 2] = b.z - PZ; });
+    tgGeo.setDrawRange(0, got.length);
+    tgGeo.attributes.position.needsUpdate = true;
   }
 
   // --- screen effects (mine only): a camera dip, a damped wobble, a flare, a floating bag count ---
@@ -1181,7 +1318,7 @@ export function createScuba(scene, camera, POND, opts = {}) {
     if (Math.abs(clarCur - clarTgt) < 0.002) clarCur = clarTgt;
     applyTint();
     U.uTime.value = T;
-    animateCase(T);
+    animateCase(T, dt);
     splashRings.step(dt); sonarRings.step(dt); stepDrops(dt);
     const air01 = s.air01 ?? 1, dp = s.depthPos && typeof s.depthPos === 'object' ? s.depthPos : null;
     const cx = (dp?.x ?? camera.position.x) - PX, cy = dp?.y ?? camera.position.y, cz = (dp?.z ?? camera.position.z) - PZ;
@@ -1189,6 +1326,7 @@ export function createScuba(scene, camera, POND, opts = {}) {
     if (!under && Math.hypot(cx, cz) > R + 70) { applyFx(dt, T); return; }
     if (typeof innerHeight === 'number') { scaleU.value = innerHeight * 0.85; glintU.uScale.value = innerHeight * 0.85; }
 
+    stepBoil(T); stepBag(dt);   // round 6 #9: what the dock can follow
     padTimer += dt;
     if (padTimer > 0.066) { padTimer = 0; updatePads(T); }
     stepCat(dt, T);
@@ -1212,6 +1350,7 @@ export function createScuba(scene, camera, POND, opts = {}) {
     shafts.instanceMatrix.needsUpdate = true;
 
     goldMat.emissiveIntensity = 0.75 + 0.25 * Math.sin(T * 1.7);
+    stepTorchGlints(dt, s.balls);   // round 6 #9: lead and gold in the torch
 
     // treasure glints: only within range (6 m, 8 m with the dive light); a soft ping the first time you get there
     const gr = s.glintR ?? 6;
@@ -1283,6 +1422,7 @@ export function createScuba(scene, camera, POND, opts = {}) {
     setUnder, tick, dispose, group: root, trophyPos,
     // Scuba v2
     attach, setClarity, setFound, setTreasure, plunge, surface, ping, placeCase, setMode,
+    setMates, sendBag, reveal,   // round 6 #9
     caseGroup: caseG,
     get mode() { return mode; },
     get activeTreasure() { return active ? active.id : null; },

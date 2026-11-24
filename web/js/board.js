@@ -6,8 +6,13 @@
 //     state: { bv, rate, upkeep, hustle, curb, pond, fries, kpiLabel, kpi, slogan, quota, outstanding, lastCall, gary, title, silo }
 //   b.floatText(x, y, z, 'text', '#fff');  // rises ~1.5 m and fades over 1.6 s
 //   b.tick(dt);                            // call every frame (flip animation + float labels)
+//   b.stamp(quotaEvent, { low });          // the Closing Bell's APPROVED / DENIED stamp (council round 6, #3)
+//   createBoard(scene, { x, z, onCross })  // onCross('up' | 'down'): BV crossed the target (the green flash's ding)
+//     state also takes: live (a shift is on: crossings only count then)
 import * as THREE from 'three';
 import { BOARD_YAW } from './signs.js';
+import { BELL, crossing, gaugeRed, gaugePass, stampFor } from './closingbell.js';
+import { sharedConfetti, confettiCount } from './confetti.js';
 
 const W = 1024, H = 512;
 const MONO = '"Courier New", ui-monospace, Menlo, Consolas, monospace';
@@ -55,7 +60,7 @@ function drawDimples(g, cx, cy, r) {
 // never stopped scrambling at the Stadium).
 const boardMoney = v => (v >= 100 ? '$' + Math.round(v).toLocaleString('en-US') : money(v));
 
-export function createBoard(scene, { x, z }) {
+export function createBoard(scene, { x, z, onCross = null }) {
   const root = new THREE.Group();
   scene.add(root);
   const disposables = [];
@@ -86,6 +91,8 @@ export function createBoard(scene, { x, z }) {
   disposables.push(boardMat, frameMat, front.geometry, back.geometry, frame.geometry);
 
   let s = null;                // last state
+  const cross = { above: null, at: -Infinity }, flash = { t: 0, up: true };   // round 6 #3: the crossing flash
+  let stampT = 0, stampNow = null, stampEl = null, clock = 0;
   let key = '';
   let flipT = 0, flipAcc = 0;
   const prev = { bv: '', quota: '', banner: '' };
@@ -156,7 +163,12 @@ export function createBoard(scene, { x, z }) {
       g.fillStyle = v == null ? '#4a4f5a' : '#cfc8b0'; g.textBaseline = 'alphabetic';
       g.fillText(label, gx, gy + lab - 2);
       if (v != null) { g.textAlign = 'right'; g.font = `700 ${lab}px ${MONO}`; g.fillText(Math.round(clamp01(v) * 100) + '%', gx + gw, gy + lab - 2); }
-      bar(gx, gy + barY, gw, barH, v == null ? 0 : v, color);
+      const isKpi = four && i === 3;                       // round 6 #2/#3: the venue gauge decides the stamp
+      bar(gx, gy + barY, gw, barH, v == null ? 0 : v, isKpi && gaugeRed(v, st.lastCall) ? '#e03a3a' : color);
+      if (isKpi && v != null) {                            // a white tick at the pass line (50%)
+        const kx = gx + 2 + (gw - 4) * gaugePass();
+        g.fillStyle = '#ffffff'; g.fillRect(kx - 2, gy + barY - 4, 4, barH + 8);
+      }
       if (v == null) {
         g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#6b7180'; g.font = `600 ${four ? 13 : 15}px ${SANS}`;
         g.fillText('COMING SOON — CORPORATE', gx + gw / 2, gy + barY + barH / 2);
@@ -180,13 +192,19 @@ export function createBoard(scene, { x, z }) {
       const mx = tx + tw - 4;                 // quota marks the bar's end; the bar is BV / quota
       g.fillStyle = '#e03a3a'; g.fillRect(mx - 3, 300, 6, 44);
     }
+    if (flash.t > 0) {                        // round 6 #3: BV crossed the target: green over, amber back under
+      g.globalAlpha = Math.min(1, flash.t / BELL.FLASH_SECS) * 0.85;
+      g.fillStyle = flash.up ? BELL.GREEN : BELL.AMBER; g.fillRect(tx - 6, 300, tw + 12, 44);
+      g.globalAlpha = 1;
+    }
 
     // outstanding
     g.fillStyle = '#1d2129'; g.fillRect(24, 358, W - 48, 72);
     g.textAlign = 'left'; g.fillStyle = '#7d8594'; g.font = `600 26px ${SANS}`;
-    g.fillText('BALLS OUTSTANDING', 44, 394);
-    g.textAlign = 'right'; g.fillStyle = '#f5e6b8'; g.font = `700 56px ${MONO}`;
-    g.fillText(commas(st.outstanding), W - 44, 396);
+    // endless (council round 6 #7): today's cash against the record instead of the ball count
+    g.fillText(pace ? 'TODAY ' + money(pace.cash) : 'BALLS OUTSTANDING', 44, 394);
+    g.textAlign = 'right'; g.fillStyle = '#f5e6b8'; g.font = `700 ${pace ? 40 : 56}px ${MONO}`;
+    g.fillText(pace ? 'RECORD ' + money(pace.record) : commas(st.outstanding), W - 44, 396);
 
     // banner
     let banner = '', bcol = '#e8b04a', bg = '#1b1f27', fg = '#8f98a8';
@@ -204,6 +222,14 @@ export function createBoard(scene, { x, z }) {
     const px = fit(shown, p => `700 ${p}px ${MONO}`, W - 80, 34);
     g.font = `700 ${px}px ${MONO}`; g.fillText(shown, W / 2, 470);
 
+    if (stampT > 0 && stampNow) {             // the Board wears the stamp too (world space, for the Rats out on the range)
+      g.save(); g.translate(304, 190); g.rotate(-0.14);
+      g.strokeStyle = stampNow.ink; g.fillStyle = stampNow.ink; g.lineWidth = 10;
+      g.font = `900 96px ${SANS}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      const sw = g.measureText(stampNow.text).width + 48;
+      g.strokeRect(-sw / 2, -64, sw, 128); g.fillText(stampNow.text, 0, 4);
+      g.restore();
+    }
     tex.needsUpdate = true;
   }
   const hustleShown = st => st.hustle > 1;
@@ -282,6 +308,10 @@ export function createBoard(scene, { x, z }) {
     const n = Math.min(SILO_MAX, Math.max(0, Math.floor(state.silo || 0)));
     if (balls.count !== n) balls.count = n;
 
+    // round 6 #3: BV crossing the target flashes the bar (at most once every 3 s); 'up' also rings onCross
+    const cr = crossing(cross, { bv: state.bv, quota: state.quota, live: state.live !== false, t: clock });
+    if (cr) { flash.t = BELL.FLASH_SECS; flash.up = cr === 'up'; onCross?.(cr); if (s) draw(); }
+
     // board
     const k = [
       boardMoney(state.bv), money(state.rate), money(state.upkeep), state.hustle > 1 ? state.hustle.toFixed(2) : '-',
@@ -304,6 +334,15 @@ export function createBoard(scene, { x, z }) {
   }
 
   function tick(dt) {
+    clock += dt;
+    if (flash.t > 0) {                         // fade the flash at the flip's 20 Hz, not every frame
+      flash.t = Math.max(0, flash.t - dt); flash.acc = (flash.acc ?? 0) + dt;
+      if (flipT <= 0 && (flash.acc >= FLIP_STEP || flash.t === 0)) { flash.acc = 0; draw(); }
+    }
+    if (stampT > 0 && (stampT -= dt) <= 0) {
+      stampT = 0; stampNow = null; draw();
+      if (stampEl) stampEl.style.opacity = '0';
+    }
     if (flipT > 0) {
       flipT -= dt; flipAcc += dt;
       if (flipT <= 0) { flipT = 0; flipping.bv = flipping.quota = flipping.banner = false; flipAcc = 0; draw(); }
@@ -322,5 +361,44 @@ export function createBoard(scene, { x, z }) {
     }
   }
 
-  return { update, floatText, tick };
+  // The Closing Bell's stamp (round 6 #3): the one centre element at the bell, 1.5 s, then the report card.
+  // APPROVED: red ink, confetti over the Board. DENIED: grey ink, and the server's reason (<= 8 words) under it.
+  function stamp(e, { low = false } = {}) {
+    const st = stampFor(e);
+    if (!st) return null;
+    stampNow = st; stampT = BELL.STAMP_SECS;
+    if (s) draw();
+    if (typeof document !== 'undefined') {
+      if (!stampEl) {
+        stampEl = document.createElement('div'); stampEl.id = 'bell-stamp';
+        stampEl.style.cssText = 'position:fixed;left:50%;top:42%;z-index:40;pointer-events:none;text-align:center;opacity:0;'
+          + 'transition:opacity .2s;font:900 clamp(48px,9vw,112px)/1 system-ui,sans-serif;letter-spacing:.04em';
+        document.body.appendChild(stampEl);
+      }
+      stampEl.innerHTML = '';
+      const word = document.createElement('div');
+      word.textContent = st.text;
+      word.style.cssText = `color:${st.ink};border:.09em solid ${st.ink};border-radius:.08em;padding:.06em .3em;`
+        + 'background:rgba(255,250,235,.82);mix-blend-mode:normal;box-shadow:0 .05em .3em rgba(0,0,0,.35)';
+      stampEl.appendChild(word);
+      if (st.why) {
+        const why = document.createElement('div'); why.textContent = st.why;
+        why.style.cssText = 'margin-top:.4em;font:800 clamp(16px,2.2vw,26px)/1.2 system-ui,sans-serif;color:#fff;text-shadow:0 2px 6px #000';
+        stampEl.appendChild(why);
+      }
+      // the slam: big and faint, then down hard with a slight tilt
+      stampEl.animate?.([{ transform: 'translate(-50%,-50%) rotate(-12deg) scale(2.4)', opacity: 0 },
+        { transform: 'translate(-50%,-50%) rotate(-8deg) scale(0.94)', opacity: 1, offset: 0.55 },
+        { transform: 'translate(-50%,-50%) rotate(-8deg) scale(1)', opacity: 1 }], { duration: 220, easing: 'ease-in', fill: 'forwards' });
+      stampEl.style.transform = 'translate(-50%,-50%) rotate(-8deg)';
+      stampEl.style.opacity = '1';
+    }
+    if (st.ok) {                               // confetti over the Board (≤ 160 points for 2 s; low tier 60)
+      const p = new THREE.Vector3(0, BOTTOM + BH + 0.4, 0.3); root.localToWorld(p);
+      sharedConfetti(scene).burst(p.x, p.y, p.z, { n: confettiCount(BELL.CONFETTI, low, BELL.CONFETTI_LOW), secs: BELL.CONFETTI_SECS, speed: 5, up: 5 });
+    }
+    return st;
+  }
+
+  return { update, floatText, tick, stamp };
 }

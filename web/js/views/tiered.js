@@ -1,10 +1,27 @@
 // Tiered Entertainment Range (venue 2), client side: bowl decals, neon pins, the cup tween, gutter glass, the strobe.
+// Council round 6 (#4): 10 m pins with a flag showing the cup's count, light pillars over every bowl, and the
+// landing ring at a crew bay (aim.js predicts where a PURE strike rests).
 // The rules live in web/js/tiered.js (pure) and server/venues/tiered.mjs.
 import * as THREE from 'three';
 import { MAP } from '../map.js';
 import { TARGET, hasGutters } from '../tiered.js';
+import { AIM, createAimer, ringBowl, flagNormal, cupWarn } from '../aim.js';
 
 const FLAG = { red: 0xff3b5c, yellow: 0xffe14a, blue: 0x4aa8ff };
+const PIN_H = 10, PIN_R = 0.125, PILLAR_H = 30, FLAG_W = 2.6, FLAG_H = 2;   // the flag reads at 150 m
+
+// The flag's canvas: the bowl's colour with the cup's count on a plate (red plate at the cup's share of the pass line).
+function drawFlag(f, n) {
+  const { g, size, col } = f, warn = n >= cupWarn();
+  g.fillStyle = '#' + col.toString(16).padStart(6, '0'); g.fillRect(0, 0, size, size);
+  g.fillStyle = warn ? '#d0202a' : '#fff8e6';
+  g.beginPath(); g.arc(size / 2, size / 2, size * 0.4, 0, Math.PI * 2); g.fill();
+  g.fillStyle = warn ? '#ffffff' : '#14161c'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const s = String(Math.min(99, n));
+  g.font = `900 ${Math.round(size * (s.length > 1 ? 0.42 : 0.52))}px system-ui, sans-serif`;
+  g.fillText(s, size / 2, size / 2 + size * 0.03);
+  f.tex.needsUpdate = true;
+}
 
 export default {
   id: 'tiered',
@@ -12,6 +29,10 @@ export default {
   create(ctx) {
     const root = new THREE.Group();
     root.name = 'tiered';
+    const low = !!ctx.perf?.low;
+    const flagPx = low ? 32 : 64;
+    const pinGeo = new THREE.CylinderGeometry(PIN_R, PIN_R, PIN_H, 8);
+    const flagGeo = new THREE.PlaneGeometry(FLAG_W, FLAG_H).translate(FLAG_W / 2, 0, 0);   // hangs off the pole
     const bowls = MAP.BOWLS.map(b => {
       const col = FLAG[b.flag] ?? 0xffffff;
       const g = new THREE.Group(); g.position.set(b.x, 0, b.z);
@@ -22,20 +43,59 @@ export default {
       const glass = mk(new THREE.RingGeometry(b.cup * 1.1, b.cup * 1.35, 24), new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.55, depthWrite: false }), 0.06);
       glass.visible = false;
       const pinMat = new THREE.MeshBasicMaterial({ color: col });
-      const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 4, 8), pinMat); pin.position.set(b.r * 0.55, 2, 0); g.add(pin);
-      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 8), pinMat); tip.position.set(b.r * 0.55, 4.1, 0); g.add(tip);
+      const px = b.r * 0.55;
+      const pin = new THREE.Mesh(pinGeo, pinMat); pin.position.set(px, PIN_H / 2, 0); g.add(pin);
+      // The flag: a canvas redrawn only when the cup's count changes, facing both crew bays.
+      const c = document.createElement('canvas'); c.width = c.height = flagPx;
+      const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+      const flag = new THREE.Mesh(flagGeo, new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
+      const n = flagNormal(b);
+      flag.position.set(px, PIN_H - FLAG_H / 2 - 0.1, 0); flag.rotation.y = Math.atan2(n.x, n.z);
+      g.add(flag);
       root.add(g);
-      return { b, col, pinMat, glass, strobe: 0 };
+      const f = { g: c.getContext('2d'), size: flagPx, col, tex, n: 0 };
+      drawFlag(f, 0);
+      return { b, col, pinMat, glass, strobe: 0, flag: f, pinAt: { x: b.x + px, z: b.z } };
     });
+    // Light pillars: one InstancedMesh for all three bowls (the gold-ball beacon's material, in each flag's colour).
+    const pillars = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.35, 0.9, PILLAR_H, 12, 1, true).translate(0, PILLAR_H / 2, 0),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
+      bowls.length);
+    const m4 = new THREE.Matrix4(), c3 = new THREE.Color();
+    bowls.forEach((w, i) => { m4.makeTranslation(w.pinAt.x, 0, w.pinAt.z); pillars.setMatrixAt(i, m4); pillars.setColorAt(i, c3.setHex(w.col)); });
+    pillars.instanceMatrix.needsUpdate = true; if (pillars.instanceColor) pillars.instanceColor.needsUpdate = true;
+    pillars.frustumCulled = false;
+    root.add(pillars);
+    // The landing ring: where a PURE strike rests, in your colour; the bowl's colour while it would score.
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(AIM.RING_R - AIM.RING_W / 2, AIM.RING_R + AIM.RING_W / 2, 40), ringMat);
+    ring.rotation.x = -Math.PI / 2; ring.visible = false; ring.renderOrder = 3;
+    root.add(ring);
+    const aimer = createAimer({ hz: low ? AIM.LOW_HZ : AIM.HZ, now: () => performance.now() });
     ctx.scene.add(root);
     const tweens = [];
     let t = 0, lastThunk = -1;
 
     return {
-      show(on) { root.visible = on; },
-      onSnapshot() {
+      show(on) { root.visible = on; if (!on) { ring.visible = false; aimer.update(null); } },
+      onSnapshot(s, mine) {
         const own = hasGutters(ctx.crew()?.up);
-        for (const w of bowls) w.glass.visible = own;
+        bowls.forEach((w, i) => {
+          w.glass.visible = own;
+          const n = Math.max(0, mine?.cups?.[i] | 0);
+          if (n !== w.flag.n) { w.flag.n = n; drawFlag(w.flag, n); }
+        });
+      },
+      // main.js, every frame: { bay, yaw, pitch, power, color, world } while you stand at a crew bay with balls, else null.
+      aim(input) {
+        const rest = aimer.update(input);
+        ring.visible = !!rest;
+        if (!rest) return;
+        ring.position.set(rest.x, 0.08, rest.z);
+        const bowl = ringBowl(rest);
+        ringMat.color.set(bowl ? FLAG[bowl.flag] ?? 0xffffff : input.color ?? '#ffffff');
+        ringMat.opacity = bowl ? 0.8 : 0.5;
       },
       onEvent(e) {
         if (e.t === 'cup') {

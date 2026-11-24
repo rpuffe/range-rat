@@ -5,9 +5,13 @@
 export const DECK = {
   MAX: 6,                       // drinks that cause the INCIDENT
   WARN: 4,                      // the mugs go amber: "The deck is getting loud"
-  SOBER_SECS: 30,               // every 30 s of shift time the deck sobers up by 1
+  SOBER_SECS: 60,               // every 60 s of shift time the deck sobers up by 1 (council round 6 #6: was 30)
   FOOD: { fries: 1, hotdog: 2 },// a non-burnt hot dog is -2 ("food helps"), fries -1
   TAB: 5,                       // a non-burnt beer pays a bar tab of 5 x BV in cash
+  ORDER_SECS: 30,               // council round 6 #6: a lounger orders every 30 s of working shift time...
+  ORDER_LOUD_SECS: 20,          // ...every 20 s once the deck is amber (Drinks >= WARN)
+  ORDER_OPEN: 20,               // an order stays open 20 s, then expires quietly (no penalty)
+  ORDER_TAB: 10,                // a good beer while an order is open pays 10 x BV
   FINE: 100,                    // the Liability fine: 100 x BV
   RESET_TO: 2,                  // drinks after an incident
   FALL_R: 1.5,                  // a Rat this close to the landing spot is knocked flat
@@ -23,19 +27,36 @@ export const DECK = {
 
 const clampDrinks = n => Math.max(0, Math.min(DECK.MAX, n));
 
-// The deck's state: Drinks 0..6, the next seat (round robin), and the sober-up timer.
-export const newDeck = () => ({ drinks: 0, seat: 0, soberT: 0 });
+// The deck's state: Drinks 0..6, the next seat (round robin), the sober-up timer, and the loungers' order (council
+// round 6 #6): one open order at a time, { seat, left } or null, raised every orderEvery() seconds by the next seat.
+export const newDeck = () => ({ drinks: 0, seat: 0, soberT: 0, orderT: 0, oseat: 0, order: null });
 
-// Time passes (call only while the shift clock runs). Returns true when the deck sobered up by one.
+// Seconds between orders: 30, or 20 once the deck is amber ("they're getting loud").
+export const orderEvery = drinks => drinks >= DECK.WARN ? DECK.ORDER_LOUD_SECS : DECK.ORDER_SECS;
+
+// Time passes (call only while the shift clock runs). Returns { sobered, order, expired }: sobered when the deck
+// sobered up by one, order when a lounger just ordered (d.order is the new order), expired when an order lapsed.
 export function stepDeck(d, dt) {
-  if (!(dt > 0)) return false;
+  const out = { sobered: false, order: false, expired: false };
+  if (!(dt > 0)) return out;
   d.soberT += dt;
-  let sobered = false;
   while (d.soberT >= DECK.SOBER_SECS) {
     d.soberT -= DECK.SOBER_SECS;
-    if (d.drinks > 0) { d.drinks = clampDrinks(d.drinks - 1); sobered = true; }
+    if (d.drinks > 0) { d.drinks = clampDrinks(d.drinks - 1); out.sobered = true; }
   }
-  return sobered;
+  if (d.order) {
+    d.order.left -= dt;
+    if (d.order.left <= 0) { d.order = null; out.expired = true; }
+  }
+  d.orderT = (d.orderT ?? 0) + dt;
+  if (!d.order && d.orderT >= orderEvery(d.drinks)) {
+    d.orderT = 0;
+    const seat = (d.oseat ?? 0) % DECK.SEATS.length;
+    d.oseat = (seat + 1) % DECK.SEATS.length;
+    d.order = { seat, left: DECK.ORDER_OPEN };
+    out.order = true;
+  }
+  return out;
 }
 
 // What one serve does to the Drinks count. A burnt (or unknown) serve changes nothing.
@@ -46,7 +67,13 @@ export function serveEffect(item, quality) {
 }
 // Does this serve pay the deck's bar tab?
 export const paysTab = (item, quality) => item === 'beer' && (quality === 'perfect' || quality === 'good');
-export const tabFor = bv => DECK.TAB * Math.max(0, bv);
+export const tabFor = (bv, ordered = false) => (ordered ? DECK.ORDER_TAB : DECK.TAB) * Math.max(0, bv);
+// A paying beer fills the open order, if there is one. Returns the filled order (or null) and closes it.
+export function fillOrder(d, item, quality) {
+  if (!d.order || !paysTab(item, quality)) return null;
+  const o = d.order; d.order = null;
+  return o;
+}
 export const fineFor = bv => DECK.FINE * Math.max(0, bv);
 
 // Apply a serve. Returns { delta, incident }; on an incident the caller pays the fine, then calls afterIncident.

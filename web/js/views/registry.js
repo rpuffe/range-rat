@@ -23,6 +23,7 @@ export function createViews(ctx, views = []) {
     onSnapshot(s) { sync(s); for (const e of live()) e.inst.onSnapshot?.(s, s.mods?.[e.v.id]); },
     onEvent(e) { for (const x of live()) x.inst.onEvent?.(e); },
     tick(dt, t) { for (const e of live()) e.inst.tick?.(dt, t); },
+    aim(input) { for (const e of live()) e.inst.aim?.(input); },   // round 6 #4: the swing's aim at a crew bay, or null
     prompt: (btn, ibtn) => first('prompt', btn, ibtn),
     use: fromPad => first('use', fromPad) === true,
     unlatch: () => first('unlatch') === true,

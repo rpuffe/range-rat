@@ -59,3 +59,19 @@ test('readable() catches the faults it exists for', () => {
   assert.equal(readable(SIGN_BY_ID['mat.4'], { x: SIGN_BY_ID['mat.4'].pos.x, y: 1.6, z: -0.8 }).why, 'upside-down');
   assert.ok(Math.abs(yawOf(facing(2.1)) - 2.1) < 1e-12);
 });
+
+test('round 6 #4: every Target Green flag faces both crew bays (dot > 0.5), and the mesh yaw matches flagNormal', async () => {
+  const { flagNormal } = await import('../web/js/aim.js');
+  const { BAYS } = await import('../web/js/sim.js');
+  for (const b of MAP.BOWLS) {
+    const n = flagNormal(b);
+    const sign = { pos: { x: b.x + b.r * 0.55, y: 9.3, z: b.z }, normal: n };
+    for (const bay of BAYS) {
+      const r = readable(sign, { x: bay.x, y: 1.6, z: bay.z });
+      assert.ok(r.ok && r.dot > 0.5, `Bowl ${b.id} from bay ${bay.x}: ${r.why} (dot ${r.dot.toFixed(2)})`);
+    }
+    // views/tiered.js sets flag.rotation.y = atan2(n.x, n.z): a plane's +z normal turned by that yaw is n.
+    const yaw = Math.atan2(n.x, n.z);
+    assert.ok(Math.abs(Math.sin(yaw) - n.x) < 1e-12 && Math.abs(Math.cos(yaw) - n.z) < 1e-12);
+  }
+});

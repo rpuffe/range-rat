@@ -1,0 +1,70 @@
+// The huddle beat's pure rules for the client (council round 6 #5): the ring's slots, the gold sweep, the
+// Last Bucket banner line, and the Board's GARY 3 · 2 · 1. No three, no DOM: unit-tested in test/huddle.test.mjs.
+// The server owns the truth (crew.mjs stepHuddle); this only draws it.
+
+export const HUDDLE = {
+  R: 8,              // the ring round the stand (crew.mjs HUDDLE_R, GARY.HUDDLE_R)
+  HOLD: 3,           // seconds of everyone holding Use (crew.mjs HUDDLE_HOLD)
+  TICKS: 48,         // the ring is drawn as this many arc ticks (one InstancedMesh)
+  MAX_SLOTS: 6,      // one slot per online Rat (six crew colours)
+};
+
+const dist = (p, c) => Math.hypot(p.x - c.x, p.z - c.z);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, ch => '&#' + ch.charCodeAt(0) + ';');   // the banner is innerHTML
+
+// The slots for the Last Bucket huddle, in the server's order: [{ id, color, in, held }].
+export function ringSlots(lb, players = []) {
+  if (!lb || lb.phase !== 'huddle') return [];
+  const byId = new Map(players.map(p => [p.id, p]));
+  const inSet = new Set(lb.in ?? []), held = new Set(lb.held ?? []);
+  return (lb.slots ?? []).slice(0, HUDDLE.MAX_SLOTS).map(id => ({ id, color: byId.get(id)?.color ?? '#ffffff', in: inSet.has(id), held: held.has(id) }));
+}
+
+// Gary's huddle (A4): the same ring, no hold. A slot fills while that Rat is within the ring (his verdict's rule).
+export function garyRingSlots(players = [], stand, r = HUDDLE.R) {
+  return players.filter(p => p.online).slice(0, HUDDLE.MAX_SLOTS).map(p => ({ id: p.id, color: p.color ?? '#ffffff', in: dist(p, stand) < r, held: false }));
+}
+
+// Which slot a ring tick belongs to, or -1 for the small gap between two slots.
+export function slotOfTick(i, n, ticks = HUDDLE.TICKS) {
+  if (n <= 0) return -1;
+  const s = Math.floor(i * n / ticks);
+  if (n > 1 && Math.floor((i + 1) * n / ticks) !== s) return -1;   // the last tick of each slot is the gap
+  return s;
+}
+
+// How many gold ticks the sweep has filled (0..ticks).
+export const sweepTicks = (sweep, hold = HUDDLE.HOLD, ticks = HUDDLE.TICKS) => Math.max(0, Math.min(ticks, Math.floor((sweep / hold) * ticks + 1e-9)));
+
+// The sweep to draw between snapshots: it runs on locally while every slot is held, and sits at 0 otherwise.
+export function sweepNow(lb, since) {
+  if (!lb || lb.phase !== 'huddle') return 0;
+  const slots = lb.slots?.length ?? 0, held = lb.held?.length ?? 0;
+  if (!slots || held < slots) return 0;
+  return Math.min(HUDDLE.HOLD, (lb.sweep ?? 0) + Math.max(0, since));
+}
+
+// The Last Bucket's one banner line (round2.js shows it; one centre text at a time). '' hides it.
+// `glyph` is the Use control (Ⓐ on a pad, SPACE on a keyboard). The huddle line is ≤ 8 words.
+export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = { x: 26, z: 6 }) {
+  const lb = c?.lastBucket;
+  if (!lb || lb.phase === 'done' || c.phase !== 'shift') return '';
+  const on = (c.players ?? []).filter(p => p.online);
+  if (lb.phase === 'huddle') return `HOLD ${glyph} TOGETHER · <b>${(lb.held ?? []).length} / ${(lb.slots ?? []).length}</b>`;
+  const carrier = on.find(p => p.one);
+  if (carrier) {
+    const missing = on.filter(p => dist(p, stand) >= HUDDLE.R).map(p => p.id === meId ? 'you' : esc(p.name));
+    return `BALL NO. 1 → THE STAND · <b>${on.length - missing.length} / ${on.length}</b>${missing.length ? ` · waiting: ${missing.slice(0, 3).join(', ')}` : ''}`;
+  }
+  return lb.phase === 'down' ? 'BALL NO. 1 IS DOWN · follow the beam' : '';
+}
+
+// The Board while Gary drives his last leg to the stand: GARY 3, GARY 3 · 2, GARY 3 · 2 · 1. null otherwise.
+// `stop` is his stand stop (sim.js GARY.STOPS), `speed` GARY.SPEED; he arrives within 0.3 m (crew.mjs stepGary).
+export function garyCountdown(gary, stop = { x: 26, z: 10 }, speed = 5) {
+  if (!gary || gary.phase !== 'drive' || gary.to !== 'stand') return null;
+  const eta = (dist(gary, stop) - 0.3) / speed;
+  if (eta <= 0 || eta > 3) return null;
+  const n = Math.max(1, Math.ceil(eta));
+  return 'GARY ' + [3, 2, 1].filter(k => k >= n).join(' · ');
+}

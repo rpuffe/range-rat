@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Crew } from '../server/crew.mjs';
-import { SIM, WASH, KIND_W, KIND_NAMES, KIND_BLURB, advanceBall, pickKind, mulberry32 } from '../web/js/sim.js';
+import { SIM, WASH, CART, KIND_W, KIND_NAMES, KIND_BLURB, advanceBall, pickKind, mulberry32 } from '../web/js/sim.js';
 
 function makeCrew(save = null, shiftSecs = 100000, seed = 11) {
   const clock = { t: 1_000_000 };
@@ -111,7 +111,7 @@ test('pickKind: day 3 brings gold (rare); the square ball waits for day 5', () =
   assert.deepEqual(Object.keys(c).sort(), ['gold', 'range']);
   assert.equal(sample(4, 0).square, undefined, 'no square on day 4');
   const d5 = sample(5, 0);
-  within(d5.square ?? 0, 0.24, 0.31, 'square on day 5');
+  within(d5.square ?? 0, 0.13, 0.15, 'square on day 5 (round 6 #8: was ~0.27)');
   within(d5.gold ?? 0, 0.003, 0.008, 'gold on day 5');
 });
 
@@ -140,7 +140,7 @@ test('every kind has a name, and every non-range kind a blurb and a weight', () 
 
 // ---- weights, end to end -----------------------------------------------------------
 
-for (const [kind, w] of [['range', 1], ['gold', 10], ['bouncy', 1.5]]) {
+for (const [kind, w] of [['range', 1], ['gold', 10], ['bouncy', 1.5], ['square', 2]]) {
   test(`a ${kind} ball banks ${w} x a range ball (BV 1.5 at Curb 1, clean Rat x1.25)`, () => {
     const { crew } = makeCrew();
     openShift(crew, 0);
@@ -350,4 +350,30 @@ test('venue reaches spawning: at venue 0 no bouncy ever spawns, at venue 1 some 
   };
   assert.ok(!kindsAt(0).has('bouncy'));
   assert.ok(kindsAt(1).has('bouncy'));
+});
+
+// ---- council round 6 #8: square balls jam the reels ------------------------------------------------------------
+
+test('round 6 #8: the cart reels refuse a square ball; a walker picks it up; it banks at weight 2', () => {
+  const { crew } = makeCrew({ up: { cart: 1 } });
+  openShift(crew, 0);
+  const d = addPlayer(crew, 'D', CART.PARK.x - 1, CART.PARK.z);
+  act(crew, d, { t: 'board' });
+  const c = crew.cart, rx = c.x - Math.sin(c.yaw) * CART.REEL_AHEAD, rz = c.z - Math.cos(c.yaw) * CART.REEL_AHEAD;
+  const sq = restingBall(crew, rx, rz, 'square'), rg = restingBall(crew, rx + 0.2, rz, 'range');
+  assert.deepEqual(act(crew, d, { t: 'pickup', ball: sq.id, cart: true }).denied, [sq.id], 'the reels pass over it');
+  assert.deepEqual(act(crew, d, { t: 'pickup', ball: rg.id, cart: true }).denied, [], 'a range ball still scoops');
+  assert.equal(c.load, 1);
+  assert.ok(crew.balls.has(sq.id), 'the square stays exactly where it landed');
+  const w = addPlayer(crew, 'W', rx, rz);
+  assert.deepEqual(act(crew, w, { t: 'pickup', ball: sq.id }).denied, [], 'a walker takes it');
+  assert.equal(w.pocketW, 2);
+  assert.equal(KIND_W.square, 2);
+  assert.equal(KIND_BLURB.square, "Worth ×2. The reels can't take it.");
+});
+
+test('round 6 #8: the square share over 10,000 seeded draws: ~14% at the Muni from day 5, ~5% at the Club', () => {
+  within(sample(5, 0, 10000).square ?? 0, 0.13, 0.15, 'Muni day 5');
+  within(sample(7, 1, 10000).square ?? 0, 0.04, 0.06, 'Club day 7');
+  within(sample(5, 1, 10000).square ?? 0, 0.04, 0.06, 'Club day 5');
 });

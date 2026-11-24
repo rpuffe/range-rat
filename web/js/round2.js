@@ -7,10 +7,14 @@
 import * as THREE from 'three';
 import { WASHER_HANDLES, atHandle, WASH, VENUE_RULES, gearGrimeFactor, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
 import { createPA } from './pa.js';
+import { showPromo, promoPanelHtml } from './promopanel.js';   // council round 6 #7: the fee line from 2 stamps
 import { createWasher, createCrank } from './washer.js';
 import { createVenues, paintSign } from './venues.js';
 import { createEnding } from './ending.js';
 import { createCCTV } from './cctv.js';
+import { createHuddleRing, roar } from './huddle.js';                          // round 6 #5: the huddle beat
+import { HUDDLE, ringSlots, garyRingSlots, sweepNow, lastBucketLine } from './huddlerules.js';
+import { sharedConfetti, confettiCount } from './confetti.js';
 
 export function setupRound2(ctx) {
   const { scene, camera, $, toast, board, SFX, nameOf, me } = ctx;
@@ -25,6 +29,12 @@ export function setupRound2(ctx) {
   const venues = createVenues(scene);
   const ending = createEnding({ scene, camera });   // its overlays mount on document.body; `root` would be a 3D parent
   const cctv = createCCTV({ camera, root: $('hud'), onFlag: ({ x, z }) => link()?.act({ t: 'mark', x, z }) });
+  // The huddle beat (council round 6 #5): the ring round the stand, the shared confetti pool, Use held at the stand.
+  const ring = createHuddleRing(scene, SIM.STAND);
+  const confetti = sharedConfetti(scene);
+  const low = () => !!ctx.perfLow?.();
+  let holdingUse = false, lbAt = 0;
+  const inRing = p => Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < HUDDLE.R;
 
   let venueShown = -1, endlessShown = false;
   let cranking = null, crankTurns = 0, crankSent = 0;
@@ -77,9 +87,20 @@ export function setupRound2(ctx) {
       case 'huddle': break;   // the Last Bucket banner (tick) shows who is still missing
       case 'lastbucket':
         if (e.phase === 'falling') toast('Corporate has paused the sun.', 3);
-        if (e.phase === 'carried') toast(e.by === me.id ? 'You have Ball No. 1. Walk it home. Everyone to the stand.' : nameOf(e.by) + ' has Ball No. 1. Everyone to the stand!', 4);
-        if (e.phase === 'banked') { ending.huddle(null); ending.finale({}); ctx.floods?.forEach((l, i) => setTimeout(() => { l.intensity = 0; }, 400 * i)); }
+        if (e.phase === 'carried' && !e.back) toast(e.by === me.id ? 'You have Ball No. 1. Walk it home. Everyone to the stand.' : nameOf(e.by) + ' has Ball No. 1. Everyone to the stand!', 4);
+        if (e.phase === 'banked') {
+          ring.hide(); holdingUse = false;
+          // Two confetti cannons at the stand and the crowd's roar, then the $∞ finale (round 6 #5).
+          for (const dx of [-2.5, 2.5]) confetti.burst(SIM.STAND.x + dx, 1.2, SIM.STAND.z, { n: confettiCount(160, low(), 80), secs: 2.5, speed: 5, up: 11 });
+          roar(SFX.audioHandle?.());
+          ending.huddle(null); ending.finale({}); ctx.floods?.forEach((l, i) => setTimeout(() => { l.intensity = 0; }, 400 * i));
+        }
         break;
+      case 'verdict': {   // Gary saw the huddle: a small puff over his cart (main.js lifts his hat)
+        const g = crew()?.gary;
+        if (e.huddle && g) confetti.burst(g.x, 2.6, g.z, { n: confettiCount(60, low(), 30), secs: 1.6, speed: 3, up: 5 });
+        break;
+      }
       case 'rest': if (e.one) { ending.land(); SFX.bonk(); } break;
       case 'shift':
         if (e.phase === 'report' && e.report?.ending) setTimeout(() => showEndCard(e.report), 7000);
@@ -90,6 +111,7 @@ export function setupRound2(ctx) {
 
   // ---- snapshot ---------------------------------------------------------------------
   function onSnapshot(s) {
+    lbAt = now();                     // the huddle sweep runs on locally from here (sweepNow)
     if (s.venue !== venueShown || !!s.endless !== endlessShown) {
       if (!reveal) {                  // a reveal flips the sign mid-sequence instead
         venues.setVenue(s.venue, !!s.endless);
@@ -112,6 +134,8 @@ export function setupRound2(ctx) {
   function press(latch = false) {
     const c = crew();
     if (c.phase !== 'shift' || me.down > 0 || ctx.driving()) return false;
+    // The Last Bucket huddle: Use held anywhere in the ring is your hand on the pile (round 6 #5).
+    if (c.lastBucket?.phase === 'huddle' && inRing(me)) { holdingUse = true; link()?.act({ t: 'hold', on: true }); return true; }
     if (c.up?.washer) for (const side of ['L', 'R']) {
       if (atHandle(me, side)) { cranking = side; latched = !!latch; washer.crank.begin(side); return true; }
     }
@@ -119,6 +143,7 @@ export function setupRound2(ctx) {
   }
   function release() {
     if (cranking) { washer.crank.end(); cranking = null; }
+    if (holdingUse) { holdingUse = false; link()?.act({ t: 'hold', on: false }); }
     latched = false;
   }
   // Let go of a latched crank or pump. Returns true if something was latched.
@@ -205,12 +230,8 @@ export function setupRound2(ctx) {
     if (c.promotedTo) {
       html += '<div class="sheet promo"><h3>Promoted!</h3><p>The ' + esc(c.promotedTo) + ' opens tomorrow.</p></div>';
       const tm = document.querySelector('#report-body .dim'); if (tm) tm.textContent = 'Tomorrow: the ' + c.promotedTo + '.';
-    } else if (promo && (promo.stamps > 0 || promo.ready)) {   // nothing to request before the first stamp (playtest)
-      const dots = '●'.repeat(Math.min(promo.stamps, promo.need)) + '○'.repeat(Math.max(0, promo.need - promo.stamps));
-      const signedN = promo.signed.length;
-      html += '<div class="sheet promo"><h3>Request promotion: ' + esc(promo.next) + '</h3>' +
-        '<p>Review stamps <b>' + dots + '</b></p><p>Franchise fee <b>' + money(promo.fee) + (promo.ready ? '' : ' · you have ' + money(c.cash)) + '</b></p>' +
-        (promo.ready ? '<button id="sign-btn">' + (mine?.signed ? 'Unsign' : 'Sign the franchise agreement') + ' (' + signedN + ' of ' + online.length + ' signed)</button>' : '<p class="note">Earn ' + promo.need + ' review stamps (hit the daily quota), then sign at the bell.</p>') + '</div>';
+    } else if (showPromo(promo)) {   // nothing to request before the first stamp (playtest); the fee from 2 stamps (round 6 #7)
+      html += promoPanelHtml(promo, { cash: c.cash, signed: !!mine?.signed, signedN: promo.signed.length, onlineN: online.length, esc });
     }
     el.innerHTML = html;
     $('sign-btn')?.addEventListener('click', () => link()?.act({ t: 'sign', on: !mine?.signed }));
@@ -229,24 +250,24 @@ export function setupRound2(ctx) {
   // The Last Bucket: one persistent line that says where Ball No. 1 is and who the stand is waiting for.
   let lbKey = '';
   function lastBucketBanner() {
-    const c = crew(), lb = c?.lastBucket;
-    let html = '';
-    if (lb && lb.phase !== 'done' && c.phase === 'shift') {
-      const on = (c.players ?? []).filter(p => p.online);
-      const carrier = on.find(p => p.one);
-      if (carrier) {
-        const atStand = p => Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < 8;
-        const missing = on.filter(p => !atStand(p)).map(p => p.id === me.id ? 'you' : p.name);
-        html = `BALL NO. 1 → THE STAND · <b>${on.length - missing.length} / ${on.length}</b>${missing.length ? ` · waiting: ${missing.slice(0, 3).join(', ')}` : ''}`;
-      } else if (lb.phase === 'down') html = 'BALL NO. 1 IS DOWN · follow the beam';
-    }
+    const glyph = document.body.classList.contains('pad') ? 'Ⓐ' : 'SPACE';
+    const html = lastBucketLine(crew(), me.id, glyph, SIM.STAND);   // huddlerules.js: "HOLD Ⓐ TOGETHER · 3 / 4" once at the stand
     if (html === lbKey) return;
     lbKey = html;
     ending.huddle(html || null);
   }
+  // The huddle ring: the Last Bucket's (slots fill, the gold sweep runs) or Gary's (slots only, no hold).
+  function huddleRing() {
+    const c = crew(), lb = c?.lastBucket, g = c?.gary;
+    if (c?.phase === 'shift' && lb?.phase === 'huddle') ring.show(ringSlots(lb, c.players), sweepNow(lb, (performance.now() - lbAt) / 1000));
+    else if (c?.phase === 'shift' && (g?.phase === 'warn' || g?.phase === 'drive')) ring.show(garyRingSlots(c.players, SIM.STAND));
+    else ring.hide();
+  }
 
   function tick(dt, now) {
     lastBucketBanner();
+    huddleRing();
+    confetti.tick(dt);         // the shared pool: a no-op if something else stepped it this frame
     const c = crew();
     washer.tick(dt);
     venues.tick(dt, now / 1000);

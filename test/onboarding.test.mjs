@@ -130,3 +130,68 @@ test('playtest: Gary does not run over the huddle on his way to the stand', () =
   crew.stepGary(0.1);
   assert.equal(a.down, 0);
 });
+
+// ---- council round 6 #10: day-2 suggestions -------------------------------------------------------------------------
+import { NUDGE, NUDGE_TEXT, nudgePool, dealNudge, nudgeTarget } from '../web/js/nudge.js';
+const nudges = crew => crew.snapshot().mods?.nudge ?? {};
+function day2(n, save = {}) {
+  const { crew, run, clock } = makeCrew({ day: 2, ...save });
+  const rats = Array.from({ length: n }, (_, i) => { const p = crew.join('R' + i); crew.connect(p); return p; });
+  crew.startShift();
+  return { crew, run, clock, rats };
+}
+
+test('day 2: 4 Rats get 4 different nudges; a 5th repeats from the top', () => {
+  const { crew, rats } = day2(5);
+  const got = rats.map(p => nudges(crew)[p.id]);
+  assert.deepEqual(got, ['hose', 'far', 'stand', 'shop', 'hose']);
+  assert.equal(new Set(got.slice(0, 4)).size, 4);
+  for (const id of got) assert.ok(NUDGE_TEXT[id].split(' ').length <= 8, NUDGE_TEXT[id]);
+});
+test('the washer nudge depends on up.washer', () => {
+  assert.deepEqual(nudgePool({}), ['hose', 'far', 'stand', 'shop']);
+  assert.deepEqual(nudgePool({ washer: 1 }), ['hose', 'far', 'stand', 'washer']);
+  assert.equal(dealNudge(3, { washer: 2 }), 'washer');
+  const { crew, rats } = day2(4, { up: { washer: 1 } });
+  assert.equal(nudges(crew)[rats[3].id], 'washer');
+  assert.equal(nudgeTarget('shop'), null, 'the shop is a menu: no arrow');
+  assert.ok(nudgeTarget('washer') && nudgeTarget('far') && nudgeTarget('stand') && nudgeTarget('hose', true));
+});
+test('no nudges on day 1, day 3, at the Club, or in endless', () => {
+  for (const save of [{ day: 1 }, { day: 3 }, { day: 2, venue: 1, venueDay: 2 }]) {
+    const { crew } = makeCrew(save);
+    const p = crew.join('A'); crew.connect(p); crew.startShift();
+    assert.deepEqual(nudges(crew), {}, JSON.stringify(save));
+  }
+});
+test('a late joiner on day 2 gets the next one in the pool', () => {
+  const { crew, run } = day2(2);
+  run(1);
+  const late = crew.join('Late'); crew.connect(late);
+  run(0.2);
+  assert.equal(nudges(crew)[late.id], 'stand');
+});
+test('doing it clears the line; otherwise it goes after 45 s of working time', () => {
+  const { crew, run, rats } = day2(3);
+  const [hoser, far, stander] = rats;
+  run(1);
+  stander.pocket = 2; stander.pocketW = 2; stander.x = 26; stander.z = 6; crew.deposit(stander);
+  run(0.1);
+  assert.equal(nudges(crew)[stander.id], undefined, 'banked: done');
+  far.x = 26; far.z = -76; far.pocket = 1; run(0.1);
+  assert.equal(nudges(crew)[far.id], undefined, 'in the far field with a ball: done');
+  assert.equal(nudges(crew)[hoser.id], 'hose');
+  run(NUDGE.WAIT + NUDGE.SECS);
+  assert.deepEqual(nudges(crew), {}, '45 s: gone');
+});
+test('the unfinished day-1 checklist keeps precedence: no nudge while it is up', () => {
+  const { crew } = makeCrew();
+  const a = crew.join('A'); crew.connect(a);
+  crew.startShift(); crew.stats.picked = 1; crew.snapshot();
+  crew.endShift(); crew.flush(); crew.startShift();
+  assert.equal(crew.day, 2); assert.ok(crew.snapshot().todo);
+  assert.deepEqual(nudges(crew), {}, 'the checklist first');
+  crew.todo = { pick: true, bank: true, sign: true, buy: true };
+  crew.tick(0.05);
+  assert.equal(nudges(crew)[a.id], 'hose', 'dealt once the checklist is done');
+});

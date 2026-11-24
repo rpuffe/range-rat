@@ -6,7 +6,7 @@ import { MODULES, checkModule } from '../server/venues/index.mjs';
 import tiered from '../server/venues/tiered.mjs';
 import { readFileSync } from 'node:fs';
 import { MAP } from '../web/js/map.js';
-import { inBowl, cupSpot, bayUtil, GUTTERS_ROW, TARGET } from '../web/js/tiered.js';
+import { inBowl, cupSpot, bayUtil, CUP_FULL, GUTTERS_ROW, TARGET } from '../web/js/tiered.js';
 import { SHOP, CART, nextPrice } from '../web/js/sim.js';
 
 const [A, B, C] = MAP.BOWLS;
@@ -49,10 +49,12 @@ test('inBowl: r 6.9 of Bowl A is inside, r 7.5 is not; cupSpot stays in the cup 
   assert.ok(seen.size > 250, 'scattered');
 });
 
-test('bayUtil: empty cups 1, 40 balls 0, clamped', () => {
+test('bayUtil: empty cups 1, 30 balls 0 (round 6 #2: was 40), clamped', () => {
+  assert.equal(CUP_FULL, 30);
   assert.equal(bayUtil(0), 1);
+  assert.equal(bayUtil(30), 0);
+  assert.equal(bayUtil(15), 0.5);
   assert.equal(bayUtil(40), 0);
-  assert.equal(bayUtil(20), 0.5);
   assert.equal(bayUtil(400), 0);
   assert.equal(bayUtil(-3), 1);
 });
@@ -160,4 +162,31 @@ test('the snapshot is small JSON; the module keeps no save key', () => {
   assert.deepEqual(snap.cups, [1, 0, 0]);
   assert.ok(JSON.stringify(snap).length < 80);
   assert.equal(tiered.toSave, undefined);
+});
+
+test('the forgiving lip (round 6 #4): a crew ball at r + 1.4 is a TARGET, at r + 1.6 it is not; customers still cup inside r only', () => {
+  assert.equal(TARGET.LIP, 1.5);
+  assert.equal(inBowl(A.x + A.r + 1.4, A.z, MAP.BOWLS, TARGET.LIP), A);
+  assert.equal(inBowl(A.x + A.r + 1.4, A.z), null, 'no pad: the plain bowl');
+  {
+    const { crew, p, drop, run } = setup();
+    drop(A.x + A.r + 1.4, A.z, p.id);
+    run(0.3);
+    assert.equal(crew.stats.targets, 1, 'r + 1.4: TARGET');
+  }
+  {
+    const { crew, p, drop, run } = setup();
+    const b = drop(A.x + A.r + 1.6, A.z, p.id);
+    run(0.3);
+    assert.equal(crew.stats.targets ?? 0, 0, 'r + 1.6: no TARGET');
+    assert.equal(b.cup, undefined);
+  }
+  {
+    const { crew, drop, run, st } = setup();
+    const b = drop(A.x + A.r + 0.5, A.z);
+    run(0.3);
+    assert.equal(b.cup, undefined, 'a customer ball at r + 0.5 does not cup');
+    assert.equal(st().cups[0], 0);
+    assert.equal(crew.stats.targets ?? 0, 0);
+  }
 });

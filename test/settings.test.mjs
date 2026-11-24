@@ -121,6 +121,7 @@ test('new hints fire on their conditions, once each', () => {
   assert.equal(nextHint({ ...base, venue: 1, beers: 3 }), null);
   assert.equal(nextHint({ ...base, venue: 2, beers: 0 }), null);
   assert.equal(nextHint({ ...base, venue: 2, beers: 1 }), 'deck');
+  assert.equal(nextHint({ ...base, venue: 2, beers: 0, deckOrder: true }), 'deck', 'round 6: the first order');
   assert.equal(nextHint({ ...base, pocketFull: true, seen: [...base.seen, 'bank'] }), null);
   for (const id of ['wand', 'bank', 'crank', 'dive', 'deck']) { assert.ok(hintText(id, false)); assert.ok(hintText(id, true)); }
   assert.match(hintText('bank', true), /Ⓧ/); assert.match(hintText('bank', false), /E there/);

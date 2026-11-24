@@ -355,7 +355,7 @@ test('no swing, no scuff: a full field leaves the mat clean', () => {
 // ---- ball weights, end to end ------------------------------------------------------
 
 test('KIND_W: the council weights for every ball type', () => {
-  assert.deepEqual(KIND_W, { range: 1, glow: 2, lead: 3, square: 1, gold: 10, splitter: 1, bouncy: 1.5, debris: 3 });
+  assert.deepEqual(KIND_W, { range: 1, glow: 2, lead: 3, square: 2, gold: 10, splitter: 1, bouncy: 1.5, debris: 3 });
 });
 
 test('a player\'s pocket carries weights: a range, glow and lead ball bank for 6 x BV', () => {
@@ -555,16 +555,17 @@ test('lastCall() is false in the lobby and in the report', () => {
 
 // ---- the quota -------------------------------------------------------------------
 
-test('quotaQ: none on day 1, then 0.15 / 0.20 / 0.30 / 0.35 and +0.05 a day, capped by the ceiling', () => {
+test('quotaQ: none on day 1, then a floor of 0.3 (round 6 #1): 0.30 / 0.30 / 0.30 / 0.35 and +0.05 a day, capped by the ceiling', () => {
   assert.equal(quotaQ(1, 1.5), null);
   assert.equal(quotaQ(0, 1.5), null);
-  assert.equal(quotaQ(2, 2.5), 0.15);
-  assert.equal(quotaQ(3, 2.5), 0.2);
+  assert.equal(quotaQ(2, 2.5), 0.3);
+  assert.equal(quotaQ(3, 2.5), 0.3);
   assert.equal(quotaQ(4, 2.5), 0.3);
   assert.equal(quotaQ(5, 2.5), 0.35);
   near(quotaQ(6, 2.5), 0.4);
   near(quotaQ(9, 2.5), 0.55);
-  near(quotaQ(2, upkeepCeiling({})), 0.15);
+  near(quotaQ(2, upkeepCeiling({})), 0.3);
+  near(quotaQ(6, upkeepCeiling({})), 0.4, 1e-9);          // day 6 asks 0.4, which is also the Curb-alone cap
   near(quotaQ(30, upkeepCeiling({})), 0.4, 1e-9);        // 0.8 x (1.5 - 1): Curb alone cannot be asked for more
 });
 
@@ -585,26 +586,26 @@ test('no quota on day 1: the memo says welcome, the report has no quota', () => 
   assert.equal(crew.flush().ev.filter(e => e.t === 'quota').length, 0, 'no quota event either');
 });
 
-test('the day-2 target is Rate x (1 + 0.15), set at the start of the shift', () => {
+test('the day-2 target is Rate x (1 + 0.30), set at the start of the shift (round 6 #1: the 0.3 floor)', () => {
   const { crew } = makeCrew({ day: 2 }, 600);
   crew.startShift();
-  assert.deepEqual(crew.quota, { q: 0.15 }, 'the quota stores only q; the target follows the live Rate');
-  assert.equal(crew.quotaTarget(), 1.15);
-  assert.deepEqual(crew.snapshot().quota, { q: 0.15, target: 1.15 });
+  assert.deepEqual(crew.quota, { q: 0.3 }, 'the quota stores only q; the target follows the live Rate');
+  assert.equal(crew.quotaTarget(), 1.3);
+  assert.deepEqual(crew.snapshot().quota, { q: 0.3, target: 1.3 });
   const memo = crew.flush().ev.find(e => e.t === 'memo');
   assert.equal(memo.day, 2);
-  assert.equal(memo.target, 1.15);
-  assert.match(memo.text, /\$1\.15/);
+  assert.equal(memo.target, 1.3);
+  assert.match(memo.text, /\$1\.30/);
 
   const { crew: b } = makeCrew({ day: 2, up: { washer: 1 }, commendations: 4 }, 600);
   b.startShift();
-  assert.equal(b.quotaTarget(), 2.76, 'rate 2 x 1.2 = 2.4, x 1.15');
-  assert.match(b.flush().ev.find(e => e.t === 'memo').text, /\$2\.76/);
+  assert.equal(b.quotaTarget(), 3.12, 'rate 2 x 1.2 = 2.4, x 1.3');
+  assert.match(b.flush().ev.find(e => e.t === 'memo').text, /\$3\.12/);
 
   assert.equal(makeCrew({ day: 3 }).crew.quota, null, 'nothing before the shift starts');
   const d3 = makeCrew({ day: 3 }).crew; d3.startShift();
-  assert.deepEqual(d3.quota, { q: 0.2 });
-  assert.equal(d3.quotaTarget(), 1.2);
+  assert.deepEqual(d3.quota, { q: 0.3 });
+  assert.equal(d3.quotaTarget(), 1.3);
   const d6 = makeCrew({ day: 6 }).crew; d6.startShift();
   assert.equal(d6.quotaTarget(), 1.4);
 });
@@ -612,17 +613,17 @@ test('the day-2 target is Rate x (1 + 0.15), set at the start of the shift', () 
 test('the target ignores curb; a purchase moves the target WITH the Rate, so it cannot buy the quota', () => {
   const { crew } = makeCrew({ day: 2 }, 600);
   crew.startShift();
-  assert.equal(crew.quotaTarget(), 1.15, 'the morning mud does not change the goalposts');
+  assert.equal(crew.quotaTarget(), 1.3, 'the morning mud does not change the goalposts');
   crew.cash = 1000;
   const p = addPlayer(crew, 'A', 0, 0);
   act(crew, p, { t: 'buy', id: 'washer' });
-  assert.equal(crew.quota.q, 0.15, 'q is fixed for the shift');
-  assert.equal(crew.quotaTarget(), 2.3, 'Rate 2 x (1 + 0.15): the red line rides up with the purchase');
+  assert.equal(crew.quota.q, 0.3, 'q is fixed for the shift');
+  assert.equal(crew.quotaTarget(), 2.6, 'Rate 2 x (1 + 0.3): the red line rides up with the purchase');
 });
 
 test('hitting the quota: bonus of 15% of the day\'s cash, a stamp, a quota event, in the report', () => {
   const { crew, run } = makeCrew({ day: 2 }, 5);
-  openShift(crew, 0);                                   // Curb 1: BV 1.5 against a target of 1.15
+  openShift(crew, 0);                                   // Curb 1: BV 1.5 against a target of 1.3
   crew.bank(10, 'x');
   assert.equal(crew.stats.cash, 15);
   run(6);
@@ -633,7 +634,7 @@ test('hitting the quota: bonus of 15% of the day\'s cash, a stamp, a quota event
   assert.equal(crew.report.bank, 17.25);
   const q = crew.report.quota;
   assert.equal(q.hit, true);
-  assert.equal(q.target, 1.15);
+  assert.equal(q.target, 1.3);
   assert.equal(q.bv, 1.5);
   assert.equal(q.bonus, 2.25);
   assert.equal(q.stamps, 1);
@@ -655,7 +656,7 @@ test('a third stamp makes you Range Rat II, in the report', () => {
 
 test('missing the quota: no bonus, no stamp, still an event and a report entry', () => {
   const { crew, run } = makeCrew({ day: 2 }, 5);
-  openShift(crew, 1);                                   // a filthy range: BV 1.00 against 1.15
+  openShift(crew, 1);                                   // a filthy range: BV 1.00 against 1.3
   crew.bank(10, 'x');
   assert.equal(crew.stats.cash, 10);
   run(6);
@@ -665,7 +666,7 @@ test('missing the quota: no bonus, no stamp, still an event and a report entry',
   assert.equal(q.hit, false);
   assert.equal(q.bonus, 0);
   assert.equal(q.bv, 1);
-  assert.equal(q.target, 1.15);
+  assert.equal(q.target, 1.3);
   assert.equal(q.stamps, 0);
   assert.equal(crew.flush().ev.filter(e => e.t === 'quota').length, 1);
 });
@@ -683,11 +684,11 @@ test('the quota is judged on BV at the bell: scrubbing in the last second counts
 
 test('exactly on target is a hit', () => {
   const { crew, run } = makeCrew({ day: 2 }, 5);
-  openShift(crew, 0.7);                                 // Curb 0.3: Upkeep 1.15, BV 1.15 = target
+  openShift(crew, 0.4);                                 // Curb 0.6: Upkeep 1.3, BV 1.3 = target
   crew.bank(1, 'x');
   run(6);
-  assert.equal(crew.report.quota.bv, 1.15);
-  assert.equal(crew.report.quota.target, 1.15);
+  assert.equal(crew.report.quota.bv, 1.3);
+  assert.equal(crew.report.quota.target, 1.3);
   assert.equal(crew.report.quota.hit, true);
   assert.equal(crew.stamps, 1);
 });
@@ -704,7 +705,7 @@ test('a bonus is 15% of the day cash only, not of the whole bank', () => {
 
 test('a day with no deposits is a MISS even when BV beats the target', () => {
   const { crew, run } = makeCrew({ day: 2, cash: 100 }, 5);
-  openShift(crew, 0);                                   // BV 1.5 >= 1.15
+  openShift(crew, 0);                                   // BV 1.5 >= 1.3
   run(6);
   const q = crew.report.quota;
   assert.ok(q.bv >= q.target);
@@ -839,8 +840,8 @@ test('the report says what is coming tomorrow', () => {
     assert.ok(crew.report.tomorrow.length > 10);
     tomorrow.push(crew.report.tomorrow);
   }
-  assert.match(tomorrow[0], /first Ball Value target/);
-  assert.match(tomorrow[0], /Last Call/);
+  assert.equal(tomorrow[0], 'Tomorrow: a target. Hose before the bell.', 'council round 6 #1');
+  assert.ok(tomorrow[0].split(/s+/).length <= 8);
   assert.match(tomorrow[1], /gold/, 'day 3 brings gold');
   assert.match(tomorrow[2], /Gary from Regional/, 'Gary inspects on day 4 (playtest)');
   assert.ok(new Set(tomorrow).size >= 3);
@@ -858,10 +859,40 @@ test('a full week: day 1 clean, then quota, mud and Last Call from day 2', () =>
   setMud(crew, 0);
   crew.startShift();
   assert.equal(crew.day, 2);
-  assert.equal(crew.quota.q, 0.15);
+  assert.equal(crew.quota.q, 0.3);
   assert.equal(crew.fixtures.sign, 0.9);
-  assert.equal(crew.snapshot().quota.target, 1.15);
+  assert.equal(crew.snapshot().quota.target, 1.3);
   crew.shiftT = 61;
   assert.equal(crew.snapshot().lastCall, true);
   assert.ok(run);
+});
+
+// ---- council round 6 #1: the Muni stamps are earned ------------------------------------------------------------
+// A seeded 4P Muni day 2 at full length, customers swinging all shift: an idle crew misses the 0.3 floor, and a crew
+// that hoses every fixture once in the morning hits it.
+function muniDay2(hose, seed = 7) {
+  const { crew, run } = makeCrew({ day: 1 }, null, seed);
+  const ps = ['A', 'B', 'C', 'D'].map((n, i) => addPlayer(crew, n, ST.x + i, ST.z));
+  crew.startShift(); crew.shiftT = crew.shiftSecs; crew.tick(0.05);   // day 1 done
+  crew.startShift();
+  assert.equal(crew.day, 2);
+  assert.equal(crew.quota.q, 0.3);
+  crew.bank(20, 'x');                                    // deposits, so only Upkeep decides the stamp
+  if (hose) {
+    const p = ps[0]; p.wand = true; p.washAt = crew.now();
+    for (const fx of FIXTURES) {
+      p.x = fx.x; p.z = fx.z + 0.5;
+      for (let i = 0; i < 40 && crew.fixtures[fx.id] > 0; i++) { run(0.5); crew.wash(p, 0.5, fx.id); }
+    }
+  }
+  while (crew.phase === 'shift') run(1);
+  const q = crew.report.quota;
+  return { upkeep: q.bv / crew.valueNow().rate, hit: q.hit, target: q.target };
+}
+test('round 6 #1: a 4P Muni day 2 with no hosing misses (Upkeep < 1.30); hosing every fixture once hits', () => {
+  const idle = muniDay2(false), hosed = muniDay2(true);
+  assert.ok(idle.upkeep < 1.3, `idle Upkeep ${idle.upkeep}`);
+  assert.equal(idle.hit, false);
+  assert.ok(hosed.upkeep >= 1.3, `hosed Upkeep ${hosed.upkeep}`);
+  assert.equal(hosed.hit, true);
 });

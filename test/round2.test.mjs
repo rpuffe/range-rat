@@ -393,27 +393,27 @@ test('amenities: the turbo nozzle reaches further, covered bays skip the morning
 
 test('a mid-shift purchase cannot buy the quota (judged on Upkeep, not dollars)', () => {
   const { crew, run } = makeCrew({ day: 2 }, 5);
-  openShift(crew, 1);                                  // filthy: Upkeep 1.0 against a 1.15 ask
+  openShift(crew, 1);                                  // filthy: Upkeep 1.0 against a 1.3 ask
   crew.bank(10, 'x');
   crew.cash = 1000;
   const a = addPlayer(crew, 'A');
   act(crew, a, { t: 'buy', id: 'washer' });            // Rate 1 -> 2: BV doubles, Upkeep does not
   assert.equal(crew.valueNow().bv, 2);
-  assert.equal(crew.quotaTarget(), 2.3, 'the line moved with the Rate');
+  assert.equal(crew.quotaTarget(), 2.6, 'the line moved with the Rate');
   run(6);
   assert.equal(crew.report.quota.hit, false);
   assert.equal(crew.report.quota.bv, 2);
-  assert.equal(crew.report.quota.target, 2.3);
+  assert.equal(crew.report.quota.target, 2.6);
   assert.equal(crew.stamps, 0);
 });
 
 test('hit = deposited > 0 and bv / rate >= 1 + q', () => {
   const { crew, run } = makeCrew({ day: 2, up: { washer: 1 } }, 5);
-  openShift(crew, 0);                                  // Upkeep 1.5 vs 1.15, at Rate 2
+  openShift(crew, 0);                                  // Upkeep 1.5 vs 1.3, at Rate 2
   crew.bank(1, 'x');
   run(6);
   assert.equal(crew.report.quota.hit, true);
-  assert.equal(crew.report.quota.target, 2.3);
+  assert.equal(crew.report.quota.target, 2.6);
   assert.equal(crew.report.quota.bv, 3);
 });
 
@@ -451,7 +451,7 @@ test('the Club quota: q = (ceiling - 1) x venueQuotaF(venueDay)', () => {
 
 test('the Muni quota is unchanged by venues: quotaQ(day, ceiling)', () => {
   const c = makeCrew({ day: 3 }).crew; c.startShift();
-  assert.deepEqual(c.quota, { q: 0.2 });
+  assert.deepEqual(c.quota, { q: 0.3 });     // round 6 #1: the 0.3 floor
 });
 
 test('at the Club: a tidy crew hits the quota, a muddy one misses', () => {
@@ -1374,11 +1374,11 @@ test('Last Bucket: banking it needs every online Rat within 8 m of the stand', (
   assert.equal(crew.phase, 'shift');
 
   b.x = STAND.x + 8.5;
-  act(crew, a, { t: 'deposit' });
+  act(crew, a, { t: 'hold', on: true }); act(crew, b, { t: 'hold', on: true }); m.run(3.2);   // the huddle (round 6 #5)
   assert.equal(a.one, true, '8.5 m is too far');
   b.x = STAND.x + 7.9;
   const bv = crew.valueNow().bv;
-  act(crew, a, { t: 'deposit' });
+  m.run(3.2);                                     // both still holding: the sweep fills
   assert.equal(a.one, false);
   near(crew.cash - cash, 1958 * bv, 0.01);
 });
@@ -1391,7 +1391,7 @@ test('Last Bucket: banking it ends the world: outstanding 0, endless, the last l
   act(crew, a, { t: 'pickup', ball: ball.id });
   a.x = STAND.x; a.z = STAND.z; b.x = STAND.x + 2;
   crew.flush();
-  act(crew, a, { t: 'deposit' });
+  act(crew, a, { t: 'hold', on: true }); act(crew, b, { t: 'hold', on: true }); m.run(3.2);   // the huddle (round 6 #5)
   assert.equal(crew.outstanding, 0);
   assert.equal(crew.endless, true);
   assert.equal(crew.phase, 'report');
@@ -1427,7 +1427,7 @@ test('Endless mode: a reveal, no quota, no Gary, and the first customer ball set
   a.x = ball.x; a.z = ball.z;
   act(crew, a, { t: 'pickup', ball: ball.id });
   a.x = STAND.x; a.z = STAND.z; b.x = STAND.x + 2;
-  act(crew, a, { t: 'deposit' });
+  act(crew, a, { t: 'hold', on: true }); act(crew, b, { t: 'hold', on: true }); m.run(3.2);   // the huddle (round 6 #5)
   crew.flush();
 
   act(crew, a, { t: 'start' }); act(crew, b, { t: 'start' });
@@ -1702,4 +1702,23 @@ test('Endless target: snapshot.pace is record pace in endless, null otherwise, a
   const noRec = makeCrew({ venue: 5, endless: true, day: 9 }, 600);
   openShift(noRec.crew);
   assert.equal(noRec.crew.snapshot().pace, null, 'no record yet');
+});
+
+test('round 6 #5: the Gary huddle flag is unchanged by the ring (no hold needed, holding alone is not enough)', () => {
+  const verdictWith = (place, holdIt) => {
+    const { crew } = makeCrew({ day: 5, voiced: ['welcome'] });
+    openShift(crew);
+    const a = addPlayer(crew, 'A', STAND.x, STAND.z), b = addPlayer(crew, 'B', STAND.x + 3, STAND.z);
+    place(a, b);
+    if (holdIt) { act(crew, a, { t: 'hold', on: true }); act(crew, b, { t: 'hold', on: true }); }
+    crew.gary = { phase: 'drive', t: 0, pause: 0, stop: 0, x: 26, z: 10, yaw: 0, fails: 0, checks: [] };
+    crew.garyStops = () => [{ id: 'stand', x: 26, z: 10 }];
+    crew.flush();
+    assert.equal(crew.snapshot().gary.to, 'stand', 'the snapshot says where he is headed (the Board countdown)');
+    crew.stepGary(0.1);
+    return events(crew).find(e => e.t === 'verdict');
+  };
+  assert.equal(verdictWith(() => {}, false).huddle, true, 'all within 8 m: a huddle, nobody held anything');
+  assert.equal(verdictWith((a, b) => { b.x = STAND.x + 20; }, true).huddle, false, 'holding Use away from the stand does not count');
+  assert.equal(verdictWith(() => {}, true).huddle, true);
 });

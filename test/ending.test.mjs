@@ -15,12 +15,20 @@ function room(save, players = ['A']) {
 }
 const one = c => [...c.balls.values()].find(b => b.kind === 'one');
 const toStand = p => { p.x = SIM.STAND.x; p.z = SIM.STAND.z; };
-// Walk A to Ball No. 1, pick it up, and bank it at the stand.
-function bankOne(c, a) {
+const hold = (c, p, on = true) => c.input(p, { a: [{ t: 'hold', on }] });   // Use held (Ⓐ / Space / click)
+const done = c => c.lastBucket?.phase === 'done';
+// Walk A to Ball No. 1 and pick it up, then carry it to the stand.
+function carryHome(c, a) {
   const b = one(c); assert.ok(b, 'Ball No. 1 is on the field');
   a.x = b.x; a.z = b.z; assert.ok(c.pickup(a, b.id), 'picked up');
   toStand(a);
-  return c.depositOne(a);
+}
+// ...and bank it: the huddle (council round 6 #5), every online Rat holding Use for 3 s.
+function bankOne(c, a, run) {
+  carryHome(c, a);
+  for (const p of c.online()) hold(c, p);
+  run(3.2);
+  return done(c);
 }
 
 test('Q1: the countdown hitting 1 at the bell starts the Last Bucket next morning, and the sweep keeps Ball No. 1', () => {
@@ -38,7 +46,7 @@ test('Q1: the countdown hitting 1 at the bell starts the Last Bucket next mornin
   assert.ok(c.lastBucket && c.lastBucket.phase !== 'done', 'the Last Bucket begins this morning');
   run(20);
   assert.ok(one(c), 'Ball No. 1 came home');
-  assert.ok(bankOne(c, a), 'banked');
+  assert.ok(bankOne(c, a, run), 'banked');
   assert.equal(c.phase, 'report');
   assert.ok(c.report.ending, 'the ending played');
 });
@@ -64,7 +72,7 @@ test('Q1: a lost Ball No. 1 is sent again while the Last Bucket is active (the c
   run(20);
   assert.ok(one(c), 'it fell again');
   assert.equal(c.lastBucket.phase, 'down');
-  assert.ok(bankOne(c, a));
+  assert.ok(bankOne(c, a, run));
 });
 
 test('Q2: a Rat on the EVA when the Last Bucket begins is brought down, and the huddle completes', () => {
@@ -82,7 +90,7 @@ test('Q2: a Rat on the EVA when the Last Bucket begins is brought down, and the 
   assert.equal(b.pocket, 1, 'the bag came home');
   run(8);
   toStand(b);
-  assert.ok(bankOne(c, a), 'the huddle completes');
+  assert.ok(bankOne(c, a, run), 'the huddle completes');
 });
 
 test('Q3: Ball No. 1\'s payout stays out of the crew record (the endless pace target)', () => {
@@ -91,7 +99,7 @@ test('Q3: Ball No. 1\'s payout stays out of the crew record (the endless pace ta
   a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a); run(15);
   const before = c.stats.cash;
   const bv = c.valueNow().bv;
-  assert.ok(bankOne(c, a));
+  assert.ok(bankOne(c, a, run));
   assert.ok(c.endless);
   assert.ok(c.stats.cash > before + 1000 * bv, 'the day did pay Ball No. 1');
   assert.ok(c.records.cash < 1000 * bv, `record ${c.records.cash} excludes the payout`);
@@ -176,9 +184,159 @@ test('playtest: the Rat who carries Ball No. 1 is credited, and an idle Rat cann
   a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a);
   for (let i = 0; i < 60 && !(one(c) && one(c).rest); i++) run(1);
   b.x = -40; b.z = -100; b.movedAt = c.now();        // B is away and just moved: the huddle waits
-  assert.equal(bankOne(c, a), false, 'B is not at the stand yet');
+  assert.equal(bankOne(c, a, run), false, 'B is not at the stand yet');
   b.movedAt = c.now() - 61_000;                       // B has not moved for a minute: counted present
-  assert.ok(c.depositOne(a), 'an idle Rat no longer stalls the ending');
+  run(3.2);
+  assert.ok(done(c), 'an idle Rat no longer stalls the ending (and counts as holding)');
   assert.equal(a.shift.banked >= 1, true, 'the carrier banked it');
   assert.ok(a.shift.cash > 0, 'and gets the payout on the end card');
+});
+
+// ---- the huddle beat (council round 6 #5): written before the code, the softlock cases first ----------------------
+// A crew whose Ball No. 1 has landed and is in A's hands at the stand, every Rat at the stand and freshly moved.
+function huddleRoom(names = ['A', 'B']) {
+  const r = room({ day: 30, venue: 5, venueDay: 2, outstanding: 2 }, names);
+  const { c, run, ps } = r;
+  for (const p of ps) c.readyUp(p);
+  run(1);
+  const [a] = ps;
+  a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a);
+  for (let i = 0; i < 60 && !(one(c) && one(c).rest); i++) run(1);
+  carryHome(c, a);
+  for (const p of ps) { toStand(p); p.movedAt = c.now(); }
+  run(0.1);
+  assert.equal(c.lastBucket.phase, 'huddle', 'the carrier at the stand starts the huddle');
+  return r;
+}
+const snapLB = c => c.snapshot().lastBucket;
+
+test('huddle: no bank before 3.0 s of everyone holding (the bucket button alone does nothing)', () => {
+  const { c, run, ps: [a, b] } = huddleRoom();
+  c.deposit(a);
+  assert.equal(a.one, true, 'a deposit does not bank it any more');
+  hold(c, a); run(3.5);
+  assert.ok(!done(c), 'B is not holding');
+  assert.equal(snapLB(c).sweep, 0);
+  hold(c, b); run(2.8);
+  assert.ok(!done(c), 'not before 3 s');
+  assert.ok(snapLB(c).sweep > 2.5, 'the sweep is filling');
+  assert.deepEqual([...snapLB(c).held].sort(), [a.id, b.id].sort());
+  run(0.3);
+  assert.ok(done(c), 'banked at 3 s');
+  assert.equal(c.phase, 'report');
+  assert.ok(a.shift.cash > 0, 'the carrier is credited');
+});
+
+test('huddle: a release at 2.9 s resets the sweep', () => {
+  const { c, run, ps: [a, b] } = huddleRoom();
+  hold(c, a); hold(c, b); run(2.9);
+  hold(c, b, false); run(0.1);
+  assert.equal(snapLB(c).sweep, 0, 'reset');
+  hold(c, b); run(2.9);
+  assert.ok(!done(c), 'a fresh 3 s');
+  run(0.2);
+  assert.ok(done(c));
+});
+
+test('huddle: walking out of the ring mid-sweep resets it too', () => {
+  const { c, run, ps: [a, b] } = huddleRoom();
+  hold(c, a); hold(c, b); run(2);
+  b.x = SIM.STAND.x + 12; b.movedAt = c.now(); run(0.1);
+  assert.equal(snapLB(c).sweep, 0);
+  assert.ok(!snapLB(c).in.includes(b.id), 'B\'s slot is empty');
+  toStand(b); run(3.1);
+  assert.ok(done(c), 'still holding when they come back');
+});
+
+test('huddle: an idle (AFK) Rat counts as present and holding', () => {
+  const { c, run, ps: [a, b] } = huddleRoom();
+  b.x = -40; b.z = -100; b.movedAt = c.now() - 61_000;   // AFK across the field for a minute
+  hold(c, a); run(3.1);
+  assert.ok(done(c));
+});
+
+test('huddle: a Rat who joins mid-sweep adds a slot and resets it', () => {
+  const { c, run, ps: [a, b] } = huddleRoom();
+  hold(c, a); hold(c, b); run(2);
+  const n = c.join('Late'); c.connect(n); n.movedAt = c.now();
+  run(0.1);
+  assert.equal(snapLB(c).slots.length, 3, 'a third slot');
+  assert.equal(snapLB(c).sweep, 0, 'reset');
+  run(3);
+  assert.ok(!done(c), 'the newcomer has to hold too');
+  toStand(n); hold(c, n); run(3.1);
+  assert.ok(done(c));
+});
+
+test('huddle: a Rat who leaves mid-sweep removes their slot (and an offline Rat never blocks)', () => {
+  const { c, run, ps: [a, b, d] } = huddleRoom(['A', 'B', 'D']);
+  hold(c, a); hold(c, b); run(2);
+  assert.equal(snapLB(c).sweep, 0, 'D is not holding');
+  c.removePlayer(d); run(0.1);
+  assert.equal(snapLB(c).slots.length, 2, 'D\'s slot is gone');
+  run(3.1);
+  assert.ok(done(c));
+});
+
+test('huddle: a Rat who disconnects mid-sweep frees the ring as well', () => {
+  const { c, run, ps: [a, b, d] } = huddleRoom(['A', 'B', 'D']);
+  hold(c, a); hold(c, b); hold(c, d); run(2);
+  c.disconnect(d); run(0.1);
+  assert.equal(snapLB(c).slots.length, 2);
+  assert.ok(snapLB(c).sweep < 0.5, 'the ring changed: the sweep starts again');
+  run(3.1);
+  assert.ok(done(c));
+});
+
+test('huddle: a ball hitting the carrier drops Ball No. 1 and returns the phase to down; picking it up again resumes', () => {
+  const { c, run, ps: [a, b] } = huddleRoom();
+  hold(c, a); hold(c, b); run(2);
+  c.addBall({ x: a.x - 3, y: 1, z: a.z, vx: 30, vy: 0, vz: 0, kind: 'range', by: b.id });
+  run(0.3);
+  assert.ok(a.down > 0, 'the carrier was hit');
+  assert.equal(a.one, false);
+  assert.equal(c.lastBucket.phase, 'down');
+  run(3.5);
+  assert.ok(!done(c), 'nobody banks a ball on the ground');
+  a.down = 0; a.movedAt = c.now();
+  const ball = one(c); assert.ok(ball, 'Ball No. 1 lies at the stand');
+  a.x = ball.x; a.z = ball.z; assert.ok(c.pickup(a, ball.id));
+  toStand(a); run(0.1);
+  assert.equal(c.lastBucket.phase, 'huddle', 'back in the huddle');
+  run(3.1);
+  assert.ok(done(c), 'still holding: banked');
+});
+
+test('huddle: the carrier walking away from the stand ends the huddle; going offline does too', () => {
+  const { c, run, ps: [a, b] } = huddleRoom();
+  hold(c, a); hold(c, b);
+  a.x = SIM.STAND.x + 20; a.movedAt = c.now(); run(0.1);
+  assert.equal(c.lastBucket.phase, 'carried');
+  run(4);
+  assert.ok(!done(c));
+  toStand(a); run(0.1);
+  assert.equal(c.lastBucket.phase, 'huddle');
+  c.disconnect(a); run(4);
+  assert.ok(!done(c), 'an offline carrier never banks');
+  assert.equal(c.lastBucket.phase, 'carried');
+});
+
+test('huddle: solo banks after 3 s of holding alone', () => {
+  const { c, run, ps: [a] } = huddleRoom(['A']);
+  hold(c, a); run(2.9);
+  assert.ok(!done(c));
+  run(0.2);
+  assert.ok(done(c));
+  assert.ok(c.endless);
+});
+
+test('huddle: the self-heal still recovers a lost ball', () => {
+  const { c, run, ps: [a] } = huddleRoom(['A']);
+  hold(c, a); run(1);
+  a.one = false;                                  // any future lost-ball path
+  run(0.2);
+  assert.equal(c.lastBucket.phase, 'falling', 'self-healed back to falling');
+  run(20);
+  assert.ok(one(c), 'it fell again');
+  assert.ok(bankOne(c, a, run), 'and the huddle banks it');
 });

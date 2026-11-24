@@ -478,3 +478,53 @@ test('the pond row is a crew row: priced by crew size, Club and up', () => {
   assert.equal(nextPrice('pond', {}, 4, 0, 1), 8800);
   assert.equal(nextPrice('pond', {}, 1, 0, 0), null);
 });
+
+// ---- council round 6 #9: scuba you can follow from the dock (web/js/scubafollow.js, pure) ----
+import { FOLLOW, pickGlints, bagAt, boilBubble, caseSpin } from '../web/js/scubafollow.js';
+
+test('round 6 #9: the glint selector picks only sunk lead and gold inside the torch cone and range, nearest first, ≤ 20', () => {
+  const eye = { x: 0, y: -1, z: 0 }, dir = { x: 0, y: 0, z: -1 };
+  const balls = [
+    { id: 1, kind: 'lead', sunk: true, x: 0, y: -1, z: -2 },        // dead ahead, 2 m
+    { id: 2, kind: 'gold', sunk: true, x: 0.5, y: -1, z: -5 },      // ahead, 5 m
+    { id: 3, kind: 'gold', sunk: true, x: 0, y: -1, z: -6.5 },      // out of range
+    { id: 4, kind: 'lead', sunk: true, x: 3, y: -1, z: -1 },        // outside the cone
+    { id: 5, kind: 'lead', sunk: true, x: 0, y: -1, z: 3 },         // behind
+    { id: 6, kind: 'range', sunk: true, x: 0, y: -1, z: -1 },       // not lead or gold
+    { id: 7, kind: 'gold', sunk: false, x: 0, y: -1, z: -1 },       // not sunk
+  ];
+  assert.deepEqual(pickGlints(balls, eye, dir).map(b => b.id), [1, 2]);
+  const many = Array.from({ length: 40 }, (_, i) => ({ id: i, kind: i % 2 ? 'gold' : 'lead', sunk: true, x: 0, y: -1, z: -0.5 - i * 0.1 }));
+  const got = pickGlints(many, eye, dir);
+  assert.equal(got.length, FOLLOW.GLINT_MAX);
+  assert.equal(got[0].id, 0, 'nearest first');
+  assert.ok(Math.abs(FOLLOW.GLINT_COS - Math.cos(0.5)) < 1e-12, 'the cone is the torch\'s');
+});
+
+test('round 6 #9: the bag tween starts at the diver and ends at the dock', () => {
+  const from = { x: 3, y: -2.4, z: -1 }, to = { x: POND.DOCK.x, y: 0.3, z: POND.DOCK.z };
+  assert.deepEqual(bagAt(from, to, 0), from);
+  const end = bagAt(from, to, 1);
+  for (const k of ['x', 'y', 'z']) assert.ok(Math.abs(end[k] - to[k]) < 1e-9, k);
+  const mid = bagAt(from, to, 0.5);
+  assert.ok(mid.y > (from.y + to.y) / 2, 'it climbs first, then runs along the line');
+  assert.equal(bagAt(from, to, 1.01), null, 'done');
+  assert.equal(bagAt(from, to, -0.1), null);
+  assert.ok(FOLLOW.BAG_SECS > 1 && FOLLOW.BAG_SECS < 3);
+});
+
+test('round 6 #9: the surface boil: 8 bubbles in a 0.6 m ring over the diver, the same on every client', () => {
+  for (let k = 0; k < FOLLOW.BOIL_N; k++) {
+    const b = boilBubble(10, 20, k, 0, 3.3);
+    assert.ok(Math.hypot(b.x - 10, b.z - 20) <= FOLLOW.BOIL_R + 1e-9);
+    assert.ok(b.rise >= 0 && b.rise < 1 && b.alpha >= 0 && b.size > 0);
+    assert.deepEqual(boilBubble(10, 20, k, 0, 3.3), b, 'deterministic');
+  }
+});
+
+test('round 6 #9: the Lost & Found reveal spins for 2 s, then stops', () => {
+  assert.equal(caseSpin(0).turn, 0);
+  assert.ok(caseSpin(1).turn > Math.PI * 4);
+  assert.equal(caseSpin(2), null);
+  assert.equal(caseSpin(-1), null);
+});

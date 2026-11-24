@@ -15,6 +15,7 @@ import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall
   VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor, cartGearOf } from '../web/js/sim.js';
 import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor, cartSpeedAt } from '../web/js/map.js';
 import { VenueHooks, MODULES } from './venues/index.mjs';
+import { shortfall, gaugeOk as gaugeHolds, GAUGE_MISS } from '../web/js/rally.js';
 import { newMat, openShift as openMats, stepMat, matReady, shoot, matWire } from '../web/js/customers.js';
 import { mowerDue, newMower, stepMower, mowerSnap } from '../web/js/mowe.js';
 import { menuFor, yieldFor, garyEats } from '../web/js/menu.js';
@@ -32,7 +33,7 @@ const READY_SECS = 20;            // Ready Up: the next shift starts this long a
 const READY_HOLD_SECS = 120;      // ...held (for signatures) at most this long when a promotion is ready
 const REVEAL_SECS = 6;            // a venue reveal holds the clock this long
 const PA_CAP = 3, PA_GAP_MS = 20_000;
-const HUDDLE_R = 8, HUDDLE_IDLE_MS = 60_000;
+const HUDDLE_R = 8, HUDDLE_IDLE_MS = 60_000, HUDDLE_HOLD = 3.0;   // the huddle beat: everyone holds Use this long (round 6 #5)
 
 // What a ping on the cage pays out, and how often.
 export const PING_PRIZES = [['jackpot', 0.4], ['boost', 0.3], ['mult', 0.3]];
@@ -327,6 +328,7 @@ export class Crew {
       else if (a?.t === 'treasure') this.treasurePickup(p);
       else if (a?.t === 'serve') this.serve(p, a);
       else if (a?.t === 'deposit') this.deposit(p);
+      else if (a?.t === 'hold') p.holding = !!a.on;    // Use held for the Last Bucket huddle (stepHuddle)
       else if (a?.t === 'start') this.readyUp(p);
       else if (a?.t === 'buy') this.buy(p, a.id);
       else if (a?.t === 'board') this.board(p);
@@ -528,6 +530,7 @@ export class Crew {
     const c = this.cartOf(p), b = this.balls.get(id);
     if (!b || !c || c.load >= this.perks.cartCap || this.phase === 'lobby') return false;
     if (b.y > 0.4 || b.kind === 'one' || b.drifting || b.sunk) return false;
+    if (b.kind === 'square') return false;   // round 6 #8: squares jam the reels; walkers, teenagers and drones fetch them
     const rx = c.x - Math.sin(c.yaw) * CART.REEL_AHEAD, rz = c.z - Math.cos(c.yaw) * CART.REEL_AHEAD;
     if (Math.hypot(b.x - rx, b.z - rz) > this.perks.cartReel / 2 + 1.5) return false;   // slack for lag
     this.balls.delete(id);
@@ -798,6 +801,11 @@ export class Crew {
   }
 
   quotaTarget() { return this.quota ? cents(this.valueNow().rate * (1 + this.quota.q)) : null; }
+  // The Closing Bell (round 6 #3): the single biggest shortfall at Last Call, as one line (null when endless).
+  rallyNeed() {
+    const value = this.valueNow();
+    return shortfall({ value, quota: this.quota, kpi: this.mods.kpi(), fixtures: this.fixtures, venue: this.venue, endless: this.endless });
+  }
 
   // The clock holds for venue reveals and for the Last Bucket's moment.
   paused() { return this.revealT > 0 || (this.lastBucket && this.lastBucket.phase !== 'done'); }
@@ -1152,7 +1160,7 @@ export class Crew {
     let lb = this.lastBucket;
     if (!lb || this.phase !== 'shift') return;
     // Self-healing: if Ball No. 1 is neither on the field nor in anyone's hands, find it or send it again.
-    if ((lb.phase === 'down' || lb.phase === 'carried') && !this.balls.has(lb.id) && ![...this.players.values()].some(p => p.one)) {
+    if ((lb.phase === 'down' || lb.phase === 'carried' || lb.phase === 'huddle') && !this.balls.has(lb.id) && ![...this.players.values()].some(p => p.one)) {
       const b = [...this.balls.values()].find(o => o.kind === 'one');
       if (b) { lb.phase = 'down'; lb.id = b.id; }
       else { lb = this.lastBucket = { phase: 'falling', t: 3 }; this.dirty = true; }
@@ -1164,15 +1172,47 @@ export class Crew {
       const b = this.addBall({ x: tx, y: 120, z: tz + 8, vx: 0, vy, vz: -8 / secs, kind: 'one' });
       if (b) { lb.id = b.id; lb.phase = 'down'; }
     }
+    if (lb.phase === 'carried' || lb.phase === 'huddle') this.stepHuddle(lb, dt);
   }
 
-  // Banking Ball No. 1 needs the whole crew at the stand.
+  // The huddle beat (council round 6 #5). The carrier at the stand turns 'carried' into 'huddle': one ring slot per
+  // online Rat, and while every slot is full and held, a 3 s sweep fills. Any release, exit, join or leave resets it.
+  // A knockdown drops Ball No. 1 (dropOne: back to 'down'); the carrier walking out of the ring or going offline
+  // returns it to 'carried'. Idle Rats count as present and holding (playtest: one AFK Rat stalled the ending).
+  huddleIn(o, now) { return Math.hypot(o.x - SIM.STAND.x, o.z - SIM.STAND.z) < HUDDLE_R || now - (o.movedAt ?? now) > HUDDLE_IDLE_MS; }
+  huddleHeld(o, now) { return now - (o.movedAt ?? now) > HUDDLE_IDLE_MS || (!!o.holding && o.down <= 0 && this.huddleIn(o, now)); }
+  stepHuddle(lb, dt) {
+    const carrier = [...this.players.values()].find(p => p.one);
+    const ring = carrier && Math.hypot(carrier.x - SIM.STAND.x, carrier.z - SIM.STAND.z);
+    const there = carrier && carrier.online > 0 && carrier.down <= 0 && (lb.phase === 'huddle' ? ring < HUDDLE_R : atStand(carrier));
+    if (!there) {
+      if (lb.phase === 'huddle') {
+        Object.assign(lb, { phase: 'carried', sweep: 0, slots: null, in: null, held: null, key: null });
+        this.events.push({ t: 'lastbucket', phase: 'carried', by: carrier?.id ?? lb.by, back: true });
+      }
+      return;
+    }
+    if (lb.phase !== 'huddle') {
+      Object.assign(lb, { phase: 'huddle', by: carrier.id, sweep: 0, key: null });
+      this.events.push({ t: 'lastbucket', phase: 'huddle', by: carrier.id });
+    }
+    const now = this.now(), online = this.online();
+    const key = online.map(o => o.id).join();
+    if (key !== lb.key) { lb.key = key; lb.sweep = 0; }      // a slot added or removed: the ring starts again
+    lb.slots = online.map(o => o.id);
+    lb.in = online.filter(o => this.huddleIn(o, now)).map(o => o.id);
+    lb.held = online.filter(o => this.huddleHeld(o, now)).map(o => o.id);
+    lb.sweep = lb.held.length === online.length ? lb.sweep + dt : 0;
+    if (lb.sweep >= HUDDLE_HOLD - 1e-6) this.depositOne(carrier);
+  }
+
+  // Banking Ball No. 1: the huddle's sweep calls this at 3 s. The bucket button alone only says who is missing.
   depositOne(p) {
-    const online = this.online(), now = this.now();
-    // At the stand, or idle a minute (playtest: one AFK Rat stalled the ending for ever).
-    const present = o => Math.hypot(o.x - SIM.STAND.x, o.z - SIM.STAND.z) < HUDDLE_R || now - (o.movedAt ?? now) > HUDDLE_IDLE_MS;
-    const near = online.filter(present).length;
+    const online = this.online(), now = this.now(), lb = this.lastBucket;
+    const near = online.filter(o => this.huddleIn(o, now)).length;
     if (near < online.length) { this.events.push({ t: 'huddle', n: near, of: online.length, by: p.id }); return false; }
+    if (lb?.phase !== 'huddle' || !(lb.sweep >= HUDDLE_HOLD - 1e-6)) return false;
+    for (const o of this.players.values()) o.holding = false;
     p.one = false;
     const v = this.valueNow();
     const pay = cents(ONE_YEAR * v.bv);
@@ -1203,7 +1243,7 @@ export class Crew {
     this.stepLastBucket(dt);
     const paused = this.paused();
     const lastCall = this.lastCall();
-    if (lastCall && !this.lastCallRung) { this.lastCallRung = true; this.events.push({ t: 'lastcall' }); }
+    if (lastCall && !this.lastCallRung) { this.lastCallRung = true; this.events.push({ t: 'lastcall', need: this.rallyNeed() }); }
     // Customers: arrive at the gate, grab a bucket, hit it, walk out. A filthy mat is refused.
     this.custT += dt;
     const nOpen = this.phase === 'shift' ? activeMats(this.onlineCount()) : 0;
@@ -1379,10 +1419,13 @@ export class Crew {
     let quota = null;
     if (this.quota && !ending) {
       const v = this.valueNow(), target = this.quotaTarget();
-      const hit = this.stats.deposited > 0 && v.bv / v.rate + 1e-9 >= 1 + this.quota.q;
+      // Round 6 #2: from Tiered on, the venue gauge must hold too (no gauge at the Muni or the Club: unchanged there).
+      const gauge = this.mods.kpi(), gaugeOk = gaugeHolds(gauge);
+      const hit = this.stats.deposited > 0 && v.bv / v.rate + 1e-9 >= 1 + this.quota.q && gaugeOk;
       const bonus = hit ? cents(this.stats.cash * 0.15) : 0;
       if (hit) { this.stamps++; this.cash = cents(this.cash + bonus); }
-      quota = { target, bv: v.bv, hit, bonus, stamps: this.stamps, title: this.title(), ...(this.stats.deposited > 0 ? {} : { idle: true }) };
+      quota = { target, bv: v.bv, hit, bonus, stamps: this.stamps, title: this.title(), ...(this.stats.deposited > 0 ? {} : { idle: true }),
+        ...(gauge == null ? {} : { gauge: Math.round(gauge * 100) / 100, gaugeOk, ...(gaugeOk ? {} : { why: GAUGE_MISS[this.venue] }) }) };
       this.events.push({ t: 'quota', ...quota });
     }
     // Crew records (from day 3).
@@ -1457,16 +1500,17 @@ export class Crew {
       silo: this.stats.deposited, lastCall: this.lastCall(),
       promo: this.promoInfo(), revealT: +this.revealT.toFixed(1),
       promotedTo: this.phase === 'report' && this.pendingReveal ? VENUE_RULES[this.pendingReveal]?.name ?? null : null,   // the report says so (playtest)
-      promotedTo: this.phase === 'report' && this.pendingReveal ? VENUE_RULES[this.pendingReveal]?.name ?? null : null,   // the report says so (playtest)
       // While the signatures hold the Ready Up timer: no countdown, and `sigWait` {n, of} ("Waiting for signatures").
       readyIn: this.phase === 'report' && this.readyAt && !this.awaitingSignatures() ? Math.max(0, Math.ceil(READY_SECS - (now - this.readyAt) / 1000)) : null,
       sigWait: this.phase === 'report' && this.readyAt ? this.awaitingSignatures() : null,
-      lastBucket: this.lastBucket && { phase: this.lastBucket.phase, by: this.lastBucket.by ?? null },
+      lastBucket: this.lastBucket && { phase: this.lastBucket.phase, by: this.lastBucket.by ?? null,
+        ...(this.lastBucket.phase === 'huddle' ? { sweep: +this.lastBucket.sweep.toFixed(2), slots: this.lastBucket.slots ?? [], in: this.lastBucket.in ?? [], held: this.lastBucket.held ?? [] } : {}) },
       washer: this.perks.washer ? { n: this.hopper.n, credit: this.hopper.credit, auto: this.perks.washAuto,
         L: cr.L && now - cr.L.at < 400 ? cr.L.id : null, R: cr.R && now - cr.R.at < 400 ? cr.R.id : null, rateL: rateOf('L'), rateR: rateOf('R') } : null,
       mower: mowerSnap(this.mower),
       ct: +this.custT.toFixed(2), mats: this.mats.map(matWire),
-      gary: this.gary && { phase: this.gary.phase, t: +this.gary.t.toFixed(1), x: +this.gary.x.toFixed(2), z: +this.gary.z.toFixed(2), yaw: +this.gary.yaw.toFixed(3) },
+      gary: this.gary && { phase: this.gary.phase, t: +this.gary.t.toFixed(1), x: +this.gary.x.toFixed(2), z: +this.gary.z.toFixed(2), yaw: +this.gary.yaw.toFixed(3),
+        to: this.gary.phase === 'drive' ? this.garyStops()[this.gary.stop]?.id ?? null : null },   // round 6 #5: the Board's GARY 3 · 2 · 1
       pond: { sunk: this.sunkCount(), unlocked: this.pondOpen(), lostFound: this.lostFound, treasure: this.treasure,
         line: this.line.n, tube: this.tube.q.reduce((s, e) => s + e.n, 0), clarity: this.pondOpen() ? pondClarity(this.sunkCount()) : null },
       fries: { stock: this.fries, max: FRIES.MAX, open: !!this.perks.shed },
@@ -1534,7 +1578,7 @@ function memoFlavor(day, venue, endless, rng) {
 }
 function tomorrowText(day, venue, endless) {
   if (endless) return 'Tomorrow: Range Rats LLC opens as usual. The job never ends.';
-  if (day === 2) return 'Tomorrow: Corporate sets your first Ball Value target. Last Call begins at dusk.';
+  if (day === 2) return 'Tomorrow: a target. Hose before the bell.';
   if (day === 3) return 'Tomorrow: the first gold balls. Worth ten.';
   if (day === 4) return 'Tomorrow: Gary from Regional inspects. Clean everything, then huddle at the stand.';
   if (venue === 0) return 'Tomorrow: three review stamps plus the fee earn the Range Club.';

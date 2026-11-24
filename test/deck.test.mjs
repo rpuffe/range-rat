@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DECK, newDeck, stepDeck, serveEffect, applyServe, afterIncident, landingSpot, hitByFall, fallPose, climbPath, pointAlong,
-  pathLength, bannerFor, mugTone, fineFor, tabFor } from '../web/js/deck.js';
+  pathLength, bannerFor, mugTone, fineFor, tabFor, fillOrder, orderEvery } from '../web/js/deck.js';
 import { Crew } from '../server/crew.mjs';
 import deck from '../server/venues/deck.mjs';
 import { createViews } from '../web/js/views/registry.js';
@@ -10,7 +10,7 @@ import { MODULES } from '../server/venues/index.mjs';
 
 // ---- pure rules -------------------------------------------------------------------------------------------------
 test('constants match the doc', () => {
-  assert.equal(DECK.MAX, 6); assert.equal(DECK.WARN, 4); assert.equal(DECK.SOBER_SECS, 30);
+  assert.equal(DECK.MAX, 6); assert.equal(DECK.WARN, 4); assert.equal(DECK.SOBER_SECS, 60);
   assert.deepEqual(DECK.FOOD, { fries: 1, hotdog: 2 });
   assert.equal(DECK.TAB, 5); assert.equal(DECK.FINE, 100); assert.equal(DECK.RESET_TO, 2); assert.equal(DECK.FALL_R, 1.5);
   assert.deepEqual(DECK.SEATS, [-14, -6, 6, 14]);
@@ -31,9 +31,9 @@ test('six beers cause an incident, five do not', () => {
   assert.equal(afterIncident(d), 1, 'round robin');
 });
 
-test('30 s sobers by 1; a hot dog is -2, fries -1, floored at 0; a burnt beer adds nothing', () => {
+test('60 s sobers by 1; a hot dog is -2, fries -1, floored at 0; a burnt beer adds nothing', () => {
   const d = newDeck(); d.drinks = 4;
-  stepDeck(d, 29.9); assert.equal(d.drinks, 4);
+  stepDeck(d, 59.9); assert.equal(d.drinks, 4);
   stepDeck(d, 0.2); assert.equal(d.drinks, 3);
   applyServe(d, 'hotdog', 'good'); assert.equal(d.drinks, 1);
   applyServe(d, 'fries', 'good'); assert.equal(d.drinks, 0);
@@ -62,9 +62,9 @@ test('the slogan counts days; red and 0 on an incident day', () => {
 });
 
 // ---- the server module ------------------------------------------------------------------------------------------
-function setup(venue = 2, extra = {}) {
+function setup(venue = 2, extra = {}, shiftSecs = 120) {
   const clock = { t: 1_000_000 };
-  const crew = new Crew('DECK', { venue, day: 5, venueDay: 1, up: { shed: 1 }, cash: 500_000, ...extra }, { shiftSecs: 120, seed: 3, now: () => clock.t, modules: [deck] });
+  const crew = new Crew('DECK', { venue, day: 5, venueDay: 1, up: { shed: 1 }, cash: 500_000, ...extra }, { shiftSecs, seed: 3, now: () => clock.t, modules: [deck] });
   const p = crew.join('Pat'); crew.connect(p);
   crew.startShift();
   const run = secs => { for (let i = 0; i < secs * 20; i++) { clock.t += 50; crew.tick(0.05); } };
@@ -126,7 +126,7 @@ test('time sobers, hot dogs and fries sober, a burnt beer adds nothing, the morn
   assert.equal(st.deck.drinks, 3);
   serve('hotdog'); assert.equal(st.deck.drinks, 1);
   serve('beer'); serve('beer'); assert.equal(st.deck.drinks, 3);
-  run(31); assert.equal(st.deck.drinks, 2, '30 s of shift time = -1');
+  run(61); assert.equal(st.deck.drinks, 2, '60 s of shift time = -1');
   serve('fries'); assert.equal(st.deck.drinks, 1);
   serve('beer', 'good'); assert.equal(st.deck.drinks, 2);
   crew.phase = 'report'; crew.startShift();
@@ -172,4 +172,77 @@ test('the deck view\'s banner reads DAYS WITHOUT AN INCIDENT', async () => {
   v.onSnapshot(s);
   assert.equal(v.banner(s).text, 'DAYS WITHOUT AN INCIDENT: 3');
   assert.equal(fineFor(2), 200); assert.equal(tabFor(2), 10);
+});
+
+// ---- council round 6 #6: the loungers order ---------------------------------------------------------------------
+test('orders every 30 s, every 20 s at amber; one open at a time, 20 s long, round robin seats', () => {
+  assert.equal(DECK.ORDER_SECS, 30); assert.equal(DECK.ORDER_LOUD_SECS, 20); assert.equal(DECK.ORDER_OPEN, 20); assert.equal(DECK.ORDER_TAB, 10);
+  assert.equal(orderEvery(3), 30); assert.equal(orderEvery(4), 20);
+  const d = newDeck();
+  assert.equal(stepDeck(d, 29.9).order, false); assert.equal(d.order, null);
+  assert.equal(stepDeck(d, 0.2).order, true); assert.deepEqual(d.order, { seat: 0, left: 20 });
+  const r = stepDeck(d, 20); assert.equal(r.expired, true); assert.equal(d.order, null, 'lapses after 20 s');
+  assert.equal(stepDeck(d, 9.9).order, false);
+  assert.equal(stepDeck(d, 0.2).order, true); assert.equal(d.order.seat, 1, 'the next seat orders');
+  const loud = newDeck(); loud.drinks = 4;
+  assert.equal(stepDeck(loud, 19.9).order, false); assert.equal(stepDeck(loud, 0.2).order, true, 'amber: every 20 s');
+});
+
+test('a paying beer fills the open order; food and burnt beer do not', () => {
+  const d = newDeck(); stepDeck(d, 30);
+  assert.equal(fillOrder(d, 'hotdog', 'good'), null); assert.equal(fillOrder(d, 'beer', 'burnt'), null);
+  assert.ok(d.order);
+  assert.deepEqual(fillOrder(d, 'beer', 'good'), { seat: 0, left: 20 }); assert.equal(d.order, null);
+  assert.equal(fillOrder(d, 'beer', 'perfect'), null, 'nothing open');
+  assert.equal(tabFor(2, true), 20); assert.equal(tabFor(2), 10);
+});
+
+test('server: a filled order pays 10 x BV, an unordered beer 5 x BV; expiry costs nothing; deckOrder event and snapshot', () => {
+  const { crew, serve, run } = setup();
+  const st = crew.mods.state('deck');
+  let c0 = crew.cash; serve('beer'); const plain = crew.cash - c0;
+  const bv = crew.valueNow().bv;
+  assert.ok(Math.abs(plain - 5 * bv) < 0.1 * 5 * bv + 0.5, `unordered ${plain} vs ${5 * bv}`);
+  run(30.2);
+  assert.ok(crew.events.some(e => e.t === 'deckOrder' && e.seat === 0));
+  assert.equal(crew.snapshot().mods.deck.order.seat, 0);
+  c0 = crew.cash; serve('beer'); const ordered = crew.cash - c0;
+  assert.ok(Math.abs(ordered - 10 * crew.valueNow().bv) < 0.1 * 10 * bv + 0.5, `ordered ${ordered} vs ${10 * bv}`);
+  assert.ok(crew.events.some(e => e.t === 'deckTab' && e.order));
+  assert.equal(crew.snapshot().mods.deck.order, null);
+  assert.equal(crew.stats.deckOrders, 1);
+  // the next order lapses unfilled: no cash moves, no drink, no penalty
+  run(30); assert.ok(st.deck.order);
+  const cash = crew.cash, drinks = st.deck.drinks;
+  run(21); assert.equal(st.deck.order, null);
+  assert.equal(crew.cash, cash); assert.equal(st.deck.drinks, drinks); assert.equal(crew.stats.incidents ?? 0, 0);
+});
+
+test('orders only while the shift clock runs', () => {
+  const { crew, run } = setup();
+  crew.phase = 'report';
+  run(90);
+  assert.equal(crew.mods.state('deck').deck.order, null);
+  assert.ok(!crew.events.some(e => e.t === 'deckOrder'));
+});
+
+// Fill every order 5 s after it opens (the pour takes a moment). Returns the second of the first incident, or null.
+function orderRun(secs, hotdogAtAmber) {
+  const { crew, serve, run } = setup(2, {}, 900);
+  const st = crew.mods.state('deck');
+  let openFor = 0;
+  for (let t = 0; t < secs; t += 0.5) {
+    run(0.5);
+    if (crew.stats.incidents) return t;
+    openFor = st.deck.order ? openFor + 0.5 : 0;
+    if (openFor >= 5) serve('beer');
+    if (hotdogAtAmber && st.deck.drinks >= DECK.WARN) serve('hotdog');
+    if (crew.stats.incidents) return t;
+  }
+  return null;
+}
+test('a crew filling every order with no food falls between 270 and 330 s; one hot dog at amber keeps it under for 420 s', () => {
+  const t = orderRun(420, false);
+  assert.ok(t != null && t >= 270 && t <= 330, `first incident at ${t}`);
+  assert.equal(orderRun(420, true), null);
 });

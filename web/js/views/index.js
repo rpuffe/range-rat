@@ -23,6 +23,7 @@
 //         banner(s) -> string | {text, bg, fg} | null   // the Board's slogan when there's no Last Call / Gary
 //         amb(s) -> { crowd?, ... }         // ambience overrides (e.g. the Stadium's crowd level)
 //         reportLines(r) -> [string]        // plain-text lines for the shift report card
+//         aim(input|null)                   // every frame: {bay, yaw, pitch, power, color, world} at a crew bay with balls
 //       };
 //     },
 //   };

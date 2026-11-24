@@ -4,13 +4,15 @@
 // a cycle (a TDZ crash when this file loads first). map.js is a leaf, so MAP.BOWLS is safe to read.
 import { MAP } from './map.js';
 
-// Bay Utilization: the venue's fourth gauge. Balls resting in cups block the sensors; 40 in the cups is an empty dial.
-export const CUP_FULL = 40;
+// Bay Utilization: the venue's fourth gauge. Balls resting in cups block the sensors; 30 in the cups is an empty dial
+// (council round 6 #2: was 40, which left an idle crew a free pass on the gauge stamp).
+export const CUP_FULL = 30;
 export const bayUtil = cupBalls => Math.max(0, Math.min(1, 1 - Math.max(0, cupBalls || 0) / CUP_FULL));
 
 // The bowl a resting point lies inside (r, not the cup), or null. The rule is flat: no heightfield.
-export function inBowl(x, z, bowls = MAP.BOWLS) {
-  for (const b of bowls) if (Math.hypot(x - b.x, z - b.z) < b.r) return b;
+// `pad` widens every bowl by that many metres: crew balls use TARGET.LIP (council round 6, #4), customers 0.
+export function inBowl(x, z, bowls = MAP.BOWLS, pad = 0) {
+  for (const b of bowls) if (Math.hypot(x - b.x, z - b.z) < b.r + pad) return b;
   return null;
 }
 export const bowlById = (id, bowls = MAP.BOWLS) => bowls.find(b => b.id === id) ?? null;
@@ -32,6 +34,7 @@ export const TARGET = {
   GEAR: 1,             // the flush banks at gear x1
   STROBE: 3,           // s the neon pin strobes
   TWEEN_SPEED: 4,      // m/s the client rolls a ball into its cup (dist / 4 s)
+  LIP: 1.5,            // m: a crew ball resting within r + LIP is a TARGET (council round 6, #4); customers cup inside r
 };
 
 // Automation: the ball-return gutters drain one ball a second from each cup to the stand.

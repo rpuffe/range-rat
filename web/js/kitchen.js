@@ -730,6 +730,23 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
       c.restore();
     }
   }
+  // Council round 6 #6: a lounger's open order (seconds left, counted down locally between snapshots), or null.
+  let ordSeen = null, ordAt = 0;
+  function deckOrderLeft() {
+    let o = null; try { o = state?.()?.mods?.deck?.order ?? null; } catch { o = null; }
+    if (!o || !Number.isFinite(o.left)) { ordSeen = null; return null; }
+    if (o !== ordSeen) { ordSeen = o; ordAt = Date.now(); }
+    return Math.max(0, o.left - (Date.now() - ordAt) / 1000);
+  }
+  // The order timer: a gold ring that empties over DECK.ORDER_OPEN seconds.
+  function drawOrderRing(cx, cy, r, left) {
+    const u = Math.max(0, Math.min(1, left / DECK.ORDER_OPEN));
+    c.save(); c.lineCap = 'round'; c.lineWidth = 6;
+    c.strokeStyle = 'rgba(255,248,236,0.18)'; c.beginPath(); c.arc(cx, cy, r, 0, 7); c.stroke();
+    c.shadowColor = '#ffd34a'; c.shadowBlur = 10; c.strokeStyle = '#ffd34a';
+    c.beginPath(); c.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + u * Math.PI * 2); c.stroke();
+    c.restore();
+  }
   function deckCaption() { const n = deckDrinks(); return n == null ? '' : MUG_CAPTION[mugTone(n)]; }
 
   function drawMenu() {
@@ -751,6 +768,14 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
         text(c, MENU_UNLOCK[ITEMS[i]] ?? '', cx, CARD.y + 232, 14, DIM, 'center', CARD.w - 12);
       } else if (ordered && ITEMS[i] === lastItem) text(c, 'LAST ORDER', cx, CARD.y + 232, 14, DIM);
       if (ITEMS[i] === 'beer' && !locked) { const n = deckDrinks(); if (n != null) drawMugs(cx, CARD.y + 30, n, 0.85); }
+      if (ITEMS[i] === 'beer' && !locked) {                      // an open order: the BEER card glows gold, with its timer
+        const left = deckOrderLeft();
+        if (left != null) {
+          c.save(); c.shadowColor = '#ffd34a'; c.shadowBlur = 22 + Math.sin(S.t * 6) * 8; c.strokeStyle = '#ffd34a'; c.lineWidth = 6;
+          rrect(c, x, CARD.y, CARD.w, CARD.h, 18); c.stroke(); c.restore();
+          drawOrderRing(x + CARD.w - 26, CARD.y + 66, 15, left);
+        }
+      }
       c.restore();
     }
   }
@@ -1131,7 +1156,7 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
     else if (st === 'mustard') drawMustardStage();
     else if (st === 'pour') drawPour();
     const dn = deckDrinks();   // the deck's mugs stay in view while you pour
-    if (dn != null && S.item === 'beer' && st !== 'menu') { drawMugs(345, 34, dn, 0.85); const cap = deckCaption(); if (cap) text(c, cap, 345, 62, 16, mugTone(dn) === 'cut' ? '#ff4a3d' : '#ffa31a', 'center', 260); }
+    if (dn != null && S.item === 'beer' && st !== 'menu') { const ol = deckOrderLeft(); if (ol != null) drawOrderRing(450, 34, 13, ol); drawMugs(345, 34, dn, 0.85); const cap = deckCaption(); if (cap) text(c, cap, 345, 62, 16, mugTone(dn) === 'cut' ? '#ff4a3d' : '#ffa31a', 'center', 260); }
     else if (dn != null && st === 'menu' && menu.includes('beer')) { const cap = deckCaption(); if (cap) text(c, cap, CARD.x(2) + CARD.w / 2, CARD.y + CARD.h + 18, 17, mugTone(dn) === 'cut' ? '#ff4a3d' : '#ffa31a', 'center', 330); }
     // hint
     c.fillStyle = 'rgba(0,0,0,0.28)'; c.fillRect(0, H - 40, W, 40);

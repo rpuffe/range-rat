@@ -2,7 +2,7 @@
 // Drinks count climbs, hot dogs sober it, and at six a lounger falls off the top row: a Liability fine, a knockdown
 // for any Rat underneath, and Gary's kitchen stop fails. Active at Tiered and every later venue; the rules are pure
 // (web/js/deck.js).
-import { DECK, newDeck, stepDeck, applyServe, afterIncident, paysTab, tabFor, fineFor, landingSpot, hitByFall } from '../../web/js/deck.js';
+import { DECK, newDeck, stepDeck, applyServe, afterIncident, paysTab, tabFor, fillOrder, fineFor, landingSpot, hitByFall } from '../../web/js/deck.js';
 
 const int = (v, lo, hi, d) => Number.isFinite(Number(v)) && v != null ? Math.max(lo, Math.min(hi, Math.floor(Number(v)))) : d;
 
@@ -28,12 +28,20 @@ export default {
     return { deck: newDeck(), last: int(saved?.last, 1, 1e6, crew.day || 1), today: false, garyFail: false };
   },
   startShift(crew, st) { st.deck = newDeck(); st.today = false; st.garyFail = false; },   // the deck resets each morning
-  tick(crew, st, dt) { if (crew.working()) stepDeck(st.deck, dt); },
+  // Council round 6 #6: the loungers order. Only while the shift clock runs; an unfilled order lapses quietly.
+  tick(crew, st, dt) {
+    if (!crew.working()) return;
+    const r = stepDeck(st.deck, dt);
+    if (r.order) { crew.events.push({ t: 'deckOrder', seat: st.deck.order.seat }); crew.dirty = true; }
+    if (r.expired || r.sobered) crew.dirty = true;
+  },
 
   serve(crew, st, p, { item, quality }) {
     if (paysTab(item, quality)) {
-      const tab = crew.payCash(tabFor(crew.valueNow().bv), p.id);
-      if (tab) crew.events.push({ t: 'deckTab', by: p.id, n: tab });
+      const filled = fillOrder(st.deck, item, quality);            // an open order pays 10 x BV, an unordered beer 5 x BV
+      const tab = crew.payCash(tabFor(crew.valueNow().bv, !!filled), p.id);
+      if (filled) crew.stats.deckOrders = (crew.stats.deckOrders ?? 0) + 1;
+      if (tab) crew.events.push({ t: 'deckTab', by: p.id, n: tab, ...(filled ? { order: true, seat: filled.seat } : {}) });
     }
     if (applyServe(st.deck, item, quality).incident) incident(crew, st, p);
   },
@@ -41,6 +49,7 @@ export default {
   inspect(crew, st, stopId) { if (stopId === 'kitchen' && st.garyFail) return false; },   // somebody fell off on his watch
 
   awards: () => [['Last Orders', 'lastOrders']],
-  snapshot: (crew, st) => ({ drinks: st.deck.drinks, last: st.last, today: st.today }),
+  snapshot: (crew, st) => ({ drinks: st.deck.drinks, last: st.last, today: st.today,
+    order: st.deck.order ? { seat: st.deck.order.seat, left: Math.max(0, Math.round(st.deck.order.left * 10) / 10) } : null }),
   toSave: (crew, st) => ({ last: st.last }),
 };
