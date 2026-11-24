@@ -22,7 +22,7 @@ const SILO_MAX = 2000, BALL_R = 0.05;
 const FLOAT_TIME = 1.6, FLOAT_RISE = 1.5;
 const SCRAMBLE = 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789$#%&';
 
-const money = n => '$' + (Number.isFinite(n) ? n : 0).toFixed(2);
+const money = n => { n = Number.isFinite(n) ? n : 0; return '$' + (Math.abs(n) >= 100 ? Math.round(n).toLocaleString('en-US') : n.toFixed(2)); };   // $1.23, $4,247, $60,000,000
 const commas = n => String(Math.max(0, Math.round(n || 0))).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 const clamp01 = v => Math.max(0, Math.min(1, v));
 
@@ -363,6 +363,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
 
   // The Closing Bell's stamp (round 6 #3): the one centre element at the bell, 1.5 s, then the report card.
   // APPROVED: red ink, confetti over the Board. DENIED: grey ink, and the server's reason (<= 8 words) under it.
+  let stampHide = 0;
   function stamp(e, { low = false } = {}) {
     const st = stampFor(e);
     if (!st) return null;
@@ -389,9 +390,10 @@ export function createBoard(scene, { x, z, onCross = null }) {
       // the slam: big and faint, then down hard with a slight tilt
       stampEl.animate?.([{ transform: 'translate(-50%,-50%) rotate(-12deg) scale(2.4)', opacity: 0 },
         { transform: 'translate(-50%,-50%) rotate(-8deg) scale(0.94)', opacity: 1, offset: 0.55 },
-        { transform: 'translate(-50%,-50%) rotate(-8deg) scale(1)', opacity: 1 }], { duration: 220, easing: 'ease-in', fill: 'forwards' });
+        { transform: 'translate(-50%,-50%) rotate(-8deg) scale(1)', opacity: 1 }], { duration: 220, easing: 'ease-in' });   // no fill: a held frame overrode the fade (playtest 2: a watermark behind the report)
       stampEl.style.transform = 'translate(-50%,-50%) rotate(-8deg)';
       stampEl.style.opacity = '1';
+      clearTimeout(stampHide); stampHide = setTimeout(() => { if (stampEl) stampEl.style.opacity = '0'; }, BELL.STAMP_SECS * 1000);   // real time
     }
     if (st.ok) {                               // confetti over the Board (≤ 160 points for 2 s; low tier 60)
       const p = new THREE.Vector3(0, BOTTOM + BH + 0.4, 0.3); root.localToWorld(p);

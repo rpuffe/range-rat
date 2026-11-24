@@ -15,7 +15,8 @@ import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall
   VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor, cartGearOf } from '../web/js/sim.js';
 import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor, cartSpeedAt } from '../web/js/map.js';
 import { VenueHooks, MODULES } from './venues/index.mjs';
-import { shortfall, gaugeOk as gaugeHolds, GAUGE_MISS } from '../web/js/rally.js';
+import { shortfall, gaugeOk as gaugeHolds, GAUGE_MISS, RALLY_LINES, RALLY_MARGIN } from '../web/js/rally.js';
+import { QUOTA_KPI } from '../web/js/sim.js';
 import { newMat, openShift as openMats, stepMat, matReady, shoot, matWire } from '../web/js/customers.js';
 import { mowerDue, newMower, stepMower, mowerSnap } from '../web/js/mowe.js';
 import { menuFor, yieldFor, garyEats } from '../web/js/menu.js';
@@ -745,7 +746,7 @@ export class Crew {
     // Ball No. 1 is never swept: losing it would hold the clock for ever.
     for (const [id, b] of this.balls) if (!b.sunk && b.kind !== 'one') { this.balls.delete(id); this.events.push({ t: 'gone', id }); }
     this.shiftSecs = this.shiftOverride ?? (this.endless || this.venue > 0 ? SIM.SHIFT_SECS : shiftSecsFor(this.day));
-    this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false;
+    this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false; this.reRallied = false; this.gaugeWas = null;
     this.gary = null; this.mower = null; this.paShift = 0; this.jackpotSaid = false;
     this.ready.clear(); this.readyAt = 0; this.signed.clear();
     this.hopper = { n: 0, credit: 0, frac: 0 };
@@ -803,8 +804,10 @@ export class Crew {
   quotaTarget() { return this.quota ? cents(this.valueNow().rate * (1 + this.quota.q)) : null; }
   // The Closing Bell (round 6 #3): the single biggest shortfall at Last Call, as one line (null when endless).
   rallyNeed() {
-    const value = this.valueNow();
-    return shortfall({ value, quota: this.quota, kpi: this.mods.kpi(), fixtures: this.fixtures, venue: this.venue, endless: this.endless });
+    const value = this.valueNow(), kpi = this.mods.kpi();
+    // Forecast the rush (playtest 2: "On target", then DENIED): Last Call swings x1.5, so read the gauge with a margin.
+    const ahead = kpi == null ? null : kpi - (RALLY_MARGIN[this.venue] ?? 0.1);
+    return shortfall({ value, quota: this.quota, kpi: ahead, fixtures: this.fixtures, venue: this.venue, endless: this.endless });
   }
 
   // The clock holds for venue reveals and for the Last Bucket's moment.
@@ -1243,7 +1246,12 @@ export class Crew {
     this.stepLastBucket(dt);
     const paused = this.paused();
     const lastCall = this.lastCall();
-    if (lastCall && !this.lastCallRung) { this.lastCallRung = true; this.events.push({ t: 'lastcall', need: this.rallyNeed() }); }
+    if (lastCall && !this.lastCallRung) { this.lastCallRung = true; this.gaugeWas = this.mods.kpi(); this.events.push({ t: 'lastcall', need: this.rallyNeed() }); }
+    if (lastCall && this.lastCallRung && !this.reRallied && !this.endless) {   // the gauge slipped under the tick mid-rush: say it once
+      const k = this.mods.kpi();
+      if (k != null && this.gaugeWas != null && this.gaugeWas >= QUOTA_KPI && k < QUOTA_KPI) { this.reRallied = true; this.events.push({ t: 'rally', need: RALLY_LINES.gauge[this.venue] ?? null }); }
+      if (k != null) this.gaugeWas = k;
+    }
     // Customers: arrive at the gate, grab a bucket, hit it, walk out. A filthy mat is refused.
     this.custT += dt;
     const nOpen = this.phase === 'shift' ? activeMats(this.onlineCount()) : 0;
@@ -1322,6 +1330,7 @@ export class Crew {
       for (const p of [...this.players.values(), ...this.helpers]) {
         if (!p.helper && (this.driving(p) || this.aloft(p))) continue;   // the cage keeps the driver safe; riders are 120 m up
         if (b.by === p.id || b.kind === 'one') continue;       // your own swing leaves from your feet
+        if (p.helper && b.by) continue;                          // crew swings sail over the teenagers (playtest 2: they walk the line of fire)
         if (!ballHitsPlayer(x0, y0, z0, b, p)) continue;
         this.knockDown(p);
         b.vx *= -0.25; b.vz *= -0.25; b.vy = Math.abs(b.vy) * 0.3;  // it bounces off you

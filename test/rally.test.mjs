@@ -67,3 +67,15 @@ test('no lastcall on day 1; endless rings it with no line', () => {
   assert.equal(e.length, 1, 'the horn still rings');
   assert.equal(e[0].need, null);
 });
+
+test('playtest 2: the Last Call line reads the gauge ahead of the rush at Tiered', async () => {
+  const { RALLY_MARGIN, RALLY_LINES: L } = await import('../web/js/rally.js');
+  const { Crew } = await import('../server/crew.mjs');
+  const crew = new Crew('RLY', { venue: 2, day: 12, venueDay: 1, up: { shed: 1 } }, { shiftSecs: 120, seed: 3, now: () => 1 });
+  crew.join('A'); crew.startShift();
+  crew.mods.kpi = () => 0.6;                       // over the tick now, but the rush will fill the cups
+  assert.ok(RALLY_MARGIN[2] >= 0.2);
+  assert.equal(crew.rallyNeed(), L.gauge[2], 'warns before the rush instead of "On target"');
+  crew.mods.kpi = () => 0.9;
+  assert.notEqual(crew.rallyNeed(), L.gauge[2]);
+});

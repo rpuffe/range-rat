@@ -1044,7 +1044,7 @@ test('fleet: the Stadium counts laps off every driven cart', () => {
   const st = crew.mods.state('stadium');
   crew.carts[0].driver = a.id; crew.carts[1].driver = b.id;
   const T = MAP.TRACK;
-  const lap = [[T.a, 0], [0, T.b], [-T.a, 0], [0, -T.b]];
+  const lap = [[T.a, 0], [0, T.b], [-T.a, 0], [0, -T.b], [T.a, 0]];   // the whole oval, back to the start gate
   for (const [dx, dz] of lap) {
     crew.carts[0].x = T.x + dx; crew.carts[0].z = T.z + dz;
     crew.carts[1].x = T.x - dx; crew.carts[1].z = T.z - dz;   // half a lap apart

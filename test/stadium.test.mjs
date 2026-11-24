@@ -36,16 +36,16 @@ test('gates: four quadrants by angle, -1 off the Track', () => {
 
 const run = (gates, dt = 4) => { const l = newLap(); let laps = 0; gates.forEach((g, i) => { if (stepLap(l, g, i * dt)) laps++; }); return laps; };
 test('a lap needs all four gates in order, either direction, within 25 s', () => {
-  assert.equal(run([0, 1, 2, 3]), 1, 'clockwise');
-  assert.equal(run([0, 3, 2, 1]), 1, 'anticlockwise');
-  assert.equal(run([2, 3, 0, 1]), 1, 'from any gate');
-  assert.equal(run([0, 1, 2]), 0, 'three gates is not a lap');
+  assert.equal(run([0, 1, 2, 3, 0]), 1, 'clockwise');
+  assert.equal(run([0, 3, 2, 1, 0]), 1, 'anticlockwise');
+  assert.equal(run([2, 3, 0, 1, 2]), 1, 'from any gate');
+  assert.equal(run([0, 1, 2, 3]), 0, 'three quarter-turns is not a lap');
   assert.equal(run([0, 1, 3, 2]), 0, 'across the oval restarts');
-  assert.equal(run([0, 1, 2, 3], 9), 0, '27 s is too slow');
-  assert.equal(run([0, 1, 2, 3], 8), 1, '24 s is fine');
-  assert.equal(run([0, 1, 0, 1, 2, 3]), 1, 'a wobble back over a line is ignored');
-  assert.equal(run([0, 1, 2, 3, 0, 1, 2]), 2, 'the last gate starts the next lap');
-  assert.equal(run([0, -1, 1, -1, 2, 3]), 1, 'leaving the Track does not reset');
+  assert.equal(run([0, 1, 2, 3, 0], 7), 0, '28 s is too slow');
+  assert.equal(run([0, 1, 2, 3, 0], 6), 1, '24 s is fine');
+  assert.equal(run([0, 1, 0, 1, 2, 3, 0]), 1, 'a wobble back over a line is ignored');
+  assert.equal(run([0, 1, 2, 3, 0, 1, 2, 3, 0]), 2, 'the last gate starts the next lap');
+  assert.equal(run([0, -1, 1, -1, 2, 3, 0]), 1, 'leaving the Track does not reset');
 });
 
 test('sentiment: decay, deltas, clamps', () => {
@@ -92,10 +92,10 @@ test('the server module: starts at 0.5, decays, pings pay more on the Track, kno
   assert.equal(crew.snapshot().mods.stadium.knocks, 15);
 });
 
-test('laps are read off the driven cart\'s pose and pay +0.06', () => {
+test('laps are read off the driven cart\'s pose and pay +0.1', () => {
   const { crew, p, run, st } = stadiumCrew();
   crew.cart.driver = p.id;
-  const lap = [[T.a, 0], [0, T.b], [-T.a, 0], [0, -T.b]];
+  const lap = [[T.a, 0], [0, T.b], [-T.a, 0], [0, -T.b], [T.a, 0]];   // the whole oval, back to the start gate
   st.s = 0.3;
   for (const [dx, dz] of lap) { crew.cart.x = T.x + dx; crew.cart.z = T.z + dz; run(2); }
   assert.equal(st.laps, 1);

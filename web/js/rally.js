@@ -50,3 +50,7 @@ export function shortfall({ value, quota, kpi = null, fixtures = {}, fries = val
   if (pond != null && pond < POND_MURKY) cands.push({ line: RALLY_LINES.pond, loss: 1 - pond });
   return cands.reduce((a, b) => (b.loss > a.loss ? b : a)).line;
 }
+
+// Last Call swings x1.5, so the cups (Tiered) refill during the rush: the line reads the gauge this far ahead
+// (playtest 2: 6 of 9 "On target" bells at Tiered were then DENIED on the gauge).
+export const RALLY_MARGIN = Object.freeze({ 2: 0.25, 3: 0.1, 4: 0.1, 5: 0.1 });

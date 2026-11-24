@@ -108,7 +108,7 @@ export default {
           if (w) w.strobe = TARGET.STROBE;
           ctx.SFX.jackpot?.();
           const mine = e.by === ctx.me.id;
-          (mine ? ctx.toast : ctx.feed)(mine ? `TARGET! Bowl ${e.bowl}: ${e.n} balls flushed. Hustle x${e.mult.toFixed(2)}` : `${ctx.nameOf(e.by)} hit TARGET on Bowl ${e.bowl}: ${e.n} balls`, 3);
+          (mine ? ctx.toast : ctx.feed)(mine ? `TARGET! +${e.n} ball${e.n === 1 ? '' : 's'}` : `${ctx.nameOf(e.by)} hit TARGET on Bowl ${e.bowl}: ${e.n} balls`, 3);
         } else if (e.t === 'gutter' && t - lastThunk > 0.4) { lastThunk = t; ctx.SFX.bonk?.(); }
       },
       tick(dt, now) {

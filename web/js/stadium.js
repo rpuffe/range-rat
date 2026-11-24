@@ -24,7 +24,7 @@ export const newLap = () => ({ last: -1, dir: 0, n: 0, t0: 0 });
 
 // Feed one gate sighting (g, or -1 off the Track) at time t (seconds). Mutates lap. Returns true on a completed lap.
 // Four gates in order (either direction, fixed by the second one) within LAP_SECS is a lap; the last gate is
-// then the start of the next, so a steady driver banks a lap every four quarter-turns.
+// then the start of the next. Five sightings = four quarter-turns = the whole oval (playtest 2: four sightings was 3/4).
 export function stepLap(lap, g, t) {
   if (g < 0 || g === lap.last) return false;
   if (lap.n > 0 && t - lap.t0 > CROWD.LAP_SECS) lap.n = 0;          // too slow: start over from here
@@ -35,7 +35,7 @@ export function stepLap(lap, g, t) {
   else if (d === 2) return restart();                                // jumped across the oval: start over
   else if (d !== (lap.dir === 1 ? 1 : 3)) return false;              // a wobble back over the line is ignored
   lap.last = g; lap.n++;
-  if (lap.n >= 4) { lap.n = 1; lap.t0 = t; lap.dir = 0; return true; }
+  if (lap.n >= 5) { lap.n = 1; lap.t0 = t; lap.dir = 0; return true; }
   return false;
 }
 

@@ -620,6 +620,7 @@ function onEvent(e) {
     case 'memo':
       if (!e.quiet) { memoQ.push([e.text, e.target, 7, e.flavor]); memoHold = 0.6; }   // settles so a PA line in the same tick goes first
       break;
+    case 'rally': { const again = () => (textBusy() ? setTimeout(again, 400) : toast(e.need, 3)); if (e.need) again(); break; }   // the gauge slipped mid-rush
     case 'lastcall': {   // the Closing Bell (round 6 #3): the horn, then the server's one-line rally (null when endless)
       SFX.horn();
       const rally = () => (textBusy() ? setTimeout(rally, 400) : toast(e.need, 3));   // waits for a PA card or a memo
@@ -681,7 +682,7 @@ let memoT = 0, memoHold = 0, paOffT = 0;
 // Memos queue: a ball debut never knocks the morning memo (and its target) off the screen.
 const memoQ = [];
 function showMemo(text, target, secs = 9, flavor = '') {
-  if (memoT > 0 || paOn()) { memoQ.push([text, target, secs, flavor]); return; }   // the memo waits for the PA card
+  if (memoT > 0 || paOn() || toastT > 0) { memoQ.push([text, target, secs, flavor]); return; }   // the memo waits for the PA card and a toast
   $('memo-text').textContent = text;
   $('memo-flavor').textContent = flavor ?? '';
   $('memo-target').textContent = target && !text.includes(money(target)) ? `TARGET  ${money(target)}` : '';
@@ -732,7 +733,7 @@ function applySnapshot(s) {
     if (!others.has(p.id)) addMate(p);
     const o = others.get(p.id);
     o.to = { x: p.x, z: p.z, yaw: p.yaw }; o.down = p.down;
-    o.g.visible = (p.online || p.down > 0) && !(s.carts ?? [s.cart]).some(c => c?.driver === p.id);   // drivers are drawn in their cart
+    o.g.visible = (p.online || p.down > 0) && !p.diving && !(s.carts ?? [s.cart]).some(c => c?.driver === p.id);   // drivers are drawn in their cart; divers are the boil
     setMateGear(o, p.helper ? 1 : p.wand ? 'wand' : p.gear ?? 0);
   }
   for (const id of [...others.keys()]) if (!seen.has(id)) removeMate(id);
@@ -1048,7 +1049,7 @@ function showPhase() {
       ${report.runOver ? `<p>Run over by the cart <b>${report.runOver}</b></p>` : ''}
       ${report.unwashed > 0 ? `<p>Unwashed at the bell <b>${report.unwashed} balls · −${money(report.lostPremium ?? 0)}</b></p>` : ''}
       <p>In the bank <b>${money(report.bank)}</b></p>
-      ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b>BV ${money(report.quota.bv)} / ${money(report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
+      ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b>BV ${money(report.quota.bv >= 100 ? Math.round(report.quota.bv) : report.quota.bv)} / ${money(report.quota.target >= 100 ? Math.round(report.quota.target) : report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
       ${report.quota?.gauge != null ? `<p>Venue gauge at the bell <b>${Math.round(report.quota.gauge * 100)}% · ${report.quota.gaugeOk ? 'held' : report.quota.why ?? 'under 50%'}</b></p>` : ''}
       ${report.quota ? `<p>Review stamps <b>${report.quota.stamps} · ${report.quota.title}</b></p>` : ''}
       ${report.tomorrow ? `<p class="dim">${report.tomorrow}</p>` : ''}`;
@@ -1328,7 +1329,7 @@ function hud(dt = 0) {
   $('prompt').textContent = !playing() || r2?.cctvOn || paOn() ? ''   // one text at a time: the PA card wins
     : me.down > 0 ? 'Seeing stars…'
     : crew.lastBucket?.phase === 'huddle' ? ''          // round 6 #5: the banner says HOLD Ⓐ TOGETHER (one text)
-    : me.one ? 'Ball No. 1: carry it to the stand.'
+    : me.one ? ''   // the Last Bucket banner says it
     : nearestBall()?.kind === 'one' ? `${btn}  Pick up Ball No. 1`
     : views?.prompt(btn, ibtn) ? views.prompt(btn, ibtn)
     : r2?.prompt(btn) ? r2.prompt(btn)
@@ -1337,7 +1338,7 @@ function hud(dt = 0) {
     : dockOpen(me) && crew.players.some(p => p.diving && p.id !== me.id) ? pad ? `Tap ${btn}, then circle either stick to pump air to your diver` : `Hold ${btn} and circle the mouse to pump air to your diver`
     : crew.pond?.unlocked && hasTube(crew.up) && atTube(me) && (carrying() > 0 || me.treasure) ? `${ibtn}  Feed the tube${crew.pond.tube ? ` (${crew.pond.tube} in flight)` : ''}`
     : dockOpen(me) ? 'Walk into the pond to dive for sunk balls'
-    : atShed(me) && crew.fries?.open ? `${btn}  Open the kitchen · fries ${crew.fries.stock}/${crew.fries.max}`
+    : atShed(me) && crew.fries?.open ? `${btn}: kitchen · fries ${crew.fries.stock}/${crew.fries.max}`
     : atShed(me) ? (crew.venue ?? 0) >= 1 ? 'The snack shed is boarded up' : 'The snack shed is boarded up. It reopens at the Range Club.'
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
@@ -1345,7 +1346,7 @@ function hud(dt = 0) {
     : nearStation() ? `${ibtn}  Grab the pressure washer${crewCarts().some(c => (c.mud ?? 0) > 0.05) ? crewCarts().length > 1 ? ' (a cart is muddy)' : ' (the cart is muddy)' : ''}`
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up${nearCart() ? `   ·   ${cbtn}  Drive the cart` : ''}`
     : nearCart() ? `${cbtn}  Drive the cart`
-    : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `${pad ? 'Pull the right stick back, push it through' : 'Drag down, flick up'} to swing · aim at the cart (${me.pocket} to hit)` : 'Bring balls to hit them')
+    : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `${pad ? 'Pull the right stick back, push it through' : 'Drag down, flick up'} to swing · ${(crew.venue ?? 0) >= 2 ? 'land it in a green' : 'aim at the cart'} (${me.pocket})` : 'Bring balls to hit them')
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up`
     : n >= cap ? 'Full: head to the bucket stand' : '';
   $('air').classList.toggle('hidden', !me.diving);

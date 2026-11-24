@@ -223,6 +223,8 @@ export function createPA({ root, audio } = {}) {
   }
 
   function play(item) {
+    const memo = typeof document !== 'undefined' && document.getElementById('memo');
+    if (memo && !memo.classList.contains('hidden')) { playing = { timer: setTimeout(() => { playing = null; play(item); }, 500), speakTimer: null }; return; }   // one text at a time
     const words = item.text.split(/\s+/).filter(Boolean).length;
     const ms = Math.max(MIN_SHOW_MS, words * 380 + 1000);
     const ok = build();

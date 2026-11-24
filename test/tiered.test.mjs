@@ -190,3 +190,13 @@ test('the forgiving lip (round 6 #4): a crew ball at r + 1.4 is a TARGET, at r +
     assert.equal(crew.stats.targets ?? 0, 0);
   }
 });
+
+test('playtest 2: a crew swing sails over the teenagers walking past the bays', async () => {
+  const { Crew } = await import('../server/crew.mjs');
+  const crew = new Crew('TEEN', { venue: 2, day: 12, venueDay: 1, up: { helpers: 1 } }, { shiftSecs: 120, seed: 3, now: () => 1 });
+  const a = crew.join('A'); crew.connect(a); crew.startShift();
+  const h = crew.helpers[0];
+  const b = crew.addBall({ x: h.x, y: 1, z: h.z + 0.3, vx: 0, vy: 0, vz: -10, kind: 'range' }); b.by = a.id;
+  for (let i = 0; i < 10; i++) crew.tick(0.02);
+  assert.equal(h.down, 0);
+});

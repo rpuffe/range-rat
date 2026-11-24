@@ -136,10 +136,8 @@ export function createEnding({ scene, root, camera }) {
       after(1600, () => {
         flashEl.style.opacity = '0';
         const memo = document.getElementById('memo'), txt = document.getElementById('memo-text'), tgt = document.getElementById('memo-target');
-        if (memo && txt) {
-          txt.textContent = FINAL_MEMO; if (tgt) tgt.textContent = '';
-          memo.classList.remove('hidden');
-        }
+        // One text at a time (playtest 2): the PA card speaks the final line; no memo on top of it.
+        void txt; void tgt;
         after(6000, () => {
           if (memo) memo.classList.add('hidden');
           if (flashEl) flashEl.classList.add('hidden');
@@ -158,7 +156,7 @@ export function createEnding({ scene, root, camera }) {
     cardEl = document.createElement('div');
     cardEl.id = 'endcard'; cardEl.className = 'card';
     const lines = players.map(p => `<div class="rat" style="color:${safeColor(p.color)}"><b>${esc(p.name)}</b>
-      <span>${p.banked ?? 0} balls · $${p.cash ?? 0} · ${p.knockdowns ?? 0} knockdowns</span></div>`).join('');
+      <span>${p.banked ?? 0} ball${p.banked === 1 ? '' : 's'} · $${Math.round(p.cash ?? 0).toLocaleString('en-US')} · ${p.knockdowns ?? 0} knockdowns</span></div>`).join('');
     cardEl.innerHTML = `<div class="sheet">
       <h1>Site 12 is yours</h1>
       <div class="sig">Range Rats, a final report for Fairway Holdings International</div>
