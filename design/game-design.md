@@ -145,21 +145,39 @@ Three only, and each player picks their own:
 ## Multiplayer and saves
 
 - **One shared range.** The server holds the only copy of the game state
-  (balls, customers, cash, machines). Browsers send what their player does
-  and draw what the server says. This is different from golf, where each
-  browser simulated its own shots and the server just passed messages along.
+  (balls, customers, pockets, cash, the shift clock). Browsers send what their
+  player does and draw what the server says. This is different from golf,
+  where each browser simulated its own shots and the server just passed
+  messages along.
+  - A player's own position is theirs to report, clamped by the server to a
+    plausible walking speed. Pick-ups, deposits, knockdowns and the clock are
+    the server's call.
+  - Ball physics lives in one shared module (`web/js/sim.js`) with fixed
+    steps. The server runs it for real, and browsers run the same code so
+    flights look smooth between ticks. The server's word wins when a ball
+    comes to rest.
+  - The server simulates at 20 Hz and streams to browsers at 10 Hz over
+    server-sent events. Browsers post their position and actions about 15
+    times a second.
 - Crews join with a 4-letter code (no I or O, because codes get read aloud).
-  Max 6 players.
-- **Saves:** a crew's range is saved to S3 at the end of every shift (and on a
-  timer mid-shift), keyed by the crew code. Coming back resumes the same
-  range. Expected manifest value: `storage: s3-retained`, so saves survive a
-  stack teardown and deploys run stop-then-start. Not enabled yet.
+  Max 6 players. A reload rejoins as the same player. A second tab is a
+  second player.
+- **Saves:** a crew's day, cash and totals are saved to S3
+  (`saves/<CODE>.json`) when the crew is made, at the end of every shift,
+  every minute while something changed, when the crew goes idle, and on
+  shutdown. Coming back with the code resumes on the next day. The manifest
+  sets `storage: s3-retained`, so saves survive a stack teardown and deploys
+  run stop-then-start. A deploy ends live shifts, but the crews come back
+  from their saves.
+- Each morning starts on a clean field (the night crew picked up). Balls on
+  the field aren't saved.
 
 ## Not in scope
 
 - Anything from Golden Hour Golf's design (geese, Old Tom, the commentator).
-  Only golf's code is reused: the sky and lighting, controller support,
-  Three.js.
+  Only golf's client code is reused: the sky and lighting, controller
+  support, Three.js. The server is new, and it's Node rather than golf's Go,
+  so the physics is one module shared by server and browser.
 - Named balls.
 - Greenskeeper (the mowing game) is a separate future project.
 

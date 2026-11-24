@@ -1,22 +1,29 @@
-# Multi-stage: compile a static Go binary, ship it on distroless static.
-# linux/amd64 per the flightdeck contract; the final image has no shell or
-# package manager, so the Trivy image scan has almost no surface to flag.
+# Zero-dependency Node server (plain node:http + node:crypto, including the
+# S3 saves), so there is no npm install: the image is the current slim Node
+# base plus our files.
+FROM node:22-alpine
 
-FROM --platform=linux/amd64 golang:1.26-alpine AS build
-WORKDIR /src
-# No dependencies yet, so there's no go.sum and nothing to download. Once the
-# server needs one (S3 saves will), copy go.sum and run `go mod download`
-# here, before COPY . ., so module downloads cache separately from source.
-COPY go.mod ./
-COPY . .
-# CGO off => fully static binary that runs on distroless static.
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /range-rat .
+# apk upgrade: official base images lag CVE fixes by days, and the Trivy gate
+# fails on fixable HIGH/CRITICAL vulns. Keep this line (docs/dockerfile.md).
+RUN apk upgrade --no-cache
 
-# Distroless static: no shell, no apk/apt, ships a built-in nonroot user.
-FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /range-rat /range-rat
+# Nothing here ever runs npm, and the npm CLI that node:22-alpine ships carries
+# its own vulnerable transitive deps that trip the scan gate. Remove the
+# package managers rather than chase CVEs in code we never run.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+    /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn*
 
-# Explicit non-root USER (Trivy DS002 reads the Dockerfile, not the base image).
-USER nonroot
+WORKDIR /app
+COPY package.json ./
+COPY server ./server
+COPY web ./web
+
+ENV PORT=8080
 EXPOSE 8080
-ENTRYPOINT ["/range-rat"]
+
+# node:22-alpine ships a non-root "node" user; name it explicitly so the
+# Dockerfile itself satisfies the non-root scan check (Trivy DS002).
+USER node
+
+CMD ["node", "server/server.mjs"]

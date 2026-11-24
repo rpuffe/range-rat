@@ -1,6 +1,5 @@
 #!/bin/sh
-# App test command — replace with your real tests; make test runs this.
-# App-owned: survives make upgrade.
-
-echo "no tests defined yet — replace test.sh with your app's real test command"
-exit 0
+# App tests (make test runs this; app-owned, survives make upgrade).
+# Needs Node 20+ on the host. Zero npm dependencies: node's own test runner.
+set -e
+node --test test/

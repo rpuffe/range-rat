@@ -5,61 +5,104 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Range Rat</title>
 <style>
-  :root { --ink: #fff8ec; --dim: #e8d6bd; --panel: rgba(28, 22, 40, 0.78); --accent: #ffb347; }
+  :root { --ink: #fff8ec; --dim: #e8d6bd; --panel: rgba(28, 22, 40, 0.82); --accent: #ffb347; --bad: #ff8a7a; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #1e1c38; color: var(--ink);
     font: 600 clamp(16px, 2.2vmin, 28px)/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
   canvas { display: block; width: 100vw; height: 100vh; outline: none; }
   .hidden { display: none !important; }
-  .card { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; gap: 1em;
-    background: linear-gradient(rgba(30, 28, 56, 0.35), rgba(30, 28, 56, 0.75)); }
+
+  .card { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; gap: 0.9em; padding: 16px;
+    background: linear-gradient(rgba(30, 28, 56, 0.35), rgba(30, 28, 56, 0.78)); }
   .card h1 { margin: 0; font-size: 3.2em; letter-spacing: 0.02em; text-shadow: 0 0.08em 0.3em #0008; }
+  .card h2 { margin: 0; font-size: 1.6em; }
   .card p { margin: 0; color: var(--dim); }
-  button { font: inherit; color: #2a1d10; background: var(--accent); border: 0; border-radius: 0.6em;
-    padding: 0.6em 1.6em; cursor: pointer; justify-self: center; }
-  button:focus-visible { outline: 0.18em solid var(--ink); outline-offset: 0.18em; }
+  .card .big { font-size: 2.6em; letter-spacing: 0.25em; color: var(--ink); }
+  .row { display: flex; gap: 0.6em; justify-content: center; flex-wrap: wrap; }
+  .or { color: var(--dim); font-weight: 500; }
+
+  button, input { font: inherit; border-radius: 0.6em; border: 0; padding: 0.55em 1.4em; }
+  button { color: #2a1d10; background: var(--accent); cursor: pointer; }
+  button.quiet { background: rgba(255, 248, 236, 0.15); color: var(--ink); }
+  input { background: rgba(255, 248, 236, 0.92); color: #2a1d10; width: 11em; text-align: center; }
+  #join-code { width: 6em; text-transform: uppercase; letter-spacing: 0.2em; }
+  button:focus-visible, input:focus-visible, .pad button:focus, .pad input:focus { outline: 0.18em solid var(--ink); outline-offset: 0.18em; }
+  #join-error { color: var(--bad); min-height: 1.35em; }
+
   #hud { position: fixed; inset: 0; pointer-events: none; }
   #hud .top { position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px; right: 16px;
-    display: flex; justify-content: space-between; text-shadow: 0 0.06em 0.25em #000a; font-size: 1.3em; }
+    display: flex; justify-content: space-between; align-items: baseline; text-shadow: 0 0.06em 0.25em #000a; font-size: 1.25em; }
   #pocket { letter-spacing: 0.2em; }
+  #crewline { position: absolute; top: calc(max(16px, env(safe-area-inset-top)) + 2.2em); right: 16px; text-align: right; text-shadow: 0 0.06em 0.25em #000a; }
+  #crewline small { color: var(--dim); font-weight: 500; }
+  #code { letter-spacing: 0.15em; }
+  #roster { list-style: none; margin: 0.4em 0 0; padding: 0; font-size: 0.85em; }
+  #roster li { display: flex; gap: 0.4em; align-items: center; justify-content: flex-end; }
+  #roster li.off { opacity: 0.45; }
+  #roster i { color: var(--dim); font-style: normal; font-weight: 500; }
+  #roster .dot { width: 0.7em; height: 0.7em; border-radius: 50%; background: var(--c); }
+  #roster .pk { min-width: 3.2em; text-align: left; letter-spacing: 0.1em; }
   #crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: var(--ink); opacity: 0.8; }
   #prompt { position: absolute; left: 0; right: 0; top: 58%; text-align: center; text-shadow: 0 0.06em 0.25em #000c; }
+  #net { position: absolute; left: 0; right: 0; bottom: 4%; text-align: center; color: var(--bad); text-shadow: 0 0.06em 0.25em #000c; }
   #toast { position: fixed; left: 50%; bottom: 12%; transform: translate(-50%, 1em); opacity: 0; transition: 0.25s;
-    background: var(--panel); padding: 0.4em 1em; border-radius: 0.6em; pointer-events: none; }
+    background: var(--panel); padding: 0.4em 1em; border-radius: 0.6em; pointer-events: none; text-align: center; max-width: calc(100vw - 32px); }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
-  #report { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--panel);
-    padding: 1.2em 2em; border-radius: 1em; min-width: min(90vw, 22em); }
-  #report h2 { margin: 0 0 0.4em; }
-  #report p { display: flex; justify-content: space-between; gap: 2em; margin: 0.3em 0; }
-  #report .dim { color: var(--dim); font-weight: 500; display: block; margin-top: 1em; }
-  .keys { color: var(--dim); font-weight: 500; }
+
+  .sheet { background: var(--panel); padding: 1.2em 2em; border-radius: 1em; min-width: min(calc(100vw - 32px), 22em); text-align: left; }
+  .sheet p { display: flex; justify-content: space-between; gap: 2em; margin: 0.3em 0; color: var(--ink); }
+  .sheet h2 { margin: 0 0 0.4em; }
+
+  .keys { color: var(--dim); font-weight: 500; font-size: 0.85em; }
   .pad .kb, body:not(.pad) .gp { display: none; }
 </style>
 <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
 </head>
 <body>
-<canvas id="c" tabindex="0" aria-label="The driving range, first-person view"></canvas>
+<canvas id="c" tabindex="-1" aria-label="The driving range, first-person view"></canvas>
 
 <div id="title" class="card">
   <h1>Range Rat</h1>
-  <p>The customers hit them. You pick them up.</p>
-  <button id="play">Start shift</button>
-  <p class="keys kb">WASD to walk · mouse to look · E or click to pick up</p>
-  <p class="keys gp">Ⓐ to start · left stick walk · right stick look · Ⓐ pick up</p>
+  <p>The customers hit them. Your crew picks them up.</p>
+  <div class="row"><input id="name" maxlength="16" placeholder="Your name" autocomplete="nickname" aria-label="Your name"></div>
+  <div class="row"><button id="create">Start a crew</button></div>
+  <p class="or">or join friends with their code</p>
+  <div class="row">
+    <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off" aria-label="Crew code">
+    <button id="join" class="quiet">Join</button>
+  </div>
+  <p id="join-error" role="alert"></p>
+  <p class="keys kb">WASD walk · mouse or arrows look · E or click pick up · Esc pause</p>
+  <p class="keys gp">Left stick walk · right stick look · Ⓐ pick up · ☰ pause</p>
 </div>
 
 <div id="hud" class="hidden">
   <div class="top"><span id="cash">$0</span><span id="pocket"></span><span id="clock"></span></div>
+  <div id="crewline"><small>Crew</small> <span id="code"></span><ul id="roster"></ul></div>
   <div id="crosshair"></div>
   <div id="prompt"></div>
+  <div id="net"></div>
+</div>
+
+<div id="lobby" class="card hidden">
+  <p>Your crew code</p>
+  <div class="big" id="lobby-code"></div>
+  <p>Friends join with this code, from any browser (Edge on Xbox too). Up to 6.</p>
+  <div class="row"><button id="start">Open the range</button></div>
+</div>
+
+<div id="report" class="card hidden">
+  <div class="sheet" id="report-body"></div>
+  <div class="row"><button id="next">Next shift</button></div>
+  <p class="keys">Anyone on the crew can start the next shift.</p>
 </div>
 
 <div id="pause" class="card hidden">
   <h1>Paused</h1>
-  <button id="resume">Back to work</button>
+  <p>The range keeps going without you. It's a shared range.</p>
+  <div class="row"><button id="resume">Back to work</button><button id="leave" class="quiet">Leave crew</button></div>
 </div>
 
-<div id="report" class="hidden"></div>
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script type="module" src="/js/main.js"></script>

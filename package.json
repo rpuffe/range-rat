@@ -1,0 +1,11 @@
+{
+  "name": "range-rat",
+  "private": true,
+  "type": "module",
+  "description": "Range Rat: a co-op incremental golf-range game. Zero npm dependencies.",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/server.mjs",
+    "test": "node --test test/"
+  }
+}

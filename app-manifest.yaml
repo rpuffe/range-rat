@@ -16,6 +16,10 @@ env:                 # non-secret config only — NO secrets, tokens, or credent
   LOG_LEVEL: info
 # secrets:            # optional names only; values are operator-managed SSM
 #   - API_KEY          # SecureStrings (docs/contract.md)
-# storage: s3          # optional: private per-env bucket, name injected as STORAGE_BUCKET
+storage: s3-retained # crew saves (saves/<CODE>.json). Retained: versioned, and
+                     # survives a stack teardown, because these are players'
+                     # progress. Also makes deploys stop-then-start, which the
+                     # in-memory crews need (one task owns every live range).
+                     # Falls back to in-memory when STORAGE_BUCKET is unset.
 # auth: cognito        # optional: per-env Cognito user pool + hosted login,
                        # ids injected as COGNITO_* env vars (docs/contract.md)
