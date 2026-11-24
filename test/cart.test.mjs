@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Crew, PING_PRIZES } from '../server/crew.mjs';
-import { SIM, CART, BAYS, perks, underReels } from '../web/js/sim.js';
+import { SIM, CART, BAYS, perks, underReels, nextPrice, GARY, WASH } from '../web/js/sim.js';
+import { MOWER, newMower, stepMower } from '../web/js/mowe.js';
+import { MAP } from '../web/js/map.js';
+import stadium from '../server/venues/stadium.mjs';
 
 // A crew on a fake clock. `run(secs)` steps 20 ticks a second (use multiples of 0.25 to avoid float drift).
 function makeCrew(save = { up: { cart: 1 } }, shiftSecs = 600) {
@@ -856,4 +859,197 @@ test('a removed driver frees the cart', () => {
   act(crew, d, { t: 'board' });
   crew.removePlayer(d);
   assert.equal(crew.cart.driver, null);
+});
+
+// ---- the fleet (council round 4, item 10): carts[] with a `cart` alias ----------------------------
+
+// A Stadium crew with the second cart (up.cart 3).
+const fleetCrew = (extra = {}) => {
+  const clock = { t: 1_000_000 };
+  const crew = new Crew('FLET', { v: 3, venue: 3, day: 5, venueDay: 1, up: { cart: 3 }, ...extra }, { shiftSecs: 600, seed: 5, now: () => clock.t });
+  for (const k of Object.keys(crew.fixtures)) crew.fixtures[k] = 0;
+  const run = secs => { for (let i = 0; i < secs * 20; i++) { clock.t += 50; crew.tick(0.05); } };
+  return { crew, clock, run };
+};
+
+test('fleet: the alias is carts[0], in the crew and in the snapshot', () => {
+  const { crew } = makeCrew();
+  assert.equal(crew.carts.length, 1);
+  assert.equal(crew.cart, crew.carts[0]);
+  const s = crew.snapshot();
+  assert.deepEqual(s.cart, s.carts[0]);
+  const bare = makeCrew({}).crew;
+  assert.deepEqual(bare.carts, []);
+  assert.equal(bare.cart, null);
+  assert.deepEqual(bare.snapshot().carts, []);
+  assert.equal(bare.snapshot().cart, null);
+});
+
+test('fleet: tier 3 is the second cart, from the Stadium, $150k base, parked at (35, 10)', () => {
+  assert.equal(CART.PARK2.x, 35); assert.equal(CART.PARK2.z, 10);
+  assert.equal(nextPrice('cart', { cart: 2 }, 1, 0, 2), null, 'not before venue 3');
+  assert.equal(nextPrice('cart', { cart: 2 }, 1, 0, 3), 150_000);
+  assert.equal(nextPrice('cart', { cart: 2 }, 4, 0, 3), 330_000);
+  assert.equal(perks({ cart: 3 }).carts, 2);
+  assert.equal(perks({ cart: 3 }).cartCap, 600);
+  const { crew } = fleetCrew({ up: { cart: 2 }, cash: 200_000 });
+  const first = crew.cart;
+  const p = addPlayer(crew, 'A', 0, 0);
+  act(crew, p, { t: 'buy', id: 'cart' });
+  assert.equal(crew.up.cart, 3);
+  assert.equal(crew.carts.length, 2);
+  assert.equal(crew.cart, first, 'the first cart is the same object');
+  assert.equal(crew.carts[1].x, 35); assert.equal(crew.carts[1].z, 10);
+  assert.ok(crew.voiced.has('fleet'), 'the fleet PA line');
+});
+
+test('fleet: two drivers at once, each driving and scooping their own cart', () => {
+  const { crew } = fleetCrew();
+  openShift(crew);
+  const a = addPlayer(crew, 'A', CART.PARK.x - 1, CART.PARK.z);
+  const b = addPlayer(crew, 'B', CART.PARK2.x + 1, CART.PARK2.z);
+  act(crew, a, { t: 'board' });
+  act(crew, b, { t: 'board' });
+  assert.equal(crew.carts[0].driver, a.id, 'A boards the nearest');
+  assert.equal(crew.carts[1].driver, b.id, 'B boards the other');
+  const c = addPlayer(crew, 'C', CART.PARK.x - 1, CART.PARK.z);
+  act(crew, c, { t: 'board' });
+  assert.ok(!crew.driving(c), 'no free cart left');
+  crew.input(a, { cart: { x: CART.PARK.x - 1, z: CART.PARK.z, yaw: CART.PARK.yaw } });
+  crew.input(b, { cart: { x: CART.PARK2.x + 1, z: CART.PARK2.z + 0.5, yaw: 0.3 } });
+  assert.ok(crew.carts[0].x < CART.PARK.x && crew.carts[0].z === CART.PARK.z);
+  assert.ok(crew.carts[1].x > CART.PARK2.x && crew.carts[1].yaw === 0.3);
+  assert.equal(b.x, crew.carts[1].x);
+  for (const [p, k] of [[a, 0], [b, 1]]) {
+    const r = reelCentre(crew.carts[k]);
+    act(crew, p, { t: 'pickup', ball: restingBall(crew, r.x, r.z).id, cart: true });
+  }
+  assert.equal(crew.carts[0].load, 1); assert.equal(crew.carts[1].load, 1);
+  const s = crew.snapshot();
+  assert.deepEqual(s.carts.map(x => x.driver), [a.id, b.id]);
+  assert.equal(s.players.find(p => p.id === b.id).x, s.carts[1].x);
+  act(crew, b, { t: 'leave' });
+  assert.equal(crew.carts[1].driver, null);
+  assert.equal(crew.carts[0].driver, a.id);
+});
+
+test('fleet: each cart pings on its own (driver, boost, event)', () => {
+  const { crew, run } = fleetCrew();
+  openShift(crew);
+  const d = addPlayer(crew, 'D', CART.PARK2.x + 1, CART.PARK2.z);
+  act(crew, d, { t: 'board' });
+  assert.equal(crew.carts[1].driver, d.id);
+  const s = addPlayer(crew, 'S', -40, 0);
+  crew.rng = () => 0.5;                                    // boost
+  const c1 = crew.carts[1];
+  crew.addBall({ x: c1.x, y: 1, z: c1.z + 6, vx: 0, vy: 1, vz: -20, by: s.id });   // from the south: misses cart 0
+  run(0.5);
+  const ev = pings(crew);
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].cart, 1);
+  assert.equal(ev[0].prize, 'boost');
+  assert.ok(crew.carts[1].boostT > 0, 'the driven cart boosts');
+  assert.equal(crew.carts[0].boostT, 0, 'the other does not');
+  crew.flush();
+  const c0 = crew.carts[0];
+  crew.addBall({ x: c0.x, y: 1, z: c0.z + 6, vx: 0, vy: 1, vz: -20, by: s.id });
+  run(0.5);
+  const ev0 = pings(crew);
+  assert.equal(ev0.length, 1);
+  assert.equal(ev0[0].cart, 0);
+  assert.equal(ev0[0].prize, undefined, 'nobody drives cart 0: just noise');
+});
+
+test('fleet: both hoppers unload at the stand, each at its own gear', () => {
+  const { crew, run } = fleetCrew();
+  openShift(crew);
+  crew.carts[0].load = 4; crew.carts[0].loadW = 4; crew.carts[0].mud = 0;
+  crew.carts[1].load = 4; crew.carts[1].loadW = 4; crew.carts[1].mud = 1;
+  for (const c of crew.carts) { c.x = SIM.STAND.x + 2; c.z = SIM.STAND.z + 2; }
+  run(0.25);
+  assert.equal(crew.carts[0].load, 0); assert.equal(crew.carts[1].load, 0);
+  const ev = crew.flush().ev.filter(e => e.t === 'cash' && e.kind === 'cart');
+  assert.deepEqual(ev.map(e => e.cart).sort(), [0, 1]);
+  const by = Object.fromEntries(ev.map(e => [e.cart, e.cash]));
+  assert.ok(Math.abs(by[0] / by[1] - 1.25) < 0.01, 'the clean cart pays x1.25, the muddy one x1');
+  assert.equal(crew.stats.deposited, 8);
+});
+
+test('fleet: endShift banks both carts', () => {
+  const { crew } = fleetCrew();
+  openShift(crew);
+  crew.carts[0].load = 2; crew.carts[1].load = 3;
+  crew.endShift();
+  assert.equal(crew.carts[0].load + crew.carts[1].load, 0);
+  assert.equal(crew.stats.deposited, 5);
+});
+
+test('fleet: a one-cart v3 save loads unchanged; a fleet save loads two carts at their spots', () => {
+  const { crew } = makeCrew({ v: 3, day: 4, cash: 50, up: { cart: 2 } });
+  assert.equal(crew.carts.length, 1);
+  assert.equal(crew.cart.x, CART.PARK.x);
+  const save = crew.toSave();
+  assert.equal(save.up.cart, 2);
+  assert.equal(save.carts, undefined, 'no new save field: the row tier is the fleet');
+  const again = new Crew('CART', JSON.parse(JSON.stringify(save)), { seed: 5 });
+  assert.equal(again.carts.length, 1);
+  assert.equal(again.cash, 50);
+  const fleet = new Crew('CART', { v: 3, up: { cart: 3 }, venue: 3 }, { seed: 5 });
+  assert.equal(fleet.carts.length, 2);
+  assert.deepEqual([fleet.carts[1].x, fleet.carts[1].z], [CART.PARK2.x, CART.PARK2.z]);
+  fleet.carts[1].x = 0;
+  fleet.startShift();
+  assert.equal(fleet.carts[1].x, CART.PARK2.x, 'parks at its own spot each morning');
+});
+
+test('fleet: the wand hoses each cart ("cart" is the first, "cart1" the second)', () => {
+  const { crew, clock } = fleetCrew();
+  const p = addPlayer(crew, 'W', WASH.STATION.x, WASH.STATION.z);
+  act(crew, p, { t: 'wand' });
+  assert.ok(p.wand);
+  crew.carts[0].mud = 0.8; crew.carts[1].mud = 0.8;
+  crew.carts[0].x = p.x - 3; crew.carts[0].z = p.z + 3;   // both within the wand's reach
+  clock.t += 1000;
+  act(crew, p, { t: 'wash', secs: 0.5, target: 'cart1' });
+  assert.equal(crew.carts[0].mud, 0.8);
+  assert.ok(crew.carts[1].mud < 0.8);
+  clock.t += 1000;
+  act(crew, p, { t: 'wash', secs: 0.5, target: 'cart' });
+  assert.ok(crew.carts[0].mud < 0.8);
+  assert.equal(crew.wash(p, 0.5, 'cart7'), false, 'no such cart');
+});
+
+test('fleet: Gary checks the muddier cart', () => {
+  const { crew } = fleetCrew();
+  crew.carts[0].mud = 0; crew.carts[1].mud = GARY.CLEAN + 0.2;
+  assert.equal(crew.muddiestCart(), crew.carts[1]);
+  assert.equal(crew.inspectBase('cart'), false);
+  crew.carts[1].mud = 0;
+  assert.equal(crew.inspectBase('cart'), true);
+});
+
+test('fleet: MOW-E honks at any cart', () => {
+  const s = newMower([], () => 0.5); s.lane = -132; s.phase = 'drive'; s.x = 0; s.z = -132;
+  const r = stepMower(s, 0.05, { balls: [], players: [], carts: [{ x: 0, z: -20 }, { x: 2, z: -132 }] });
+  assert.equal(r.honk, true);
+  assert.ok(s.blocked && MOWER.CART_STOP > 2);
+});
+
+test('fleet: the Stadium counts laps off every driven cart', () => {
+  const clock = { t: 1_000_000 };
+  const crew = new Crew('STAD', { venue: 3, day: 5, venueDay: 1, up: { shed: 1, cart: 3 } }, { shiftSecs: 120, seed: 5, now: () => clock.t, modules: [stadium] });
+  const run = secs => { for (let i = 0; i < secs * 20; i++) { clock.t += 50; crew.tick(0.05); } };
+  crew.startShift(); for (const m of crew.mats) m.next = 1e9;
+  const a = addPlayer(crew, 'A', 0, 0), b = addPlayer(crew, 'B', 0, 0);
+  const st = crew.mods.state('stadium');
+  crew.carts[0].driver = a.id; crew.carts[1].driver = b.id;
+  const T = MAP.TRACK;
+  const lap = [[T.a, 0], [0, T.b], [-T.a, 0], [0, -T.b]];
+  for (const [dx, dz] of lap) {
+    crew.carts[0].x = T.x + dx; crew.carts[0].z = T.z + dz;
+    crew.carts[1].x = T.x - dx; crew.carts[1].z = T.z - dz;   // half a lap apart
+    run(2);
+  }
+  assert.equal(st.laps, 2, 'both drivers bank a lap');
+  assert.equal(st.lap, st.lapBy[0], 'st.lap is the first cart\'s');
 });

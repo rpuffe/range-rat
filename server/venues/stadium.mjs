@@ -3,7 +3,8 @@
 import { onTrack } from '../../web/js/map.js';
 import { CROWD, gateAt, newLap, stepLap, stepSentiment, bump, pingDelta } from '../../web/js/stadium.js';
 
-const fresh = () => ({ s: CROWD.START, laps: 0, knocks: 0, lap: newLap(), t: 0, lastKnock: null, lastPing: null });
+// One lap tracker per cart (the fleet: two drivers can race). `lap` is the first cart's, kept for old readers.
+const fresh = () => { const lapBy = [newLap(), newLap()]; return { s: CROWD.START, laps: 0, knocks: 0, lapBy, lap: lapBy[0], t: 0, lastKnock: null, lastPing: null }; };
 
 export default {
   id: 'stadium',
@@ -14,12 +15,15 @@ export default {
     if (!crew.working()) return;
     st.t += dt;
     st.s = stepSentiment(st.s, dt);
-    const c = crew.cart;
-    if (!c || !c.driver) { st.lap = newLap(); return; }              // a parked cart is not racing
-    if (stepLap(st.lap, gateAt(c.x, c.z), st.t)) {
-      st.laps++; st.s = bump(st.s, CROWD.LAP);
-      crew.events.push({ t: 'crowd', kind: 'lap', by: c.driver, laps: st.laps });
-    }
+    const carts = crew.carts ?? (crew.cart ? [crew.cart] : []);
+    carts.forEach((c, i) => {                                         // every driven cart's pose
+      const lap = st.lapBy[i] ??= newLap();
+      if (!c.driver) { Object.assign(lap, newLap()); return; }      // a parked cart is not racing
+      if (stepLap(lap, gateAt(c.x, c.z), st.t)) {
+        st.laps++; st.s = bump(st.s, CROWD.LAP);
+        crew.events.push({ t: 'crowd', kind: 'lap', by: c.driver, laps: st.laps });
+      }
+    });
   },
   ping(crew, st, b, { prize, cart }) {
     st.s = bump(st.s, pingDelta(!!cart && onTrack(cart.x, cart.z), prize));

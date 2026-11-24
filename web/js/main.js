@@ -100,6 +100,7 @@ scene.add(stand);
 // Scenery: nets, trees, hills, the parking lot and entrance, the clubhouse, props.
 const scenery = createScenery(scene, { lowDetail: perf.low });
 let sceneT = 0;
+const rightPoles = scenery.rightPoles ?? null;   // and its poles (scenery.js splits them out for the County)
 // The right side net, handed to the venue views (the County takes it down). Found, not owned: scenery.js builds it.
 let rightNet = null;
 scene.getObjectByName('scenery')?.traverse(o => { if (!rightNet && o.isMesh && !o.isInstancedMesh && o.position.x === MAP.NETS.side && o.position.y === 8) rightNet = o; });
@@ -321,9 +322,11 @@ function buildGary() {
   const tag = nameTag('Gary · Regional', '#ffffff'); tag.position.y = 2.6; v.g.add(tag);
   return v;
 }
-let cartView = null;                // the 3D cart, once the crew owns one
-const cartPose = { x: CART.PARK.x, z: CART.PARK.z, yaw: CART.PARK.yaw, v: 0 };  // where I draw it
+// The fleet (council round 4): one view per cart the crew owns, each { ...buildCart(), pose } (mesh, reels, mud, flash).
+const cartViews = [];
+const cartPose = { x: CART.PARK.x, z: CART.PARK.z, yaw: CART.PARK.yaw, v: 0 };  // where I draw the first cart (cartViews[0].pose)
 const pendingCart = new Set();      // balls my cart scooped that the server hasn't confirmed
+const crewCarts = () => crew.carts ?? (crew.cart ? [crew.cart] : []);   // the snapshot's carts (or the legacy single cart)
 let engine = null;
 
 // ---------------------------------------------------------------- balls
@@ -551,7 +554,7 @@ function onEvent(e) {
       break;
     case 'ping': {
       SFX.ping();
-      if (cartView) cartView.flash = 1;
+      if (cartViews[e.cart ?? 0]) cartViews[e.cart ?? 0].flash = 1;   // each cart pings on its own
       if (!e.prize) break;
       SFX.jackpot();
       const who = e.by === me.id ? 'You' : nameOf(e.by);
@@ -602,7 +605,7 @@ function onEvent(e) {
       break;
     case 'spotless':
       SFX.jackpot();
-      toast(e.target && e.target !== 'cart'
+      toast(e.target && !/^cart\d?$/.test(e.target)
         ? `Spotless ${e.target.startsWith('mat') ? 'mat' : e.target}! Curb Appeal is up`
         : `Spotless! ${e.by === me.id ? 'You' : nameOf(e.by)} washed the cart. Corporate pays ×1.25 a ball for a clean fleet`, 3);
       break;
@@ -633,7 +636,7 @@ function onEvent(e) {
 function floatPay(e) {
   const who = crew.players.find(p => p.id === e.by);
   const at = e.by === me.id ? me : who ?? (crew.helpers ?? []).find(h => h.id === e.by) ?? SIM.STAND;
-  const at2 = e.kind === 'cart' ? cartPose : at;
+  const at2 = e.kind === 'cart' ? cartViews[e.cart ?? 0]?.pose ?? cartPose : at;
   board.floatText(at2.x, 2.4, at2.z, `+${money(e.cash)} · ${e.n} × ${money(e.per ?? e.cash / e.n)}`, who?.color ?? '#ffd54a');
 }
 let memoT = 0;
@@ -668,7 +671,7 @@ function applySnapshot(s) {
   gp = gearPerks(me.gear);
   const held = me.wand ? 'wand' : me.gear;
   if (held !== gearLevel) setMyGear(held);
-  applyCart(s.cart);
+  applyCarts(s.carts ?? (s.cart ? [s.cart] : []));
   paintFixtures(s.fixtures);
   const v = s.value ?? {};
   board.update({ bv: v.bv, rate: v.rate, upkeep: v.upkeep, hustle: v.hustle, curb: v.curb, pond: s.pond?.unlocked ? v.pond ?? 0 : null, fries: s.fries?.open ? v.fries ?? 0 : null,
@@ -689,7 +692,7 @@ function applySnapshot(s) {
     if (!others.has(p.id)) addMate(p);
     const o = others.get(p.id);
     o.to = { x: p.x, z: p.z, yaw: p.yaw }; o.down = p.down;
-    o.g.visible = (p.online || p.down > 0) && s.cart?.driver !== p.id;   // drivers are drawn in the cart
+    o.g.visible = (p.online || p.down > 0) && !(s.carts ?? [s.cart]).some(c => c?.driver === p.id);   // drivers are drawn in their cart
     setMateGear(o, p.helper ? 1 : p.wand ? 'wand' : p.gear ?? 0);
   }
   for (const id of [...others.keys()]) if (!seen.has(id)) removeMate(id);
@@ -699,25 +702,33 @@ function applySnapshot(s) {
   views?.onSnapshot(s);     // after r2: venues.js has built this venue's parts by now
 }
 
-// The cart from the server. While I drive, my own pose is the truth and the
+// The carts from the server. While I drive one, my own pose is the truth and the
 // server's is only for everyone else; when I climb in, I start from its pose.
-let wasDriving = false;
-const driving = () => !!crew.cart && crew.cart.driver === me.id;
-function applyCart(c) {
-  if (!c) return;
-  if (!cartView) { cartView = buildCart(); Object.assign(cartPose, { x: c.x, z: c.z, yaw: c.yaw, v: 0 }); }
-  setReels(cartView, my.cartReel);
-  const mine = c.driver === me.id;
-  if (mine && !wasDriving) { Object.assign(cartPose, { x: c.x, z: c.z, yaw: c.yaw, v: 0 }); pendingCart.clear(); }
-  if (!mine && wasDriving) {
+let wasCart = -1;                   // the cart I drove last snapshot (-1: on foot)
+const myCartIdx = () => crewCarts().findIndex(c => c.driver === me.id);
+const driving = () => myCartIdx() >= 0;
+const myPose = () => cartViews[myCartIdx()]?.pose ?? cartPose;        // the pose of the cart I drive
+function applyCarts(list) {
+  list.forEach((c, i) => {
+    let v = cartViews[i];
+    if (!v) {
+      v = cartViews[i] = buildCart();
+      v.pose = Object.assign(i ? {} : cartPose, { x: c.x, z: c.z, yaw: c.yaw, v: 0 });
+    }
+    setReels(v, my.cartReel);
+    const d = c.driver && crew.players.find(p => p.id === c.driver);
+    v.driver.visible = !!d;
+    if (d) v.torso.material.color.set(d.color);
+  });
+  const mine = list.findIndex(c => c.driver === me.id);
+  if (mine >= 0 && mine !== wasCart) { const c = list[mine]; Object.assign(cartViews[mine].pose, { x: c.x, z: c.z, yaw: c.yaw, v: 0 }); pendingCart.clear(); }
+  if (mine < 0 && wasCart >= 0) {
     // I got out (or lost the cart): stand on the driver's side, facing where it faces.
-    me.x = cartPose.x - Math.cos(cartPose.yaw) * 1.4; me.z = cartPose.z + Math.sin(cartPose.yaw) * 1.4; me.yaw = cartPose.yaw;
+    const P = cartViews[wasCart]?.pose ?? cartPose;
+    me.x = P.x - Math.cos(P.yaw) * 1.4; me.z = P.z + Math.sin(P.yaw) * 1.4; me.yaw = P.yaw;
     pendingCart.clear();
   }
-  wasDriving = mine;
-  const d = c.driver && crew.players.find(p => p.id === c.driver);
-  cartView.driver.visible = !!d;
-  if (d) cartView.torso.material.color.set(d.color);
+  wasCart = mine;
 }
 
 // ---------------------------------------------------------------- the shop
@@ -767,7 +778,8 @@ function nearestBall(reach = gp.reach) {
 const carrying = () => me.pocket + pending.size;
 const playing = () => link && crew.phase !== 'lobby' && !paused && !menuOpen();
 
-const nearCart = () => crew.cart && !crew.cart.driver && Math.hypot(cartPose.x - me.x, cartPose.z - me.z) < CART.BOARD_REACH;
+// A free cart within reach (the server boards the nearest one).
+const nearCart = () => crewCarts().some((c, i) => !c.driver && cartViews[i] && Math.hypot(cartViews[i].pose.x - me.x, cartViews[i].pose.z - me.z) < CART.BOARD_REACH);
 const canSwing = () => crew.phase === 'shift' && atBay(me) && me.pocket > 0 && !driving();
 
 // Separate buttons, so no action ever has to guess:
@@ -861,19 +873,21 @@ function releaseBucket() { r2?.haulEnd(); }
 function driveCart(dt, px, py, lt, rt) {
   const throttle = Math.max(-1, Math.min(1, (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0) + rt - lt - py));
   const steer = Math.max(-1, Math.min(1, (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0) + px));
-  const vmax = my.cartSpeed * ((crew.cart?.boost ?? 0) > 0 ? CART.BOOST : 1) * cartSpeedAt(cartPose.x, cartPose.z, world());   // x1.3 on the Ping Track
-  stepCart(cartPose, throttle, steer, dt, vmax, world());
-  me.x = cartPose.x; me.z = cartPose.z;
+  const i = myCartIdx(), c = crewCarts()[i], P = cartViews[i]?.pose;
+  if (!c || !P) return;
+  const vmax = my.cartSpeed * ((c.boost ?? 0) > 0 ? CART.BOOST : 1) * cartSpeedAt(P.x, P.z, world());   // x1.3 on the Ping Track
+  stepCart(P, throttle, steer, dt, vmax, world());
+  me.x = P.x; me.z = P.z;
   // The gang reels scoop whatever they roll over.
-  const room = my.cartCap - (crew.cart?.load ?? 0) - pendingCart.size;
+  const room = my.cartCap - (c.load ?? 0) - pendingCart.size;
   let n = 0;
   for (const b of balls.values()) {
     if (n >= 8 || n >= room) break;
-    if (b.hidden || b.y > 0.4 || !underReels(cartPose, b, my.cartReel)) continue;
+    if (b.hidden || b.y > 0.4 || !underReels(P, b, my.cartReel)) continue;
     b.hidden = true; pendingCart.add(b.id); n++;
     link.act({ t: 'pickup', ball: b.id, cart: true });
   }
-  if (engine) engine.set(Math.min(1, Math.abs(cartPose.v) / vmax));
+  if (engine) engine.set(Math.min(1, Math.abs(P.v) / vmax));
 }
 function grab(b) {
   b.hidden = true; pending.add(b.id);
@@ -1166,13 +1180,14 @@ function hud() {
   const btn = pad ? GLYPH.A : 'Click';          // use: pick up, swing
   const ibtn = pad ? GLYPH.X : 'E';             // the bucket stand
   const cbtn = pad ? GLYPH.Y : 'F';             // the cart
-  if (driving()) {
-    const load = (crew.cart?.load ?? 0) + pendingCart.size;
-    $('pocket').textContent = `Cart ${load} / ${my.cartCap}${(crew.cart?.boost ?? 0) > 0 ? `  TURBO ${Math.ceil(crew.cart.boost)}s` : ''}`;
+  const mc = crewCarts()[myCartIdx()];          // the cart I drive, if any
+  if (mc) {
+    const load = (mc.load ?? 0) + pendingCart.size;
+    $('pocket').textContent = `Cart ${load} / ${my.cartCap}${(mc.boost ?? 0) > 0 ? `  TURBO ${Math.ceil(mc.boost)}s` : ''}`;
   } else $('pocket').textContent = cap <= 8 ? '●'.repeat(Math.min(n, cap)) + '○'.repeat(Math.max(0, cap - n)) : `${n} / ${cap}`;
   const left = Math.max(0, crew.shiftSecs - crew.shiftT);
   $('clock').textContent = crew.phase === 'shift' ? `Day ${crew.day} · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : `Day ${crew.day}`;
-  const load = (crew.cart?.load ?? 0) + pendingCart.size;
+  const load = (mc?.load ?? 0) + pendingCart.size;
   $('prompt').textContent = !playing() ? ''
     : me.down > 0 ? 'Seeing stars…'
     : me.one ? 'Ball No. 1: carry it to the stand. Everyone to the stand.'
@@ -1188,7 +1203,7 @@ function hud() {
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
     : me.wand ? `Hold ${btn} to spray: sign · mats · stand · cart · a crewmate · look down to rinse your boots · ${ibtn} put the wand back`
-    : nearStation() ? `${ibtn}  Grab the pressure washer${(crew.cart?.mud ?? 0) > 0.05 ? ' (the cart is muddy)' : ''}`
+    : nearStation() ? `${ibtn}  Grab the pressure washer${crewCarts().some(c => (c.mud ?? 0) > 0.05) ? crewCarts().length > 1 ? ' (a cart is muddy)' : ' (the cart is muddy)' : ''}`
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up${nearCart() ? `   ·   ${cbtn}  Drive the cart` : ''}`
     : nearCart() ? `${cbtn}  Drive the cart`
     : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `${pad ? 'Pull the right stick back, push it through' : 'Drag down, flick up'} to swing · aim at the cart (${me.pocket} to hit)` : 'Bring balls to hit them')
@@ -1230,7 +1245,7 @@ function updateSpray(dt, now) {
       if (along < 0 || along > WASH.RANGE + r) return;
       if (sprayRay.ray.distanceToPoint(cartCentre) < r && along < bestD) { bestD = along; best = id; }
     };
-    if (cartView && crew.cart) consider('cart', cartPose.x, 1.0, cartPose.z, 1.5);
+    crewCarts().forEach((c, i) => { const P = cartViews[i]?.pose; if (P) consider(i ? 'cart' + i : 'cart', P.x, 1.0, P.z, 1.5); });   // 'cart' is the first
     for (const [id, o] of others) if (!o.helper && o.g.visible) consider('p:' + id, o.g.position.x, 1.0, o.g.position.z, 0.6);   // Hose a Friend
     for (const fx of FIXTURES) consider(fx.id, fx.x, fx.id === 'sign' ? 2.0 : fx.id === 'stand' ? 0.6 : 0.1, fx.z, fx.r);
     if (me.pitch < -1.0 && (me.grime ?? 0) > 0) best = 'self';   // looking down at your boots: the server rinses a layer every 1.5 s
@@ -1288,7 +1303,7 @@ function frame(now) {
     me.yaw += ((keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)) * 2.2 * dt;
     me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch + ((keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0)) * 1.5 * dt));
   }
-  if (link && me.placed) link.move(me.x, me.z, me.yaw, drivingNow ? cartPose : null);
+  if (link && me.placed) link.move(me.x, me.z, me.yaw, drivingNow ? myPose() : null);
   if (crew.phase === 'shift') crew.shiftT += dt;        // smooth between server ticks
 
   for (const b of balls.values()) { if (b.drifting) stepDrift(b, dt); else advanceBall(b, dt, world()); }
@@ -1303,29 +1318,33 @@ function frame(now) {
   if (!sprayHiss && me.wand) sprayHiss = SFX.sprayLoop?.() ?? null;
   updateSpray(dt, now);
 
-  // The cart: my own pose while I drive, otherwise eased toward the server's.
-  if (cartView && crew.cart) {
-    if (!drivingNow) {
-      const c = crew.cart, kc = 1 - Math.exp(-dt * 10);
-      cartPose.x += (c.x - cartPose.x) * kc; cartPose.z += (c.z - cartPose.z) * kc;
-      let dy = c.yaw - cartPose.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-      cartPose.yaw += dy * kc;
+  // The carts: my own pose for the one I drive, the others eased toward the server's.
+  const myIdx = myCartIdx();
+  crewCarts().forEach((c, i) => {
+    const v = cartViews[i];
+    if (!v) return;
+    const P = v.pose, mine = i === myIdx;
+    if (!mine) {
+      const kc = 1 - Math.exp(-dt * 10);
+      P.x += (c.x - P.x) * kc; P.z += (c.z - P.z) * kc;
+      let dy = c.yaw - P.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      P.yaw += dy * kc;
     }
-    cartView.g.position.set(cartPose.x, 0, cartPose.z);
-    cartView.g.rotation.y = cartPose.yaw;
-    const spin = drivingNow ? cartPose.v : 0;
-    for (const r of cartView.reels.children) r.rotation.x -= spin * dt / 0.26;
-    cartView.fill.scale.y = Math.max(0.001, Math.min(1, ((crew.cart.load ?? 0) + (drivingNow ? pendingCart.size : 0)) / Math.max(1, my.cartCap)) * 0.45);
-    cartView.fill.position.y = 0.8 + cartView.fill.scale.y / 2;
-    const mud = crew.cart.mud ?? 0;
-    for (const m of cartView.splotches) m.visible = mud > m.userData.at;
-    cartView.body.material.color.setRGB(0.95 - 0.45 * mud, 0.94 - 0.55 * mud, 0.9 - 0.65 * mud);
+    v.g.position.set(P.x, 0, P.z);
+    v.g.rotation.y = P.yaw;
+    const spin = mine ? P.v : 0;
+    for (const r of v.reels.children) r.rotation.x -= spin * dt / 0.26;
+    v.fill.scale.y = Math.max(0.001, Math.min(1, ((c.load ?? 0) + (mine ? pendingCart.size : 0)) / Math.max(1, my.cartCap)) * 0.45);
+    v.fill.position.y = 0.8 + v.fill.scale.y / 2;
+    const mud = c.mud ?? 0;
+    for (const m of v.splotches) m.visible = mud > m.userData.at;
+    v.body.material.color.setRGB(0.95 - 0.45 * mud, 0.94 - 0.55 * mud, 0.9 - 0.65 * mud);
     // A ping lights the bullseyes up, then they fade back.
-    cartView.flash = Math.max(0, cartView.flash - dt * 1.5);
-    const glow = cartView.flash > 0 && (cartView.flash * 12) % 2 > 1;
-    for (const t of cartView.targets) for (const m of t.userData.mats) m.color.set(glow ? 0xfff27a : 0xd9382b);
-    if (!engine && drivingNow) engine = SFX.cartEngine();
-  }
+    v.flash = Math.max(0, v.flash - dt * 1.5);
+    const glow = v.flash > 0 && (v.flash * 12) % 2 > 1;
+    for (const t of v.targets) for (const m of t.userData.mats) m.color.set(glow ? 0xfff27a : 0xd9382b);
+  });
+  if (!engine && drivingNow) engine = SFX.cartEngine();
 
   const k = 1 - Math.exp(-dt * 12);
   for (const o of others.values()) {
@@ -1344,10 +1363,10 @@ function frame(now) {
   sky.setTime(crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);
   sky.follow(skyAt.set(me.x, 0, me.z));
   if (drivingNow) {
-    // Chase cam: behind and above the cart, looking a little ahead of it.
-    const fx = -Math.sin(cartPose.yaw), fz = -Math.cos(cartPose.yaw);
-    camera.position.set(cartPose.x - fx * 7, 3.6, cartPose.z - fz * 7);
-    camera.lookAt(cartPose.x + fx * 6, 0.8, cartPose.z + fz * 6);
+    // Chase cam: behind and above my cart, looking a little ahead of it.
+    const P = myPose(), fx = -Math.sin(P.yaw), fz = -Math.cos(P.yaw);
+    camera.position.set(P.x - fx * 7, 3.6, P.z - fz * 7);
+    camera.lookAt(P.x + fx * 6, 0.8, P.z + fz * 6);
   } else {
     const under = wetPond(me) && !drivingNow;
     camera.position.set(me.x, under ? eyeY(me.x, me.z) : EYE - fall * (EYE - 0.25), me.z);   // eyeY follows the bed down into the Deep End
@@ -1406,7 +1425,7 @@ r2 = setupRound2({
 });
 // Round 4: the venue views (views/index.js). Everything a view may touch comes in through this ctx.
 views = createViews({
-  scene, camera, me, board, SFX, keys, terrain, sky, rightNet, cartPose, world, nameOf, toast, feed, showMemo,
+  scene, camera, me, board, SFX, keys, terrain, sky, rightNet, rightPoles, cartPose, cartViews, world, nameOf, toast, feed, showMemo,
   venues: r2.venueParts,     // venues.js parts: the deck, both stands and crowds (crowdBob), the jumbotron, the Lift car (carY)
   crew: () => crew, balls: () => balls, pad: () => pad, act: msg => link?.act(msg),
   playing: () => !!playing(), driving: () => !!driving(),
@@ -1416,4 +1435,4 @@ SET.set({});   // re-apply saved settings now the PA exists
 requestAnimationFrame(frame);
 
 // Dev hook: /?debug exposes live state for poking at from the console.
-if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats };
+if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats };

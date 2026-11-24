@@ -67,10 +67,11 @@ export function mowerPos(s, t) {
 // Advance one tick. Mutates the mower state only; the caller applies the results:
 //   raked:   [{id, x, z}] balls to move (set rest, zero velocity); emit {t:'rake', ids, z: lane+RAKE_OFFSET}
 //   knocked: [ids] -> knockDown(p, 'mower'), stats.runOver++
-//   honk:    true on the tick the cart first blocks it -> events.push({t:'honk'})
+//   honk:    true on the tick a cart first blocks it -> events.push({t:'honk'})
 //   phaseChange: 'drive' | 'done' | null (events.push({t:'mower', phase}))
-// players: iterable of {id, x, z, down?, driving?} (Rats and helpers). cart: {x, z} or null.
-export function stepMower(s, dt, { balls, players, cart, rng = Math.random } = {}) {
+// players: iterable of {id, x, z, down?, driving?} (Rats and helpers). carts: [{x, z}] (the fleet: any of them
+// blocks it), or the legacy cart: {x, z} or null.
+export function stepMower(s, dt, { balls, players, cart, carts = cart ? [cart] : [], rng = Math.random } = {}) {
   const out = { raked: [], knocked: [], honk: false, phaseChange: null };
   if (!s || s.phase === 'done') return out;
   if (s.phase === 'warn') {
@@ -82,7 +83,7 @@ export function stepMower(s, dt, { balls, players, cart, rng = Math.random } = {
   // drive
   s.t += dt;
   const was = s.blocked;
-  s.blocked = !!cart && Math.hypot(cart.x - s.x, cart.z - s.z) < MOWER.CART_STOP && cart.x >= s.x - 0.5;
+  s.blocked = carts.some(c => c && Math.hypot(c.x - s.x, c.z - s.z) < MOWER.CART_STOP && c.x >= s.x - 0.5);
   if (s.blocked) { if (!was) out.honk = true; return out; }
   s.x = Math.min(MOWER.X1, s.x + MOWER.SPEED * dt);
   const rz = s.lane + MOWER.RAKE_OFFSET;

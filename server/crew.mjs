@@ -12,7 +12,7 @@ import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall
   SHOP_BY_ID, nextPrice, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
   gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT, FIXTURES, FIXTURE_BY_ID, KIND_W, BALLS_OUTSTANDING, payFor,
   upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed, pickKind,
-  VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor } from '../web/js/sim.js';
+  VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor, cartGearOf } from '../web/js/sim.js';
 import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor, cartSpeedAt } from '../web/js/map.js';
 import { VenueHooks, MODULES } from './venues/index.mjs';
 import { newMat, openShift as openMats, stepMat, matReady, shoot, matWire } from '../web/js/customers.js';
@@ -47,6 +47,7 @@ export function cleanName(s) {
   return [...s].slice(0, NAME_MAX).join('').trim();
 }
 
+const cartWire = c => ({ i: c.i, x: +c.x.toFixed(2), z: +c.z.toFixed(2), yaw: +c.yaw.toFixed(3), driver: c.driver, load: c.load, boost: +c.boostT.toFixed(1), mud: +c.mud.toFixed(3) });
 const freshStats = () => ({ picked: 0, deposited: 0, cash: 0, knockdowns: 0, helped: 0, carted: 0, swings: 0, pings: 0, runOver: 0, washed: 0,
   scrubbed: 0, unwashed: 0, lostPremium: 0 });
 const freshShift = () => ({ banked: 0, cash: 0, knockdowns: 0, dived: 0, cooked: 0, scrubbed: 0, hosed: 0, pings: 0, mowed: 0 });
@@ -129,7 +130,7 @@ export class Crew {
     this.paShift = 0; this.paAt = 0;
     this.perks = perks(this.up);
     this.helpers = [];
-    this.cart = null;
+    this.carts = [];                 // the fleet (council round 4): [0] is "the cart", [1] the Stadium's second
     this.mult = 1;                   // Hustle (Hit the Cart), for the rest of the shift
     this.applyUpgrades();
     this.phase = 'lobby';            // lobby -> shift -> report -> shift ...
@@ -188,7 +189,12 @@ export class Crew {
   onlineCount() { let n = 0; for (const p of this.players.values()) if (p.online > 0) n++; return n; }
   online() { return [...this.players.values()].filter(p => p.online > 0); }
   world() { return { venue: this.venue }; }   // what the map's rules depend on (Dimple Creek: dry or running)
-  driving(p) { return !!this.cart && this.cart.driver === p.id; }
+  driving(p) { return !!this.cartOf(p); }
+  cartOf(p) { return this.carts.find(c => c.driver === p.id) ?? null; }   // the cart this Rat drives, if any
+  // The legacy alias (one release): "the cart" is the first one. Venue modules and old code read it.
+  get cart() { return this.carts[0] ?? null; }
+  set cart(c) { if (c) { c.i ??= 0; this.carts[0] = c; } else this.carts = []; }
+  muddiestCart() { return this.carts.reduce((m, c) => (!m || c.mud > m.mud ? c : m), null); }
   working() { return this.phase === 'shift' && !this.paused(); }   // the shift clock is running
   pondOpen() { return this.venue >= POND.FROM_VENUE; }
 
@@ -226,7 +232,7 @@ export class Crew {
   // pays for its cleanliness, a Rat for theirs (grime), helpers never.
   // With a ball washer, the muddy price is paid now and the washer's share waits
   // in the hopper as credit, paid out as balls are washed (council round 2, §4.4).
-  bank(n, by, kind = null, w = n, gearOv = null) {
+  bank(n, by, kind = null, w = n, gearOv = null, extra = null) {
     if (n <= 0) return;
     const v = this.valueNow();
     const who = kind == null ? this.players.get(by) : null;
@@ -239,7 +245,7 @@ export class Crew {
     if (kind === 'helper') this.stats.helped += n;
     if (who) { who.shift.banked += n; who.shift.cash = cents(who.shift.cash + muddy); }
     this.countDown(n);
-    this.events.push({ t: 'cash', by, n, cash: muddy, credit, kind, per: cents(muddy / Math.max(1, n)), clean: who ? who.grime === 0 : undefined });
+    this.events.push({ t: 'cash', by, n, cash: muddy, credit, kind, per: cents(muddy / Math.max(1, n)), clean: who ? who.grime === 0 : undefined, ...extra });
   }
 
   // Cash in (a bar tab) or out (a fine) that isn't banked balls: never takes the crew below $0. Returns the change.
@@ -377,14 +383,16 @@ export class Crew {
     this.dirty = true;
     this.events.push({ t: 'buy', by: p.id, id, level, price, personal: !!item.personal });
     if (id === 'cart' && level === 1) this.pa('cart', { once: true });
+    if (id === 'cart' && level === 3) this.pa('fleet', { once: true });
     return true;
   }
 
   applyUpgrades() {
     this.perks = perks(this.up);
     this.hireHelpers();
-    if (this.perks.cart && !this.cart) {
-      this.cart = { ...CART.PARK, v: 0, driver: null, load: 0, loadW: 0, boostT: 0, movedAt: this.now(), mud: 0 };
+    while (this.carts.length < (this.perks.carts ?? 0)) {
+      const i = this.carts.length;
+      this.carts.push({ i, ...(i ? CART.PARK2 : CART.PARK), v: 0, driver: null, load: 0, loadW: 0, boostT: 0, movedAt: this.now(), mud: 0 });
     }
   }
 
@@ -442,18 +450,21 @@ export class Crew {
 
   // ---- the cart --------------------------------------------------------------
 
+  // Climb into the nearest free cart within reach.
   board(p) {
-    const c = this.cart;
-    if (!c || c.driver || p.down > 0 || p.one || Math.hypot(c.x - p.x, c.z - p.z) > CART.BOARD_REACH) return false;
+    if (p.down > 0 || p.one || this.driving(p)) return false;
+    let c = null, best = CART.BOARD_REACH;
+    for (const o of this.carts) { const d = Math.hypot(o.x - p.x, o.z - p.z); if (!o.driver && d <= best) { c = o; best = d; } }
+    if (!c) return false;
     c.driver = p.id; c.movedAt = this.now(); c.v = 0;
     p.x = c.x; p.z = c.z;
-    this.events.push({ t: 'board', by: p.id });
+    this.events.push({ t: 'board', by: p.id, cart: c.i });
     return true;
   }
 
   leaveCart(p) {
-    const c = this.cart;
-    if (!c || c.driver !== p.id) return false;
+    const c = this.cartOf(p);
+    if (!c) return false;
     c.driver = null; c.v = 0;
     // Step out on the driver's side.
     p.x = c.x - Math.cos(c.yaw) * 1.4; p.z = c.z + Math.sin(c.yaw) * 1.4;
@@ -465,8 +476,8 @@ export class Crew {
 
   // The driver reports where the cart is; the server keeps it plausible.
   driveTo(p, pose, now) {
-    const c = this.cart;
-    if (!pose || !Number.isFinite(pose.x) || !Number.isFinite(pose.z)) return;
+    const c = this.cartOf(p);
+    if (!c || !pose || !Number.isFinite(pose.x) || !Number.isFinite(pose.z)) return;
     const dt = Math.min(1, Math.max(0.05, (now - c.movedAt) / 1000));
     const vmax = this.perks.cartSpeed * (c.boostT > 0 ? CART.BOOST : 1) * cartSpeedAt(c.x, c.z, this.world());   // x1.3 on the Ping Track
     const max = vmax * 1.3 * dt + 0.6;
@@ -500,8 +511,8 @@ export class Crew {
   loadOf(b) { return b.kind === 'splitter' ? 3 : 1; }
 
   cartPickup(p, id) {
-    const c = this.cart, b = this.balls.get(id);
-    if (!b || !c || c.driver !== p.id || c.load >= this.perks.cartCap || this.phase === 'lobby') return false;
+    const c = this.cartOf(p), b = this.balls.get(id);
+    if (!b || !c || c.load >= this.perks.cartCap || this.phase === 'lobby') return false;
     if (b.y > 0.4 || b.kind === 'one' || b.drifting || b.sunk) return false;
     const rx = c.x - Math.sin(c.yaw) * CART.REEL_AHEAD, rz = c.z - Math.cos(c.yaw) * CART.REEL_AHEAD;
     if (Math.hypot(b.x - rx, b.z - rz) > this.perks.cartReel / 2 + 1.5) return false;   // slack for lag
@@ -510,6 +521,12 @@ export class Crew {
     c.load += k; c.loadW = (c.loadW ?? 0) + (KIND_W[b.kind] ?? 1) * (k === 3 ? 3 : 1); this.stats.picked += k; this.stats.carted += k; this.dirty = true;
     this.events.push({ t: 'gone', id, by: p.id });
     return true;
+  }
+
+  // A cart's hopper banks at its own gear (its own mud), then empties.
+  unloadCart(c) {
+    if (c.load > 0) this.bank(c.load, c.driver ?? 'cart', 'cart', c.loadW ?? c.load, cartGearOf(c), { cart: c.i });
+    c.load = 0; c.loadW = 0;
   }
 
   // ---- power washing ---------------------------------------------------------
@@ -522,7 +539,8 @@ export class Crew {
     return true;
   }
 
-  // target: 'cart' (default), a fixture id (the sign, the stand, a mat), or 'p:<id>' (Hose a Friend).
+  // target: 'cart' (default: the first cart), 'cart1' (the second), a fixture id (the sign, the stand, a mat),
+  // or 'p:<id>' (Hose a Friend).
   wash(p, secs, target = 'cart') {
     const now = this.now();
     if (!p.wand || p.down > 0 || !Number.isFinite(secs) || secs <= 0) return false;
@@ -549,18 +567,19 @@ export class Crew {
       }
       return true;
     }
-    const isCart = target === 'cart' || target == null;
-    const where = isCart ? this.cart : Object.hasOwn(FIXTURE_BY_ID, target) ? FIXTURE_BY_ID[target] : null;
+    const isCart = target === 'cart' || target == null || /^cart\d$/.test(target);
+    const cart = isCart ? this.carts[target === 'cart' || target == null ? 0 : +target.slice(4)] : null;
+    const where = isCart ? cart : Object.hasOwn(FIXTURE_BY_ID, target) ? FIXTURE_BY_ID[target] : null;
     if (!where || Math.hypot(where.x - p.x, where.z - p.z) > reach + (where.r ?? 0)) return false;
     p.washAt = now;
     if (s <= 0) return false;
     const rate = WASH.RATE * (isCart ? 1 : 1.6) * (this.perks.turbo ? 2 : 1);   // fixtures are smaller than a cart
-    const before = isCart ? this.cart.mud : this.fixtures[target];
+    const before = isCart ? cart.mud : this.fixtures[target];
     const after = Math.max(0, before - rate * s);
     const done = before > 0.05 && after <= 0.05;
-    if (isCart) this.cart.mud = done ? 0 : after; else this.fixtures[target] = done ? 0 : after;
+    if (isCart) cart.mud = done ? 0 : after; else this.fixtures[target] = done ? 0 : after;
     this.stats.washed = Math.round((this.stats.washed + s) * 10) / 10;
-    if (done) this.events.push({ t: 'spotless', by: p.id, target: isCart ? 'cart' : target });
+    if (done) this.events.push({ t: 'spotless', by: p.id, target: isCart ? (cart.i ? 'cart' + cart.i : 'cart') : target });
     this.dirty = true;
     return true;
   }
@@ -606,12 +625,11 @@ export class Crew {
     return true;
   }
 
-  ping(b) {
-    const c = this.cart;
+  ping(b, c = this.cart) {
     b.pinged = true;
     b.vx *= -0.3; b.vz *= -0.3; b.vy = Math.abs(b.vy) * 0.4;    // it rattles off the cage
     if (!b.by || !c.driver || this.phase !== 'shift') {          // a customer's ball, or nobody driving: just noise
-      this.events.push({ t: 'ping', by: b.by ?? null });
+      this.events.push({ t: 'ping', by: b.by ?? null, cart: c.i });
       return;
     }
     this.stats.pings++; this.dirty = true;
@@ -632,7 +650,7 @@ export class Crew {
       if (!this.jackpotSaid) { this.jackpotSaid = this.pa('jackpot', { chance: 0.25 }); }
     } else if (prize === 'boost') c.boostT = CART.BOOST_SECS;
     else this.mult = Math.min(CART.MAX_MULT, this.mult + CART.MULT_STEP);
-    this.events.push({ t: 'ping', by: b.by, prize, n, mult: this.mult });
+    this.events.push({ t: 'ping', by: b.by, prize, n, mult: this.mult, cart: c.i });
     this.mods.call('ping', b, { prize, n, cart: c });
   }
 
@@ -717,7 +735,7 @@ export class Crew {
     let slot = 0;
     for (const p of this.players.values()) {
       p.shift = freshShift(); p.grime = 0;
-      if (this.cart?.driver === p.id) this.cart.driver = null;
+      const own = this.cartOf(p); if (own) own.driver = null;
       p.diving = false; p.wand = false;
       p.x = 18 + (slot++ % 6) * 2.4; p.z = 4; p.yaw = 0;
     }
@@ -728,7 +746,7 @@ export class Crew {
     else if (this.venue === 0) { const q = quotaQ(this.day, this.ceiling()); this.quota = q == null ? null : { q }; }
     else this.quota = { q: (this.ceiling() - 1) * venueQuotaF(this.venueDay) };
     this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaTarget() : null, text: memoText(this.day, this.quota && this.quotaTarget(), this.endless, this.rng) });
-    if (this.cart) { this.cart.boostT = 0; if (!this.cart.driver) Object.assign(this.cart, CART.PARK, { v: 0 }); }
+    for (const c of this.carts) { c.boostT = 0; if (!c.driver) Object.assign(c, c.i ? CART.PARK2 : CART.PARK, { v: 0 }); }
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
     for (const e of openMats(this.mats, { now: this.custT, rng: this.rng, venue: this.venue, nOpen: activeMats(this.onlineCount()), nextCust: () => ++this.nextCust, mud: i => this.fixtures['mat' + i] ?? 0 })) {
       if (e.t === 'wait') this.events.push({ t: 'custwait', mat: e.mat });
@@ -1005,7 +1023,8 @@ export class Crew {
     let stop = stops[g.stop];
     if (stop?.id === 'cart' && !this.cart) { g.stop++; stop = stops[g.stop]; }
     if (!stop) return;
-    const tx = stop.id === 'cart' ? this.cart.x + 3 : stop.x, tz = stop.id === 'cart' ? this.cart.z + 3 : stop.z;
+    if (stop.id === 'cart' && !g.cart) g.cart = this.muddiestCart();      // Gary checks the muddier cart (the fleet)
+    const tx = stop.id === 'cart' ? g.cart.x + 3 : stop.x, tz = stop.id === 'cart' ? g.cart.z + 3 : stop.z;
     const dx = tx - g.x, dz = tz - g.z, d = Math.hypot(dx, dz), step = GARY.SPEED * dt;
     if (d > 0.3) {
       const k = Math.min(1, step / d);
@@ -1049,7 +1068,7 @@ export class Crew {
     }
     if (this.mower.phase === 'done') return;
     const people = [...this.players.values(), ...this.helpers].map(o => ({ id: o.id, x: o.x, z: o.z, down: o.down, driving: this.driving(o) }));
-    const r = stepMower(this.mower, dt, { balls: this.balls, players: people, cart: this.cart, rng: this.rng });
+    const r = stepMower(this.mower, dt, { balls: this.balls, players: people, carts: this.carts, rng: this.rng });
     const ids = [];
     for (const m of r.raked) {
       const b = this.balls.get(m.id);
@@ -1074,7 +1093,7 @@ export class Crew {
     const f = this.fixtures;
     if (id === 'sign') return f.sign <= GARY.CLEAN;
     if (id === 'stand') return f.stand <= GARY.CLEAN;
-    if (id === 'cart') return !this.cart || this.cart.mud <= GARY.CLEAN;
+    if (id === 'cart') return !this.cart || this.muddiestCart().mud <= GARY.CLEAN;
     if (id === 'kitchen') return !!this.gary?.fed || this.fries >= FRIES.MAX * 0.5;   // Gary had a hot dog
     if (id === 'mats') {
       const nAct = activeMats(this.onlineCount());   // only the mats in play: solo never washes mats nobody uses
@@ -1205,13 +1224,13 @@ export class Crew {
       this.washBatch.clear();
     }
 
-    const c = this.cart;
     for (const b of this.balls.values()) {
       if (b.rest) continue;
       const x0 = b.x, y0 = b.y, z0 = b.z;
       const stopped = advanceBall(b, dt, this.world());
       if (stopped === 'drift') { this.events.push(driftEvent(b)); continue; }   // into the running creek
-      if (c && b.kind !== 'one' && !b.pinged && ballHitsCart(x0, y0, z0, b, c)) { this.ping(b); continue; }
+      const hit = b.kind !== 'one' && !b.pinged ? this.carts.find(c => ballHitsCart(x0, y0, z0, b, c)) : null;
+      if (hit) { this.ping(b, hit); continue; }
       // Gary's cart rings too, but it isn't a PING. Gary has noted your enthusiasm.
       if (this.gary?.phase === 'drive' && b.kind !== 'one' && !b.pinged && ballHitsCart(x0, y0, z0, b, this.gary)) {
         b.pinged = true;
@@ -1237,15 +1256,12 @@ export class Crew {
       else if (end === 'rest') { this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z }); this.mods.call('onRest', b); }
     }
 
-    if (c) {
+    for (const c of this.carts) {
       if (c.boostT > 0) c.boostT = Math.max(0, c.boostT - dt);
       const d = c.driver && this.players.get(c.driver);
       if (c.driver && (!d || (d.online === 0 && now - d.seenAt > DRIVER_GRACE_MS))) { c.driver = null; c.v = 0; }
       // Pull up to the stand and the hopper empties itself.
-      if (c.load > 0 && Math.hypot(c.x - SIM.STAND.x, c.z - SIM.STAND.z) < SIM.STAND_REACH + 2.5) {
-        this.bank(c.load, c.driver ?? 'cart', 'cart', c.loadW ?? c.load);
-        c.load = 0; c.loadW = 0;
-      }
+      if (c.load > 0 && Math.hypot(c.x - SIM.STAND.x, c.z - SIM.STAND.z) < SIM.STAND_REACH + 2.5) this.unloadCart(c);
     }
 
     for (const p of this.players.values()) {
@@ -1279,7 +1295,7 @@ export class Crew {
   }
 
   removePlayer(p) {
-    if (this.driving(p)) { this.cart.driver = null; this.cart.v = 0; }
+    const own = this.cartOf(p); if (own) { own.driver = null; own.v = 0; }
     for (const s of spill(p.x, p.z, p.pocket, this.rng)) this.addBall(s);
     if (p.one) { const b = this.addBall({ x: p.x, y: SIM.BALL_R, z: p.z, vx: 0, vy: 0, vz: 0, kind: 'one' }); if (b) b.rest = true; }
     this.players.delete(p.id);
@@ -1294,7 +1310,7 @@ export class Crew {
     // The night crew takes the pond's line at half pay, and the tube delivers what is still in it.
     if (this.line.n > 0) { const nc = nightCrew(this.line); this.line = newLine(); this.bank(nc.n, 'night', 'helper', nc.w * nc.mult); }
     for (const e of tubeArrivals(this.tube, Infinity)) this.bank(e.n, e.by, null, e.w, e.factor);
-    if (this.cart) { this.bank(this.cart.load, this.cart.driver ?? 'cart', 'cart', this.cart.loadW ?? this.cart.load); this.cart.load = 0; this.cart.loadW = 0; this.cart.boostT = 0; }
+    for (const c of this.carts) { this.unloadCart(c); c.boostT = 0; }
     // The ball washer at the bell: the night crew washes half of what's left at half pay; the rest goes dirty.
     if (this.hopper.n > 0) {
       const half = Math.floor(this.hopper.n / 2), payHalf = cents(this.hopper.credit * 0.5 * 0.5);
@@ -1348,7 +1364,7 @@ export class Crew {
   // ---- what goes over the wire ----------------------------------------------
 
   snapshot() {
-    const c = this.cart, now = this.now();
+    const now = this.now();
     const cr = this.cranking ?? {};
     const rateOf = s => (cr[s] && now - cr[s].at < 400 ? +cr[s].rate.toFixed(2) : 0);
     return {
@@ -1378,7 +1394,8 @@ export class Crew {
       fries: { stock: this.fries, max: FRIES.MAX, open: !!this.perks.shed },
       fixtures: Object.fromEntries(Object.entries(this.fixtures).map(([k, v]) => [k, +v.toFixed(2)])),
       helpers: this.helpers.map(h => ({ id: h.id, name: h.name, x: +h.x.toFixed(2), z: +h.z.toFixed(2), yaw: +h.yaw.toFixed(3), pocket: h.pocket, down: +h.down.toFixed(2) })),
-      cart: c && { x: +c.x.toFixed(2), z: +c.z.toFixed(2), yaw: +c.yaw.toFixed(3), driver: c.driver, load: c.load, boost: +c.boostT.toFixed(1), mud: +c.mud.toFixed(3) },
+      carts: this.carts.map(cartWire),
+      cart: this.cart && cartWire(this.cart),   // the legacy alias (one release): the first cart
       up: this.up,
       mods: this.mods.snapshot(),      // { [module id]: its snapshot } (round 4 venue modules)
     };

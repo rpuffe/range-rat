@@ -96,12 +96,14 @@ export default {
     const stand = ctx.venues?.stands?.right ?? null;
     const net = ctx.rightNet ?? null;
     const net0 = net ? net.position.x : null;
+    const poles = ctx.rightPoles ?? null;                      // scenery's right-side poles (one InstancedMesh)
 
     return {
       show(on) {
         root.visible = on;
         if (stand) stand.visible = !on;                          // "relocated to the County Fair"
         if (net) net.position.x = on ? Y.NET_X : net0;           // the right net comes down, and goes up at 96.5
+        if (poles) poles.position.x = on ? Y.NET_X - MAP.NETS.side : 0;   // and its poles go with it
       },
       onSnapshot(s, mine) {
         const list = mine?.drones ?? [];

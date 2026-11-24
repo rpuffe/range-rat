@@ -485,3 +485,20 @@ Built to council-round4.md §3.4 (the full EVA, not the "Orbital lite" fallback)
 - **PA.** `eva`, once, on the first ride: "A Range Rat has left the atmosphere. Corporate will hold their locker."
 - **Known limits.** Other Rats' bodies stay at ground level (the walker is drawn at `y = 0` by `main.js`) while someone floats; only the car is
   seen rising. The car has one height, so two riders at different stages share the highest. Not seen yet in a real four-player playtest.
+
+## The fleet (round 4, build item 10): the second cart
+
+- **Buying it.** The `cart` row's tier 3, *A second cart*: `minVenue: 3`, $150,000 base ($330k at 4P). It has the wide reels (cap 600). The
+  first cart keeps (31, 10); the second parks at `CART.PARK2` (35, 10) and returns there each morning. The `fleet` PA line plays once on purchase.
+- **Server.** `crew.cart` became `crew.carts[]` (`perks.carts`: 0, 1, 1, 2 by tier). `crew.cart` stays as an alias for one release: a getter
+  for `carts[0]` (and a setter, for old tests), so venue modules and old code keep working. Each cart has its own driver, reels, hopper, mud,
+  boost and pings: `board` takes the nearest free cart within reach, `cartOf(p)` is the one a Rat drives, a ball rings whichever cage it passes
+  through (the `ping` event carries `cart: i`), and each hopper auto-unloads at the stand and banks at its own Gear (`cartGearOf`, the `cash`
+  event carries `cart: i`). The Board's `cartGear` still reads the first cart.
+- **Chores.** Gary's cart stop checks the muddier cart. MOW-E stops and honks for any cart (`stepMower`'s `carts`). The wand's target `'cart'`
+  is still the first cart; `'cart1'` is the second (and the `spotless` event says which).
+- **The Stadium.** Laps are read off every driven cart (`st.lapBy[i]`; `st.lap` is the first cart's), so two drivers can race the Track.
+- **Wire and save.** The snapshot carries `carts: [...]` plus the legacy `cart` (`carts[0]`). No save field: the row's tier is the fleet, so a
+  v3 save with one cart loads unchanged.
+- **Client.** `cartViews[]` (mesh, reels, mud, flash, and its own drawn `pose`; `cartPose` is still the first one's). You drive whichever cart
+  you boarded; the others ease to the server.

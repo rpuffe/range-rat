@@ -29,7 +29,7 @@
 //
 // ctx (built in main.js): { scene, camera, me, crew(), balls(), act(msg), toast(text, secs), feed(text),
 //   showMemo(text, target, secs), board, SFX, nameOf(id), pad(), keys, world(), playing(), driving(),
-//   cartPose, terrain, sky, rightNet, venues (venues.js parts: deck, stands, crowd, crowdBob, jumbo, car, carY) }.
+//   cartPose, cartViews, terrain, sky, rightNet, rightPoles, venues (venues.js parts: deck, stands, crowd, crowdBob, jumbo, car, carY) }.
 // Full contract: design/game-design.md, "Round 4 venue seam".
 
 import { createViews as run } from './registry.js';

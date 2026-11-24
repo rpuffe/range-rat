@@ -36,10 +36,12 @@ export const SIM = {
   SWING_COOLDOWN: 0.8, // s between a player's own swings at a crew bay
 };
 
-// The picker cart. One per crew, shared: whoever climbs in drives. Its cage
+// The picker cart. Shared by the crew: whoever climbs in drives. Its cage
 // keeps the driver safe, and a crew ball that hits the cage pays out (Hit the Cart).
+// From the Stadium the row's tier 3 parks a second one beside it (the fleet, council round 4).
 export const CART = {
   PARK: { x: 31, z: 10, yaw: Math.PI / 2 },   // where it lives (and starts each morning)
+  PARK2: { x: 35, z: 10, yaw: Math.PI / 2 },  // the second cart's spot (the fleet)
   BOARD_REACH: 3,       // m, how close you must be to climb in
   REEL_AHEAD: 1.9,      // m, the gang reels' centre, ahead of the cart's middle
   REEL_DEPTH: 0.7,      // m, front to back of the reels
@@ -205,6 +207,7 @@ export const SHOP = [
     { name: 'No cart', desc: 'Everything on foot.' },
     { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 300, unloads itself at the stand, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
     { name: 'Wide gang reels', cost: 1500, desc: 'Scoops a lane almost twice as wide, holds 600, a bit faster.' },
+    { name: 'A second cart', cost: 150000, minVenue: 3, desc: 'Another caged cart with wide reels, parked beside the first. One laps for the crowd, one harvests. Each pings on its own.' },
   ] },
   { id: 'shed', title: 'Snack shed', tiers: [
     { name: 'Boarded up', desc: 'The old shed. Something smells like fryer oil.' },
@@ -296,9 +299,10 @@ export function perks(up = {}) {
     walk: SIM.WALK * (1 + 0.15 * (up.shoes ?? 0)),
     knockSecs: up.hardhat ? 1 : SIM.KNOCK_SECS,
     cart: up.cart ?? 0,
-    cartCap: [0, 300, 600][up.cart ?? 0],
-    cartReel: [0, 2.4, 4.2][up.cart ?? 0],
-    cartSpeed: [0, 9, 11][up.cart ?? 0],
+    carts: [0, 1, 1, 2][up.cart ?? 0],               // how many carts the crew owns (tier 3: the fleet)
+    cartCap: [0, 300, 600, 600][up.cart ?? 0],
+    cartReel: [0, 2.4, 4.2, 4.2][up.cart ?? 0],
+    cartSpeed: [0, 9, 11, 11][up.cart ?? 0],
     shed: up.shed ?? 0,
     autoFry: [0, 0, 10, 3][up.shed ?? 0],          // seconds per basket, 0 = by hand only
   };
@@ -355,11 +359,13 @@ export const BALLS_OUTSTANDING = 4_213_377_019;   // down to Ball No. 1, hit int
 const clamp01 = v => Math.max(0, Math.min(1, v ?? 0));
 const c2 = v => Math.round(v * 100) / 100;
 
+// The cart's gear factor: 1 + 0.25 × cleanliness (no cart: 1). Each cart in the fleet pays its own.
+export const cartGearOf = cart => cart ? 1 + 0.25 * (1 - Math.max(0, Math.min(1, cart.mud ?? 0))) : 1;
 export function ballValue({ perks: k, mult = 1, cart = null, curb = 0.5, pond = null, fries = null, kpi = null, commendations = 0, venue = 0 }) {
   const rate = VENUES[venue].rate * k.price * (1 + 0.05 * Math.min(10, commendations));
   const upkeep = 1 + 0.5 * (clamp01(curb) + (pond == null ? 0 : clamp01(pond)) + (fries == null ? 0 : clamp01(fries)) + (kpi == null ? 0 : clamp01(kpi)));
   const bv = c2(rate * upkeep);
-  const cartGear = cart ? 1 + 0.25 * (1 - clamp01(cart.mud)) : 1;
+  const cartGear = cartGearOf(cart);
   const v = { value: c2(bv * mult), bv, rate: c2(rate), upkeep, hustle: mult, cartGear, curb: clamp01(curb), pond, fries };
   if (kpi != null) v.kpi = clamp01(kpi);     // only when the venue has one: the Muni and the Club are byte-identical
   return v;
@@ -464,7 +470,7 @@ export const GARY = {
   STOPS: [
     { id: 'sign', x: 14, z: 13 },
     { id: 'mats', x: 0, z: 3.5 },
-    { id: 'cart', x: null, z: null },       // wherever the cart is (skipped if the crew has none)
+    { id: 'cart', x: null, z: null },       // wherever the (muddier) cart is (skipped if the crew has none)
     { id: 'stand', x: 26, z: 10 },
   ],
 };

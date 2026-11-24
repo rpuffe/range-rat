@@ -119,6 +119,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
   }
 
   // ---------- 1. Range boundaries ----------
+  let rightPoles = null;   // the right net's poles, their own mesh so the County can move them out with the net
   {
     const gridTex = canvasTex(64, 64, (g, w, h) => {
       g.clearRect(0, 0, w, h);
@@ -141,10 +142,11 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     for (const sx of [-MAP.NETS.side, MAP.NETS.side]) mesh(sideGeo, netMat, sx, 8, -97.5);
     mesh(netGeo(130, 12), netMat, 0, 8, MAP.NETS.back);
 
-    const poles = [];
-    for (const sx of [-MAP.NETS.side, MAP.NETS.side]) for (let z = -5; z >= MAP.NETS.back - 0.1; z -= 14.7) poles.push({ p: [sx, 8, z] });
+    const poles = [], right = [], poleGeo = new THREE.CylinderGeometry(0.12, 0.16, 16, 6), poleMat = lambert(0x6e747a);
+    for (const sx of [-MAP.NETS.side, MAP.NETS.side]) for (let z = -5; z >= MAP.NETS.back - 0.1; z -= 14.7) (sx > 0 ? right : poles).push({ p: [sx, 8, z] });
     for (let x = -MAP.NETS.side; x <= MAP.NETS.side + 0.1; x += 12.9) poles.push({ p: [x, 8, MAP.NETS.back] });
-    inst(new THREE.CylinderGeometry(0.12, 0.16, 16, 6), lambert(0x6e747a), poles);
+    inst(poleGeo, poleMat, poles);
+    rightPoles = inst(poleGeo, poleMat, right);
 
     // fence posts along z 9.5 with gaps for the entrance (-8..2) and cart (28..34.5)
     const posts = [];
@@ -566,6 +568,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
   const flagPos = clubFlag.geo.attributes.position;
   const hazeCol = new THREE.Color(), hazeA = new THREE.Color(0xf3dcb8), hazeB = new THREE.Color(0xff9e6a);
   return {
+    rightPoles,   // the right side net's poles (the County moves them with the net)
     // dt seconds, t running seconds, timeOfDay01 optional (0 morning .. 1 sunset)
     tick(dt, t, timeOfDay01 = 0) {
       // clouds drift
