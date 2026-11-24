@@ -9,7 +9,7 @@
 
 import crypto from 'node:crypto';
 import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall, ballHitsPlayer, atStand, clampToField,
-  SHOP_BY_ID, nextPrice, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
+  SHOP_BY_ID, nextPrice, shopDay, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
   gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT, FIXTURES, FIXTURE_BY_ID, KIND_W, BALLS_OUTSTANDING, payFor,
   upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed, pickKind,
   VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor, cartGearOf } from '../web/js/sim.js';
@@ -131,6 +131,7 @@ export class Crew {
     this.paShift = 0; this.paAt = 0;
     this.perks = perks(this.up);
     this.helpers = [];
+    this.todo = null;
     this.carts = [];                 // the fleet (council round 4): [0] is "the cart", [1] the Stadium's second
     this.mult = 1;                   // Hustle (Hit the Cart), for the rest of the shift
     this.applyUpgrades();
@@ -377,8 +378,9 @@ export class Crew {
   buy(p, id) {
     const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
     if (!item) return false;
-    const price = nextPrice(id, this.up, this.onlineCount(), id === 'dive' ? p.dive : p.gear, this.venue);
+    const price = nextPrice(id, this.up, this.onlineCount(), id === 'dive' ? p.dive : p.gear, this.venue, shopDay(this.phase, this.day));
     if (price === null || price > this.cash) return false;
+    if (this.todo) this.todo.buy = true;
     this.cash = cents(this.cash - price);
     let level;
     if (id === 'dive') { level = ++p.dive; this.diveByName[p.name] = p.dive; }
@@ -753,6 +755,13 @@ export class Crew {
       p.x = 18 + (slot++ % 6) * 2.4; p.z = 4; p.yaw = 0;
     }
     if (this.day > 1) { this.morningMud(); this.fries = Math.floor(this.fries / 2); }   // the fries went cold overnight
+    // Day 1 at the Muni is training: a shared checklist (snapshot `todo`) teaches the loop.
+    this.todo = this.day === 1 && this.venue === 0 && !this.endless ? { sign: false, buy: false } : null;
+    // Day 2: Corporate sends a teenager, so every crew meets automation early (owner playtest).
+    if (this.day === 2 && this.venue === 0 && !this.endless && (this.up.helpers ?? 0) < SHOP_BY_ID.helpers.tiers.length - 1) {
+      this.up.helpers = (this.up.helpers ?? 0) + 1; this.applyUpgrades();
+      this.events.push({ t: 'freehelper', name: this.helpers.at(-1)?.name ?? 'A teenager' });
+    }
     this.mods.call('startShift');      // venue modules' mornings: after the reset, before the quota is set
     // Corporate's memo and today's quota. Judged on Upkeep, so a mid-shift purchase can't buy it.
     if (this.endless) this.quota = null;
@@ -1398,6 +1407,19 @@ export class Crew {
 
   // ---- what goes over the wire ----------------------------------------------
 
+  // The day-1 checklist: crew-wide, ticks off when anyone does it. Null once training is over.
+  todoWire() {
+    if (!this.todo || this.phase !== 'shift') return null;
+    if ((this.fixtures.sign ?? 1) <= 0.05) this.todo.sign = true;
+    const picked = Math.min(TODO_BALLS, this.stats.picked), banked = Math.min(TODO_BALLS, this.stats.deposited);
+    return [
+      { id: 'pick', n: picked, of: TODO_BALLS, done: picked >= TODO_BALLS },
+      { id: 'bank', n: banked, of: TODO_BALLS, done: banked >= TODO_BALLS },
+      { id: 'sign', done: this.todo.sign },
+      { id: 'buy', done: this.todo.buy },
+    ];
+  }
+
   snapshot() {
     const now = this.now();
     const cr = this.cranking ?? {};
@@ -1432,6 +1454,7 @@ export class Crew {
       pond: { sunk: this.sunkCount(), unlocked: this.pondOpen(), lostFound: this.lostFound, treasure: this.treasure,
         line: this.line.n, tube: this.tube.q.reduce((s, e) => s + e.n, 0), clarity: this.pondOpen() ? pondClarity(this.sunkCount()) : null },
       fries: { stock: this.fries, max: FRIES.MAX, open: !!this.perks.shed },
+      todo: this.todoWire(),
       fixtures: Object.fromEntries(Object.entries(this.fixtures).map(([k, v]) => [k, +v.toFixed(2)])),
       helpers: this.helpers.map(h => ({ id: h.id, name: h.name, x: +h.x.toFixed(2), z: +h.z.toFixed(2), yaw: +h.yaw.toFixed(3), pocket: h.pocket, down: +h.down.toFixed(2) })),
       carts: this.carts.map(cartWire),
@@ -1478,11 +1501,13 @@ const MEMOS = [
   'Smiling is not required, but it is tracked.',
   'Dimples asks that you keep the mats clean. Dimples is a golf ball.',
 ];
+const TODO_BALLS = 10;
 const RAT_MEMOS = ["Today's target: whatever. — the Rats", 'Reminder: we are Corporate now. Please do not tell us.', 'Fries are free. For us. — the Rats'];
 function memoText(day, target, endless, rng) {
   if (endless) return RAT_MEMOS[Math.floor(rng() * RAT_MEMOS.length)];
   const line = MEMOS[Math.floor(rng() * MEMOS.length)];
-  if (target == null) return day === 1 ? 'Welcome to the Muni Range. Pick up balls. Bank them. Corporate pays per ball. Corporate has scheduled a beginners’ clinic. Balls will land closer. Corporate will not.' : 'Pick up balls. Bank them. Corporate pays per ball. ' + line;
+  if (target == null) return day === 1 ? 'Welcome to the Muni Range. Pick up balls. Bank them. Corporate pays per ball. Corporate has scheduled a beginners’ clinic. Balls will land closer. Corporate will not.' : day === 2 ? 'Corporate has sent a teenager to pick up balls and bank them. More teenagers are in the shop. ' + line
+    : 'Pick up balls. Bank them. Corporate pays per ball. ' + line;
   return "Today's Ball Value target is $" + target.toFixed(2) + ' at the closing bell. ' + line;
 }
 function tomorrowText(day, venue, endless) {

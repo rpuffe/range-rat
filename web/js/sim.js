@@ -203,13 +203,13 @@ export const SHOP = [
     { name: 'Range bucket', cost: 75, desc: 'Holds 25. You look like you work here.' },
     { name: 'Push picker', cost: 250, desc: 'Walk over balls and it scoops them up. Holds 60.' },
   ] },
-  { id: 'cart', title: 'Picker cart', tiers: [
+  { id: 'cart', title: 'Picker cart', minDay: 3, tiers: [
     { name: 'No cart', desc: 'Everything on foot.' },
     { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 300, unloads itself at the stand, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
     { name: 'Wide gang reels', cost: 1500, desc: 'Scoops a lane almost twice as wide, holds 600, a bit faster.' },
     { name: 'A second cart', cost: 300000, minVenue: 3, desc: 'Another caged cart with wide reels, parked beside the first. One laps for the crowd, one harvests. Each pings on its own.' },
   ] },
-  { id: 'shed', title: 'Snack shed', tiers: [
+  { id: 'shed', title: 'Snack shed', minVenue: 1, tiers: [
     { name: 'Boarded up', desc: 'The old shed. Something smells like fryer oil.' },
     { name: 'Snack shed', cost: 200, desc: 'Reopens the shed: peel potatoes by hand for Fry Satisfaction (Upkeep up to +50%).' },
     { name: 'Electric peeler', cost: 600, desc: 'Peels on its own: a basket every 10 s. Nobody asked how.' },
@@ -222,7 +222,7 @@ export const SHOP = [
     { name: 'Three teenagers', cost: 400, desc: 'One of them brought a speaker.' },
     { name: 'Four teenagers', cost: 1000, desc: 'A union is forming.' },
   ] },
-  { id: 'washer', title: 'Ball washer', tiers: [
+  { id: 'washer', title: 'Ball washer', minDay: 2, tiers: [
     { name: 'Muddy balls', desc: 'A ball banks for $1.' },
     { name: 'Hand-crank washer', cost: 40, desc: 'Clean balls: $2 each, once someone cranks them through the ball washer by the stand.' },
     { name: 'Electric washer', cost: 160, desc: 'Sparkling balls: $3 each, and it washes 1 ball a second on its own.' },
@@ -240,7 +240,7 @@ export const SHOP = [
   DRONES_ROW,    // County (4): drones
   //
   TETHER_ROW,    // Orbital (5): the orbital tether winch
-  { id: 'ads', title: 'Advertising', tiers: [
+  { id: 'ads', title: 'Advertising', minDay: 2, tiers: [
     { name: 'Word of mouth', desc: 'Customers trickle in.' },
     { name: 'A sign by the road', cost: 30, desc: 'Customers hit 25% more balls.' },
     { name: 'Radio spot', cost: 90, desc: 'Customers hit 55% more balls.' },
@@ -260,12 +260,21 @@ export const SHOP = [
 export const SHOP_BY_ID = Object.fromEntries(SHOP.map(i => [i.id, i]));
 export const HELPER_NAMES = ['Kyle', 'Madison', 'Tanner', 'Brayden'];
 
+// The shop grows with the crew (owner playtest, 2026-11-24: don't overwhelm a new crew).
+// A row appears at its venue (`minVenue`) and, at the Muni, on its day (`minDay`): day 1 is
+// gear, shoes, hard hats and the teenagers; the washer and ads on day 2; the cart on day 3;
+// the snack shed (the kitchen) at the Range Club. Hidden rows are not shown at all.
+export const shopShows = (item, venue = 0, day = Infinity) =>
+  (item.minVenue ?? 0) <= venue && (venue > 0 || (item.minDay ?? 0) <= day);
+// The day the shop is shopping for: overnight (the report) it is tomorrow.
+export const shopDay = (phase, day) => (phase === 'report' ? day + 1 : day);
+
 // Crew upgrades scale with crew size (balanced for 4): ×1 solo, ×2.2 for four.
 // Personal gear doesn't: everyone buys their own at the catalog price.
 export const priceScale = crewSize => 1 + 0.4 * (Math.max(1, crewSize) - 1);
-export function nextPrice(id, up, crewSize, gearLevel = 0, venue = 0) {
+export function nextPrice(id, up, crewSize, gearLevel = 0, venue = 0, day = Infinity) {
   const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
-  if (!item || (item.minVenue ?? 0) > venue) return null;
+  if (!item || !shopShows(item, venue, day)) return null;
   const lvl = item.personal ? gearLevel : up?.[id] ?? 0;
   const t = item.tiers[lvl + 1];
   if (!t || (t.minVenue ?? 0) > venue) return null;    // maxed out, or not at this venue yet

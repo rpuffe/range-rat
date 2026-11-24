@@ -87,7 +87,7 @@ test('with up.cart the cart exists, parked, and the snapshot reports it', () => 
 });
 
 test('buying the cart in the shop creates it (cash needed, outside a shift)', () => {
-  const { crew } = makeCrew({});
+  const { crew } = makeCrew({ day: 3 });
   const p = addPlayer(crew, 'A', 20, 2);
   act(crew, p, { t: 'buy', id: 'cart' });
   assert.equal(crew.cart, null, 'no cash, no cart');
@@ -102,7 +102,7 @@ test('buying the cart in the shop creates it (cash needed, outside a shift)', ()
 });
 
 test('cart tier 2 (wide reels) improves perks and keeps the same cart object', () => {
-  const { crew } = makeCrew();
+  const { crew } = makeCrew({ day: 3, up: { cart: 1 } });
   const before = crew.cart;
   crew.cash = 1500;
   const p = addPlayer(crew, 'A', 20, 2);

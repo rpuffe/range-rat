@@ -553,3 +553,20 @@ promotion, Tiered / Stadium / County / Orbital, then the Last Bucket:
 
 The reason for x2 over x3: the climb stays at the same length for a 4-person crew, and a solo Rat adds about one
 shift, so no crew gets stuck, while the late shop stops being free. Quotas and `PROMO_STAMPS` are unchanged.
+
+## Owner playtest (2026-11-24): the first-night ramp
+
+The owner asked how a new crew learns the game. Calls made (pick the easier, more fun option for 4):
+
+- **Day 1 checklist.** At the Muni on day 1, a shared panel under the HUD lists four jobs: pick up
+  10 balls, drop them in the bucket stand, wash the sign, buy something in the shop. It ticks off
+  when *anyone* on the crew does each one (server `todoWire()`, snapshot `todo`), plays a ping and a
+  feed line, says "Training done. Corporate is unimpressed." and goes away. No checklist after day 1.
+- **The shop grows by day** (`shopShows`, `minDay`). Day 1: carrying gear, teenagers, shoes, hard
+  hats. Day 2: the ball washer and ads. Day 3: the picker cart. Rows for later venues are hidden
+  entirely, not shown locked. The overnight shop shops for tomorrow (`shopDay`).
+- **The kitchen waits for the Range Club.** The snack shed row is `minVenue: 1`; at the Muni the shed
+  stays boarded ("It reopens at the Range Club."). Promotion to the Club still opens it for free.
+  The Muni's Upkeep ceiling is 1.5 (no fries), and its targets already cap at 0.8 × (ceiling − 1).
+- **A free teenager on day 2.** Corporate sends one (or one more, up to four) at the start of day 2,
+  so every crew sees automation early; the memo and the feed say so. More are in the shop.

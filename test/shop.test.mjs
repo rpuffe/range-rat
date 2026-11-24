@@ -155,6 +155,7 @@ test('helpers do not chase the same ball', () => {
 test('upgrades and helpers survive a save', () => {
   const { crew } = makeCrew();
   const a = crew.join('A');
+  crew.day = 2;                                         // the washer row opens on day 2
   crew.cash = 1000;
   for (const id of ['gear', 'gear', 'helpers', 'helpers', 'washer']) buy(crew, a, id);
   const save = JSON.parse(JSON.stringify(crew.toSave()));

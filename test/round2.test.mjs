@@ -1034,7 +1034,7 @@ test('PA: the glow line plays at the first Last Call', () => {
 });
 
 test('PA: the first cart purchase speaks, once', () => {
-  const { crew } = makeCrew({ voiced: ['welcome'] });
+  const { crew } = makeCrew({ voiced: ['welcome'], day: 3 });
   openShift(crew);
   crew.cash = 5000;
   const a = addPlayer(crew, 'A');

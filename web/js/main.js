@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
-import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, priceScale, perks,
+import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, shopShows, shopDay, priceScale, perks,
   CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB,
   VENUE_RULES } from './sim.js';
 import * as NET from './net.js';
@@ -539,6 +539,7 @@ function onEvent(e) {
       break;
     case 'honk': SFX.horn('mower'); break;
     case 'garyFed': (e.by === me.id ? toast : feed)(GARY_LINE, 3); break;
+    case 'freehelper': feed(`${e.name} has clocked in to pick up balls. Paid in pizza.`); break;
     case 'custwait': if (playing()) feed(`A customer is waiting for a clean mat (Mat ${e.mat + 1}).`); break;
     case 'refuse': if (playing()) feed(`A customer gave up on Mat ${e.mat + 1} and left. Hose the mats!`); break;
     case 'gone':
@@ -739,17 +740,18 @@ function applyCarts(list) {
 let shopKey = '';
 function renderShop() {
   const size = crew.players.length;
-  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase, me.gear, me.dive, crew.venue]);
+  const day = shopDay(crew.phase, crew.day ?? 1);
+  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase, me.gear, me.dive, crew.venue, day]);
   if (key === shopKey) return;
   shopKey = key;
   const focused = document.activeElement?.dataset?.buy;
   const scale = priceScale(size);
   const html = `<h3>${crew.phase === 'report' ? 'Overnight shop' : 'Shop'} <span>${money(crew.cash)} to spend</span></h3>
     ${size > 1 ? `<p class="note">Prices are ×${scale.toFixed(1)} for a crew of ${size}.</p>` : ''}
-    <ul>${SHOP.map(item => {
+    <ul>${SHOP.filter(item => shopShows(item, crew.venue ?? 0, day)).map(item => {
       const mineLvl = item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0;
       const lvl = item.personal ? mineLvl : crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
-      const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0);
+      const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0, day);
       return `<li>
         <div><b>${item.title}</b>: ${now.name}${next ? `<small>Next: <i>${next.name}</i>. ${next.desc}</small>` : `<small>${now.desc} (maxed out)</small>`}</div>
         ${!next ? '<span class="max">✓</span>' : price == null ? '<span class="max">🔒 next venue</span>' : `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>$${price}</button>`}
@@ -1164,6 +1166,32 @@ function feed(msg) {
   setTimeout(() => line.remove(), 3000);
 }
 
+// Day 1's shared checklist (crew.todo from the server): ticks off when anyone on the crew does it.
+const TODO_TEXT = {
+  pick: (t, k) => `Pick up ${t.of} balls · ${k.btn} (${t.n}/${t.of})`,
+  bank: (t, k) => `Drop them in the bucket stand · ${k.ibtn} (${t.n}/${t.of})`,
+  sign: (t, k) => `Wash the sign: grab the pressure washer by the cart bay · ${k.ibtn}`,
+  buy: (t, k) => `Buy something in the shop · ${k.shop}`,
+};
+let todoKey = '', todoSeen = null, todoDoneT = 0;
+function renderTodo(dt) {
+  const el = $('todo'); if (!el) return;
+  const list = crew.todo, pad = document.body.classList.contains('pad');
+  if (list) {
+    const done = new Set(list.filter(t => t.done).map(t => t.id));
+    if (todoSeen) for (const id of done) if (!todoSeen.has(id)) { SFX.ping(); feed('✓ ' + TODO_TEXT[id](list.find(t => t.id === id), { btn: '', ibtn: '', shop: '' }).split(' · ')[0]); }
+    todoSeen = done;
+    todoDoneT = list.every(t => t.done) ? todoDoneT + dt : 0;
+  } else { todoSeen = null; todoDoneT = 0; }
+  const show = list && playing() && todoDoneT < 4;
+  const k = { btn: pad ? GLYPH.A : 'Click', ibtn: pad ? GLYPH.X : 'E', shop: pad ? 'D-pad ↑' : 'Tab' };
+  const key = show ? JSON.stringify([list, pad, todoDoneT > 0]) : '';
+  if (key === todoKey) return;
+  todoKey = key;
+  el.innerHTML = !show ? '' : `<b>${todoDoneT > 0 ? 'Training done. Corporate is unimpressed.' : 'Your first shift'}</b>` +
+    list.map(t => `<div class="${t.done ? 'done' : ''}">${t.done ? '✓' : '○'} ${TODO_TEXT[t.id](t, k)}</div>`).join('');
+}
+
 function renderRoster() {
   renderLobby();   // the lobby's roster is live too
   $('roster').innerHTML = crew.players.map(p => `<li style="--c:${p.color}" class="${p.online ? '' : 'off'}">
@@ -1173,7 +1201,8 @@ function renderRoster() {
 }
 const esc = s => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 
-function hud() {
+function hud(dt = 0) {
+  renderTodo(dt);
   $('cash').textContent = money(crew.cash);
   const v = crew.value;
   // One line: BV · target · gear (the KPIs live on the Board, council round 3).
@@ -1201,7 +1230,7 @@ function hud() {
     : crew.pond?.unlocked && hasTube(crew.up) && atTube(me) && (carrying() > 0 || me.treasure) ? `${ibtn}  Feed the tube${crew.pond.tube ? ` (${crew.pond.tube} in flight)` : ''}`
     : dockOpen(me) ? 'Walk into the pond to dive for sunk balls'
     : atShed(me) && crew.fries?.open ? `${btn}  Cook fries: peel, slice, fry, serve · fries ${crew.fries.stock}/${crew.fries.max}`
-    : atShed(me) ? 'The snack shed is boarded up (Tab: the shop can reopen it)'
+    : atShed(me) ? (crew.venue ?? 0) >= 1 ? 'The snack shed is boarded up (Tab: the shop can reopen it)' : 'The snack shed is boarded up. It reopens at the Range Club.'
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
     : me.wand ? `Hold ${btn} to spray: sign · mats · stand · cart · a crewmate · look down to rinse your boots · ${ibtn} put the wand back`
@@ -1413,7 +1442,7 @@ function frame(now) {
     garyView.g.position.set(garyPose.x, 0, garyPose.z); garyView.g.rotation.y = garyPose.yaw;
   }
   if (memoT > 0 && (memoT -= dt) <= 0) { $('memo').classList.add('hidden'); if (memoQ.length) showMemo(...memoQ.shift()); }
-  if (link) hud();
+  if (link) hud(dt);
   perf.tick(now);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
