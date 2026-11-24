@@ -7,11 +7,11 @@ import { groundContact, ballFeatures, startDrift, cartBlocked, keepInField, fiel
 import { DIVE_ROW, POND_ROW } from './dive.js';
 // Venue shop rows (council round 4, wave C): each venue build uncomments ITS OWN import here and its row in
 // SHOP below, nothing else. The row's file must import nothing from sim.js (see dive.js: a cycle is a TDZ crash).
-// import { GUTTERS_ROW } from './tiered.js';
+import { GUTTERS_ROW } from './tiered.js';
 //
-// import { DRONES_ROW } from './county.js';
+import { DRONES_ROW } from './county.js';
 //
-// import { TETHER_ROW } from './orbit.js';
+import { TETHER_ROW } from './orbit.js';
 
 export const SIM = {
   G: 9.81,
@@ -232,11 +232,11 @@ export const SHOP = [
   ] },
   DIVE_ROW,    // personal: the dive gear ladder (Scuba v2), kept by name as diveByName
   POND_ROW,    // crew: the pneumatic ball tube and the pond pump
-  // GUTTERS_ROW,   // Tiered (2): the ball-return gutters
+  GUTTERS_ROW,   // Tiered (2): the ball-return gutters
   //
-  // DRONES_ROW,    // County (4): drones
+  DRONES_ROW,    // County (4): drones
   //
-  // TETHER_ROW,    // Orbital (5): the orbital tether winch
+  TETHER_ROW,    // Orbital (5): the orbital tether winch
   { id: 'ads', title: 'Advertising', tiers: [
     { name: 'Word of mouth', desc: 'Customers trickle in.' },
     { name: 'A sign by the road', cost: 30, desc: 'Customers hit 25% more balls.' },
@@ -328,7 +328,7 @@ export const WASH = {
 //   Gear   = the cart: 1 + 0.25 × cleanliness; people ×1 (gear grime comes later)
 export const VENUES = [{ name: 'Muni Range', rate: 1 }, { name: 'Range Club', rate: 5 }, { name: 'Tiered Entertainment Range', rate: 25 },
   { name: 'Stadium Range', rate: 100 }, { name: 'County Range', rate: 500 }, { name: 'Orbital Range', rate: 2500 }];
-export const KIND_W = { range: 1, glow: 2, lead: 3, square: 1, gold: 10, splitter: 1, bouncy: 1.5 };
+export const KIND_W = { range: 1, glow: 2, lead: 3, square: 1, gold: 10, splitter: 1, bouncy: 1.5, debris: 3 };
 
 // Which kind a customer's next ball is (lead and glow are chosen elsewhere).
 // Debuts by day: gold day 3, square day 5 (council round 3), splitter day 7,
@@ -341,7 +341,7 @@ export function pickKind(day, venue, rng) {
   if (day >= 5 && r < 0.28) return 'square';
   return 'range';
 }
-export const KIND_NAMES = { range: 'range ball', glow: 'glow ball', lead: 'lead ball', square: 'square ball', gold: 'GOLD BALL', splitter: 'splitter', bouncy: 'super-bouncy ball' };
+export const KIND_NAMES = { range: 'range ball', glow: 'glow ball', lead: 'lead ball', square: 'square ball', gold: 'GOLD BALL', splitter: 'splitter', bouncy: 'super-bouncy ball', debris: 'orbital debris' };
 export const KIND_BLURB = {
   square: "It doesn't roll. Corporate calls this \"efficiency\".",
   gold: 'Worth ×10. Dimples is watching you pick it up.',
@@ -349,6 +349,7 @@ export const KIND_BLURB = {
   splitter: 'Pick one up and it becomes three.',
   bouncy: 'Worth ×1.5. It does not want to be picked up.',
   glow: 'Worth ×2. Only at Last Call.',
+  debris: 'Worth ×3. It left the atmosphere and came back. Corporate has questions.',
 };
 export const BALLS_OUTSTANDING = 4_213_377_019;   // down to Ball No. 1, hit into orbit by the founder in 1958
 const clamp01 = v => Math.max(0, Math.min(1, v ?? 0));

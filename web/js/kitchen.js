@@ -15,6 +15,7 @@
 // No top-level DOM access: the overlay is built lazily on first open().
 
 import { MENU_UNLOCK } from './menu.js';
+import { DECK, mugTone, MUG_CAPTION } from './deck.js';
 
 const W = 640, H = 420;
 const INK = '#fff8ec', DIM = '#e8d6bd', ACCENT = '#ffb347', BAD = '#ff8a7a';
@@ -107,7 +108,7 @@ function text(c, s, x, y, size, col = INK, align = 'center', maxW) {
   if (maxW) c.fillText(s, x, y, maxW); else c.fillText(s, x, y);
 }
 
-export function createKitchen({ root, onServe, onSound } = {}) {
+export function createKitchen({ root, onServe, onSound, state } = {}) {
   let opened = false, built = false;
   let wrapEl = null, cv = null, c = null;
   let S = null;                  // state of the current order (or the menu card)
@@ -713,6 +714,24 @@ export function createKitchen({ root, onServe, onSound } = {}) {
     }
     c.restore();
   }
+  // The Upper Deck's mug meter (round 4): six mugs for the deck's Drinks. Amber at 4, red at 5 and up. Only where the
+  // deck exists (the live snapshot carries s.mods.deck from Tiered on).
+  function deckDrinks() { try { const m = state?.()?.mods?.deck; return m && Number.isFinite(m.drinks) ? m.drinks : null; } catch { return null; } }
+  function drawMugs(cx, cy, n, size = 1) {
+    const tone = mugTone(n), col = tone === 'cut' ? '#ff4a3d' : tone === 'loud' ? '#ffa31a' : '#ffe08a';
+    const gap = 27 * size, x0 = cx - gap * (DECK.MAX - 1) / 2;
+    for (let i = 0; i < DECK.MAX; i++) {
+      const x = x0 + i * gap, full = i < n, w = 16 * size, h = 20 * size;
+      c.save(); c.lineWidth = 2.5; c.strokeStyle = full ? col : 'rgba(255,248,236,0.35)';
+      c.fillStyle = full ? col : 'rgba(255,248,236,0.06)';
+      rrect(c, x - w / 2, cy - h / 2, w, h, 4); c.fill(); c.stroke();
+      c.beginPath(); c.arc(x + w / 2, cy, h * 0.28, -Math.PI / 2, Math.PI / 2); c.stroke();     // the handle
+      if (full) { c.fillStyle = '#fffaf0'; c.fillRect(x - w / 2 + 2, cy - h / 2 + 2, w - 4, 4 * size); }  // the head
+      c.restore();
+    }
+  }
+  function deckCaption() { const n = deckDrinks(); return n == null ? '' : MUG_CAPTION[mugTone(n)]; }
+
   function drawMenu() {
     for (let i = 0; i < ITEMS.length; i++) {
       const x = CARD.x(i), locked = !isOpen(ITEMS[i]), sel = !locked && i === menuSel, cx = x + CARD.w / 2, bob = sel ? Math.sin(S.t * 5) * 3 : 0;
@@ -731,6 +750,7 @@ export function createKitchen({ root, onServe, onSound } = {}) {
         text(c, ITEM_LABEL[ITEMS[i]], cx, CARD.y + 206, 34, DIM, 'center', CARD.w - 16);
         text(c, MENU_UNLOCK[ITEMS[i]] ?? '', cx, CARD.y + 232, 14, DIM, 'center', CARD.w - 12);
       } else if (ordered && ITEMS[i] === lastItem) text(c, 'LAST ORDER', cx, CARD.y + 232, 14, DIM);
+      if (ITEMS[i] === 'beer' && !locked) { const n = deckDrinks(); if (n != null) drawMugs(cx, CARD.y + 30, n, 0.85); }
       c.restore();
     }
   }
@@ -1110,6 +1130,9 @@ export function createKitchen({ root, onServe, onSound } = {}) {
     else if (st === 'bun') drawBunStage();
     else if (st === 'mustard') drawMustardStage();
     else if (st === 'pour') drawPour();
+    const dn = deckDrinks();   // the deck's mugs stay in view while you pour
+    if (dn != null && S.item === 'beer' && st !== 'menu') { drawMugs(345, 34, dn, 0.85); const cap = deckCaption(); if (cap) text(c, cap, 345, 62, 16, mugTone(dn) === 'cut' ? '#ff4a3d' : '#ffa31a', 'center', 260); }
+    else if (dn != null && st === 'menu' && menu.includes('beer')) { const cap = deckCaption(); if (cap) text(c, cap, CARD.x(2) + CARD.w / 2, CARD.y + CARD.h + 18, 17, mugTone(dn) === 'cut' ? '#ff4a3d' : '#ffa31a', 'center', 330); }
     // hint
     c.fillStyle = 'rgba(0,0,0,0.28)'; c.fillRect(0, H - 40, W, 40);
     text(c, hint(), 320, H - 20, 19, DIM, 'center', 610);

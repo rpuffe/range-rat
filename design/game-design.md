@@ -379,3 +379,109 @@ its car rests on the platform at `parts.carY` (the Orbital view raises it); `jum
 **Tests:** a module's own test builds a crew with `new Crew(code, save, { modules: [mine], seed, now })`; see the
 dummy module in `test/seam.test.mjs` (it is never in `MODULES`). Views can be tested through
 `web/js/views/registry.js` (`createViews(ctx, [view])`) if their `create` avoids THREE.
+
+## Stadium (venue 3, round 4 item 7): the Ping Track and Crowd Sentiment
+
+Built as a venue module: `web/js/stadium.js` (pure: `CROWD` constants, `gateAt`, `stepLap`, `stepSentiment`, `pingDelta`),
+`server/venues/stadium.mjs` (`tick`, `ping`, `knockDown`, `signal('target')`, `kpi`, `snapshot` `{s, laps, knocks}`),
+`web/js/views/stadium.js` (the Track paint, the jumbotron canvas, the crowd bob and wave, ambience), `test/stadium.test.mjs`.
+- **Crowd Sentiment** (the Board's fourth gauge here): 0.5 each morning, -0.0025/s while the clock runs. A paid ping +0.08
+  (+0.16 with the cart on the Track, jackpot +0.10 on top); a lap +0.06; a Tiered TARGET! (signal `'target'`) +0.06; a
+  knockdown +0.02, the first 10 a shift (the rest still trigger KNOCKDOWN CAM). Nothing is saved: it resets each shift.
+- **Laps:** read off the driven cart's pose. The Track's four quadrant gates (0 E, 1 S, 2 W, 3 N, by angle on the ellipse,
+  counted within 1.5 m of the paint) must be visited in order, either direction (fixed by the second gate), inside 25 s.
+  The fourth gate then starts the next lap, so a steady driver banks a lap every 3 quarter-turns of travel. Skipping across
+  the oval restarts; a wobble back over a line is ignored; a parked cart resets it. Server event `{t: 'crowd', kind:
+  'ping' | 'lap' | 'knock'}` feeds the view.
+- **View:** the bob is `0.1 + 0.5 s` (set on `venues.crowdBob`), pulsing in a wave above 0.9 and flat below 0.25 with a
+  toast "THE CROWD IS BORED"; ambience `crowd` is `0.2 + 0.8 s` during a shift; the jumbotron plane takes a 512 x 300 canvas
+  (CROWD heart %, PING! name for 3 s, KNOCKDOWN CAM name, n TODAY for 5 s). The Track is a painted ribbon at y 0.04.
+- **Not built:** the second cart (the fleet, item 10). The wave pulses the whole crowd together rather than rolling per seat
+  (venues.js owns the matrices).
+
+## Tiered Entertainment Range (venue 2, round 4 item 4): the Target Greens
+
+Files: `web/js/tiered.js` (pure: `inBowl`, `cupSpot`, `bayUtil`, `TARGET`, `GUTTERS_ROW`; imports only `map.js`),
+`server/venues/tiered.mjs`, `web/js/views/tiered.js`, `test/tiered.test.mjs`. The Upper Deck is a separate module.
+- **The cup rule.** On rest (`onRest`), a ball inside a bowl's `r` (strictly less) is moved to `cupSpot(id, bowl)`
+  (a hash scatter inside the cup radius), gets `b.cup = bowl.id`, and `{t:'cup', id, bowl, x, z}` goes out. The client
+  rolls it there at 4 m/s. Cupped balls are ordinary resting balls: pickers and helpers take them. `b.cup` is cleared
+  and re-evaluated whenever the ball rests again.
+- **Bay Utilization** = `bayUtil(cupBalls)` = `1 - n/40`, recounted every 0.25 s (balls leave cups by being picked up)
+  and stored; `kpi()` returns the stored value. Only graded at venue 2.
+- **TARGET.** A *crew* ball (`b.by` is a player) resting in a bowl during the shift flushes that cup plus itself to the
+  shooter at gear x1 (`bank(n, id, null, w, 1)`), then Hustle +0.25 (capped at `CART.MAX_MULT`), `stats.targets`,
+  `p.shift.targets` (award: Bullseye (Noted)), event `{t:'target', by, bowl, n, mult}` and a `'target'` signal for the
+  Stadium crowd. The pin strobes 3 s on the client. Outside the shift a crew ball just cups.
+- **Gutters** (`GUTTERS_ROW`, crew row, `minVenue` 2, $50,000 base): each cup drains 1 ball/s (oldest first) while the
+  shift runs, banked as `bank(n, 'gutter', 'gutter', w, 1)` with a `{t:'gutter'}` event (THUNK). No burst after an
+  empty cup: the accumulator is capped at 1 s.
+- **Snapshot** `s.mods.tiered = {cups: [A, B, C], util}`; no save key.
+- **Not done / needs core:** the TARGET PA line (a `pa.js` entry) and the Board's KPI row text come from core;
+  `main.js` has no `cup` handling (the view tweens `ctx.balls()` entries itself).
+
+## The County (venue 4), round 4 build item 8
+
+Files: `web/js/county.js` (pure: `SLICE`, `strayCount`, `zoning`, `yardAt`, `DRONES_ROW`, `droneCount`, `droneTarget`, `droneStep`; no `sim.js`
+import), `server/venues/county.mjs` (`launchMod` slice, the stray count, `stepDrones`), `web/js/views/county.js` (lawns, kerb, picket
+fences with gates, mailboxes, the Gnome, the pool, "Yard N" signs, drones; hides the right grandstand and moves `ctx.rightNet` to x 96.5),
+`test/county.test.mjs`.
+
+- **The slice.** 40% of customer shots (not the pond's lead balls) get `curve` 1.0-2.0, bending right. The doc's 0.6-1.4 puts only ~6% of
+  shots past the kerb; 1.0-2.0 gives ~12% (pinned at 8-18% by 2,000 seeded shots). Venues 0-3 have no slice.
+- **Zoning Compliance** = `1 - strays / 30`, strays = resting balls (not Ball No. 1) at x > 64.5, recomputed every 0.5 s; the module's `kpi`.
+- **Drones** (`drones` crew row, `minVenue` 4: two drones $600k, four $1.5M base). State lives in the module (`st.drones`), not in `crew.helpers`,
+  so nothing can knock them down. 10 m/s at y 6, strays first then the nearest ball, 25 carried, dip to y 1 to grab, bank at the stand (`kind: 'helper'`,
+  so `stats.helped` counts them); they bank at the bell. Snapshot `s.mods.county = { strays, kpi, drones: [{id, x, y, z, yaw, n}] }`. The PA line
+  `drones` is voiced once-ever on first purchase. The view cheers (jackpot sound) on the `buy` event for `drones`.
+- Not built: the buzz that pitches up when loaded (no audio hook in the view ctx), and the Yards chore (a push picker on foot is a core change).
+
+## The Upper Deck (round 4, build item 5)
+
+Tiered's overserving toy. Files: `web/js/deck.js` (pure `DECK`, `stepDeck`, `serveEffect`, `applyServe`, `landingSpot`, `fallPose`, `bannerFor`),
+`server/venues/deck.mjs` (module `deck`, venue 2), `web/js/views/deck.js` (loungers), the mug meter in `kitchen.js`, tests in `test/deck.test.mjs`.
+
+- **Rule.** `st.deck.drinks` 0..6, reset each morning. Beer (good or perfect) +1 and pays a bar tab of 5 x BV (`deckTab` event); every 30 s of shift
+  time -1 (only while `crew.working()`); hot dog -2, fries -1, burnt serves change nothing. At 6: **incident**.
+- **Incident.** Next seat round robin falls: `deckFall {seat, x, z, by, fine}`. Fine 100 x BV via `payCash` (never below $0; `stats.deckFines` is what
+  was actually taken), drinks to 2, `stats.incidents++`, `p.shift.lastOrders++` (award *Last Orders*), PA `deck` (once ever, big), any Rat or helper
+  within 1.5 m of (seat x, 1.0) gets `knockDown(p, 'customer')`. If Gary is on site (warn or drive) his kitchen stop fails (`inspect` veto, this shift).
+- **Save.** One key, `save.mods.deck = { last }`: the day of the last incident (new saves start at the current day). Snapshot `s.mods.deck = { drinks, last, today }`.
+- **View.** Four loungers at x -14, -6, 6, 14 (y 3, z 2.4) with a mug; sway amplitude drinks / 6; from 4 drinks one shouts WOOO every 6 s (synthesised
+  voice plus a sprite). On `deckFall` the lounger leans, falls 3 m in 1.4 s with a half spin (arms up), lies 3 s under a star swirl, walks out left,
+  and 20 s after the fall a new one climbs the stairs from x -27.5. First beer at Tiered shows the hint toast once (localStorage). The Board slogan is
+  the view's `banner()`: "DAYS WITHOUT AN INCIDENT: N" (red and 0 on an incident day), so `board.js` needed no change. `reportLines` adds
+  "Upper Deck incidents: N · fine $X".
+- **Kitchen.** `createKitchen({ state })` reads `state().mods.deck.drinks`: six mugs on the beer card (and over the pour stages), gold, amber at 4
+  ("The deck is getting loud"), red at 5 ("CUT THEM OFF").
+- Not built: a ball-return (gutters) or hosing a lounger (cut by the council). The loungers' mugs are a fixed prop, not in the hand rig.
+
+## Round 4: the Orbital (venue 5, build item 9): the Lift, orbit shots, the EVA, the tether
+
+Built to council-round4.md §3.4 (the full EVA, not the "Orbital lite" fallback). Files: `web/js/orbit.js` (pure; imports `dive.js` and
+`map.js`, never `sim.js`: `ORBIT`, `LIFT`, `debrisSpot`, `nearestDebris`, `rideHeight`, `spaceness`, `clampDisc`, `evaStep`, `TETHER_ROW`),
+`server/venues/orbit.mjs` (module `orbit`, venue 5), `web/js/views/orbit.js`, `createEva()` at the end of `web/js/scuba.js`, and `test/orbit.test.mjs`.
+
+- **Orbit shots.** `launchMod` turns 5% of customer shots (never a lead ball) into `{vx: 0, vz: 0, vy: 70, orbit: true}`. Each tick, an `orbit`
+  ball above y 150 is deleted (`gone`) and gets the next debris id (a saved `Set`, cap 60; past the cap a shot just leaves). Save key
+  `mods.orbit = {d: [ids], n: nextId}`; the snapshot is `{d, r, p, w}`. **Orbital Debris** = `1 − debris / 30` (`kpi`).
+- **Debris geometry.** `debrisSpot(id)` is relative to the top of the Lift: angle `id × 2.39996`, radius `3 + (id mod 7) × 1.2`, height ±1.5 m. Static
+  and never streamed, so the server can check a grab against the player's reported position (2D distance, 2.2 m plus 0.3 m of lag slack).
+- **Inputs** (`input` hook): `{t:'lift'}` (within 2.4 m of the car, during a shift; 5 s up), `{t:'grab'}` (the nearest id in reach; bag capped by the
+  **dive tier's** bag 10/15/25/40), `{t:'ridedown'}` (5 s), `{t:'orbpump', turns, held}` (a buddy within 3.4 m of the car, not riding: the pond's
+  `pumpGain` rules, capped at two pumpers). The `clamp` hook pins a rider to the car on the ride and to an 11 m disc while floating.
+- **Air.** `evaStep` is `airStep` from `dive.js` with the Lift's position, so there is no Deep End drain. Out of air (or knocked flat, or
+  disconnected): `{t:'reel'}`, the bag returns to orbit with the same ids, and you ride down. Down: the bag lands in the pocket at weight 3 a ball
+  (`KIND_W.debris`); at the bell a rider still out is brought down and the bag banks directly.
+- **The tether winch** (`TETHER_ROW`, crew row `tether`, $3,000,000): every 8 s of a working shift, the lowest debris id is cleared and banked at
+  weight 3 as `by: 'tether'` (a `winch` event).
+- **View.** Ⓧ on the platform rides up; the car follows the highest rider (`venues.parts.carY`), the camera climbs 1.7 to 120 m, the sky (the
+  shared uniforms in `sky.js`) fades to space, 3,000 stars and a Milky Way band come in, an Earth limb with an atmosphere shell curves the
+  horizon, and the fog is pushed out. First-person gear on the camera is hidden for the trip. In the EVA you drift (WASD / stick, with inertia),
+  Ⓐ grabs, a tether line of 26 little cylinders runs to the car, and `amb()` turns on the ambience low-pass for the hush. `createEva()` (scuba.js)
+  adds the visor, breath fog, a pulsing red edge under 25% O₂, an O₂ gauge, synthesised breathing (faster with exertion and panic) and a low-air
+  beep. A buddy cranks by tapping Ⓐ / clicking (a held trickle) or circling the right stick (whole turns); the dock's mouse crank in `round2.js`
+  is not wired to the Lift.
+- **PA.** `eva`, once, on the first ride: "A Range Rat has left the atmosphere. Corporate will hold their locker."
+- **Known limits.** Other Rats' bodies stay at ground level (the walker is drawn at `y = 0` by `main.js`) while someone floats; only the car is
+  seen rising. The car has one height, so two riders at different stages share the highest. Not seen yet in a real four-player playtest.

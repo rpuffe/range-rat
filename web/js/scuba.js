@@ -1287,3 +1287,133 @@ export function createScuba(scene, camera, POND, opts = {}) {
     get activeTreasure() { return active ? active.id : null; },
   };
 }
+
+// ---------- the EVA: the visor, the breath and the O2 gauge (council round 4, build item 9) ----------
+// The Orbital reuses the scuba code in 'eva' mode (createScuba's palette swap above); this is its screen half. It is
+// DOM and WebAudio only (no THREE), so the view (views/orbit.js) builds one on the first ride and calls tick() every
+// frame the rider is in a helmet. Low air pulses the same red vignette as the pond, and the breathing is synthesised
+// (filtered noise: an inhale, an exhale and a faint regulator tick) and sped up by panic.
+//
+//   const eva = createEva({ audio: SFX.audioHandle });      // audio() -> { ctx, master, isMuted } | null
+//   eva.setOn(true|false);                                  // helmet on / off (the ride up, the ride down)
+//   eva.tick(dt, t, { air01, secs, ph: 'up'|'out'|'down', speed01, space01 });
+//   eva.dispose();
+export function createEva(opts = {}) {
+  const getAudio = typeof opts.audio === 'function' ? opts.audio : () => null;
+  const has = typeof document !== 'undefined';
+  let root = null, vig = null, fog = null, gauge = null, fill = null, num = null, on = false;
+  let cyc = 0, lastVig = -1, lastFog = -1, lastFill = -1, lastNum = '', beepT = 0, noise = null;
+
+  function build() {
+    if (root || !has) return root;
+    root = document.createElement('div');
+    root.id = 'eva-visor';
+    root.style.cssText = 'position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:28;opacity:0;display:none;';
+    // The visor: a dark rim that shrinks the view into a rounded helmet, two curved glints, a faint blue tint.
+    const visor = document.createElement('div');
+    visor.style.cssText = 'position:absolute;inset:0;background:' +
+      'radial-gradient(ellipse 78% 74% at 50% 50%, rgba(0,0,0,0) 62%, rgba(4,8,18,0.55) 84%, rgba(2,4,10,0.96) 100%),' +
+      'radial-gradient(ellipse 120% 90% at 30% 8%, rgba(140,190,255,0.10) 0%, rgba(140,190,255,0) 46%);';
+    const glint = document.createElement('div');
+    glint.style.cssText = 'position:absolute;left:11%;top:9%;width:22%;height:11%;border-radius:50%;transform:rotate(-24deg);' +
+      'border-top:2px solid rgba(220,240,255,0.35);border-left:1px solid rgba(220,240,255,0.18);filter:blur(0.6px);';
+    const glint2 = document.createElement('div');
+    glint2.style.cssText = 'position:absolute;right:13%;top:12%;width:9%;height:5%;border-radius:50%;transform:rotate(18deg);' +
+      'border-top:2px solid rgba(220,240,255,0.22);filter:blur(0.6px);';
+    fog = document.createElement('div');       // breath fog: blooms at the bottom of the glass on every exhale
+    fog.style.cssText = 'position:absolute;inset:0;opacity:0;background:radial-gradient(ellipse 46% 30% at 50% 96%, rgba(235,245,255,0.55) 0%, rgba(235,245,255,0) 100%);';
+    vig = document.createElement('div');        // low O2: the pond's pulsing red edge
+    vig.style.cssText = 'position:absolute;inset:0;opacity:0;background:radial-gradient(ellipse at center, rgba(160,0,0,0) 38%, rgba(190,10,10,0.55) 80%, rgba(120,0,0,0.9) 100%);';
+    gauge = document.createElement('div');      // the O2 tube
+    gauge.style.cssText = 'position:absolute;left:18px;bottom:26%;width:26px;height:150px;border:2px solid rgba(190,225,255,0.7);border-radius:13px;' +
+      'background:rgba(6,14,28,0.55);overflow:hidden;box-shadow:0 0 14px rgba(120,190,255,0.35);';
+    fill = document.createElement('div');
+    fill.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:100%;background:linear-gradient(0deg,#5fd0ff,#c4f0ff);';
+    gauge.appendChild(fill);
+    num = document.createElement('div');
+    num.style.cssText = 'position:absolute;left:12px;bottom:calc(26% - 26px);font:700 15px/1 ui-monospace,Consolas,monospace;color:#cfeaff;letter-spacing:0.08em;text-shadow:0 0 6px #0008;';
+    root.append(visor, glint, glint2, fog, vig, gauge, num);
+    document.body.appendChild(root);
+    return root;
+  }
+
+  function setOn(v) {
+    on = !!v;
+    if (on) build();
+    if (!root) return;
+    root.style.display = on ? 'block' : 'none';
+    root.style.opacity = on ? '1' : '0';
+    if (!on) { lastVig = lastFog = lastFill = -1; lastNum = ''; }
+  }
+
+  // One breath: filtered noise through a band-pass with an attack/decay envelope. `exhale` is lower and longer.
+  function breath(exhale, panic, vol) {
+    const a = getAudio(); if (!a?.ctx || a.isMuted?.()) return;
+    const c = a.ctx, now = c.currentTime;
+    if (!noise) {
+      noise = c.createBuffer(1, c.sampleRate, c.sampleRate);
+      const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const src = c.createBufferSource(); src.buffer = noise; src.loop = true;
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9 + panic * 1.4;
+    const g = c.createGain();
+    const dur = (exhale ? 1.35 : 0.95) * (1 - panic * 0.55);
+    const f0 = exhale ? 900 : 1500, f1 = exhale ? 420 : 900;
+    bp.frequency.setValueAtTime(f0 * (1 + panic * 0.4), now);
+    bp.frequency.linearRampToValueAtTime(f1, now + dur);
+    const peak = vol * (exhale ? 0.16 : 0.12) * (1 + panic * 0.8);
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(peak, now + dur * 0.28);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    src.connect(bp); bp.connect(g); g.connect(a.master);
+    src.start(now, Math.random() * 0.5); src.stop(now + dur + 0.05);
+    if (!exhale) {          // the regulator tick
+      const o = c.createOscillator(), og = c.createGain();
+      o.type = 'square'; o.frequency.value = 2300; og.gain.setValueAtTime(vol * 0.02, now); og.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+      o.connect(og); og.connect(a.master); o.start(now); o.stop(now + 0.04);
+    }
+  }
+  function beep() {
+    const a = getAudio(); if (!a?.ctx || a.isMuted?.()) return;
+    const c = a.ctx, now = c.currentTime, o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine'; o.frequency.value = 1180; g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.07, now + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+    o.connect(g); g.connect(a.master); o.start(now); o.stop(now + 0.18);
+  }
+
+  function tick(dt, t, s = {}) {
+    if (!on) return;
+    dt = Math.min(Math.max(dt || 0, 0), 0.1);
+    const air01 = Math.max(0, Math.min(1, s.air01 ?? 1));
+    const panic = air01 < 0.3 ? (0.3 - air01) / 0.3 : 0;
+    const exertion = Math.max(0, Math.min(1, s.speed01 ?? 0));
+    // the breathing cycle: ~4.4 s at rest, quicker when you move, ~1.5 s in a panic. Inhale first (40%), then exhale.
+    const period = 4.4 - 0.9 * exertion - 2.9 * panic;
+    const before = cyc;
+    cyc = (cyc + dt / period) % 1;
+    const vol = s.ph === 'out' ? 1 : 0.5;
+    if (cyc < before) breath(false, panic, vol);                    // a new cycle starts: inhale
+    if (before < 0.4 && cyc >= 0.4) breath(true, panic, vol);       // ...and the exhale
+    // the visor fog follows the exhale; the red edge pulses under 25% like the pond's
+    const ex = cyc >= 0.4 ? Math.sin((cyc - 0.4) / 0.6 * Math.PI) : 0;
+    const fogOp = Math.round(ex * 0.3 * 50) / 50;
+    if (fog && fogOp !== lastFog) { lastFog = fogOp; fog.style.opacity = String(fogOp); }
+    let vo = 0;
+    if (air01 < 0.25) { const k = (0.25 - air01) / 0.25; vo = Math.min(1, (0.35 + 0.65 * k) * (0.6 + 0.4 * Math.sin(t * (5 + k * 8)))); }
+    vo = Math.round(vo * 50) / 50;
+    if (vig && vo !== lastVig) { lastVig = vo; vig.style.opacity = String(vo); }
+    if (air01 < 0.25 && s.ph === 'out' && (beepT -= dt) <= 0) { beepT = 0.9 - 0.5 * panic; beep(); }
+    if (air01 >= 0.25) beepT = 0;
+    // the gauge
+    const f = Math.round(air01 * 100);
+    if (fill && f !== lastFill) {
+      lastFill = f; fill.style.height = f + '%';
+      fill.style.background = air01 < 0.25 ? 'linear-gradient(0deg,#ff4a3a,#ff9a7a)' : 'linear-gradient(0deg,#5fd0ff,#c4f0ff)';
+    }
+    const label = `O₂ ${Math.ceil(s.secs ?? 0)}s`;
+    if (num && label !== lastNum) { lastNum = label; num.textContent = label; }
+  }
+
+  function dispose() { root?.remove(); root = vig = fog = gauge = fill = num = null; on = false; }
+  return { setOn, tick, dispose, get on() { return on; } };
+}

@@ -30,26 +30,26 @@
 // MODULES order. Nothing here keeps module-level state: one Node process runs many crews.
 
 // ---- the production list: one import and one entry per venue module (wave C) ----------------------------------
-// import tiered from './tiered.mjs';
+import tiered from './tiered.mjs';
 //
-// import deck from './deck.mjs';
+import deck from './deck.mjs';
 //
-// import stadium from './stadium.mjs';
+import stadium from './stadium.mjs';
 //
-// import county from './county.mjs';
+import county from './county.mjs';
 //
-// import orbit from './orbit.mjs';
+import orbit from './orbit.mjs';
 
 export const MODULES = [
-  // tiered,
+  tiered,
   //
-  // deck,
+  deck,
   //
-  // stadium,
+  stadium,
   //
-  // county,
+  county,
   //
-  // orbit,
+  orbit,
 ];
 
 export const HOOKS = ['init', 'startShift', 'tick', 'endShift', 'serve', 'ping', 'knockDown', 'input', 'launchMod', 'onRest',

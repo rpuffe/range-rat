@@ -35,26 +35,26 @@
 import { createViews as run } from './registry.js';
 
 // ---- the production list: one import and one entry per venue view (wave C) -------------------------------------
-// import tiered from './tiered.js';
+import tiered from './tiered.js';
 //
-// import deck from './deck.js';
+import deck from './deck.js';
 //
-// import stadium from './stadium.js';
+import stadium from './stadium.js';
 //
-// import county from './county.js';
+import county from './county.js';
 //
-// import orbit from './orbit.js';
+import orbit from './orbit.js';
 
 export const VIEWS = [
-  // tiered,
+  tiered,
   //
-  // deck,
+  deck,
   //
-  // stadium,
+  stadium,
   //
-  // county,
+  county,
   //
-  // orbit,
+  orbit,
 ];
 
 // main.js: createViews(ctx) runs the list above (views/registry.js has the runner; tests use it directly).
