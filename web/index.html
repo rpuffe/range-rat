@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Range Rat</title>
+<style>
+  :root { --ink: #fff8ec; --dim: #e8d6bd; --panel: rgba(28, 22, 40, 0.78); --accent: #ffb347; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1e1c38; color: var(--ink);
+    font: 600 clamp(16px, 2.2vmin, 28px)/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  canvas { display: block; width: 100vw; height: 100vh; outline: none; }
+  .hidden { display: none !important; }
+  .card { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; gap: 1em;
+    background: linear-gradient(rgba(30, 28, 56, 0.35), rgba(30, 28, 56, 0.75)); }
+  .card h1 { margin: 0; font-size: 3.2em; letter-spacing: 0.02em; text-shadow: 0 0.08em 0.3em #0008; }
+  .card p { margin: 0; color: var(--dim); }
+  button { font: inherit; color: #2a1d10; background: var(--accent); border: 0; border-radius: 0.6em;
+    padding: 0.6em 1.6em; cursor: pointer; justify-self: center; }
+  button:focus-visible { outline: 0.18em solid var(--ink); outline-offset: 0.18em; }
+  #hud { position: fixed; inset: 0; pointer-events: none; }
+  #hud .top { position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px; right: 16px;
+    display: flex; justify-content: space-between; text-shadow: 0 0.06em 0.25em #000a; font-size: 1.3em; }
+  #pocket { letter-spacing: 0.2em; }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: var(--ink); opacity: 0.8; }
+  #prompt { position: absolute; left: 0; right: 0; top: 58%; text-align: center; text-shadow: 0 0.06em 0.25em #000c; }
+  #toast { position: fixed; left: 50%; bottom: 12%; transform: translate(-50%, 1em); opacity: 0; transition: 0.25s;
+    background: var(--panel); padding: 0.4em 1em; border-radius: 0.6em; pointer-events: none; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #report { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--panel);
+    padding: 1.2em 2em; border-radius: 1em; min-width: min(90vw, 22em); }
+  #report h2 { margin: 0 0 0.4em; }
+  #report p { display: flex; justify-content: space-between; gap: 2em; margin: 0.3em 0; }
+  #report .dim { color: var(--dim); font-weight: 500; display: block; margin-top: 1em; }
+  .keys { color: var(--dim); font-weight: 500; }
+  .pad .kb, body:not(.pad) .gp { display: none; }
+</style>
+<script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
+</head>
+<body>
+<canvas id="c" tabindex="0" aria-label="The driving range, first-person view"></canvas>
+
+<div id="title" class="card">
+  <h1>Range Rat</h1>
+  <p>The customers hit them. You pick them up.</p>
+  <button id="play">Start shift</button>
+  <p class="keys kb">WASD to walk · mouse to look · E or click to pick up</p>
+  <p class="keys gp">Ⓐ to start · left stick walk · right stick look · Ⓐ pick up</p>
+</div>
+
+<div id="hud" class="hidden">
+  <div class="top"><span id="cash">$0</span><span id="pocket"></span><span id="clock"></span></div>
+  <div id="crosshair"></div>
+  <div id="prompt"></div>
+</div>
+
+<div id="pause" class="card hidden">
+  <h1>Paused</h1>
+  <button id="resume">Back to work</button>
+</div>
+
+<div id="report" class="hidden"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
