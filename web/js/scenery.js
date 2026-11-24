@@ -2,6 +2,7 @@
 // parking lot and entrance arch, a clubhouse backdrop, and small props.
 // Everything happens inside createScenery(); this module has no side effects.
 import * as THREE from 'three';
+import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';
 import { MAP, creekProject } from './map.js';
 
 // Key coordinates for the customer-arrival feature (metres, world space).
@@ -319,8 +320,8 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     });
     const signMat = new THREE.MeshBasicMaterial({ map: signTex });
     const signGeo = new THREE.PlaneGeometry(9.4, 1.18);
-    mesh(signGeo, signMat, gx, 5.45, gz + 0.16);
-    const back = mesh(signGeo, signMat, gx, 5.45, gz - 0.16);
+    tagSign(mesh(signGeo, signMat, gx, 5.45, gz + 0.16), 'arch.out');
+    const back = tagSign(mesh(signGeo, signMat, gx, 5.45, gz - 0.16), 'arch.in');
     back.rotation.y = Math.PI;
     // Dimples on top: a golf ball in a necktie
     const ball = mesh(new THREE.SphereGeometry(0.55, 14, 10), lambert(0xfafafa), gx, 6.7, gz, true);
@@ -358,6 +359,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     const fg = new THREE.PlaneGeometry(2.2, 1.35, 8, 4).translate(1.1, 0, 0);
     const flag = new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ map: ftex, side: THREE.DoubleSide }));
     flag.position.set(cx + 8.8, 8.7, cz - 3);
+    flag.userData.notSign = 'a waving flag with a symmetric emblem: either side reads';   // ?signs skips it
     root.add(flag);
     clubFlag.geo = fg;
     clubFlag.base = Float32Array.from(fg.attributes.position.array);
@@ -413,7 +415,8 @@ export function createScenery(scene, { lowDetail = false } = {}) {
         g.fillText(yd + ' YD', w / 2, h / 2 + 4);
       });
       const m = mesh(sgeo, new THREE.MeshBasicMaterial({ map: tex }), -63.5, 2.3, z);
-      m.rotation.y = Math.PI / 2;
+      m.rotation.y = yawOf(SIGN_BY_ID['yardage.' + yd].normal);   // turned to the mat line (straight across, +x, was edge-on)
+      tagSign(m, 'yardage.' + yd);
     }
   }
 

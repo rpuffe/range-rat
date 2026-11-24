@@ -111,7 +111,8 @@ test('new hints fire on their conditions, once each', () => {
   const base = { seen: ['shop', 'sprint', 'cctv'], playSecs: 100 };
   assert.equal(nextHint({ ...base, day: 1, signMud: 0.4 }), null);
   assert.equal(nextHint({ ...base, day: 1, signMud: 0.6 }), 'wand');
-  assert.equal(nextHint({ ...base, day: 2, signMud: 0.9 }), null);
+  assert.equal(nextHint({ ...base, day: 2, signMud: 0.9 }), 'bv', 'day 2: Ball Value appears, once');
+  assert.equal(nextHint({ ...base, day: 2, signMud: 0.9, seen: [...base.seen, 'bv'] }), null);
   assert.equal(nextHint({ ...base, playSecs: 10, day: 1, signMud: 0.9, seen: ['shop', 'sprint', 'cctv'] }), null);
   assert.equal(nextHint({ ...base, pocketFull: true }), 'bank');
   assert.equal(nextHint({ ...base, washerCash: 9.5 }), null);

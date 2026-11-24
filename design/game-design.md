@@ -570,3 +570,45 @@ The owner asked how a new crew learns the game. Calls made (pick the easier, mor
   The Muni's Upkeep ceiling is 1.5 (no fries), and its targets already cap at 0.8 × (ceiling − 1).
 - **A free teenager on day 2.** Corporate sends one (or one more, up to four) at the start of day 2,
   so every crew sees automation early; the memo and the feed say so. More are in the shop.
+
+## Owner playtest (2026-11-24, round 2): one idea at a time
+
+The owner: "too many signs and stuff to read all at once... clearly communicate with less text."
+Rule from here on: **never more than one text element in the middle of the screen**, about 8 words
+each, and show, don't tell.
+
+- **Lobby:** the crew code, the share link, the roster, one line ("Pick up balls. Bank them. Hit
+  the target.") and Open. No shop on day 1 at the Muni (there is no money yet); the HUD is hidden
+  behind the lobby.
+- **Day 1 opens with the PA welcome only.** The day-1 memo still fires but is `quiet` (no card);
+  there is no "range is open" toast on any day.
+- **The checklist is one step at a time** (pick up a ball → bank 3 at the stand → grab the pressure
+  washer → spray the sign → buy something), with dots for progress, a yellow arrow in the world over
+  the target (the nearest ball, the stand, the washer, the sign; it grows with distance) and a
+  compass arrow in the panel. "Picked up!" / "Banked!" / "Spotless!" / "Bought!" toast as each ticks.
+  The BV line and the store hint are hidden until they matter.
+- **Ordering:** the memo waits for the PA card (and settles 0.6 s, so a PA line in the same tick goes
+  first); the checklist and the hints wait for both. Toasts last 4 s at most, on real time.
+- **Memos are one line** ("Today: Ball Value $1.15 by the closing bell.") with the joke as small
+  `flavor` underneath; the duplicate TARGET line is dropped when the text has the amount.
+- **Ball Value** is explained once, by a hint, on day 2 when its line first appears.
+- **Shorter everything:** the title controls line, the wand prompt, the late-join toast, the
+  overnight report (one big "+$X" with the balls banked; zero lines hidden), the Gary and promotion
+  "tomorrow" lines.
+
+## Sign orientation and station detail (owner playtest, 2026-11-24)
+
+- **Signs:** `web/js/signs.js` is the table of every readable sign (position, facing, venues, approach
+  points); builders take their yaw from it. `test/signs.test.mjs` asserts dot(facing, toViewer) > 0.5
+  from every approach point at every venue. `?signs` draws each sign's facing in the browser and warns
+  about meshes that disagree or text planes not in the table. Fixed: the ball washer faced the fence
+  (now turned π, handles remapped), its sign is angled to the path, the road sign was one mirrored
+  double-sided plane, yardage boards were edge-on, the KITCHEN board sat inside the roof, the
+  Jumbotron faced away.
+- **Station props** (`web/js/props.js`, `web/js/detail.js`): a real pressure washer (wheels, engine,
+  hose reel, gauge, holstered wand, puddle) with mist, wet sheen and drips; the ball washer's plate,
+  bolts, grips, bubbles and Brent's roller brushes; a bucket dispenser with a lit header and ball
+  window; burlap SPUDS sack, fryer glow and steam at the shed; cart reels that roll and a mud band;
+  MOW-E details. Ground noise, mowing stripes, worn dirt, green rings, contact shadows, billboard
+  clouds, a warmer light. All scaled by the perf.js tier (`detailFor`); `?noprops` turns it off.
+  Known gap: props read the tier at load, so an Auto step-down mid-session applies after a reload.

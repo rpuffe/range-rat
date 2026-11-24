@@ -33,8 +33,7 @@ export default {
     // ---- the jumbotron: its black plane becomes a 512 x 300 canvas (readable from the field side, -z)
     const cv = document.createElement('canvas'); cv.width = CW; cv.height = CH;
     const x = cv.getContext('2d');
-    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-    tex.wrapS = THREE.RepeatWrapping; tex.repeat.x = -1; tex.offset.x = 1;
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;   // the plane itself faces -z (venues.js)
     let screen = null;
     ctx.venues?.jumbo?.traverse(o => { if (o.isMesh && o.geometry?.type === 'PlaneGeometry') screen = o; });
     if (screen) { screen.material.map = tex; screen.material.color.set(0xffffff); screen.material.needsUpdate = true; }

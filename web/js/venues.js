@@ -6,6 +6,7 @@
 // `parts` (createVenues(...).parts): the Tiered deck, both Stadium stands and crowds, the jumbotron, the Lift car.
 import * as THREE from 'three';
 import { MAP } from './map.js';
+import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';
 
 export const SIGN_TEXT = [
   { title: 'MUNI RANGE', sub: 'a Fairway Holdings property', tag: 'Every Ball Matters.™' },
@@ -85,9 +86,10 @@ export function createVenues(scene) {
       // white dividers between the mats (mats at x -18..18 step 4; dividers at +-2 offsets)
       const dv = []; for (let i = 0; i <= 10; i++) dv.push([-20 + i * 4, 0.55, 1.0, 0.08, 1.1, 1.8]);
       g.add(boxes(dv, white));
-      // KITCHEN board on the shed (shed group at 42, 10.25; counter side faces -z)
-      const k = textPlane('KITCHEN', 2.0, 0.5, '#fff8ec', '#8a3b2e', 38, true);
-      k.position.set(42, 2.7, 9.0); g.add(k);
+      // KITCHEN board under the shed's front eave (signs.js 'kitchen'; it used to sit inside the roof, placed for an
+      // old shed position). Faces the counter side (-z).
+      const K = SIGN_BY_ID.kitchen, k = textPlane('KITCHEN', 2.0, 0.5, '#fff8ec', '#8a3b2e', 38, false);
+      k.position.set(K.pos.x, K.pos.y, K.pos.z); k.rotation.y = yawOf(K.normal); g.add(tagSign(k, 'kitchen'));
       // two club flags on the stand (26, 6)
       for (const dx of [-1.8, 1.8]) {
         const pole = box(0.07, 5, 0.07, lambert(0xcccccc), 26 + dx, 2.5, 6.0); g.add(pole);
@@ -156,8 +158,10 @@ export function createVenues(scene) {
       for (const dx of [-5.4, 5.4]) j.add(box(0.4, 16, 0.4, fr, dx, 8, 0));
       j.add(box(11.2, 0.4, 0.6, fr, 0, 16, 0)); j.add(box(11.2, 0.4, 0.6, fr, 0, 9.6, 0));
       j.add(box(0.3, 6.4, 0.5, fr, 0, 12.8, 0));
-      const back = new THREE.Mesh(new THREE.PlaneGeometry(10.4, 6), new THREE.MeshBasicMaterial({ color: 0x0a0c12, side: THREE.DoubleSide }));
-      back.position.set(0, 12.8, 0.25); j.add(back);
+      // The screen faces the field (-z) and sits in front of the frame (signs.js 'jumbo'), so views/stadium.js
+      // draws on it unmirrored.
+      const back = new THREE.Mesh(new THREE.PlaneGeometry(10.4, 6), new THREE.MeshBasicMaterial({ color: 0x0a0c12 }));
+      back.position.set(0, 12.8, -0.31); back.rotation.y = yawOf(SIGN_BY_ID.jumbo.normal); j.add(tagSign(back, 'jumbo'));
       j.position.set(26, 0, 14); g.add(j);
       live.jumbo = j;
     },
@@ -179,7 +183,7 @@ export function createVenues(scene) {
       const sg = new THREE.Group();
       sg.add(box(0.15, 3, 0.15, lambert(0x6b5a45), 0, 1.5, -1.4)); sg.add(box(0.15, 3, 0.15, lambert(0x6b5a45), 0, 1.5, 1.4));
       const pl = textPlane('COUNTY LINE', 3.2, 1.0, '#1d4d2f', '#fff8ec', 34, false);
-      pl.rotation.y = Math.PI / 2; pl.position.set(0.1, 2.6, 0); sg.add(pl);
+      pl.rotation.y = yawOf(SIGN_BY_ID.county.normal); pl.position.set(0.1, 2.6, 0); sg.add(tagSign(pl, 'county'));
       sg.position.set(-119, 0, -30); g.add(sg);
     },
     orbital() {
@@ -210,7 +214,7 @@ export function createVenues(scene) {
       const g = grp('endless');
       g.add(box(0.08, 1.2, 0.08, lambert(0x6b5a45), 10, 0.6, 11));
       const pl = textPlane('FOR SALE', 1.2, 0.6, '#c62828', '#ffffff', 40, false);
-      pl.position.set(10, 1.3, 11); pl.rotation.y = Math.PI; g.add(pl);
+      pl.position.set(10, 1.3, 11); pl.rotation.y = yawOf(SIGN_BY_ID.forsale.normal); g.add(tagSign(pl, 'forsale'));
       g.add(box(0.1, 1.2, 0.1, lambert(0x6b5a45), 10.5, 0.6, 11));
     },
   };

@@ -35,6 +35,8 @@ import { createViews } from './views/index.js';
 import { createPerf } from './perf.js';
 import { createPace } from './pace.js'; const pace = createPace({ search: location.search, storage: (() => { try { return sessionStorage; } catch { return null; } })(), clipboard: navigator.clipboard }); pace.bind(document.getElementById('pace-copy'));   // ?pace: the pace log
 import { setHeavyRate } from './venues.js';
+import { createProps } from './props.js';
+import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';   // sign facings (test/signs.test.mjs; ?signs checks the meshes)
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
@@ -78,7 +80,7 @@ for (const m of MATS) {
   g.fillText(String(m.i + 1), 32, 34);
   const num = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false }));
-  num.position.set(m.x, 0.045, 0.62); num.renderOrder = 1; scene.add(num);
+  num.position.set(m.x, 0.045, 0.62); num.renderOrder = 1; scene.add(tagSign(num, `mat.${m.i + 1}`, { x: 0, y: 1, z: 0 }));
 }
 const crowd = createCrowd({ scene, people: { buildPerson, animatePerson, SWING_IMPACT, SWING_SECS } });
 // A ball leaving a mat: that mat's golfer swings (catch the swing just before impact).
@@ -125,12 +127,14 @@ const MUD = new THREE.Color(0x5a3d1e);
   x.font = '600 26px system-ui, sans-serif'; x.fillText('a Fairway Holdings property', 256, 160);
   x.font = 'italic 24px system-ui, sans-serif'; x.fillText('Every Ball Matters.™', 256, 205);
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-  const signMat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide });
+  const signMat = new THREE.MeshLambertMaterial({ map: tex });
   const panel = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), signMat);
-  panel.position.y = 2.0; sign.add(panel);
+  panel.position.y = 2.0; sign.add(tagSign(panel, 'road.field'));
+  // A second face for the road (and the promotion reveal camera): one DoubleSide plane read mirrored from there.
+  const roadFace = tagSign(panel.clone(), 'road.road'); roadFace.rotation.y = Math.PI; sign.add(roadFace);
   for (const px of [-1.4, 1.4]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2), lambert(0x6b5a45)); post.position.set(px, 1.1, -0.02); sign.add(post); }
   const fx = FIXTURE_BY_ID.sign;
-  sign.position.set(fx.x, 0, fx.z); sign.rotation.y = Math.PI;   // faces the field
+  sign.position.set(fx.x, 0, fx.z); sign.rotation.y = yawOf(SIGN_BY_ID['road.field'].normal);   // faces the field
   scene.add(sign);
   fixtureMats.sign = { mat: signMat, base: new THREE.Color(0xffffff) };
   signRef = { canvas: c, ctx: x, tex };      // repainted per venue (round2.js)
@@ -188,7 +192,7 @@ const shedSign = (() => {
   x.font = 'bold 34px system-ui, sans-serif'; x.textAlign = 'center'; x.fillText('SNACK SHED', 128, 44);
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.5), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
-  sign.position.set(0, 2.15, -1.22); sign.rotation.y = Math.PI; g.add(sign);
+  sign.position.set(0, 2.15, -1.22); sign.rotation.y = yawOf(SIGN_BY_ID['shed.sign'].normal); g.add(tagSign(sign, 'shed.sign'));
   const boards = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 0.05), lambert(0x6b5a45)); boards.position.set(0, 1.45, -1.23); g.add(boards);
   g.position.set(FRIES.SHED.x, 0, FRIES.SHED.z + 2.25);   // the counter faces the range; you stand in front of it
   scene.add(g);
@@ -595,7 +599,7 @@ function onEvent(e) {
       break;
     case 'kick': { const b = balls.get(e.id); if (b) Object.assign(b, { x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, acc: 0 }); break; }
     case 'memo':
-      showMemo(e.text, e.target);
+      if (!e.quiet) { memoQ.push([e.text, e.target, 7, e.flavor]); memoHold = 0.6; }   // settles so a PA line in the same tick goes first
       break;
     case 'lastcall':
       SFX.jackpot();
@@ -628,7 +632,7 @@ function onEvent(e) {
     case 'shift':
       report = e.report ?? null;
       if (e.phase === 'report') pace.record(report, { venueName: VENUE_RULES[report?.venue ?? 0]?.name, value: crew.value, debris: crew.mods?.orbit?.d?.length });
-      if (e.phase === 'shift') { toast(`Day ${e.day}: the range is open`, 2.4); me.placed = false; }
+      if (e.phase === 'shift') me.placed = false;   // no 'range is open' toast: the PA line and the memo say it (one thing at a time)
       crew.phase = e.phase;
       showPhase();
       break;
@@ -642,13 +646,14 @@ function floatPay(e) {
   const at2 = e.kind === 'cart' ? cartViews[e.cart ?? 0]?.pose ?? cartPose : at;
   board.floatText(at2.x, 2.4, at2.z, `+${money(e.cash)} · ${e.n} × ${money(e.per ?? e.cash / e.n)}`, who?.color ?? '#ffd54a');
 }
-let memoT = 0;
+let memoT = 0, memoHold = 0;
 // Memos queue: a ball debut never knocks the morning memo (and its target) off the screen.
 const memoQ = [];
-function showMemo(text, target, secs = 9) {
-  if (memoT > 0) { memoQ.push([text, target, secs]); return; }
+function showMemo(text, target, secs = 9, flavor = '') {
+  if (memoT > 0 || paOn()) { memoQ.push([text, target, secs, flavor]); return; }   // the memo waits for the PA card
   $('memo-text').textContent = text;
-  $('memo-target').textContent = target ? `TARGET  ${money(target)}` : '';
+  $('memo-flavor').textContent = flavor ?? '';
+  $('memo-target').textContent = target && !text.includes(money(target)) ? `TARGET  ${money(target)}` : '';
   $('memo').classList.remove('hidden'); memoT = secs;
 }
 
@@ -970,6 +975,7 @@ function renderLobby() {
   $('lobby-roster').innerHTML = crew.players.map(p => `<li style="--c:${p.color}" class="${p.online ? '' : 'off'}"><span class="dot"></span>${esc(p.name)}${p.id === me.id ? ' <i>(you)</i>' : ''}</li>`).join('');
   const n = crew.players.filter(p => p.online).length || crew.players.length;
   $('start').textContent = `Open the range (${n} Rat${n === 1 ? '' : 's'} here)`;
+  $('lobby').querySelector('.shop')?.classList.toggle('hidden', (crew.day ?? 1) <= 1 && (crew.venue ?? 0) === 0);   // no shop before there is money
 }
 function copyJoinLink() {
   const url = NET.joinLink($('code').textContent);
@@ -979,25 +985,23 @@ function copyJoinLink() {
 }
 $('copy-link').addEventListener('click', copyJoinLink);
 function showPhase() {
+  $('hud').classList.toggle('in-lobby', crew.phase === 'lobby');   // the lobby card owns the screen
   $('lobby').classList.toggle('hidden', crew.phase !== 'lobby' || !link);
   $('report').classList.toggle('hidden', crew.phase !== 'report' || !report);
   renderLobby();
   if (crew.phase === 'shift' && link && joinToastFor !== link) {
     joinToastFor = link;
     const left = Math.max(0, crew.shiftSecs - crew.shiftT);
-    if (crew.shiftT > 3 && left > 5) toast(`You've joined day ${crew.day} with ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')} left. Pick up balls, bank them at the bucket stand (by the big board).`, 6);
+    if (crew.shiftT > 3 && left > 5) toast(`Joined day ${crew.day}, ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')} left. Pick up balls.`, 4);
   }
   if (crew.phase === 'report' && report) {
     $('report-body').innerHTML = `<h2>Day ${report.day} is done</h2>
-      <p>Balls picked up <b>${report.picked}</b></p>
-      <p>Balls banked <b>${report.deposited}</b></p>
-      <p>Cash earned <b>$${report.cash}</b></p>
+      <p class="big-stat">+${money(report.cash)} <small>${report.deposited} balls banked</small></p>
       ${report.helped ? `<p>Banked by hired help <b>${report.helped}</b></p>` : ''}
       ${report.carted ? `<p>Scooped by the cart <b>${report.carted}</b></p>` : ''}
       ${report.swings ? `<p>Hit the Cart <b>${report.pings ?? 0} pings from ${report.swings} swings</b></p>` : ''}
-      <p>Knockdowns <b>${report.knockdowns}</b></p>
+      ${report.knockdowns ? `<p>Knockdowns <b>${report.knockdowns}</b></p>` : ''}
       ${report.runOver ? `<p>Run over by the cart <b>${report.runOver}</b></p>` : ''}
-      <p>Balls left out there <b>${report.left}</b></p>
       <p>In the bank <b>${money(report.bank)}</b></p>
       ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b>BV ${money(report.quota.bv)} / ${money(report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
       ${report.quota ? `<p>Review stamps <b>${report.quota.stamps} · ${report.quota.title}</b></p>` : ''}
@@ -1157,7 +1161,14 @@ function pollPad(dt) {
 
 // ---------------------------------------------------------------- HUD
 let toastT = 0;
-function toast(msg, secs = 1.6) { $('toast').textContent = msg; $('toast').classList.add('show'); toastT = secs; }
+let toastTimer = 0;
+function toast(msg, secs = 1.6) {
+  $('toast').textContent = msg; $('toast').classList.add('show'); toastT = Math.min(4, secs);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastT = 0; $('toast').classList.remove('show'); }, toastT * 1000);   // real time: a background tab pauses rAF
+}
+// One text element at a time (owner playtest): while the memo or the PA card is up, the checklist and hints wait.
+const paOn = () => !!document.getElementById('pa-card')?.classList.contains('on');
+const textBusy = () => !$('memo').classList.contains('hidden') || paOn() || memoQ.length > 0;
 // Other Rats' news: a quiet 3-line feed on the left, 3 s a line (council round 3).
 function feed(msg) {
   const el = $('feed'); if (!el) return;
@@ -1166,30 +1177,65 @@ function feed(msg) {
   setTimeout(() => line.remove(), 3000);
 }
 
-// Day 1's shared checklist (crew.todo from the server): ticks off when anyone on the crew does it.
+// Day 1's shared checklist (crew.todo from the server): one step at a time, ticked off by anyone on
+// the crew, with a bobbing arrow over the thing to go to (owner playtest: show, don't tell).
 const TODO_TEXT = {
-  pick: (t, k) => `Pick up ${t.of} balls · ${k.btn} (${t.n}/${t.of})`,
-  bank: (t, k) => `Drop them in the bucket stand · ${k.ibtn} (${t.n}/${t.of})`,
-  sign: (t, k) => `Wash the sign: grab the pressure washer by the cart bay · ${k.ibtn}`,
-  buy: (t, k) => `Buy something in the shop · ${k.shop}`,
+  pick: (t, k) => `Pick up a ball · ${k.btn}`,
+  bank: (t, k) => `Bank them at the stand · ${k.ibtn}  ${t.n}/${t.of}`,
+  sign: (t, k) => me.wand ? `Spray the sign · hold ${k.btn}` : `Grab the pressure washer · ${k.ibtn}`,
+  buy: (t, k) => crew.cash >= 15 ? `Buy something · ${k.shop}` : `Bank $15, then shop · ${money(crew.cash)}`,
 };
-let todoKey = '', todoSeen = null, todoDoneT = 0;
+const TODO_DONE = { pick: 'Picked up!', bank: 'Banked!', sign: 'Spotless!', buy: 'Bought!' };
+const todoArrow = (() => {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.95, depthTest: false });
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.8, 16), mat); head.rotation.x = Math.PI; head.position.y = 0.4;
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.8, 10), mat); shaft.position.y = 1.2;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.95, 32), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthTest: false }));
+  ring.rotation.x = -Math.PI / 2;
+  g.add(head, shaft); head.renderOrder = shaft.renderOrder = ring.renderOrder = 999;
+  scene.add(g); scene.add(ring); ring.visible = g.visible = false;
+  return { g, ring };
+})();
+let todoKey = '', todoSeen = null, todoDoneT = 0, todoT = 0;
+function todoTarget(id) {
+  const ball = () => { const b = nearestBall(80); return b ? { x: b.x, z: b.z, y: 0.6, s: 0.6 } : null; };
+  if (id === 'pick') return ball();
+  if (id === 'bank') return carrying() === 0 ? ball() : { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6, s: 1 };
+  if (id === 'sign') { const sg = FIXTURE_BY_ID.sign; return me.wand ? { x: sg.x, z: sg.z, y: 3.4, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 }; }
+  return null;
+}
 function renderTodo(dt) {
   const el = $('todo'); if (!el) return;
+  todoT += dt;
   const list = crew.todo, pad = document.body.classList.contains('pad');
+  let doneNow = null;
   if (list) {
     const done = new Set(list.filter(t => t.done).map(t => t.id));
-    if (todoSeen) for (const id of done) if (!todoSeen.has(id)) { SFX.ping(); feed('✓ ' + TODO_TEXT[id](list.find(t => t.id === id), { btn: '', ibtn: '', shop: '' }).split(' · ')[0]); }
+    if (todoSeen) for (const id of done) if (!todoSeen.has(id)) { SFX.ping(); doneNow = id; }
     todoSeen = done;
     todoDoneT = list.every(t => t.done) ? todoDoneT + dt : 0;
   } else { todoSeen = null; todoDoneT = 0; }
-  const show = list && playing() && todoDoneT < 4;
+  const cur = list?.find(t => !t.done) ?? null;
+  const show = !!list && playing() && !textBusy() && todoDoneT < 3;
+  const tg = show && cur ? todoTarget(cur.id) : null;
+  todoArrow.g.visible = todoArrow.ring.visible = !!tg;
+  if (tg) {
+    const bob = Math.sin(todoT * 4) * 0.2;
+    const far = Math.max(1, Math.hypot(tg.x - me.x, tg.z - me.z) / 8);       // grows with distance so it reads from the yard
+    tg.s *= far; tg.y *= Math.sqrt(far);
+    todoArrow.g.position.set(tg.x, tg.y + bob * far, tg.z); todoArrow.g.scale.setScalar(tg.s);
+    const dir = document.getElementById('todo-dir');
+    if (dir) { let rel = Math.atan2(-(tg.x - me.x), -(tg.z - me.z)) - me.yaw; rel = Math.atan2(Math.sin(rel), Math.cos(rel)); dir.style.transform = `rotate(${-rel}rad)`; }
+    todoArrow.ring.position.set(tg.x, 0.05, tg.z); todoArrow.ring.scale.setScalar(tg.s * (1 + 0.15 * Math.sin(todoT * 4)));
+  }
+  if (doneNow && show) toast(TODO_DONE[doneNow], 1.4);
   const k = { btn: pad ? GLYPH.A : 'Click', ibtn: pad ? GLYPH.X : 'E', shop: pad ? 'D-pad ↑' : 'Tab' };
-  const key = show ? JSON.stringify([list, pad, todoDoneT > 0]) : '';
+  const key = show ? JSON.stringify([cur?.id, cur?.n, pad, me.wand, crew.cash >= 15, cur?.id === 'buy' ? crew.cash : 0, todoDoneT > 0, !!tg]) : '';
   if (key === todoKey) return;
   todoKey = key;
-  el.innerHTML = !show ? '' : `<b>${todoDoneT > 0 ? 'Training done. Corporate is unimpressed.' : 'Your first shift'}</b>` +
-    list.map(t => `<div class="${t.done ? 'done' : ''}">${t.done ? '✓' : '○'} ${TODO_TEXT[t.id](t, k)}</div>`).join('');
+  el.innerHTML = !show ? '' : todoDoneT > 0 || !cur ? '<b>You know the job. Go.</b>'
+    : `<b>${todoTarget(cur.id) ? '<span id="todo-dir">↑</span> ' : ''}${TODO_TEXT[cur.id](cur, k)}</b><span class="dots">${list.map(t => t.done ? '●' : '○').join(' ')}</span>`;
 }
 
 function renderRoster() {
@@ -1206,6 +1252,8 @@ function hud(dt = 0) {
   $('cash').textContent = money(crew.cash);
   const v = crew.value;
   // One line: BV · target · gear (the KPIs live on the Board, council round 3).
+  $('value').classList.toggle('hidden', !!crew.todo);
+  $('storehint').classList.toggle('hidden', !!crew.todo && crew.todo.find(t => !t.done)?.id !== 'buy');
   $('value').textContent = v ? `BV ${money(v.bv)}${v.hustle > 1 ? ` ×${v.hustle}` : ''}${crew.quota ? ` · target ${money(crew.quota.target)}` : crew.pace ? ` · record pace ${money(crew.pace.now)}` : ''}${r2 ? ' · ' + r2.hudLine() : ''}${crew.lastCall ? ' · LAST CALL' : ''}` : '';
   const n = carrying(), cap = gp.pocket, pad = document.body.classList.contains('pad');
   const btn = pad ? GLYPH.A : 'Click';          // use: pick up, swing
@@ -1233,7 +1281,7 @@ function hud(dt = 0) {
     : atShed(me) ? (crew.venue ?? 0) >= 1 ? 'The snack shed is boarded up (Tab: the shop can reopen it)' : 'The snack shed is boarded up. It reopens at the Range Club.'
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
-    : me.wand ? `Hold ${btn} to spray: sign · mats · stand · cart · a crewmate · look down to rinse your boots · ${ibtn} put the wand back`
+    : me.wand ? `Hold ${btn} to spray · look down to rinse your boots · ${ibtn} put it back`
     : nearStation() ? `${ibtn}  Grab the pressure washer${crewCarts().some(c => (c.mud ?? 0) > 0.05) ? crewCarts().length > 1 ? ' (a cart is muddy)' : ' (the cart is muddy)' : ''}`
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up${nearCart() ? `   ·   ${cbtn}  Drive the cart` : ''}`
     : nearCart() ? `${cbtn}  Drive the cart`
@@ -1421,7 +1469,7 @@ function frame(now) {
   views?.camera(camera, dt);
   r2?.tick(dt, now);       // after the camera: CCTV and the venue reveal drive it when active
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
-  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen(), venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: showHint,
+  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen() && !crew.todo && !textBusy(), venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: showHint,
     day: crew.day, cash: crew.cash, signMud: crew.fixtures?.sign ?? 0, pocketFull: gp.pocket > 0 && carrying() >= gp.pocket, washerCash: crew.washer?.credit ?? 0, onDock: dockOpen(me), beers: beersPoured });
   board.tick(dt);
   mowe.update(crew.mower ?? null); mowe.tick(dt, sceneT);
@@ -1441,8 +1489,11 @@ function frame(now) {
     let dy = garyView.to.yaw - garyPose.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); garyPose.yaw += dy * kg;
     garyView.g.position.set(garyPose.x, 0, garyPose.z); garyView.g.rotation.y = garyPose.yaw;
   }
-  if (memoT > 0 && (memoT -= dt) <= 0) { $('memo').classList.add('hidden'); if (memoQ.length) showMemo(...memoQ.shift()); }
+  if (memoT > 0 && (memoT -= dt) <= 0) $('memo').classList.add('hidden');
+  if (memoHold > 0) memoHold -= dt;
+  else if (memoT <= 0 && memoQ.length && !paOn()) showMemo(...memoQ.shift());
   if (link) hud(dt);
+  props.tick(dt, sceneT, crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);   // station details (props.js)
   perf.tick(now);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
@@ -1462,8 +1513,13 @@ views = createViews({
   playing: () => !!playing(), driving: () => !!driving(),
 });
 perf.attach({ sun: sky.sun, crowd, scuba, ballMesh, venueRate: setHeavyRate, toast: m => toast(m, 3) });
+// Station details and the cheap graphics pass (props.js), scaled by the perf profile.
+const props = createProps({ scene, camera, renderer, perf, sky, me, cartViews, fpGear, myGear,
+  crew: () => crew, sprayOn: () => spraying && me.wand && playing() && me.down <= 0, ballCount: () => balls.size });
 SET.set({});   // re-apply saved settings now the PA exists
 requestAnimationFrame(frame);
 
 // Dev hook: /?debug exposes live state for poking at from the console.
-if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats };
+if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats, todoArrow };
+// ?signs: draw each sign's facing and log any mesh whose world normal disagrees with signs.js (loaded only then).
+if (new URLSearchParams(location.search).has('signs')) import('./signsdebug.js').then(m => m.installSignDebug({ scene, venue: () => crew ? (crew.endless ? 6 : crew.venue ?? 0) : 0 }));

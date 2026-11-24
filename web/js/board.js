@@ -71,6 +71,7 @@ export function createBoard(scene, { x, z }) {
   const frameMat = new THREE.MeshLambertMaterial({ color: 0x20242c });
   const frame = new THREE.Mesh(new THREE.BoxGeometry(BW + 0.2, BH + 0.2, 0.1), frameMat);
   frame.position.set(0, cy, 0);
+  front.userData.sign = 'board.front'; back.userData.sign = 'board.back';   // signs.js (checked by ?signs)
   root.add(frame, front, back);
   for (const sx of [-2.6, 2.6]) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, BOTTOM + 0.2, 0.16), frameMat);

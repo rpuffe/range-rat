@@ -10,6 +10,7 @@
 //
 // No top-level side effects: everything is built inside createTerrain().
 import * as THREE_NS from 'three';
+import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';
 import { MAP, creekPoint, creekLength, inPondArea } from './map.js';
 
 const TAU = Math.PI * 2;
@@ -193,6 +194,7 @@ export function createTerrain({ scene, THREE = THREE_NS } = {}) {
     const sign = new THREE.Group(); sign.name = 'pond-sign';
     sign.add(new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.8), new THREE.MeshLambertMaterial({ map: tex, color: tex ? 0xffffff : 0xf4efe2, side: THREE.DoubleSide })));
     sign.children[0].position.y = 2.1;
+    tagSign(sign.children[0], 'pond'); sign.rotation.y = yawOf(SIGN_BY_ID.pond.normal);   // faces the mats (+z)
     const postGeo = new THREE.CylinderGeometry(0.07, 0.07, 2.6, 6), postMat = lambert(0x6b5a45);
     for (const px of [-1.5, 1.5]) { const p = new THREE.Mesh(postGeo, postMat); p.position.set(px, 1.3, -0.04); sign.add(p); }
     sign.position.set(MAP.SIGN.x, 0, MAP.SIGN.z);

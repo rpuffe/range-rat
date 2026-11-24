@@ -40,7 +40,15 @@
   #todo { position: absolute; top: calc(max(16px, env(safe-area-inset-top)) + 3.4em); left: 16px; font-size: 0.85em; max-width: min(28em, 60vw);
     background: rgba(20, 16, 32, 0.6); padding: 0.45em 0.8em; border-radius: 0.4em; color: #fff8ec; display: flex; flex-direction: column; gap: 0.15em; }
   #todo:empty { display: none; }
-  #todo .done { opacity: 0.5; text-decoration: line-through; }
+  #todo { font-size: 1.05em; padding: 0.5em 0.9em; }
+  #todo-dir { display: inline-block; color: #ffd23f; font-size: 1.2em; transition: transform 0.1s; }
+  #todo .dots { font-size: 0.7em; letter-spacing: 0.3em; opacity: 0.7; }
+  .goal-line { font-size: 1.25em; font-weight: 700; margin: 0.6em 0; }
+  #memo-flavor { font-size: 0.8em; font-weight: 500; opacity: 0.75; margin: 0.2em 0 0; }
+  #memo-flavor:empty { display: none; }
+  .big-stat { font-size: 2em; font-weight: 800; margin: 0.3em 0; }
+  .big-stat small { display: block; font-size: 0.4em; font-weight: 500; opacity: 0.8; }
+  #storehint.hidden, #value.hidden, #hud.in-lobby { display: none; }
   #crewline small { color: var(--dim); font-weight: 500; }
   #code { letter-spacing: 0.15em; }
   #roster { list-style: none; margin: 0.4em 0 0; padding: 0; font-size: 0.85em; }
@@ -142,8 +150,8 @@
     <button id="join" class="quiet">Join</button>
   </div>
   <p id="join-error" role="alert"></p>
-  <p class="keys kb">WASD walk · mouse or arrows look · click or Space pick up (hold at a crew bay to swing) · E bucket and washer · F cart · Esc pause</p>
-  <p class="keys gp">Left stick walk · right stick look · Ⓐ pick up (hold at a crew bay to swing) · Ⓧ bucket and washer · Ⓨ cart · ☰ pause</p>
+  <p class="keys kb">WASD move · Mouse look · Click pick up · E bank · Esc pause</p>
+  <p class="keys gp">Left stick move · Right stick look · Ⓐ pick up · Ⓧ bank · ☰ pause</p>
 </div>
 
 <div id="hud" class="hidden">
@@ -166,11 +174,7 @@
   <p>Friends join with this code, from any browser (Edge on Xbox too). Up to 6.</p>
   <div class="row"><span id="lobby-link" class="linkbox"></span><button id="copy-link" class="quiet" type="button">Copy link</button></div>
   <ul id="lobby-roster" aria-label="Rats in the crew"></ul>
-  <div class="sheet goal">
-    <p><b>Customers hit balls. You pick them up and bank them at the bucket stand.</b></p>
-    <p><b>Keep the place clean and Corporate pays more per ball.</b> That's Ball Value, on the big board.</p>
-    <p><b>Hit Corporate's daily target three times, pay the fee, and the whole crew gets promoted.</b></p>
-  </div>
+  <p class="goal-line">Pick up balls. Bank them. Hit the target.</p>
   <div class="row"><button id="start">Open the range</button></div>
   <div class="sheet shop"></div>
 </div>
@@ -204,6 +208,7 @@
 <div id="memo" class="hidden" role="status" aria-live="polite">
   <div class="memo-head"><span class="dimples">●</span> FAIRWAY HOLDINGS INTERNATIONAL · INTEROFFICE MEMO</div>
   <p id="memo-text"></p>
+  <p id="memo-flavor"></p>
   <div id="memo-target"></div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>

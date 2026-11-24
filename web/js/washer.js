@@ -3,6 +3,7 @@
 // clear chute down to the stand's bucket. Client visuals plus a pure-logic crank input helper.
 // No top-level side effects: everything happens inside createWasher().
 import * as THREE from 'three';
+import { WASHER_YAW, SIGN_BY_ID, yawOf, tagSign } from './signs.js';
 
 export const WASHER_POS = { x: 21.5, z: 6 };
 // Where a Rat stands to crank: about 0.9 m out from each side of the box.
@@ -80,6 +81,10 @@ export function createWasher(scene, opts = {}) {
   const crank = createCrank(opts.onTick);
   const g = new THREE.Group();
   g.position.set(WASHER_POS.x, 0, WASHER_POS.z);
+  // The front (+z here: window, drum, UNWASHED board) faces the field, so the group turns by WASHER_YAW (pi).
+  // That puts local -x on the world's +x side: `out` below maps a world side (-1 = L) to local x.
+  g.rotation.y = WASHER_YAW;
+  const out = Math.cos(WASHER_YAW) < 0 ? -1 : 1;
   scene.add(g);
 
   const green = lambert(0x2e7d4f), darkGreen = lambert(0x1f5a38), steel = lambert(0x9aa3ad);
@@ -155,7 +160,8 @@ export function createWasher(scene, opts = {}) {
 
   // Crank handles, one each side: an axle through the box side, an arm, and a knob.
   const handleRigs = {};
-  for (const [side, sx] of [['L', -1], ['R', 1]]) {
+  for (const [side, wx] of [['L', -1], ['R', 1]]) {   // L on the world's -x side (sim.js WASHER_HANDLES)
+    const sx = wx * out;
     const rig = new THREE.Group();
     rig.position.set(sx * 0.5, 1.2, 0.0);
     const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.14, 8), steel);
@@ -180,8 +186,11 @@ export function createWasher(scene, opts = {}) {
     x.fillStyle = '#fff8ec'; x.textAlign = 'center'; x.textBaseline = 'middle';
     x.font = 'bold 34px system-ui, sans-serif'; x.fillText('BALL WASHER', 128, 34);
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.225), new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide }));
-    sign.position.set(0, 2.3, 0); g.add(sign);
+    // Two single-sided faces (a DoubleSide plane reads mirrored from behind), the front angled toward the path
+    // and the drop-in spot (signs.js 'washer.sign'). Yaws are world yaws less the group's.
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.225), new THREE.MeshLambertMaterial({ map: tex }));
+    sign.position.set(0, 2.3, 0); sign.rotation.y = yawOf(SIGN_BY_ID['washer.sign'].normal) - WASHER_YAW; g.add(tagSign(sign, 'washer.sign'));
+    const signBack = tagSign(sign.clone(), 'washer.sign.back'); signBack.rotation.y += Math.PI; g.add(signBack);
     const bracket = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.3, 6), steel);
     bracket.position.set(0, 2.1, 0); g.add(bracket);
   }
@@ -191,7 +200,7 @@ export function createWasher(scene, opts = {}) {
   const bctx = boardCanvas.getContext('2d');
   const boardTex = new THREE.CanvasTexture(boardCanvas); boardTex.colorSpace = THREE.SRGBColorSpace;
   const boardMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.155), new THREE.MeshBasicMaterial({ map: boardTex }));
-  boardMesh.position.set(0, 0.85, 0.19); g.add(boardMesh);
+  boardMesh.position.set(0, 0.85, 0.19); g.add(tagSign(boardMesh, 'washer.board'));
   let lastN = -1, lastCredit = -1;
   function drawBoard(n, credit) {
     const amber = n > 100;
@@ -286,7 +295,7 @@ export function createWasher(scene, opts = {}) {
         const r = side === 'L' ? st.rateL : st.rateR;
         const sign = side === 'L' ? 1 : -1;   // mirrored so both crank the same way from outside
         h.ang += sign * r * TAU * dt;
-        h.arm.rotation.x = h.ang;
+        h.arm.rotation.x = h.ang * out;       // same world spin whichever way the group faces
       }
       // Chute balls ride the curve.
       for (const b of chuteBalls) {

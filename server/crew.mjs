@@ -767,7 +767,9 @@ export class Crew {
     if (this.endless) this.quota = null;
     else if (this.venue === 0) { const q = quotaQ(this.day, this.ceiling()); this.quota = q == null ? null : { q }; }
     else this.quota = { q: (this.ceiling() - 1) * venueQuotaF(this.venueDay) };
-    this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaTarget() : null, text: memoText(this.day, this.quota && this.quotaTarget(), this.endless, this.rng) });
+    // Day 1 at the Muni is quiet (the checklist teaches it): the memo still fires, flagged `quiet`, and the client skips the card.
+    this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaTarget() : null, text: memoText(this.day, this.quota && this.quotaTarget(), this.endless, this.rng),
+      flavor: memoFlavor(this.day, this.venue, this.endless, this.rng), quiet: !!this.todo });
     for (const c of this.carts) { c.boostT = 0; if (!c.driver) Object.assign(c, c.i ? CART.PARK2 : CART.PARK, { v: 0 }); }
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
     for (const e of openMats(this.mats, { now: this.custT, rng: this.rng, venue: this.venue, nOpen: activeMats(this.onlineCount()), nextCust: () => ++this.nextCust, mud: i => this.fixtures['mat' + i] ?? 0 })) {
@@ -786,7 +788,7 @@ export class Crew {
     if (this.venue === 5 && !this.endless && this.outstanding <= 1 && !this.lastBucket) { this.outstanding = 1; this.beginLastBucket(); }
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'shift', day: this.day });
-    if (this.day === 1 || !this.voiced.has('welcome')) this.pa('welcome', { once: true });
+    if (this.day === 1 || !this.voiced.has('welcome')) this.pa('welcome', { once: true });   // day 1: the one voice line; the checklist waits for it
   }
 
   quotaTarget() { return this.quota ? cents(this.valueNow().rate * (1 + this.quota.q)) : null; }
@@ -1411,10 +1413,10 @@ export class Crew {
   todoWire() {
     if (!this.todo || this.phase !== 'shift') return null;
     if ((this.fixtures.sign ?? 1) <= 0.05) this.todo.sign = true;
-    const picked = Math.min(TODO_BALLS, this.stats.picked), banked = Math.min(TODO_BALLS, this.stats.deposited);
+    const picked = Math.min(TODO_PICK, this.stats.picked), banked = Math.min(TODO_BANK, this.stats.deposited);
     return [
-      { id: 'pick', n: picked, of: TODO_BALLS, done: picked >= TODO_BALLS },
-      { id: 'bank', n: banked, of: TODO_BALLS, done: banked >= TODO_BALLS },
+      { id: 'pick', n: picked, of: TODO_PICK, done: picked >= TODO_PICK || banked >= TODO_BANK },
+      { id: 'bank', n: banked, of: TODO_BANK, done: banked >= TODO_BANK },
       { id: 'sign', done: this.todo.sign },
       { id: 'buy', done: this.todo.buy },
     ];
@@ -1501,19 +1503,25 @@ const MEMOS = [
   'Smiling is not required, but it is tracked.',
   'Dimples asks that you keep the mats clean. Dimples is a golf ball.',
 ];
-const TODO_BALLS = 10;
+const TODO_PICK = 1, TODO_BANK = 3;   // the day-1 checklist: one ball, then a pocketful banked
 const RAT_MEMOS = ["Today's target: whatever. — the Rats", 'Reminder: we are Corporate now. Please do not tell us.', 'Fries are free. For us. — the Rats'];
+// The memo is one short line (the owner: less text at once); the joke rides along as `flavor`, in small type.
 function memoText(day, target, endless, rng) {
   if (endless) return RAT_MEMOS[Math.floor(rng() * RAT_MEMOS.length)];
-  const line = MEMOS[Math.floor(rng() * MEMOS.length)];
-  if (target == null) return day === 1 ? 'Welcome to the Muni Range. Pick up balls. Bank them. Corporate pays per ball. Corporate has scheduled a beginners’ clinic. Balls will land closer. Corporate will not.' : day === 2 ? 'Corporate has sent a teenager to pick up balls and bank them. More teenagers are in the shop. ' + line
-    : 'Pick up balls. Bank them. Corporate pays per ball. ' + line;
-  return "Today's Ball Value target is $" + target.toFixed(2) + ' at the closing bell. ' + line;
+  if (target == null) return day === 1 ? 'Welcome to the Muni Range. Pick up balls.' : 'Pick up balls. Bank them. Corporate pays per ball.';
+  return 'Today: Ball Value $' + target.toFixed(2) + ' by the closing bell.';
+}
+function memoFlavor(day, venue, endless, rng) {
+  if (endless) return '';
+  const line = MEMOS[Math.floor(rng() * MEMOS.length)];      // always one draw: the seeded goldens depend on it
+  if (day === 1 && venue === 0) return 'Corporate has scheduled a beginners’ clinic. Balls will land closer.';
+  if (day === 2 && venue === 0) return 'Corporate has sent a teenager to help.';
+  return line;
 }
 function tomorrowText(day, venue, endless) {
   if (endless) return 'Tomorrow: Range Rats LLC opens as usual. The job never ends.';
   if (day === 2) return 'Tomorrow: Corporate sets your first Ball Value target. Last Call begins at dusk.';
-  if (day === 3) return 'Tomorrow: Gary from Regional inspects. Clean the sign, the mats, the cart and the stand, and huddle at the stand when he arrives.';
-  if (venue === 0) return 'Tomorrow: three review stamps and the franchise fee earn a promotion to the Range Club.';
+  if (day === 3) return 'Tomorrow: Gary from Regional inspects. Clean everything, then huddle at the stand.';
+  if (venue === 0) return 'Tomorrow: three review stamps plus the fee earn the Range Club.';
   return 'Tomorrow: more balls. Corporate thanks you for your continued compliance.';
 }

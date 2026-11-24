@@ -71,6 +71,7 @@ export const HINTS = Object.freeze({
   bank: { kb: 'Full. The bucket stand pays per ball: E there.', pad: 'Full. The bucket stand pays per ball: Ⓧ there.' },
   crank: { kb: 'The ball washer has money in it. Hold the mouse at a handle and circle it.', pad: 'The ball washer has money in it. Tap Ⓐ at a handle and circle a stick.' },
   dive: { kb: 'Walk in to dive. A buddy on the dock can pump your air.', pad: 'Walk in to dive. A buddy on the dock can pump your air.' },
+  bv: { kb: 'Ball Value: what Corporate pays per ball. Clean pays more.', pad: 'Ball Value: what Corporate pays per ball. Clean pays more.' },
   deck: { kb: 'Beer pays a tab. Six drinks and somebody falls off the deck. Hot dogs sober them up.', pad: 'Beer pays a tab. Six drinks and somebody falls off the deck. Hot dogs sober them up.' },
 });
 // Context-driven hints (council round 4, §4.2): fires when its condition holds, once ever.
@@ -81,6 +82,7 @@ export const HINT_WHEN = Object.freeze({
   crank: c => (c.washerCash ?? 0) >= 10,
   dive: c => !!c.onDock,
   deck: c => (c.venue ?? 0) >= 2 && (c.beers ?? 0) > 0,
+  bv: c => (c.day ?? 1) >= 2 && (c.playSecs ?? 0) >= 8,   // the BV line appears on day 2: say what it is once
 });
 // Play-seconds before each hint is due; CCTV also needs the crew at venue 1+.
 export const HINT_AFTER = Object.freeze({ shop: 10, sprint: 30, cctv: 6 });
@@ -105,7 +107,7 @@ export function nextHint({ seen, playSecs, venue = 0, sinceLast = Infinity, ...c
     if (id === 'shop' && !((ctx.cash ?? 0) >= SHOP_HINT_CASH)) continue;   // nothing to buy yet, nothing to say
     return id;
   }
-  for (const id of ['wand', 'bank', 'crank', 'dive', 'deck']) {
+  for (const id of ['bv', 'wand', 'bank', 'crank', 'dive', 'deck']) {
     if (!seen.includes(id) && HINT_WHEN[id]({ ...ctx, playSecs, venue })) return id;
   }
   return null;

@@ -73,12 +73,12 @@ test('the day 1 checklist ticks off for the whole crew, then goes away', () => {
   let todo = crew.snapshot().todo;
   assert.deepEqual(todo.map(t => t.id), ['pick', 'bank', 'sign', 'buy']);
   assert.ok(todo.every(t => !t.done));
-  crew.stats.picked = 12; crew.stats.deposited = 10;
+  crew.stats.picked = 5; crew.stats.deposited = 3;
   crew.fixtures.sign = 0;
   crew.cash = 100; crew.buy(a, 'shoes');
   todo = crew.snapshot().todo;
   assert.ok(todo.every(t => t.done), JSON.stringify(todo));
-  assert.equal(todo[0].n, 10, 'capped at the goal');
+  assert.equal(todo[0].n, 1, 'capped at the goal'); assert.equal(todo[1].n, 3);
   crew.endShift(); crew.startShift();
   assert.equal(crew.snapshot().todo, null, 'day 2 has no checklist');
   run(1);
@@ -87,4 +87,19 @@ test('no checklist after the Muni or in a promoted crew', () => {
   const { crew } = makeCrew({ venue: 1, day: 1, venueDay: 0 });
   crew.startShift();
   assert.equal(crew.snapshot().todo, null);
+});
+
+test('day 1 skips the memo card (quiet) but keeps the PA welcome; later memos are one line plus flavor', () => {
+  const { crew } = makeCrew();
+  crew.join('A');
+  crew.startShift();
+  const ev = crew.flush().ev;
+  const memo = ev.find(e => e.t === 'memo');
+  assert.equal(memo.quiet, true);
+  assert.ok(ev.some(e => e.t === 'pa' && e.id === 'welcome'));
+  crew.endShift(); crew.flush(); crew.startShift();
+  const m2 = crew.flush().ev.find(e => e.t === 'memo');
+  assert.equal(m2.quiet, false);
+  assert.ok(m2.text.split(' ').length <= 9, m2.text);
+  assert.match(m2.flavor, /teenager/);
 });

@@ -14,6 +14,7 @@
 // No top-level side effects: everything is built inside createScuba().
 
 import * as THREE from 'three';
+import { tagSign } from './signs.js';
 import { POND_DEEP, bedAt, deepness, deepDist, TREASURE, TREASURE_BY_ID, waterLook } from './dive.js';
 
 const TAU = Math.PI * 2;
@@ -936,7 +937,7 @@ export function createScuba(scene, camera, POND, opts = {}) {
     }
     signMat = keep(new THREE.MeshBasicMaterial({ color: signTex ? 0xffffff : 0xc9a23a, map: signTex }));
     const sign = new THREE.Mesh(keep(new THREE.PlaneGeometry(1.5, 0.375)), signMat);
-    sign.position.set(0, CASE.BASE / 2, CASE.D / 2 + 0.075); caseG.add(sign);
+    sign.position.set(0, CASE.BASE / 2, CASE.D / 2 + 0.075); caseG.add(tagSign(sign, 'lostfound'));   // signs.js
     TREASURE.forEach((t, i) => {
       const col = i % CASE.COLS, row = CASE.ROWS - 1 - Math.floor(i / CASE.COLS);
       const sx = (col - (CASE.COLS - 1) / 2) * CASE.DX, sy = CASE.BASE + row * CASE.DY + 0.03;
