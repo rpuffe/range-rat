@@ -39,6 +39,18 @@ export function nudgeDone(id, p, base, up) {
   }
 }
 
+// Playtest round 2 #7: does this Rat already do it (so dealing it would only nag)? Ever sprayed, or holding the wand;
+// banked today; out in the far field with a ball; ever cranked; the crew owns the washer.
+export const nudgeSatisfied = (id, p, up) => (id === 'hose' && !!p?.wand) || nudgeDone(id, p ?? {}, { banked: 0, washAt: 0, crankAt: 0 }, up);
+
+// The next suggestion for this Rat from the i-th deal on, skipping any it already satisfies: { id, used } (used: deals
+// consumed, so the crew still gets different lines), or { id: null } when it satisfies all of them.
+export function dealFor(i, p, up) {
+  const n = nudgePool(up).length;
+  for (let k = 0; k < n; k++) { const id = dealNudge(i + k, up); if (!nudgeSatisfied(id, p, up)) return { id, used: k + 1 }; }
+  return { id: null, used: 1 };
+}
+
 // Where the yellow arrow goes (client). wand: does this Rat hold the wand; at: where they stand (the nearest mat).
 // null = no place (the shop is a menu).
 export function nudgeTarget(id, wand = false, at = { x: 0, z: 0 }) {

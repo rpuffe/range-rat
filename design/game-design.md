@@ -752,3 +752,17 @@ see and hit; the Tiered deck never fires for a careful crew; the venue KPIs neve
   - **Case:** on a treasure `banked` event, its Lost & Found slot spins three turns with a pop for 2 s under a
     10-point sparkle (`caseSpin`, `scuba.reveal`).
   - Cost: +2 draw calls near the pond (boil, glints), plus the bag and line only while a bag rises.
+
+## Playthrough 2 fixes (A)
+
+Playtester A's findings 1–5, 7–12, 14, 15 and idea 5 (design/playtest-round2.md). The Last Call rally now names the
+biggest Upkeep loss by its real cost (0.5 × mud / 12 per fixture, the mats summed as one group, against the sign, the
+stand, fries and the pond), and re-checks once 30 s into Last Call (`RALLY_RECHECK`), posting a second line on the
+existing `rally` event if the crew is still short; client rally retries drop after the bell. Gary never knocks down a
+Rat inside the huddle ring on any leg, and the Board's GARY 3 · 2 · 1 runs from when he leaves the mats (the server
+sends `eta`/`span`; ~5 s at the Muni, ~15 s at the Club). The record PA is gone (the report's "Crew record!" line
+says it, never over the stamp). Day-2 nudges skip what a Rat already does (the host who hosed gets "far") and none is
+dealt in Last Call. The report says "Run over", the verdict toast is "Gary approves. +N commendations.", hosing a
+fixture clean credits `hosed` in the ledger, and with all stamps but short cash the promotion panel says "Fee: $X
+short". The report card pads for its pinned bar and hides the crew list; the wand prompt shows in full for 3 s, then
+"Click spray"; the day-1 lobby says "Pick up balls. Bank them." Tests: test/playtest2a.test.mjs.

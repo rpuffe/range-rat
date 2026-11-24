@@ -601,9 +601,9 @@ function onEvent(e) {
     case 'verdict':
       if (e.gained) SFX.jackpot();
       if (e.huddle && garyView) garyView.salute = 1;   // round 6 #5: hat up, arm up (round2.js adds the confetti puff)
-      toast(e.gained
-        ? `Gary is satisfied. +${e.gained} commendation${e.gained > 1 ? 's' : ''}${e.huddle ? ' (the huddle doubled it)' : ''}: Rate +${e.gained * 5}% for good`
-        : `Gary found ${e.fails} problems. "We'll circle back." No commendation.`, 5);
+      toast(e.gained   // playtest round 2 #11: 8 words or fewer
+        ? `Gary approves. +${e.gained} commendation${e.gained > 1 ? 's' : ''}.`
+        : `Gary found ${e.fails} problems. No commendation.`, 5);
       break;
     case 'served':
       if (e.item === 'beer' && e.quality !== 'burnt') beersPoured++;
@@ -620,10 +620,10 @@ function onEvent(e) {
     case 'memo':
       if (!e.quiet) { memoQ.push([e.text, e.target, 7, e.flavor]); memoHold = 0.6; }   // settles so a PA line in the same tick goes first
       break;
-    case 'rally': { const again = () => (textBusy() ? setTimeout(again, 400) : toast(e.need, 3)); if (e.need) again(); break; }   // the gauge slipped mid-rush
+    case 'rally': { const again = () => (crew.phase !== 'shift' ? null : textBusy() ? setTimeout(again, 400) : toast(e.need, 3)); if (e.need) again(); break; }   // the gauge slipped, or the 30 s re-check (dropped after the bell)
     case 'lastcall': {   // the Closing Bell (round 6 #3): the horn, then the server's one-line rally (null when endless)
       SFX.horn();
-      const rally = () => (textBusy() ? setTimeout(rally, 400) : toast(e.need, 3));   // waits for a PA card or a memo
+      const rally = () => (crew.phase !== 'shift' ? null : textBusy() ? setTimeout(rally, 400) : toast(e.need, 3));   // waits for a PA card or a memo; never after the bell
       if (e.need) rally();
       break;
     }
@@ -689,6 +689,7 @@ function showMemo(text, target, secs = 9, flavor = '') {
   $('memo').classList.remove('hidden'); memoT = secs;
 }
 
+let wandAt = 0;                     // when I grabbed the wand (playtest round 2 #10: the full prompt for 3 s, then "Click spray")
 let my = perks();                   // what the crew's upgrades add up to
 let gp = gearPerks(0);              // what my own carrying gear adds up to
 function applySnapshot(s) {
@@ -697,7 +698,7 @@ function applySnapshot(s) {
   if (s.mats) crowd.sync(s.mats, s.ct);
   const mine = s.players.find(p => p.id === me.id);
   if (mine && !me.placed) { me.x = mine.x; me.z = mine.z; me.yaw = mine.yaw; me.pitch = 0; me.placed = true; }   // clocked in at the yard
-  me.gear = mine?.gear ?? 0; me.wand = !!mine?.wand;
+  me.gear = mine?.gear ?? 0; if (!!mine?.wand && !me.wand) wandAt = performance.now(); me.wand = !!mine?.wand;   // the wand's full prompt runs 3 s from here
   me.diving = !!mine?.diving; me.dive = mine?.dive ?? 0; me.air = mine?.air ?? diveTiers(me.dive).air; me.bag = mine?.bag ?? 0; me.treasure = mine?.treasure ?? null;
   { // the Lost & Found case and the treasure glinting in the Deep End
     const lf = s.pond?.lostFound ?? [], lk = lf.join(',');
@@ -1020,6 +1021,8 @@ function renderLobby() {
   const n = crew.players.filter(p => p.online).length || crew.players.length;
   $('start').textContent = `Open the range (${n} Rat${n === 1 ? '' : 's'} here)`;
   $('lobby').querySelector('.shop')?.classList.toggle('hidden', (crew.day ?? 1) <= 1 && (crew.venue ?? 0) === 0);   // no shop before there is money
+  const goal = $('lobby').querySelector('.goal-line');   // playtest round 2 #15: day 1 has no target
+  if (goal) goal.textContent = (crew.day ?? 1) <= 1 && !crew.endless ? 'Pick up balls. Bank them.' : 'Pick up balls. Bank them. Hit the target.';
 }
 function copyJoinLink() {
   const url = NET.joinLink($('code').textContent);
@@ -1033,6 +1036,7 @@ function showPhase() {
   $('hud').classList.toggle('in-lobby', crew.phase === 'lobby');   // the lobby card owns the screen
   $('lobby').classList.toggle('hidden', crew.phase !== 'lobby' || !link);
   $('report').classList.toggle('hidden', crew.phase !== 'report' || !report || !!report?.ending || performance.now() < stampUntil);   // the ending has its own card
+  $('crewline').classList.toggle('hidden', crew.phase === 'report');   // playtest round 2 #14: the report's panels would sit on the crew list
   renderLobby();
   if (crew.phase === 'shift' && link && joinToastFor !== link) {
     joinToastFor = link;
@@ -1046,7 +1050,7 @@ function showPhase() {
       ${report.carted ? `<p>Scooped by the cart <b>${report.carted}</b></p>` : ''}
       ${report.swings ? `<p>Hit the Cart <b>${report.pings ?? 0} pings from ${report.swings} swings</b></p>` : ''}
       ${report.knockdowns ? `<p>Knockdowns <b>${report.knockdowns}</b></p>` : ''}
-      ${report.runOver ? `<p>Run over by the cart <b>${report.runOver}</b></p>` : ''}
+      ${report.runOver ? `<p>Run over <b>${report.runOver}</b></p>` : ''}
       ${report.unwashed > 0 ? `<p>Unwashed at the bell <b>${report.unwashed} balls · −${money(report.lostPremium ?? 0)}</b></p>` : ''}
       <p>In the bank <b>${money(report.bank)}</b></p>
       ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b>BV ${money(report.quota.bv >= 100 ? Math.round(report.quota.bv) : report.quota.bv)} / ${money(report.quota.target >= 100 ? Math.round(report.quota.target) : report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
@@ -1342,7 +1346,7 @@ function hud(dt = 0) {
     : atShed(me) ? (crew.venue ?? 0) >= 1 ? 'The snack shed is boarded up' : 'The snack shed is boarded up. It reopens at the Range Club.'
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
-    : me.wand ? `Hold ${btn} to spray · look down to rinse your boots · ${ibtn} put it back`
+    : me.wand ? performance.now() - wandAt < 3000 ? `Hold ${btn} to spray · look down to rinse your boots · ${ibtn} put it back` : `${btn} spray`
     : nearStation() ? `${ibtn}  Grab the pressure washer${crewCarts().some(c => (c.mud ?? 0) > 0.05) ? crewCarts().length > 1 ? ' (a cart is muddy)' : ' (the cart is muddy)' : ''}`
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up${nearCart() ? `   ·   ${cbtn}  Drive the cart` : ''}`
     : nearCart() ? `${cbtn}  Drive the cart`

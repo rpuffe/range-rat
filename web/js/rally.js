@@ -26,6 +26,7 @@ export const GAUGE_MISS = {
   5: 'Missed: too much debris overhead.',
 };
 
+// Kept for reference; shortfall() now compares every term by its real Upkeep cost (playtest round 2 #1).
 export const FRIES_LOW = 0.5;
 export const POND_MURKY = 0.6;
 
@@ -41,16 +42,23 @@ export function shortfall({ value, quota, kpi = null, fixtures = {}, fries = val
   if (endless || !quota || !value) return null;
   if (!gaugeOk(kpi)) return RALLY_LINES.gauge[venue] ?? null;
   if (upkeepOk(value, quota)) return RALLY_LINES.onTarget;
-  // Under target: name the worst term (the one costing the most Upkeep).
-  let worst = null, dirt = 0;
-  for (const [id, mud] of Object.entries(fixtures)) if (mud > dirt) { dirt = mud; worst = id; }
-  const curbLoss = 1 - (value.curb ?? 1);
-  const cands = [{ line: worst == null ? RALLY_LINES.mats : worst.startsWith('mat') ? RALLY_LINES.mats : RALLY_LINES[worst] ?? RALLY_LINES.mats, loss: curbLoss }];
-  if (fries != null && fries < FRIES_LOW) cands.push({ line: RALLY_LINES.fries, loss: 1 - fries });
-  if (pond != null && pond < POND_MURKY) cands.push({ line: RALLY_LINES.pond, loss: 1 - pond });
+  // Under target: name the term costing the most Upkeep (playtest round 2 #1). Upkeep = 1 + 0.5 × (Curb + pond +
+  // fries + gauge) and Curb = 1 − the mean mud of every fixture, so one fixture costs 0.5 × mud / N and the mats,
+  // as one group, 0.5 × their summed mud / N: one filthy sign (1 of 12) rarely outweighs ten scuffed mats.
+  const ids = Object.keys(fixtures), n = ids.length;
+  const share = id => (n ? 0.5 * (fixtures[id] ?? 0) / n : 0);
+  const mats = n ? ids.filter(id => id.startsWith('mat')).reduce((a, id) => a + share(id), 0) : 0.5 * (1 - (value.curb ?? 1));
+  const cands = [{ line: RALLY_LINES.mats, loss: mats }];
+  for (const id of ids) if (!id.startsWith('mat') && RALLY_LINES[id]) cands.push({ line: RALLY_LINES[id], loss: share(id) });
+  if (fries != null) cands.push({ line: RALLY_LINES.fries, loss: 0.5 * (1 - fries) });
+  if (pond != null) cands.push({ line: RALLY_LINES.pond, loss: 0.5 * (1 - pond) });
   return cands.reduce((a, b) => (b.loss > a.loss ? b : a)).line;
 }
 
 // Last Call swings x1.5, so the cups (Tiered) refill during the rush: the line reads the gauge this far ahead
 // (playtest 2: 6 of 9 "On target" bells at Tiered were then DENIED on the gauge).
 export const RALLY_MARGIN = Object.freeze({ 2: 0.25, 3: 0.1, 4: 0.1, 5: 0.1 });
+
+// Playtest round 2 #1: a second look this many seconds into Last Call. If the crew is still short, the server posts
+// one more line (the 'rally' event), at most once a shift.
+export const RALLY_RECHECK = 30;

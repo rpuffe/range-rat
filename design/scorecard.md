@@ -83,3 +83,27 @@ something to buy in endless (C). That is council round 6's job.
 | Polish | 4 | end card buried/unclickable; carrier got 0; wrong shop multiplier; hints in orbit | 7 |
 | One more shift | 5 | yes until the Orbital; after the Last Bucket no reason to continue | 5 |
 | **Overall** | **5** | great set pieces on a thin late-game loop | **6** |
+
+
+## Round 2 (2026-11-24, build d66602a: council round 6 built)
+
+Fresh playtesters, same slices and metrics. Full reports: design/playtest-round2.md.
+
+| Metric | A | B | C | **Avg** | Round 1 avg | Δ |
+|---|---|---|---|---|---|---|
+| Fun | 6 | 6.5 | 6.5 | **6.3** | 6.0 | +0.3 |
+| Clarity | 6 | 5 | 7 | **6.0** | 5.7 | +0.3 |
+| Text load | 5 | 5 | 5 | **5.0** | 4.0 | +1.0 |
+| Pacing | 6 | 7 | 6.5 | **6.5** | 5.0 | +1.5 |
+| Co-op | 6 | 6 | 6 | **6.0** | 6.0 | 0 |
+| Meaningful features | 6 | 6 | 5.5 | **5.8** | 4.7 | +1.1 |
+| Look & feel | 7 | 7 | 7.5 | **7.2** | 7.0 | +0.2 |
+| Polish | 6 | 5.5 | 6 | **5.8** | 4.7 | +1.1 |
+| One more shift | 7 | 6.5 | 5 | **6.2** | 6.0 | +0.2 |
+| **Overall** | **6.5** | **6** | **6** | **6.2** | 5.5 | **+0.7** |
+
+**Read:** every metric rose or held. Pacing (+1.5), Meaningful features (+1.1), Polish (+1.1) and Text
+load (+1.0) moved most: earned stamps, the gauge and the bell gave each day a goal. Co-op didn't move:
+the crew still splits only at the bell. Text load is still the lowest score (5): every tester saw two or
+three centre texts at once at the bell or the finale. Biggest drags: the rally pointing at the wrong
+thing (A), gutters switching off Tiered's greens (B), endless having nothing to do (C).

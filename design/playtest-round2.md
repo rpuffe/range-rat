@@ -88,3 +88,46 @@ Cash at each promotion ~2× the fee. Endless $63–67M a shift, flat.
    curve (XS).
 5. "Buy Site 12 back" in endless (M).
 - **Cut:** the second cart as a Stadium buy, unless idea 2 lands.
+
+## Playtester A — a new crew to the Range Club
+
+**Scores:** Fun 6 · Clarity 6 · Text load 5 · Pacing 6 · Co-op 6 · Meaningful 6 · Look & feel 7 ·
+Polish 6 · One more shift 7 · **Overall 6.5**. "A real step up. The rally just needs to point at the
+right thing."
+
+**Best:** hosing the sign at Last Call, "Spotless sign!", then the APPROVED slam with confetti.
+**Flattest:** day 4 at 4P: did what the rally said (hosed the filthy sign), DENIED anyway, and a
+"record shift, congratulations" PA over the DENIED stamp.
+
+**Findings:**
+1. The rally names the single dirtiest fixture (the sign, 1 of 12 fixtures, ~+0.04 Upkeep) instead of
+   the biggest Upkeep loss (the mats as a group). Following it still gets DENIED.
+2. Gary runs over a Rat inside the huddle ring on his mats → cart leg (the cart parks by the stand).
+3. The GARY 3·2·1 lasts ~1.7 s (his last leg is 8.5 m).
+4. The record PA fires in the same tick as the bell's stamp (day 3 is always a record).
+5. Day-2 Last Call can stack the Last Call PA, the glow-ball memo and the rally toast; a late rally can
+   land after the bell.
+6. **Design:** at 4P a single morning hoser earns day 2 only (0 of 40 later stamps); the whole crew
+   hosing at Last Call promotes by day 5–6. 10 mats scuff faster than one Rat can hose.
+7. The host's day-2 nudge is always "hose"; nudges dealt after a carried-over checklist land in Last Call.
+8. "Run over by the cart" counts Gary and the mower.
+9. The pinned report bar covers the overnight shop's rows.
+10. The wand prompt (12 words) stays up the whole time you hold the wand.
+11. The Gary verdict toast is 13 words.
+12. The ledger doesn't credit fixture hosing (the Rat who won the stamp shows "banked 0 · $0").
+13. The dark Club roof still fills the top third at the Club spawn.
+14. The report panels cover the crew list.
+15. The day-1 lobby says "Hit the target" (day 1 has none).
+
+**Pace (headless):** 4P promoted after day 5 (31 min) with one Rat hosing all day; the fee, not the
+stamps, adds the 5th shift ($4.6k vs $5.5k after day 4, and nothing says why). Solo 24–45 min. Idle
+crews never promote; any morning hose wins day 2 (8/8).
+
+**Ideas for council 7**
+1. The rally names the biggest Upkeep loss (mats grouped); re-check after 30 s (S).
+2. Gary never runs over the huddle on any leg; 3·2·1 from when he leaves the mats (S).
+3. A 4P hosing rhythm the Muni can teach: soften mat scuff at 4P, or the day-3 memo "Someone stays on
+   the hose" (S).
+4. One queue for every centre-screen text; at the bell nothing but the stamp (S).
+5. Show the fee shortfall on the report once stamps are complete ("$895 short") (XS).
+- **Cut:** "Run over by the cart" (→ "Run over"); the welcome PA replaying on rejoin.

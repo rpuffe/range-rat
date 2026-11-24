@@ -3,16 +3,18 @@
 // later for a late joiner (the next one in the pool). It clears once that Rat has done it, or after NUDGE.SECS of
 // working time. The day-1 checklist keeps precedence: nothing is dealt while an unfinished checklist is up.
 // Nothing checks or rewards it beyond clearing the line.
-import { NUDGE, dealNudge, nudgeDay, nudgeDone } from '../../web/js/nudge.js';
+import { NUDGE, dealFor, nudgeDay, nudgeDone } from '../../web/js/nudge.js';
 
 const todoOpen = crew => !!crew.todo && !(crew.todo.pick && crew.todo.bank && crew.todo.sign && crew.todo.buy);
 const baseOf = p => ({ banked: p.shift?.banked ?? 0, washAt: p.washAt ?? 0, crankAt: p.crankAt ?? 0 });
 
 function deal(crew, st) {
-  if (!nudgeDay(crew) || crew.phase !== 'shift' || todoOpen(crew)) return;
+  if (!nudgeDay(crew) || crew.phase !== 'shift' || todoOpen(crew) || crew.lastCall?.()) return;   // Last Call is the rally's (playtest round 2 #7)
   for (const p of crew.online()) {
     if (st.by[p.id]) continue;
-    st.by[p.id] = { id: dealNudge(st.dealt++, crew.up), left: NUDGE.SECS, base: baseOf(p), done: false };
+    const { id, used } = dealFor(st.dealt, p, crew.up);    // skip what this Rat already does (the host always got "hose")
+    st.dealt += used;
+    st.by[p.id] = { id, left: NUDGE.SECS, base: baseOf(p), done: id == null };
     crew.dirty = true;
   }
 }

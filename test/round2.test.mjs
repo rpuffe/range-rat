@@ -1154,14 +1154,14 @@ test('the report carries the venue, title and promotion info', () => {
 
 // ---- crew records --------------------------------------------------------------------------------
 
-test('a record shift from day 3 sets report.record, saves records and plays the PA line', () => {
+test('a record shift from day 3 sets report.record, saves records (no PA: it landed on the bell stamp, playtest round 2)', () => {
   const { crew, run } = makeCrew({ day: 3, voiced: ['welcome', 'gary'] }, 5);   // (a 5 s shift would otherwise have Gary warn and use the PA gap)
   openShift(crew);
   crew.bank(10, 'x');
   run(6);
   assert.deepEqual(crew.report.record, { cash: 15, was: 0 });
   assert.deepEqual(crew.records, { cash: 15, banked: 10, day: 3 });
-  assert.ok(events(crew).find(e => e.t === 'pa' && e.id === 'record'));
+  assert.ok(!events(crew).find(e => e.t === 'pa' && e.id === 'record'), 'the report line says it, not a PA over the stamp');
   const save = JSON.parse(JSON.stringify(crew.toSave()));
   assert.deepEqual(save.records, { cash: 15, banked: 10, day: 3 });
   assert.deepEqual(makeCrew(save).crew.records, save.records);

@@ -15,7 +15,7 @@ import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall
   VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor, cartGearOf } from '../web/js/sim.js';
 import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor, cartSpeedAt } from '../web/js/map.js';
 import { VenueHooks, MODULES } from './venues/index.mjs';
-import { shortfall, gaugeOk as gaugeHolds, GAUGE_MISS, RALLY_LINES, RALLY_MARGIN } from '../web/js/rally.js';
+import { shortfall, gaugeOk as gaugeHolds, GAUGE_MISS, RALLY_LINES, RALLY_MARGIN, RALLY_RECHECK } from '../web/js/rally.js';
 import { QUOTA_KPI } from '../web/js/sim.js';
 import { newMat, openShift as openMats, stepMat, matReady, shoot, matWire } from '../web/js/customers.js';
 import { mowerDue, newMower, stepMower, mowerSnap } from '../web/js/mowe.js';
@@ -598,6 +598,7 @@ export class Crew {
     if (isCart) cart.mud = done ? 0 : after; else this.fixtures[target] = done ? 0 : after;
     this.stats.washed = Math.round((this.stats.washed + s) * 10) / 10;
     if (done) this.events.push({ t: 'spotless', by: p.id, target: isCart ? (cart.i ? 'cart' + cart.i : 'cart') : target });
+    if (done && !isCart) p.shift.hosed++;   // playtest round 2 #12: the ledger credits the Rat who hosed a fixture clean
     this.dirty = true;
     return true;
   }
@@ -1045,6 +1046,33 @@ export class Crew {
     return stops;
   }
 
+  // Seconds until Gary reaches the stand, once he has left the mats (the Board's GARY 3 · 2 · 1, playtest round 2 #2):
+  // the legs still to drive at GARY.SPEED plus the pauses still to sit. null before then, or when he isn't driving.
+  garyEta() {
+    const g = this.gary;
+    if (!g || g.phase !== 'drive') return null;
+    const stops = this.garyStops(), mi = stops.findIndex(st => st.id === 'mats');
+    if (g.stop <= mi || (g.stop === mi + 1 && g.pause > 0)) return null;
+    let t = Math.max(0, g.pause), x = g.x, z = g.z;
+    for (let i = g.stop; i < stops.length; i++) {
+      const st = stops[i];
+      if (st.id === 'cart' && !this.cart) continue;
+      const c = st.id === 'cart' ? (g.cart ?? this.muddiestCart()) : null;
+      const tx = c ? c.x + 3 : st.x, tz = c ? c.z + 3 : st.z;
+      t += Math.max(0, Math.hypot(tx - x, tz - z) - 0.3) / GARY.SPEED + (st.id === 'stand' ? 0 : GARY.PAUSE);
+      x = tx; z = tz;
+    }
+    return t;
+  }
+
+  // { eta, span } for the snapshot: span is the eta when he left the mats, so the client splits it into 3 · 2 · 1.
+  garyEtaWire() {
+    const eta = this.garyEta(), g = this.gary;
+    if (eta == null) { if (g) g.span = null; return {}; }
+    if (!g.span) g.span = eta;
+    return { eta: +eta.toFixed(2), span: +g.span.toFixed(2) };
+  }
+
   stepGary(dt) {
     if (this.phase !== 'shift' || this.endless || this.day < GARY.FROM_DAY || this.paused()) return;
     const g = this.gary;
@@ -1075,6 +1103,7 @@ export class Crew {
       for (const o of [...this.players.values(), ...this.helpers]) {     // he drives like he owns the place
         if (stop.id === 'stand') break;          // ...except into the huddle he asked for (playtest)
         if (o.down > 0 || this.driving(o) || this.aloft(o)) continue;
+        if (Math.hypot(o.x - 26, o.z - 6) < GARY.HUDDLE_R) continue;   // nor over anyone in the ring, on any leg (playtest round 2 #2)
         if (Math.hypot(o.x - g.x, o.z - g.z) < 1.3) { this.knockDown(o, 'gary'); this.stats.runOver++; }
       }
       return;
@@ -1251,6 +1280,12 @@ export class Crew {
       const k = this.mods.kpi();
       if (k != null && this.gaugeWas != null && this.gaugeWas >= QUOTA_KPI && k < QUOTA_KPI) { this.reRallied = true; this.events.push({ t: 'rally', need: RALLY_LINES.gauge[this.venue] ?? null }); }
       if (k != null) this.gaugeWas = k;
+      // Playtest round 2 #1: a second look ~30 s into Last Call. Still short: one more line, on the same 'rally' event.
+      if (!this.reRallied && this.shiftT >= this.shiftSecs - LAST_CALL.SECS + Math.min(RALLY_RECHECK, LAST_CALL.SECS / 2)) {
+        this.reRallied = true;
+        const need = this.rallyNeed();
+        if (need && need !== RALLY_LINES.onTarget) this.events.push({ t: 'rally', need });
+      }
     }
     // Customers: arrive at the gate, grab a bucket, hit it, walk out. A filthy mat is refused.
     this.custT += dt;
@@ -1443,7 +1478,7 @@ export class Crew {
     if (this.day >= 3 && dayCash > this.records.cash) {
       record = { cash: dayCash, was: this.records.cash };
       this.records = { cash: dayCash, banked: this.stats.deposited - (onePay ? 1 : 0), day: this.day };
-      this.pa('record');
+      // No PA here (playtest round 2 #4): it landed on the bell's stamp. The report's "Crew record!" line says it.
     }
     for (const k of Object.keys(this.stats)) this.totals[k] = (this.totals[k] ?? 0) + this.stats[k];
     this.report = { day: this.day, ...this.stats, left: this.balls.size, bank: this.cash, quota, record,
@@ -1519,7 +1554,7 @@ export class Crew {
       mower: mowerSnap(this.mower),
       ct: +this.custT.toFixed(2), mats: this.mats.map(matWire),
       gary: this.gary && { phase: this.gary.phase, t: +this.gary.t.toFixed(1), x: +this.gary.x.toFixed(2), z: +this.gary.z.toFixed(2), yaw: +this.gary.yaw.toFixed(3),
-        to: this.gary.phase === 'drive' ? this.garyStops()[this.gary.stop]?.id ?? null : null },   // round 6 #5: the Board's GARY 3 · 2 · 1
+        to: this.gary.phase === 'drive' ? this.garyStops()[this.gary.stop]?.id ?? null : null, ...this.garyEtaWire() },   // round 6 #5: the Board's GARY 3 · 2 · 1
       pond: { sunk: this.sunkCount(), unlocked: this.pondOpen(), lostFound: this.lostFound, treasure: this.treasure,
         line: this.line.n, tube: this.tube.q.reduce((s, e) => s + e.n, 0), clarity: this.pondOpen() ? pondClarity(this.sunkCount()) : null },
       fries: { stock: this.fries, max: FRIES.MAX, open: !!this.perks.shed },
