@@ -14,6 +14,7 @@ import * as NET from './net.js';
 import * as SFX from './sfx.js';
 import { createBoard } from './board.js';
 import * as AMB from './ambience.js';
+import * as SET from './settings.js';
 import { createSwing, strikeToLaunch } from './swing.js';
 import { createScenery } from './scenery.js';
 import { createKitchen } from './kitchen.js';
@@ -575,7 +576,7 @@ function onEvent(e) {
       toast('LAST CALL: glow balls are worth ×2 until the bell', 3);
       break;
     case 'quota':
-      toast(e.hit ? `Quota HIT: BV ${money(e.bv)} vs ${money(e.target)}. Bonus ${money(e.bonus)} and a review stamp` : `Quota missed: BV ${money(e.bv)} vs ${money(e.target)}. Corporate is not angry. Corporate is disappointed.`, 4);
+      toast(e.hit ? `Quota HIT: BV ${money(e.bv)} vs ${money(e.target)}. Bonus ${money(e.bonus)} and a review stamp` : e.idle ? 'Quota missed: nothing was banked today. Corporate counts balls, not vibes.' : `Quota missed: BV ${money(e.bv)} vs ${money(e.target)}. Corporate is not angry. Corporate is disappointed.`, 4);
       if (e.hit) SFX.jackpot();
       break;
     case 'spotless':
@@ -927,7 +928,7 @@ function showPhase() {
       ${report.runOver ? `<p>Run over by the cart <b>${report.runOver}</b></p>` : ''}
       <p>Balls left out there <b>${report.left}</b></p>
       <p>In the bank <b>${money(report.bank)}</b></p>
-      ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : 'QUOTA MISSED'} <b>BV ${money(report.quota.bv)} / ${money(report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
+      ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b>BV ${money(report.quota.bv)} / ${money(report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
       ${report.quota ? `<p>Review stamps <b>${report.quota.stamps} · ${report.quota.title}</b></p>` : ''}
       ${report.tomorrow ? `<p class="dim">${report.tomorrow}</p>` : ''}`;
   }
@@ -941,6 +942,7 @@ $('join-code').addEventListener('keydown', e => { if (e.key === 'Enter') enter('
 $('start').addEventListener('click', startShift);
 $('next').addEventListener('click', startShift);
 $('resume').addEventListener('click', () => pause(false));
+$('settings-open').addEventListener('click', () => openSettings(true));
 $('store-close').addEventListener('click', () => toggleStore(false));
 $('leave').addEventListener('click', () => { link?.close(); link = null; try { sessionStorage.clear(); } catch {} location.reload(); });
 {
@@ -988,8 +990,8 @@ addEventListener('mousemove', e => {
   r2?.mouseMove(e);
   if (r2?.capturing()) return;                      // cranking, CCTV, or a venue reveal
   if (document.pointerLockElement !== canvas || driving() || swing.dragging) return;
-  me.yaw -= e.movementX * 0.0025;
-  me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch - e.movementY * 0.0025));
+  me.yaw -= e.movementX * 0.0025 * SET.get().look;
+  me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch - e.movementY * 0.0025 * SET.get().look * (SET.get().invertY ? -1 : 1)));
 });
 // The store: open any time with Tab / D-pad up. The range keeps going while you shop.
 let storeOpen = false;
@@ -1001,8 +1003,21 @@ function toggleStore(on = !storeOpen) {
   renderShop();
   if (on) { document.exitPointerLock?.(); keys.clear(); focusFirst($('store')); } else if (crew.phase === 'shift') lockMouse();
 }
+// Settings (web/js/settings.js): a card of its own, reached from the pause menu.
+function openSettings(on) {
+  $('settings').classList.toggle('hidden', !on);
+  $('pause').classList.toggle('hidden', on || !paused);
+  if (on) { SET.render($('settings'), { onBack: () => openSettings(false) }); focusFirst($('settings')); }
+  else focusFirst($('pause'));
+}
+SET.onChange(s => {
+  SFX.setVolumes({ master: s.master, sfx: s.sfx }); AMB.setVolume(s.ambience);
+  const pa = r2?.pa; if (pa) { pa.setVolume(s.pa); pa.setVoiceEnabled(s.paMode === 'voice'); }
+});
+const hinter = SET.createHinter();
 function pause(on) {
   if (!link) return;
+  if (!on) $('settings').classList.add('hidden');
   paused = on;
   $('pause').classList.toggle('hidden', !on);
   if (on) { document.exitPointerLock?.(); focusFirst($('pause')); } else if (crew.phase === 'shift') lockMouse();
@@ -1010,8 +1025,8 @@ function pause(on) {
 
 // ---------------------------------------------------------------- controller
 // Menus are driven with the D-pad or left stick plus Ⓐ, like a console app.
-const menuOpen = () => kitchen.isOpen || !!$('endcard') || ['title', 'lobby', 'report', 'pause', 'store'].some(id => !$(id).classList.contains('hidden'));
-const menuRoot = () => $('endcard') ?? ['pause', 'store', 'report', 'lobby', 'title'].map($).find(el => !el.classList.contains('hidden')) ?? null;
+const menuOpen = () => kitchen.isOpen || !!$('endcard') || ['title', 'lobby', 'report', 'pause', 'settings', 'store'].some(id => !$(id).classList.contains('hidden'));
+const menuRoot = () => $('endcard') ?? ['settings', 'pause', 'store', 'report', 'lobby', 'title'].map($).find(el => !el.classList.contains('hidden')) ?? null;
 function focusFirst(root) { const t = navTargets(root); if (t.length && !root.contains(document.activeElement)) t[0].focus(); }
 
 let pad = null, navHeld = 0;
@@ -1027,7 +1042,7 @@ function pollPad(dt) {
     if (dx || dy) {
       if ((navHeld -= dt) <= 0) {
         const targets = navTargets(root), cur = root.contains(document.activeElement) ? document.activeElement : null;
-        navPick(cur, targets, dx, dy)?.focus();
+        if (!(dx && !dy && SET.padAdjust(cur, dx))) navPick(cur, targets, dx, dy)?.focus();   // a focused slider eats left/right
         navHeld = navHeld < -1 ? 0.12 : 0.28;   // first step slow, then repeat
       }
     } else navHeld = 0;
@@ -1036,6 +1051,7 @@ function pollPad(dt) {
       if (el?.tagName === 'BUTTON') el.click(); else el?.focus();   // on Xbox, a focused input opens the keyboard
     }
     if (pad.pressed[BTN.B] && root.id === 'pause') pause(false);
+    if ((pad.pressed[BTN.B] || pad.pressed[BTN.MENU]) && root.id === 'settings') openSettings(false);
     if ((pad.pressed[BTN.B] || pad.pressed[BTN.MENU] || pad.pressed[BTN.VIEW]) && root.id === 'store') toggleStore(false);
     if (pad.pressed[BTN.MENU] && root.id === 'pause') pause(false);
     return [0, 0];
@@ -1052,8 +1068,8 @@ function pollPad(dt) {
   if (pad.pressed[BTN.RS]) padSprint = true;
   if (swing.enabled) swing.stepPad(pad, dt, performance.now());
   else if (!driving() && !r2?.capturing()) {
-    me.yaw -= pad.rx * 2.6 * dt;
-    me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch - pad.ry * 1.8 * dt));
+    me.yaw -= pad.rx * 2.6 * dt * SET.get().look;
+    me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch - pad.ry * 1.8 * dt * SET.get().look * (SET.get().invertY ? -1 : 1)));
   }
   return [pad.lx, pad.ly];
 }
@@ -1292,6 +1308,7 @@ function frame(now) {
   }
   r2?.tick(dt, now);       // after the camera: CCTV and the venue reveal drive it when active
   if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
+  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen(), venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: t => toast(t, 5) });
   board.tick(dt);
   mowe.update(crew.mower ?? null); mowe.tick(dt, sceneT);
   kitchen.tick(dt);
@@ -1321,6 +1338,7 @@ r2 = setupRound2({
   get sign() { return signRef; },
   link: () => link, crew: () => crew, report: () => report, driving, pad: () => pad, balls: () => balls,
 });
+SET.set({});   // re-apply saved settings now the PA exists
 requestAnimationFrame(frame);
 
 // Dev hook: /?debug exposes live state for poking at from the console.

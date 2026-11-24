@@ -264,7 +264,7 @@ export function setupRound2(ctx) {
   }
 
   return {
-    onEvent, onSnapshot, press, release, capturing, mouseMove, wheel, toggleCCTV, tick, hudLine, prompt,
+    pa, onEvent, onSnapshot, press, release, capturing, mouseMove, wheel, toggleCCTV, tick, hudLine, prompt,
     pumpBegin, pumpEnd, haulBegin, haulEnd, pumpRate: () => (pumpOn ? pumpRateNow : 0.6),
     get cctvOn() { return cctv.isOn; }, get revealing() { return !!reveal; },
     setMouseDown(v) { mouse.down = v; if (v) mouse.click = true; },

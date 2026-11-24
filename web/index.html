@@ -12,8 +12,9 @@
   canvas { display: block; width: 100vw; height: 100vh; outline: none; }
   .hidden { display: none !important; }
 
-  .card { position: fixed; inset: 0; display: grid; place-content: center; text-align: center; gap: 0.9em; padding: 16px;
+  .card { position: fixed; inset: 0; z-index: 80; display: grid; place-content: center; text-align: center; gap: 0.9em; padding: 16px;
     background: linear-gradient(rgba(30, 28, 56, 0.35), rgba(30, 28, 56, 0.78)); }
+  #pause, #settings { background: rgba(14, 12, 24, 0.86); }
   .card h1 { margin: 0; font-size: 3.2em; letter-spacing: 0.02em; text-shadow: 0 0.08em 0.3em #0008; }
   .card h2 { margin: 0; font-size: 1.6em; }
   .card p { margin: 0; color: var(--dim); }
@@ -47,7 +48,7 @@
   #crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: var(--ink); opacity: 0.8; }
   #prompt { position: absolute; left: 0; right: 0; top: 58%; text-align: center; text-shadow: 0 0.06em 0.25em #000c; }
   #net { position: absolute; left: 0; right: 0; bottom: 4%; text-align: center; color: var(--bad); text-shadow: 0 0.06em 0.25em #000c; }
-  #toast { position: fixed; left: 50%; bottom: 12%; transform: translate(-50%, 1em); opacity: 0; transition: 0.25s;
+  #toast { position: fixed; z-index: 90; left: 50%; bottom: 12%; transform: translate(-50%, 1em); opacity: 0; transition: 0.25s;
     background: var(--panel); padding: 0.4em 1em; border-radius: 0.6em; pointer-events: none; text-align: center; max-width: calc(100vw - 32px); }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
   #feed { position: fixed; left: 16px; top: 34%; display: flex; flex-direction: column; gap: 0.25em; pointer-events: none; font-size: 0.8em; max-width: 40vw; }
@@ -98,6 +99,11 @@
 
   .keys { color: var(--dim); font-weight: 500; font-size: 0.85em; }
   .pad .kb, body:not(.pad) .gp { display: none; }
+  .settings-grid { display: grid; gap: 0.5em; width: min(30em, 92vw); margin: 0 auto; }
+  .srow { display: grid; grid-template-columns: 11em 1fr 4.5em; align-items: center; gap: 0.7em; text-align: left; }
+  .srow output { text-align: right; color: var(--dim); }
+  .srow input[type=range] { width: 100%; padding: 0.3em 0; background: none; accent-color: var(--accent); }
+  .srow button { grid-column: 2; justify-self: start; min-width: 11em; }
 </style>
 <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
 </head>
@@ -159,8 +165,10 @@
 <div id="pause" class="card hidden">
   <h1>Paused</h1>
   <p>The range keeps going without you. It's a shared range.</p>
-  <div class="row"><button id="resume">Back to work</button><button id="leave" class="quiet">Leave crew</button></div>
+  <div class="row"><button id="resume">Back to work</button><button id="settings-open" class="quiet">Settings</button><button id="leave" class="quiet">Leave crew</button></div>
 </div>
+
+<div id="settings" class="card hidden"></div>
 
 <div id="memo" class="hidden" role="status" aria-live="polite">
   <div class="memo-head"><span class="dimples">●</span> FAIRWAY HOLDINGS INTERNATIONAL · INTEROFFICE MEMO</div>

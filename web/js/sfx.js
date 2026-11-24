@@ -10,6 +10,8 @@ let ctx = null;
 let master = null;
 let noiseBuf = null;
 let muted = false;
+let out = null;                 // master volume -> destination; `master` below is the SFX bus feeding it
+let vMaster = 1, vSfx = 1;      // settings volumes (web/js/settings.js)
 
 // Create or resume the context. Call from click / keydown / gamepad handlers.
 export function unlock() {
@@ -18,21 +20,34 @@ export function unlock() {
       const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
       if (!AC) return;
       ctx = new AC();
+      out = ctx.createGain();
+      out.gain.value = muted ? 0 : MASTER_LEVEL * vMaster;
+      out.connect(ctx.destination);
       master = ctx.createGain();
-      master.gain.value = muted ? 0 : MASTER_LEVEL;
-      master.connect(ctx.destination);
+      master.gain.value = vSfx;
+      master.connect(out);
     }
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   } catch {
     ctx = null;
     master = null;
+    out = null;
   }
 }
 
 export function setMuted(m) {
   muted = !!m;
   try {
-    if (master) master.gain.setTargetAtTime(muted ? 0 : MASTER_LEVEL, ctx.currentTime, 0.01);
+    if (out) out.gain.setTargetAtTime(muted ? 0 : MASTER_LEVEL * vMaster, ctx.currentTime, 0.01);
+  } catch { /* ignore */ }
+}
+
+// Settings volumes, 0..1: master scales everything (ambience and the PA chime too), sfx only the effects.
+export function setVolumes({ master: m = vMaster, sfx = vSfx } = {}) {
+  vMaster = Math.min(1, Math.max(0, +m || 0)); vSfx = Math.min(1, Math.max(0, +sfx || 0));
+  try {
+    if (out) out.gain.setTargetAtTime(muted ? 0 : MASTER_LEVEL * vMaster, ctx.currentTime, 0.02);
+    if (master) master.gain.setTargetAtTime(vSfx, ctx.currentTime, 0.02);
   } catch { /* ignore */ }
 }
 
@@ -239,4 +254,4 @@ export function sprayLoop() {
 }
 
 // Hand the live context and master to other audio modules (ambience.js).
-export function audioHandle() { return ctx && master ? { ctx, master, isMuted } : null; }
+export function audioHandle() { return ctx && master ? { ctx, master: out, isMuted } : null; }

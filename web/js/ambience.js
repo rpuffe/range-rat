@@ -23,9 +23,16 @@ let lastTick = 0;
 let bus = null; // everything ambient feeds this
 let lp = null; // underwater low-pass, sits after bus
 let out = null; // LEVEL gain
+let vol = 1;     // settings volume (web/js/settings.js)
 let beds = null; // { wind, windGain, crick, crickGain, hum, humGain, rumble, rumbleGain, nodes[] }
 
 const state = { tod: 0.3, lastCall: false, underwater: false, nearField: 0, crowd: 0 };
+
+// Ambience volume from the settings page, 0..1.
+export function setVolume(v) {
+  vol = clamp01(v);
+  try { if (out && ctx) out.gain.setTargetAtTime(LEVEL * vol * (state.lastCall ? 1.15 : 1), ctx.currentTime, 0.05); } catch { /* ignore */ }
+}
 
 // Hand over the sfx context and master gain. Safe to call repeatedly; a new
 // context replaces the old one (beds are rebuilt on the next startAmbience).
@@ -88,7 +95,7 @@ function build() {
   lp.frequency.value = 20000;
   lp.Q.value = 0.7;
   out = c.createGain();
-  out.gain.value = LEVEL;
+  out.gain.value = LEVEL * vol;
   bus.connect(lp).connect(out).connect(dest);
 
   const nodes = [];
@@ -205,7 +212,7 @@ function apply(instant) {
     beds.humGain.gain.setTargetAtTime(s.lastCall ? 0.014 : 0, t, tau * 2);
     beds.rumbleGain.gain.setTargetAtTime(s.underwater ? 0.09 : 0, t, tau);
     lp.frequency.setTargetAtTime(s.underwater ? 400 : 20000, t, instant ? 0.01 : 0.15);
-    out.gain.setTargetAtTime(LEVEL * (s.lastCall ? 1.15 : 1), t, tau);
+    out.gain.setTargetAtTime(LEVEL * vol * (s.lastCall ? 1.15 : 1), t, tau);
   } catch { /* ignore */ }
 }
 

@@ -79,6 +79,7 @@ function drawSeal(canvas) {
 
 export function createPA({ root, audio } = {}) {
   let voiceEnabled = true;
+  let volume = 1;     // settings PA volume, 0..1
   let queue = [];
   let playing = null; // { timer }
   let lastPlayed = new Map(); // id -> ms
@@ -154,7 +155,7 @@ export function createPA({ root, audio } = {}) {
       const h = audio && audio();
       if (!h || !h.ctx || isMuted()) return 0;
       const { ctx } = h;
-      const dest = h.master || ctx.destination;
+      const dest = ctx.createGain(); dest.gain.value = volume; dest.connect(h.master || ctx.destination);
       if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
       const t0 = ctx.currentTime + 0.02;
       // 60 ms bandpass mic-click
@@ -199,7 +200,7 @@ export function createPA({ root, audio } = {}) {
       const u = new Utter(text);
       const v = pickVoice();
       if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-US';
-      u.rate = 0.92; u.pitch = 0.9; u.volume = 0.9;
+      u.rate = 0.92; u.pitch = 0.9; u.volume = 0.9 * volume;
       synth.speak(u);
     } catch { /* captions still show */ }
   }
@@ -253,6 +254,7 @@ export function createPA({ root, audio } = {}) {
     say,
     stop,
     get muted() { return isMuted() || !voiceEnabled; },
+    setVolume(v) { volume = Math.min(1, Math.max(0, +v || 0)); },
     setVoiceEnabled(on) {
       voiceEnabled = !!on;
       if (!voiceEnabled) { try { if (synth) synth.cancel(); } catch { /* ignore */ } }

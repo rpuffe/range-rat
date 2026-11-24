@@ -1278,7 +1278,7 @@ export class Crew {
       const hit = this.stats.deposited > 0 && v.bv / v.rate + 1e-9 >= 1 + this.quota.q;
       const bonus = hit ? cents(this.stats.cash * 0.15) : 0;
       if (hit) { this.stamps++; this.cash = cents(this.cash + bonus); }
-      quota = { target, bv: v.bv, hit, bonus, stamps: this.stamps, title: this.title() };
+      quota = { target, bv: v.bv, hit, bonus, stamps: this.stamps, title: this.title(), ...(this.stats.deposited > 0 ? {} : { idle: true }) };
       this.events.push({ t: 'quota', ...quota });
     }
     // Crew records (from day 3).
