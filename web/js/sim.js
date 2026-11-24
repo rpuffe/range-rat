@@ -481,6 +481,7 @@ export const GARY = {
   FROM_DAY: 4, AT: 0.43, WARN_SECS: 45, SPEED: 5, PAUSE: 3,   // day 4 (playtest: day 3 already brings the first target and gold)
   CLEAN: 0.34,              // a stop passes at this much mud or less
   HUDDLE_R: 8,              // every online Rat this close to the stand when he arrives: it counts twice
+  STALL: 3, STALLS: 3,      // council round 8 #2: a crew ball on his cart while he drives: 3 s of notes, 3 times a visit
   START: { x: 60, z: 14 },
   STOPS: [
     { id: 'sign', x: 14, z: 13 },

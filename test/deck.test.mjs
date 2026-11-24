@@ -301,3 +301,38 @@ test('round 7 #8: a filled round is +2 Drinks and a 25 x BV tab; at 4 Drinks it 
   assert.equal(crew.cash, cash); assert.equal(st.deck.drinks, drinks); assert.equal(crew.stats.incidents ?? 0, 0);
 });
 
+
+// ---- Council round 8 #5: Liability escalates ------------------------------------------------------------------------
+test('round 8 #5: fineFor escalates 50 / 100 / 200 / 200 x BV for falls 1-4 of a shift', async () => {
+  const { fineMult, ordinal } = await import('../web/js/deck.js');
+  assert.equal(DECK.FINE_CAP, 4);
+  assert.deepEqual([1, 2, 3, 4, 5].map(k => fineFor(10, k)), [500, 1000, 2000, 2000, 2000]);
+  assert.equal(fineFor(10), 500, 'k defaults to the first fall');
+  assert.equal(fineMult(0), 1);
+  assert.deepEqual([1, 2, 3, 4, 11, 12, 13, 21, 22].map(ordinal), ['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd']);
+});
+
+test('round 8 #5: falls count per shift (the event carries k and the escalated fine) and reset each morning', () => {
+  const { crew, serve } = setup();
+  const fall = () => { const d = crew.mods.state('deck').deck; d.drinks = DECK.MAX - 1; serve('beer'); return crew.events.filter(e => e.t === 'deckFall').at(-1); };
+  const ks = [], ratio = [];
+  for (let i = 0; i < 4; i++) { const e = fall(); ks.push(e.k); ratio.push(Math.round(e.fine / crew.valueNow().bv)); }   // BV after the serve, as the fine reads it
+  assert.deepEqual(ks, [1, 2, 3, 4]);
+  assert.deepEqual(ratio, [50, 100, 200, 200]);
+  assert.equal(crew.mods.state('deck').falls, 4);
+  deck.startShift(crew, crew.mods.state('deck'));
+  assert.equal(crew.mods.state('deck').falls, 0, 'a new morning, a clean sheet');
+  assert.equal(fall().k, 1);
+});
+
+test('round 8 #5: a greedy cook (every order and round, no food) ends a shift with >= 2 falls and >= 150 x BV of fines', () => {
+  const { crew, run, serve } = setup(2, {}, 420);
+  const st = crew.mods.state('deck');
+  let xbv = 0;
+  for (let t = 0; t < 420; t += 0.5) {
+    run(0.5);
+    if (st.deck.order) { const bv = crew.valueNow().bv, f0 = crew.stats.deckFines ?? 0; serve('beer'); xbv += ((crew.stats.deckFines ?? 0) - f0) / bv; }
+  }
+  assert.ok((crew.stats.incidents ?? 0) >= 2, 'falls ' + crew.stats.incidents);
+  assert.ok(xbv >= 150 - 1e-6, 'fines ' + xbv.toFixed(1) + ' x BV');
+});

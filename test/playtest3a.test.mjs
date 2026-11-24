@@ -35,7 +35,7 @@ test('#1: a Gary line stays up at the pass mark and clears only once the stop is
   assert.equal(m.nudges()[b.id], 'gary:sign', 'passing is not enough: the line holds');
   m.crew.fixtures.sign = GARY_SPOTLESS - 0.01;
   m.step(0.1);
-  assert.equal(m.nudges()[b.id], undefined, 'Spotless: the line clears');
+  assert.equal(m.nudges()[b.id], 'gary:stall', 'Spotless: the stop line clears (round 8 #2: nothing left, so stall him)');
   assert.equal(m.nudges()[a.id], 'gary:mats', 'the other line is untouched');
 });
 
@@ -46,7 +46,7 @@ test('#1: a stop that fails again during the warning is dealt again', () => {
   m.crew.fixtures.sign = 0.9; m.crew.fixtures.stand = 0; m.mats(0.9);
   toWarn(m);
   m.crew.fixtures.sign = 0; m.step(0.1);
-  assert.equal(m.nudges()[b.id], undefined);
+  assert.equal(m.nudges()[b.id], 'gary:stall');
   m.crew.fixtures.sign = 0.8; m.step(0.1);   // scuffed again while he's still on his way
   assert.equal(m.nudges()[b.id], 'gary:sign', 're-dealt');
   assert.equal(m.crew.gary.phase, 'warn');
@@ -63,13 +63,14 @@ test('#12: solo, a Spotless stop deals the next failing one', () => {
   const next = m.nudges()[a.id];
   assert.ok(next === 'gary:mats' || next === 'gary:stand', `the next failing stop (${next})`);
   m.crew.fixtures.stand = 0; m.mats(0); m.step(0.1);
-  assert.equal(m.nudges()[a.id], undefined, 'everything Spotless: no line');
+  assert.equal(m.nudges()[a.id], 'gary:meet', 'everything Spotless: meet him at the stand (round 8 #2)');
 });
 
 test('#1: redealGary skips the stops someone still holds', () => {
   const stops = [{ id: 'sign', x: 14, z: 13 }, { id: 'mats', x: 0, z: 3.5 }];
   assert.deepEqual(redealGary(stops, [{ id: 'a', x: 14, z: 13 }], ['sign']), { a: 'mats' });
-  assert.deepEqual(redealGary(stops, [{ id: 'a', x: 0, z: 0 }], ['sign', 'mats']), {});
+  assert.deepEqual(redealGary(stops, [{ id: 'a', x: 0, z: 0 }], ['sign', 'mats']), { a: 'stall' }, 'round 8 #2: every failing stop held: stall');
+  assert.deepEqual(redealGary([], [{ id: 'a', x: 0, z: 0 }], []), { a: 'meet' }, 'nothing fails: meet');
 });
 
 // ---- #2: the countdown lasts ~5 s at every venue, with or without a cart -----------------------------------------

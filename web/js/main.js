@@ -10,7 +10,7 @@ import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
 import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, shopShows, shopDay, priceScale, perks,
   CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB,
-  VENUE_RULES } from './sim.js';
+  VENUE_RULES, GARY } from './sim.js';
 import * as NET from './net.js';
 import * as SFX from './sfx.js';
 import { createBoard } from './board.js';
@@ -38,10 +38,12 @@ import { createPerf } from './perf.js';
 import { createPace } from './pace.js'; const pace = createPace({ search: location.search, storage: (() => { try { return sessionStorage; } catch { return null; } })(), clipboard: navigator.clipboard }); pace.bind(document.getElementById('pace-copy'));   // ?pace: the pace log
 import { setHeavyRate } from './venues.js';
 import { createProps } from './props.js';
+import { tipCtx, createTipPointer } from './tips.js'; const tipPointer = createTipPointer();   // owner notes: a tip per new thing, and the arrow
 import { PAYFLOAT, payRoute, createRoller } from './payfloat.js';   // council round 6 #7: only your own cash floats over you
-import { nudgeLine, nudgeTarget } from './nudge.js';    // council round 6 #10 / round 7 #4: day 2, Gary's dealt stops, day 3
+import { nudgeLine, nudgeTarget, GARY_STALLED } from './nudge.js';    // council round 6 #10 / round 7 #4: day 2, Gary's dealt stops, day 3
 import { createSay } from './say.js';                     // council round 7 #3: the one centre-text queue
 import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';   // sign facings (test/signs.test.mjs; ?signs checks the meshes)
+import { createDusk } from './duskview.js';                // end of the day: the overhead walk-off between the stamp and the report
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
@@ -159,7 +161,7 @@ scene.traverse(o => {   // the customer mats were built above; find them by posi
 function paintFixtures(fx) {
   for (const [id, mud] of Object.entries(fx ?? {})) {
     const fm = fixtureMats[id];
-    if (fm) fm.mat.color.copy(fm.base).lerp(MUD, Math.min(1, mud) * 0.85);
+    if (fm && !fm.mat.userData.mudOverlay) fm.mat.color.copy(fm.base).lerp(MUD, Math.min(1, mud) * 0.85);   // props.js draws the mats' mud
   }
 }
 
@@ -342,6 +344,7 @@ function buildGary() {
   const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.42, 3, 8), lambert(0x2b3a67));
   arm.position.y = -0.27; v.arm.add(arm);
   v.salute = 0;
+  v.notes = 0;     // council round 8 #2: a stall, "taking notes": the same arm up as a clipboard for GARY.STALL s
   return v;
 }
 // The fleet (council round 4): one view per cart the crew owns, each { ...buildCart(), pose } (mesh, reels, mud, flash).
@@ -431,6 +434,7 @@ function gearModel(level) {
     lance.rotation.x = Math.PI / 2; lance.position.set(0.32, 1.0, -0.75); g.add(lance);
     const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.015, 0.06, 8), lambert(0x222222));
     tip.rotation.x = Math.PI / 2; tip.position.set(0.32, 1.0, -1.2); g.add(tip);
+    const nozzleTip = new THREE.Object3D(); nozzleTip.name = 'nozzleTip'; nozzleTip.position.set(0.32, 1.0, -1.235); g.add(nozzleTip);   // the spray's origin (updateSpray, props.js)
   } else if (level >= 3) {     // push picker: a wire drum on an axle, a long handle
     const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 12, 3, true), wire);
     drum.rotation.z = Math.PI / 2; drum.position.set(0, 0.28, -1.6); drum.name = 'drum'; g.add(drum);
@@ -583,7 +587,10 @@ function onEvent(e) {
       break;
     case 'enthusiasm':
       SFX.ping();
-      (e.by === me.id ? toast : feed)(e.by === me.id ? 'DING. Gary has noted your enthusiasm.' : `${nameOf(e.by)} hit Gary's cart. Gary has noted their enthusiasm.`, 2.5);
+      if (e.stall) {   // council round 8 #2: a crew ball stalls him for GARY.STALL s (3 a visit)
+        if (garyView) garyView.notes = GARY.STALL;
+        if (e.by === me.id) toast(GARY_STALLED, 2.5); else feed(`${nameOf(e.by)} stalled Gary. He's taking notes.`, 2.5);
+      } else (e.by === me.id ? toast : feed)(e.by === me.id ? 'DING. Gary has noted your enthusiasm.' : `${nameOf(e.by)} hit Gary's cart. Gary has noted their enthusiasm.`, 2.5);
       break;
     case 'ping': {
       SFX.ping();
@@ -672,6 +679,8 @@ function onEvent(e) {
       if (e.phase === 'shift') me.placed = false;   // no 'range is open' toast: the PA line and the memo say it (one thing at a time)
       crew.phase = e.phase;
       if (e.phase !== 'report') sayer.open();   // the report closed: held PA cards and memos go
+      if (e.phase !== 'report') dusk.stop();    // clock-in: the stand-ins go, the real avatars and the camera are back
+      else stampUntil = dusk.queue({ at: stampUntil, ending: !!report?.ending, onDone: () => { stampUntil = 0; showPhase(); } }) ?? stampUntil;   // the walk-off, then the card
       showPhase();
       break;
   }
@@ -1282,7 +1291,8 @@ function renderTodo(dt) {
   // Day 2's one-line suggestion (council round 6 #10) uses this slot and arrow, only once the checklist is gone.
   const nudge = !list || todoDoneT >= 3 ? crew.mods?.nudge?.[me.id] ?? null : null;
   const show = (!!list && todoDoneT < 3 || !!nudge) && playing() && !textBusy();
-  const tg = show && nudge ? nudgeTarget(nudge, me.wand, me, { cart: crewCarts().reduce((m, c) => (!m || (c.mud ?? 0) > (m.mud ?? 0) ? c : m), null) }) : show && cur ? todoTarget(cur.id) : null;
+  const tg = show && nudge ? nudgeTarget(nudge, me.wand, me, { cart: crewCarts().reduce((m, c) => (!m || (c.mud ?? 0) > (m.mud ?? 0) ? c : m), null), gary: crew.gary ? (crew.gary.phase === 'drive' ? garyPose : crew.gary) : null }) : show && cur ? todoTarget(cur.id)
+    : !list && !nudge ? tipPointer.target(dt, crew, me, playing() && !textBusy()) : null;   // owner notes: the arrow points at a new thing's tip
   todoArrow.g.visible = todoArrow.ring.visible = !!tg;
   if (tg) {
     const bob = Math.sin(todoT * 4) * 0.2;
@@ -1345,7 +1355,7 @@ function hud(dt = 0) {
     : crew.pond?.unlocked && hasTube(crew.up) && atTube(me) && (carrying() > 0 || me.treasure) ? `${ibtn}  Feed the tube${crew.pond.tube ? ` (${crew.pond.tube} in flight)` : ''}`
     : dockOpen(me) ? 'Walk into the pond to dive for sunk balls'
     : atShed(me) && crew.fries?.open ? `${btn}: kitchen · fries ${crew.fries.stock}/${crew.fries.max}`
-    : atShed(me) ? (crew.venue ?? 0) >= 1 ? 'The snack shed is boarded up' : 'The snack shed is boarded up. It reopens at the Range Club.'
+    : atShed(me) && (crew.up?.shed ?? 0) >= 1 ? 'The snack shed is boarded up'   // owner notes: no shed in the world until it opens (stations.js)
     : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
     : me.wand ? performance.now() - wandAt < 3000 ? `Hold ${btn} to spray · look down to rinse your boots · ${ibtn} put it back` : `${btn} spray`
@@ -1371,16 +1381,24 @@ function flushWash(now) {
   if (washSecs > 0) link.act({ t: 'wash', secs: +washSecs.toFixed(3), target: washTarget });
   sprayStats.sent += washSecs; washSecs = 0; washSent = now;
 }
+const sprayAim = new THREE.Vector3(), sprayV = new THREE.Vector3();
 function updateSpray(dt, now) {
   const on = spraying && me.wand && playing() && me.down <= 0;
   if (sprayHiss) sprayHiss.set(on ? 1 : 0);
   if (on) {
     camera.getWorldDirection(sprayDir);
-    sprayFrom.set(0.32, -0.55, -1.0).applyQuaternion(camera.quaternion).add(camera.position);
+    // Owner notes: the droplets leave the nozzle tip (gearModel's 'nozzleTip') and fly to where the crosshair lands.
+    const tipObj = fpGear.getObjectByName('nozzleTip');
+    if (tipObj) tipObj.getWorldPosition(sprayFrom); else sprayFrom.set(0.37, -0.12, -2.08).applyQuaternion(camera.quaternion).add(camera.position);
+    const reach = sprayDir.y < -0.02 ? Math.min(9, (camera.position.y - 0.04) / -sprayDir.y) : 7;
+    sprayAim.copy(camera.position).addScaledVector(sprayDir, reach);
+    sprayV.copy(sprayAim).sub(sprayFrom);
+    const flight = sprayV.length() / 16;
+    sprayV.normalize().multiplyScalar(16); sprayV.y += 4.9 * flight;   // lob it a touch so gravity brings it onto the aim point
     for (let i = 0; i < 4; i++) {
       const d = drops[dropNext++ % SPRAY_N];
-      d.life = 0.45; d.p.copy(sprayFrom);
-      d.v.copy(sprayDir).multiplyScalar(16).add(sprayJit.set((Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2));
+      d.life = Math.min(0.6, flight + 0.08); d.p.copy(sprayFrom);
+      d.v.copy(sprayV).add(sprayJit.set((Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2, (Math.random() - 0.5) * 1.2));
     }
     // On target? The nearest of the cart (a ~1.5 m sphere) and the fixtures along the spray, within reach.
     sprayRay.set(camera.position, sprayDir);
@@ -1536,8 +1554,12 @@ function frame(now) {
   views?.aim(aimInput());   // round 6 #4: the landing ring at a crew bay
   views?.camera(camera, dt);
   r2?.tick(dt, now);       // after the camera: CCTV and the venue reveal drive it when active
-  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen() && !crew.todo && !crew.mods?.nudge?.[me.id] && !crew.mods?.orbit?.r?.[me.id],   // no ball-washer tips at 120 m venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: showHint,
-    day: crew.day, cash: crew.cash, signMud: crew.fixtures?.sign ?? 0, pocketFull: gp.pocket > 0 && carrying() >= gp.pocket, washerCash: crew.washer?.credit ?? 0, onDock: dockOpen(me), beers: beersPoured, deckOrder: !!crew.mods?.deck?.order });
+  dusk.tick(dt);           // the end-of-day walk-off: last word on the camera while it runs
+  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen() && !crew.todo && !crew.mods?.nudge?.[me.id] && !crew.mods?.orbit?.r?.[me.id],   // no ball-washer tips at 120 m
+    // (owner notes: venue/pad/show used to sit inside the comment above, so every hint was marked seen and never shown)
+    venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: (msg, id) => { showHint(msg); tipPointer.point(id); },
+    day: crew.day, cash: crew.cash, signMud: crew.fixtures?.sign ?? 0, pocketFull: gp.pocket > 0 && carrying() >= gp.pocket, washerCash: crew.washer?.credit ?? 0, onDock: dockOpen(me), beers: beersPoured, deckOrder: !!crew.mods?.deck?.order,
+    ...tipCtx(crew, me) });   // owner notes: up, myDive, mats' mud (tips.js)
   board.tick(dt);
   confetti.tick(dt);        // the shared confetti pool (round 6: the bell's stamp, the huddle)
   mowe.update(crew.mower ?? null); mowe.tick(dt, sceneT);
@@ -1562,6 +1584,10 @@ function frame(now) {
       garyView.arm.rotation.z = -2.6 * k; garyView.arm.rotation.x = -0.5 * k;
       garyView.hat.position.y = 2.08 + 0.18 * k; garyView.hat.rotation.x = -0.35 * k;
       if (garyView.salute <= 0 && garyView.to.phase !== 'drive') garyView.g.visible = false;
+    } else if (garyView.notes > 0) {   // round 8 #2: stalled, the arm up in front of him (his clipboard), then down
+      garyView.notes = Math.max(0, garyView.notes - dt);
+      const k = Math.min(1, garyView.notes * 3, (GARY.STALL - garyView.notes) * 3);
+      garyView.arm.rotation.x = -1.3 * k; garyView.arm.rotation.z = -0.3 * k;
     }
   }
   if (link) hud(dt);
@@ -1588,8 +1614,9 @@ views = createViews({
 });
 perf.attach({ sun: sky.sun, crowd, scuba, ballMesh, venueRate: setHeavyRate, toast: m => toast(m, 3) });
 // Station details and the cheap graphics pass (props.js), scaled by the perf profile.
-const props = createProps({ scene, camera, renderer, perf, sky, me, cartViews, fpGear, myGear,
+const props = createProps({ scene, camera, renderer, perf, sky, me, cartViews, fpGear, myGear, others,
   crew: () => crew, sprayOn: () => spraying && me.wand && playing() && me.down <= 0, ballCount: () => balls.size });
+const dusk = createDusk({ scene, camera, me, others, balls, crew: () => crew, buildPerson, animatePerson, perf, settings: SET.get, fpGear, myGear });
 SET.set({});   // re-apply saved settings now the PA exists
 requestAnimationFrame(frame);
 

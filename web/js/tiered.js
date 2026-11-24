@@ -52,3 +52,23 @@ export const hasGutters = up => ((up?.gutters ?? 0) | 0) >= GUTTERS.FROM_TIER;
 export const drainsAll = (up, venue) => hasGutters(up) && (venue | 0) >= GUTTERS.LINKED_VENUE;
 // The gutters drain on their own (1 a second a cup) only after Tiered.
 export const guttersDrain = (up, venue) => hasGutters(up) && (venue | 0) > GUTTERS.LINKED_VENUE;
+
+// Council round 8 (#1): the Glow Rush. At Tiered a glow ball resting in a cup counts GLOW_CUP towards the cup count
+// and Bay Utilization. Glow balls only spawn in Last Call (crew.mjs tick), so this is a Last Call rule with no clock
+// check: the cups fill twice as fast at dusk and the TARGET that saves the stamp lands in the last ~30 s. The flush
+// still banks real balls (ballCount), not this weight. From the Stadium on, a glow ball counts as one.
+export const RUSH = { GLOW_CUP: 2, VENUE: 2 };
+// What one resting ball adds to its cup's count: a splitter 3, a glow ball 2 at Tiered, anything else 1.
+export function cupWeight(b, venue) {
+  if (b?.kind === 'splitter') return 3;
+  if (b?.kind === 'glow' && (venue | 0) === RUSH.VENUE) return RUSH.GLOW_CUP;
+  return 1;
+}
+
+// Council round 8 #6 (B2): the report card's line for the TARGET that lifted Bay Utilization over the tick in Last Call
+// (the module's snapshot `saved`: { by, name, left }). Only on a stamped bell; "" otherwise. 6 words.
+export const clockText = secs => { const s = Math.max(0, Math.round(secs || 0)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+export function savedLine(saved, report) {
+  if (!saved || !report?.quota?.hit || (report.venue ?? RUSH.VENUE) !== RUSH.VENUE) return '';
+  return `Saved by ${saved.name || 'a Rat'}'s TARGET at ${clockText(saved.left)}.`;
+}

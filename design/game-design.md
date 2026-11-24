@@ -890,3 +890,70 @@ endless only. The report scrolls inside `.split`, which ends above the Next bar;
 pocket dots and the panel drops its "Fee: $X short" note while it shows; no PROMOTED toast over the report. Shorter
 text: "NEW: the GOLD BALL. Worth ×10. Dimples watches.", "Your gear is caked. Hose your boots.", and on day 5 with
 stamps and fee in hand "Tomorrow: sign at the bell for the Club."
+
+## Council round 8 build
+
+**#1 The Glow Rush (builder 1).** At Tiered a glow ball resting in a cup counts 2 towards the cup count and Bay
+Utilization (`RUSH = { GLOW_CUP: 2, VENUE: 2 }`, `cupWeight(b, venue)` in `web/js/tiered.js`; `recount` in
+`tiered.mjs` uses it). Glow balls only spawn in Last Call, so this is Last Call's rule with no clock check; a TARGET
+still banks real balls, and from the Stadium on a glow ball counts 1. The flags show the doubled count. The rally reads
+Tiered's gauge 0.5 ahead (`RALLY_MARGIN[2]`), so the bowls job is dealt almost every bell: "Glow rush! Cups fill
+double. Shoot late!"; the miss line is "Missed: the glow rush filled the bowls." Real rule, 4P late gear (`tiered4.mjs`):
+nobody shooting 0.00; one TARGET at T-50 passes 2 of 6 seeds, T-30 5 of 6, T-15 6 of 6 (0.53-0.93); solo T-15 6 of 6.
+
+**dealJobs: a new job is never dealt to nobody (builder 1).** When every Rat keeps its line at the 30 s re-check and a
+new job opens (the gauge going short), the nearest Rat on a doubled-up job takes it (the lowest-ranked such job), else
+the holder of the lowest-ranked job, if the new job outranks it. A new job below every held one stays undealt, as in a
+fresh deal with more jobs than Rats.
+
+**#5 Liability escalates (builder 1).** The k-th fall of a shift costs `DECK.FINE` x BV x min(2^(k-1), `FINE_CAP` 4):
+50, 100, 200, 200 x BV (`fineFor(bv, k)`). `st.falls` resets each morning; the `deckFall` event carries `k`. From the
+2nd fall everyone, the cook too, gets the feed line "Liability: -$16,400 (2nd fall today)." (views/deck.js); the PA card
+stays once-ever. Real rule (`deck3.mjs`, 4P, seeds 1-3): careful 0 falls, +47-54%; greedy 2 falls (50 + 100 x BV),
++10-11%; reckless 13 falls, -93 to -94% (the cash floor caps the later fines).
+
+**#6 The small pack (builder 1).** The marker's beam is cut (`AIM.BEAM_*` gone; one draw call less at a crew bay; the
+disc stays). "Saved by a TARGET": in Last Call at Tiered, a TARGET that lifts Bay Utilization from under 0.5 to 0.5 or
+over records `saved = { by, name, left }` in the tiered module (a later save replaces it, a dip under 0.5 at the
+next quarter-second recount clears it). It rides the module snapshot until the next morning, and the tiered
+view's report lines show "Saved by Cy's TARGET at 0:12." on a stamped bell (`savedLine` in `tiered.js`).
+
+**#2 · Gary goes further (builder 2).** No stop is ever dealt twice at Gary's warning: `dealGary` pairs one Rat per
+failing stop, nearest first, and every extra Rat gets `gary:stall` ("Stall Gary: ping his cart!") while anything
+fails, else `gary:meet` ("All clean. Meet Gary at the stand!"; `meet`, because `gary:stand` is already the
+hose-the-stand line). A Rat whose stop goes Spotless takes the next unheld failing stop (`redealGary`), else stall/meet.
+At his first stop the stop lines clear as before, but stall/meet lines stay up through the whole drive (stall while a
+stop still ahead fails, else meet) until the verdict. The stall: while he drives, a crew ball (`b.by`) on his cart adds
+`GARY.STALL` 3 s to `g.pause`, at most `GARY.STALLS` 3 a visit (`g.stalls`); the `enthusiasm` event carries
+`stall: 1..3`. The shooter's toast is "Gary stalled! He's taking notes." (`GARY_STALLED`), others get a feed line, and
+his arm comes up as a clipboard for the 3 s. The Board's count includes it via `garyEta`. Nothing checks who did what;
+the verdict is unchanged by stalls. Tests: `test/garystall.test.mjs`, `dealt`, `playtest3a`, `words`.
+
+**#4 · Everyone up the Lift (builder 2).** The platform crank is gone: the `orbpump` input is swallowed, `st.pump`,
+`crankGain`/`maxGain`, the snapshot's `p` and the "Tap Ⓐ to crank their oxygen" prompt are removed. EVA air is the
+dive tier's tank (it never ran short); the pond's buddy pump is untouched. The venue-5 sky line is "Debris overhead.
+Everyone up the Lift!", dealt to every Rat (one job). `sky.mjs` on the real rule: 4 riders (2 twin + 2 mask) 16 s,
+four masks 27 s, 2P masks 35 s, solo 62 s. Tests: `orbit` (orbpump ignored, four ride at once), `ending` (four on
+masks clear the sky, Ball No. 1 falls).
+
+**#3 · Endless: race yesterday, own the paint, earn the projects (builder 3).** Every endless bell (not the ending's
+shift, never a review day) writes `records.yesterday = { cash, curve }` and `records.streak` (+1 on a beat, else 0;
+`owner.js raceYesterday`, the record standing in before there is a yesterday). The snapshot's `pace` races
+`yesterdayPace(records)`: `record` is yesterday's cash, `vs: 'yesterday'|'record'`, `best` the all-time record. The
+endless Board reads YESTERDAY $X with a small BEST $Y under it (RECORD on an old save). The report's headline in
+endless is `streakLine`: "Beat yesterday · 4 in a row." / "Beat yesterday." / "Short of yesterday by $2.1M." (the
+"Record shift!" note and PA stay). Ball No. 1 sets `up.owner` to 1 (the colours are the deed); an endless save with 0
+lifts on load; tier 1 costs 0 with "Site 12 is yours. It's in your colours now." The Owner's Hustle is $120M, the statue
+$300M (×2.2 at 4P). `endless.mjs` on the real rule (`council8/endless-real.mjs`): beat yesterday 4/9 idle, 5/9 with
+varying effort, max streak 3; 4P Hustle after 1 shift, statue after 8; solo 2 and 9. Tests: `owner`.
+
+## Owner notes (stations, tips, mats, spray)
+
+- **Stations appear when they matter.** The ball washer (machine, sign, handles, chute, props, UNWASHED board, its contact shadow and worn dirt) is not in the world until the crew owns the Ball washer row; the snack shed (and the Club's KITCHEN board) not until it opens. A mid-game purchase pops it in (a 0.7 s overshoot scale) with a confetti puff. `web/js/stations.js` toggles `.visible` only on a change; props.js drives it. The "boarded up" prompt no longer shows for a shed that isn't there.
+- **First-time tips for new things** (settings.js, 8 words or fewer, keyboard and pad): a muddy mat near you or one a customer refuses (`mud`), the washer (`crank`, now also on purchase), the shed, the cart, dive gear (`dive`, also on purchase), the pond tube, the gutters and the Lift. `web/js/tips.js` builds their context and points the day-1 yellow arrow at the thing for 10 s. Fixed on the way: the hinter's `venue/pad/show` had slipped into a code comment, so every hint was marked seen and never shown.
+- **Mats.** Mud is a generated field (splotches, footprints, smears; `web/js/mud.js`) drawn in each mat's own shader, shown where the mat's mud is above a per-texel threshold, so it breaks up and washes off in patches. Where your spray lands a tiny per-mat memory makes streaks wash first; the mat goes dark and glints while wet, splashes bounce off it, and a sparkle marks it clean. Overlay on every tier (no new draw calls); streaks, wet sheen and splashes are off on Low.
+- **Spray from the nozzle.** Droplets, mist and the jet cone leave the wand's `nozzleTip` and fly to where the crosshair lands. Crewmates' spray now shows too, from their wand's nozzle, while the server says they're washing (`players[].spray`).
+
+## End of the day: the walk-off
+
+Owner note: "a smoother end of the day... zoom out overhead to see how many balls we missed, or watch the people walk away." Both, as one ~5.5 s beat between the bell's stamp and the report card (`web/js/dusk.js` rules, `web/js/duskview.js` drawing, `test/dusk.test.mjs`). After the stamp's 2 s hold the camera lifts out of first person (3 s, cubic ease in-out, the height leading so it clears the nets) to a high three-quarter view (y 105, behind the stand, looking down the range). Your own body stays where you stood, then follows the crew. Every ball still out there (not picked, not sunk in the pond, not Ball No. 1) glows: one additive Points, one draw call; High pulses up to 1500, Low/Xbox shows up to 500 without the pulse (detail.js tier). The count sits on the top edge ("142 left out there"), not in the centre, because say() owns the centre and the bell lock drops toasts. Every Rat in view and every hired teenager turns and walks through the gate (scenery.js ENTRANCE) to the car park, as stand-in figures. The real avatars are only hidden, never moved, so the next clock-in has nothing stale to undo. The view holds behind the report card and resets at the next shift. Any key, click or fresh pad press skips straight to the card. Reduce Motion: no camera move, a 2.2 s dim and the count. The ending's own finale and a rejoin into the report skip it; endless runs it (no stamp, so it starts at the bell). A timer opens the card on time even when rAF stalls.

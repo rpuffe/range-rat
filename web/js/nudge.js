@@ -53,7 +53,9 @@ export function dealFor(i, p, up) {
 
 // Where the yellow arrow goes (client). wand: does this Rat hold the wand; at: where they stand (the nearest mat).
 // null = no place (the shop is a menu).
-export function nudgeTarget(id, wand = false, at = { x: 0, z: 0 }, { cart = null } = {}) {
+export function nudgeTarget(id, wand = false, at = { x: 0, z: 0 }, { cart = null, gary = null } = {}) {
+  if (id === 'gary:stall') return gary ? { x: gary.x, z: gary.z, y: 2.6, s: 1 } : null;   // round 8 #2: his cart, wherever it is
+  if (id === 'gary:meet') return nudgeTarget('stand');
   if (id === 'mats3' || id === 'gary:mats') return nudgeTarget('hose', wand, at);   // the wash station, then the nearest mat
   if (id === 'gary:sign') return wand ? { x: FIXTURE_BY_ID.sign.x, z: FIXTURE_BY_ID.sign.z, y: 3.4, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
   if (id === 'gary:stand') return wand ? { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
@@ -76,7 +78,15 @@ export const GARY_TEXT = {
   stand: 'Gary checks the stand. Hose it!',
   cart: 'Gary checks the cart. Hose it!',
   kitchen: "Gary's hungry. Serve a hot dog!",
+  // Council round 8 #2: no duplicate stops. An extra Rat stalls him while something fails, else meets him at the
+  // stand (a full huddle counts twice). 'meet', not 'stand': gary:stand is already the hose-the-stand line.
+  stall: 'Stall Gary: ping his cart!',
+  meet: 'All clean. Meet Gary at the stand!',
 };
+// The two lines that aren't a stop (nothing to hose, nothing to clear at Spotless).
+export const GARY_EXTRA = ['stall', 'meet'];
+// The shooter's toast when their ball stalls him (the enthusiasm event carries stall: 1..GARY.STALLS).
+export const GARY_STALLED = "Gary stalled! He's taking notes.";
 export const DAY3 = { DAY: 3, VENUE: 0, AT: 0.5, MUD: 0.3, TEXT: 'Keep the mats clean.' };
 
 // The line for any nudge id (day 2, Gary's, day 3).
@@ -84,10 +94,10 @@ export const nudgeLine = id => NUDGE_TEXT[id] ?? (id === 'mats3' ? DAY3.TEXT : i
 
 // stops: Gary's failing stops [{ id, x, z }] (route order); rats: [{ id, x, z }]. Returns { [ratId]: stopId }.
 // Nearest first: the closest (Rat, stop) pair is dealt, then the next closest among the rest, until every failing
-// stop has a Rat; extra Rats go to the mats when they fail, else to their nearest failing stop.
-export function dealGary(stops, rats) {
+// stop has a Rat. Council round 8 #2: extra Rats never double up: 'stall' while anything fails (failing: true by
+// default when stops is non-empty; redealGary passes it for stops someone else holds), else 'meet' (every Rat, then).
+export function dealGary(stops, rats, failing = stops.length > 0) {
   const out = {};
-  if (!stops.length) return out;
   const d = (r, s) => Math.hypot(r.x - s.x, r.z - s.z);
   const openStops = [...stops], left = [...rats];
   while (openStops.length && left.length) {
@@ -96,8 +106,7 @@ export function dealGary(stops, rats) {
     out[best.r.id] = best.s.id;
     left.splice(left.indexOf(best.r), 1); openStops.splice(openStops.indexOf(best.s), 1);
   }
-  const mats = stops.find(s => s.id === 'mats');
-  for (const r of left) out[r.id] = (mats ?? stops.reduce((a, s) => (d(r, s) < d(r, a) ? s : a))).id;
+  for (const r of left) out[r.id] = failing ? 'stall' : 'meet';
   return out;
 }
 
@@ -107,5 +116,6 @@ export const GARY_SPOTLESS = 0.1;
 
 // Playthrough 3 #1 and #12: during the warning, a Rat with no line (theirs went Spotless) takes a failing stop nobody
 // holds, nearest first: solo works down the list, and a stop that fails again is dealt again. held: the stop ids
-// still dealt. Returns { [ratId]: stopId } (empty when every failing stop is held).
-export const redealGary = (stops, rats, held = []) => dealGary(stops.filter(s => !held.includes(s.id)), rats);
+// still dealt. Returns { [ratId]: stopId | 'stall' | 'meet' } (round 8 #2: a Rat with no stop left stalls Gary, or
+// meets him at the stand when nothing fails).
+export const redealGary = (stops, rats, held = []) => dealGary(stops.filter(s => !held.includes(s.id)), rats, stops.length > 0);

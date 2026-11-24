@@ -8,13 +8,14 @@ const int = (v, lo, hi, d) => Number.isFinite(Number(v)) && v != null ? Math.max
 
 function incident(crew, st, p) {
   const seat = afterIncident(st.deck), spot = landingSpot(seat);
-  const fine = Math.abs(crew.payCash(-fineFor(crew.valueNow().bv)));          // never below $0: the change is what was really taken
+  const k = st.falls = (st.falls ?? 0) + 1;                                     // round 8 #5: the k-th fall today costs more
+  const fine = Math.abs(crew.payCash(-fineFor(crew.valueNow().bv, k)));       // never below $0: the change is what was really taken
   crew.stats.incidents = (crew.stats.incidents ?? 0) + 1;
   crew.stats.deckFines = (crew.stats.deckFines ?? 0) + fine;
   if (p?.shift) p.shift.lastOrders = (p.shift.lastOrders ?? 0) + 1;
   st.last = crew.day; st.today = true;
   if (crew.gary && (crew.gary.phase === 'warn' || crew.gary.phase === 'drive')) st.garyFail = true;
-  crew.events.push({ t: 'deckFall', seat, x: spot.x, z: spot.z, by: p?.id ?? null, fine });
+  crew.events.push({ t: 'deckFall', seat, x: spot.x, z: spot.z, by: p?.id ?? null, fine, k });
   for (const o of [...crew.players.values(), ...crew.helpers]) if (hitByFall(o, spot)) crew.knockDown(o, 'customer');
   crew.pa('deck', { once: true, big: true });
   crew.dirty = true;
@@ -25,9 +26,9 @@ export default {
   venue: DECK.FROM_VENUE,
 
   init(crew, saved) {
-    return { deck: newDeck(), last: int(saved?.last, 1, 1e6, crew.day || 1), today: false, garyFail: false };
+    return { deck: newDeck(), last: int(saved?.last, 1, 1e6, crew.day || 1), today: false, garyFail: false, falls: 0 };
   },
-  startShift(crew, st) { st.deck = newDeck(); st.today = false; st.garyFail = false; },   // the deck resets each morning
+  startShift(crew, st) { st.deck = newDeck(); st.today = false; st.garyFail = false; st.falls = 0; },   // the deck resets each morning
   // Council round 6 #6: the loungers order. Only while the shift clock runs; an unfilled order lapses quietly.
   tick(crew, st, dt) {
     if (!crew.working()) return;

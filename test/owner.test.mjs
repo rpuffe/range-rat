@@ -1,7 +1,8 @@
 // Council round 7 #9: Endless, the Owner's projects, and a Board that races the record's own curve.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OWNER_ROW, OWNER, ownerTier, maxMult, hasPaint, hasStatue, CURVE_N, curveStep, finishCurve, cleanCurve, paceAt, crewStripes } from '../web/js/owner.js';
+import { OWNER_ROW, OWNER, ownerTier, maxMult, hasPaint, hasStatue, CURVE_N, curveStep, finishCurve, cleanCurve, paceAt, crewStripes,
+  yesterdayPace, raceYesterday, streakLine, shortMoney } from '../web/js/owner.js';
 import { SHOP_BY_ID, shopShows, nextPrice, CART } from '../web/js/sim.js';
 
 test('the row is hidden outside endless and shown in it', () => {
@@ -9,13 +10,13 @@ test('the row is hidden outside endless and shown in it', () => {
   for (let v = 0; v <= 5; v++) assert.equal(shopShows(OWNER_ROW, v, 99, false), false);
   assert.equal(shopShows(OWNER_ROW, 5, 99, true), true);
   assert.equal(nextPrice('owner', {}, 1, 0, 5, 99, false), null);
-  assert.equal(nextPrice('owner', {}, 1, 0, 5, 99, true), 25_000_000);
+  assert.equal(nextPrice('owner', {}, 1, 0, 5, 99, true), 0, 'round 8 #3: the colours are the deed, not a buy');
 });
 
-test('prices scale ×2.2 at 4P, three tiers, then maxed', () => {
-  assert.equal(nextPrice('owner', {}, 4, 0, 5, 99, true), 55_000_000);
-  assert.equal(nextPrice('owner', { owner: 1 }, 4, 0, 5, 99, true), 132_000_000);
-  assert.equal(nextPrice('owner', { owner: 2 }, 4, 0, 5, 99, true), 330_000_000);
+test('prices scale ×2.2 at 4P, three tiers, then maxed (round 8 #3: $120M and $300M)', () => {
+  assert.equal(nextPrice('owner', {}, 4, 0, 5, 99, true), 0);
+  assert.equal(nextPrice('owner', { owner: 1 }, 4, 0, 5, 99, true), 264_000_000);
+  assert.equal(nextPrice('owner', { owner: 2 }, 4, 0, 5, 99, true), 660_000_000);
   assert.equal(nextPrice('owner', { owner: 3 }, 4, 0, 5, 99, true), null);
 });
 
@@ -88,9 +89,10 @@ test('the server sells the row only in endless, and the statue says its PA once'
   assert.equal(v5.up.owner, undefined, 'not at the Orbital');
   const { crew } = makeCrew(ENDLESS);
   const a = crew.join('A'); crew.connect(a); crew.cash = 1e9; crew.flush();
-  for (let i = 0; i < 4; i++) crew.input(a, { a: [{ t: 'buy', id: 'owner' }] });
+  assert.equal(crew.up.owner, 1, 'round 8 #3: an endless save is already in its colours');
+  for (let i = 0; i < 3; i++) crew.input(a, { a: [{ t: 'buy', id: 'owner' }] });
   assert.equal(crew.up.owner, 3);
-  assert.equal(crew.cash, 1e9 - 235_000_000, 'solo prices: $25M + $60M + $150M; the 4th buy is refused');
+  assert.equal(crew.cash, 1e9 - 420_000_000, 'solo prices: $120M + $300M; the 3rd buy is refused');
   assert.equal(crew.flush().ev.filter(e => e.t === 'pa' && e.id === 'statue').length, 1);
   assert.deepEqual(new Crew('OWNR', JSON.parse(JSON.stringify(crew.toSave()))).up.owner, 3, 'it survives a save');
 });
@@ -124,4 +126,83 @@ test('a record shift saves records.curve (14 rising points), and the next shift 
   const pace = crew.snapshot().pace;
   assert.ok(Math.abs(pace.now - paceAt(crew.records, crew.shiftT, crew.shiftSecs)) < 0.01);
   assert.ok(pace.now < crew.records.cash * crew.shiftT / crew.shiftSecs, 'the record started slowly, so the pace does too');
+});
+
+// ---- council round 8 #3: race yesterday, the streak, the deed --------------------------------------------------------
+const words = t => t.trim().split(/\s+/).filter(w => w !== '·').length;
+
+test('streakLine: beat with a run, beat once, short by; all ≤ 8 words', () => {
+  assert.equal(streakLine({ beat: true, streak: 4 }), 'Beat yesterday · 4 in a row.');
+  assert.equal(streakLine({ beat: true, streak: 1 }), 'Beat yesterday.');
+  assert.equal(streakLine({ beat: false, streak: 0, by: 2_140_000 }), 'Short of yesterday by $2.1M.');
+  assert.equal(streakLine(null), '');
+  assert.equal(shortMoney(850_000), '$850K'); assert.equal(shortMoney(900), '$900'); assert.equal(shortMoney(1.25e9), '$1.3B');
+  for (const r of [{ beat: true, streak: 123 }, { beat: false, by: 999_999_999 }]) assert.ok(words(streakLine(r)) <= 8, streakLine(r));
+});
+
+test('raceYesterday: the streak counts beats and resets on a miss; the record stands in before a yesterday', () => {
+  let rec = { cash: 50, streak: 0 };
+  let r = raceYesterday(rec, 40, null);
+  assert.equal(r.result.beat, false); assert.equal(r.result.by, 10); assert.equal(r.streak, 0);
+  rec = { ...rec, yesterday: r.yesterday, streak: r.streak };
+  r = raceYesterday(rec, 45, null);                 // beats yesterday (40), not the record
+  assert.equal(r.result.beat, true); assert.equal(r.streak, 1);
+  rec = { ...rec, yesterday: r.yesterday, streak: r.streak };
+  r = raceYesterday(rec, 46, null); assert.equal(r.streak, 2);
+  rec = { ...rec, yesterday: r.yesterday, streak: r.streak };
+  r = raceYesterday(rec, 46, null); assert.equal(r.streak, 0, 'a tie is not a beat');
+  assert.deepEqual(yesterdayPace({ cash: 10 }), { cash: 10, vs: 'record' });
+  assert.equal(yesterdayPace({ cash: 0 }), null);
+  assert.equal(yesterdayPace({ cash: 10, yesterday: { cash: 7 } }).vs, 'yesterday');
+});
+
+test('Ball No. 1 banks the deed: up.owner 1 and the paint shows', () => {
+  const { crew } = makeCrew({ day: 30, venue: 5, venueDay: 6, stamps: 3, outstanding: 1 });
+  const a = crew.join('A'); crew.connect(a); crew.startShift();
+  assert.equal(crew.up.owner ?? 0, 0);
+  crew.lastBucket = { phase: 'huddle', sweep: 99, held: [a.id] };
+  crew.huddleIn = () => true;
+  assert.equal(crew.depositOne(a), true);
+  assert.equal(crew.up.owner, 1); assert.equal(hasPaint(crew.up, crew.endless), true);
+  assert.equal(crew.records.yesterday, undefined, 'the ending shift does not write yesterday');
+  assert.equal(crew.report.race, undefined);
+  assert.equal(new Crew('OWNR', { ...ENDLESS, up: { owner: 0 } }).up.owner, 1, 'an endless save with owner 0 loads as 1');
+  assert.equal(new Crew('OWNR', { ...ENDLESS, endless: false, outstanding: 9 }).up.owner ?? 0, 0, 'not before the ending');
+});
+
+test('two endless shifts: yesterday is the second, the streak counts, the pace races yesterday', () => {
+  const { crew, run } = makeCrew({ ...ENDLESS, records: { cash: 1000, banked: 0, day: 39 } });
+  const a = crew.join('A'); crew.connect(a);
+  crew.startShift(); run(30);
+  let p = crew.snapshot().pace;
+  assert.equal(p.vs, 'record', 'an old save with no yesterday races the record'); assert.equal(p.record, 1000);
+  for (const m of crew.mats) m.next = 1e9;
+  for (let t = 30; t < 420; t += 10) { crew.bank(1, a.id); run(10); }
+  assert.equal(crew.phase, 'report');
+  const d1 = crew.report, y1 = crew.records.yesterday.cash;
+  assert.ok(d1.race, 'an endless bell races'); assert.equal(y1, d1.cash);
+  assert.equal(crew.snapshot().pace, null, 'no pace outside a shift');
+  crew.startShift(); for (const m of crew.mats) m.next = 1e9;
+  for (let t = 0; t < 420; t += 10) { crew.bank(5, a.id); run(10); }
+  const y2 = crew.records.yesterday.cash;
+  assert.equal(y2, crew.report.cash); assert.ok(y2 > y1);
+  assert.equal(crew.report.race.beat, true); assert.equal(crew.records.streak, d1.race.beat ? 2 : 1);
+  crew.startShift(); run(60);
+  p = crew.snapshot().pace;
+  assert.equal(p.vs, 'yesterday'); assert.equal(p.record, y2); assert.equal(p.best, crew.records.cash);
+  assert.ok(Math.abs(p.now - paceAt(crew.records.yesterday, crew.shiftT, crew.shiftSecs)) < 0.01);
+  crew.cash = 0;
+  for (let t = 60; t < 420; t += 10) run(10);   // bank nothing more: a miss
+  assert.equal(crew.phase, 'report');
+  assert.equal(crew.report.race.beat, false); assert.equal(crew.records.streak, 0);
+  const back = new Crew('OWNR', JSON.parse(JSON.stringify(crew.toSave())));
+  assert.deepEqual(back.records.yesterday, crew.records.yesterday); assert.equal(back.records.streak ?? 0, 0);
+});
+
+test('review days never write yesterday or the streak', () => {
+  const { crew, run } = makeCrew({ day: 10, venue: 2, venueDay: 2, stamps: 0, outstanding: 99, records: { cash: 1, banked: 0, day: 9 } });
+  const a = crew.join('A'); crew.connect(a); crew.startShift();
+  for (let t = 0; t < 420; t += 10) { crew.bank(10, a.id); run(10); }
+  assert.equal(crew.phase, 'report');
+  assert.equal(crew.records.yesterday, undefined); assert.equal(crew.records.streak, undefined); assert.equal(crew.report.race, undefined);
 });

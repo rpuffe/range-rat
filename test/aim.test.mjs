@@ -81,7 +81,8 @@ test('benchmark: a worst-case predict stays near the 1,500-step budget', () => {
 // Council round 7 #2: the landing marker.
 test('round 7 #2: the marker constants', () => {
   assert.equal(AIM.MARK_PX, 28);
-  assert.equal(AIM.BEAM_H, 6);
+  assert.equal(AIM.BEAM_H, undefined, 'round 8 #6: the beam is cut');
+  assert.equal(AIM.BEAM_OPACITY, undefined);
   assert.equal(AIM.AFTER, 1.5);
   // 28 px of a 1080-line screen whatever the fov: the sprite scale is a fraction of the view height at distance 1.
   for (const fov of [50, 60, 75]) assert.ok(Math.abs(markerScale(fov) / (2 * Math.tan(fov * Math.PI / 360)) - 28 / 1080) < 1e-12);

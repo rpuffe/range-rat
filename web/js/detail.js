@@ -22,6 +22,13 @@ export function detailFor(profile = {}) {
     animHz: low ? 20 : 0,                   // prop animation rate; 0 = every frame
     wetSheen: !low,                         // glossy wet overlay on what the spray hits
     rings: !low,                            // target-green rings
+    // Owner notes (mats and spray): the mud overlay itself runs on every tier (one texture lookup in the mat's own
+    // material, no new draw calls); the streaks, wet sheen, splashes and a big sparkle are the extras.
+    matStreaks: !low,                       // my spray washes streaks off where it lands (a 32x32 memory per mat)
+    matWet: !low,                           // the mat darkens and shimmers while wet
+    splash: low ? 0 : steps >= 1 ? 10 : 20, // droplets per second bouncing up where the spray lands
+    sparkle: low ? 5 : 14,                  // glints when a mat comes clean
+    jet: low ? 16 : 48,                     // crewmates' spray droplets (from their nozzle)
   };
 }
 

@@ -8,7 +8,7 @@
 //     hz (AIM.HZ; the low tier passes AIM.LOW_HZ) times a second, and only when power moved by more than AIM.DPOW or the aim by more than AIM.DANG.
 //   flagNormal(bowl) -> unit {x, y, z}: the way a bowl's flag faces (the midpoint of the two crew bays).
 //   markerState({ power, lastPower, swung, sinceRelease, bay, rest, bowl }) -> { visible, power, color, pulse }:
-//     the landing marker (council round 7 #2), a constant-size disc plus a beam where a PURE strike rests.
+//     the landing marker (council round 7 #2), a constant-size disc where a PURE strike rests.
 import { SIM, BAYS, swingLaunch, advanceBall } from './sim.js';
 import * as SIMNS from './sim.js';   // QUOTA_KPI (builder A, #2) read softly: 0.5 until it lands
 import { MAP } from './map.js';
@@ -25,8 +25,7 @@ export const AIM = {
   MARK_PX: 28,                 // the disc, px on a 1080p screen (constant: scaled by the canvas height, not distance)
   MARK_REF_H: 1080,
   MARK_OUTLINE_PX: 3,          // its dark outline
-  BEAM_H: 6, BEAM_W: 0.12,     // m: the vertical beam through it (additive, BEAM_OPACITY); low tier: no beam
-  BEAM_OPACITY: 0.4,
+  // (council round 8 #6: the 6 m beam through the disc is cut: invisible at 143 m, the disc does all the work)
   WIND_MIN: 0.05,              // backswing power above which you are winding up
   AFTER: 1.5,                  // s the marker stays after release
   PULSE_HZ: 2, PULSE_MAX: 1.25,   // inside a bowl's lip: scale 1.0 <-> 1.25 at 2 Hz

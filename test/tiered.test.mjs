@@ -259,3 +259,116 @@ test('round 7 #1: without gutters a TARGET flushes its own cup only (no all flag
   assert.equal(e.all, undefined);
   assert.equal(e.n, 3);
 });
+
+// ---- Council round 8 #1: the Glow Rush -------------------------------------------------------------------------------
+test('round 8 #1: cupWeight: a glow ball counts 2 at Tiered, 1 from the Stadium on; a range ball 1, a splitter 3', async () => {
+  const { cupWeight, RUSH } = await import('../web/js/tiered.js');
+  assert.deepEqual(RUSH, { GLOW_CUP: 2, VENUE: 2 });
+  assert.equal(cupWeight({ kind: 'glow' }, 2), 2);
+  assert.equal(cupWeight({ kind: 'range' }, 2), 1);
+  assert.equal(cupWeight({ kind: 'splitter' }, 2), 3);
+  assert.equal(cupWeight({ kind: 'glow' }, 3), 1);
+  assert.equal(cupWeight({ kind: 'splitter' }, 3), 3);
+});
+
+const dropKind = (crew, x, z, kind, by) => crew.addBall({ x, y: 0.06, z, vx: 0, vy: 0, vz: 0, kind, ...(by ? { by } : {}) });
+
+test('round 8 #1: a resting glow ball in Bowl A counts 2 at Tiered and 1 at the Stadium', () => {
+  for (const [venue, want] of [[2, 2], [3, 1]]) {
+    const { crew, run, st } = setup({}, venue);
+    dropKind(crew, A.x + 0.2, A.z, 'glow');
+    dropKind(crew, A.x - 0.2, A.z, 'range');
+    run(0.5);
+    assert.equal(st().cups[0], want + 1, 'venue ' + venue);
+    assert.equal(st().kpi, bayUtil(want + 1));
+  }
+});
+
+test('round 8 #1: a TARGET on a cup holding 4 glow balls banks 4 balls (+ the shooter), not 8', () => {
+  const { crew, p, run, st } = setup({ gutters: 1 });
+  for (let i = 0; i < 4; i++) dropKind(crew, A.x + 0.1 * i, A.z, 'glow');
+  run(0.3);
+  assert.equal(st().cups[0], 8, 'the flags show the doubled count');
+  crew.events.length = 0;
+  dropKind(crew, A.x + 2, A.z, 'range', p.id);
+  run(0.3);
+  assert.equal(crew.events.find(e => e.t === 'target').n, 5);
+  assert.equal(p.shift.banked, 5);
+  assert.equal(st().cups[0], 0);
+});
+
+// The real rule over a whole seeded 4P shift (late gear, gutters): one TARGET at T-15 saves the stamp; one at T-50
+// leaves the rush time to fill the cups again (council8/tiered3.mjs, now against the real rule).
+function rushShift(seed, shotAt) {
+  const clock = { t: 1_000_000 };
+  const crew = new Crew('RUSH', { day: 20, venue: 2, venueDay: 2, stamps: 1, up: { shed: 3, washer: 3, cart: 2, helpers: 4, ads: 3, amen: 2, gutters: 1 } }, { seed, now: () => clock.t });
+  for (let i = 0; i < 4; i++) { const r = crew.join('R' + i); crew.connect(r); r.x = 27 + i; r.z = 9; }
+  crew.startShift();
+  const shooter = [...crew.players.values()][0];
+  const st = crew.mods.state('tiered');
+  let shot = false;
+  const end = crew.shiftSecs - 0.1;
+  while (crew.phase === 'shift' && crew.shiftT < end) {
+    clock.t += 50;
+    for (const r of crew.players.values()) { r.seenAt = clock.t; r.movedAt = clock.t; }
+    if (!shot && crew.shiftT >= crew.shiftSecs - shotAt) {
+      shot = true;
+      const b = { id: 9_000_000 + seed, x: A.x, y: 0.06, z: A.z, vx: 0, vy: 0, vz: 0, rest: true, kind: 'range', by: shooter.id };
+      crew.balls.set(b.id, b); tiered.onRest(crew, st, b);
+    }
+    crew.tick(0.05);
+  }
+  return st.kpi;
+}
+
+test('round 8 #1: seeded 4P shifts: a TARGET at T-15 passes seeds 1-3; one at T-50 fails at least 2 of seeds 1-6', () => {
+  for (const s of [1, 2, 3]) assert.ok(rushShift(s, 15) >= 0.5, 'seed ' + s + ' T-15');
+  const fails = [1, 2, 3, 4, 5, 6].filter(s => rushShift(s, 50) < 0.5).length;
+  assert.ok(fails >= 2, 'the rush has teeth: ' + fails + ' of 6 fail at T-50');
+});
+
+// ---- Council round 8 #6: "Saved by Cy's TARGET at 0:12." ------------------------------------------------------------
+test('round 8 #6: a Last Call TARGET that lifts the gauge from 0.3 over the tick at T-12 is the save; no late TARGET, none', async () => {
+  const { savedLine, clockText } = await import('../web/js/tiered.js');
+  for (const late of [true, false]) {
+    const { crew, p, drop, run, st } = setup({ gutters: 1 });
+    for (let i = 0; i < 21; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);   // 21 balls: the gauge at 0.3
+    run(0.5);
+    assert.ok(Math.abs(st().kpi - 0.3) < 0.04, 'gauge ' + st().kpi);
+    for (const m of crew.mats) m.next = 1e9;                                             // no customers: a still bowl
+    run(crew.shiftSecs - 12 - crew.shiftT);
+    assert.ok(crew.lastCall());
+    if (late) { drop(A.x + 2, A.z, p.id); run(0.3); }
+    run(crew.shiftSecs);
+    assert.equal(crew.phase, 'report');
+    const saved = crew.snapshot().mods.tiered.saved;
+    if (!late) { assert.equal(saved, undefined, 'no late TARGET, no save'); continue; }
+    assert.equal(saved.left, 12);
+    assert.equal(saved.by, p.id);
+    assert.equal(crew.report.quota?.gaugeOk, true);
+    assert.equal(savedLine(saved, { venue: 2, quota: { hit: true } }), `Saved by ${p.name}'s TARGET at 0:12.`);
+  }
+  assert.equal(clockText(12), '0:12'); assert.equal(clockText(75), '1:15');
+  const s = { by: 'x', name: 'Cy', left: 12 };
+  assert.equal(savedLine(s, { venue: 2, quota: { hit: true } }), "Saved by Cy's TARGET at 0:12.");
+  assert.equal(savedLine(s, { venue: 2, quota: { hit: false } }), '', 'only on a stamped bell');
+  assert.equal(savedLine(s, { venue: 3, quota: { hit: true } }), '', 'Tiered only');
+  assert.equal(savedLine(null, { venue: 2, quota: { hit: true } }), '');
+  assert.ok(savedLine(s, { venue: 2, quota: { hit: true } }).split(/\s+/).length <= 8);
+});
+
+test('round 8 #6: a dip back under the tick clears the save; a TARGET outside Last Call is never one', () => {
+  const { crew, p, drop, run, st } = setup({ gutters: 1 });
+  for (const m of crew.mats) m.next = 1e9;
+  for (let i = 0; i < 21; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);
+  run(0.5);
+  drop(A.x + 2, A.z, p.id); run(0.3);                                   // T-119: a lift, but not Last Call
+  assert.equal(st().saved, null);
+  for (let i = 0; i < 21; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);
+  run(crew.shiftSecs - 30 - crew.shiftT);
+  drop(A.x + 2, A.z, p.id); run(0.3);                                   // T-30: the save
+  assert.equal(st().saved?.left, 30);
+  for (let i = 0; i < 21; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);
+  run(0.5);
+  assert.equal(st().saved, null, 'the cups filled again: no longer a save');
+});

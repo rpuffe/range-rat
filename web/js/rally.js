@@ -6,10 +6,10 @@ import { MAP } from './map.js';
 // Every line is one centre toast: 8 words or fewer.
 export const RALLY_LINES = {
   gauge: {                                   // by venue: the fourth gauge is under QUOTA_KPI
-    2: 'Bowls are full. Shoot or empty them!',
+    2: 'Glow rush! Cups fill double. Shoot late!',   // round 8 #1: the Glow Rush (glow balls cup x2 at Tiered)
     3: 'The crowd is bored. Lap the Track!',
     4: 'Strays in the Yards. Go get them!',
-    5: 'Debris overhead. Ride the Lift!',
+    5: 'Debris overhead. Everyone up the Lift!',   // round 8 #4: the crank is gone, so every Rat rides
   },
   mats: 'Hose the mats before the bell!',
   sign: 'The sign is filthy. Hose it!',
@@ -22,7 +22,7 @@ export const RALLY_LINES = {
 
 // The report's miss line when the gauge, not Upkeep, cost the stamp (by venue).
 export const GAUGE_MISS = {
-  2: 'Missed: the bowls were full.',
+  2: 'Missed: the glow rush filled the bowls.',
   3: 'Missed: the crowd was bored.',
   4: 'Missed: strays in the Yards.',
   5: 'Missed: too much debris overhead.',
@@ -67,7 +67,8 @@ export function shortfall({ value, quota, kpi = null, fixtures = {}, fries = val
 
 // Last Call swings x1.5, so the cups (Tiered) refill during the rush: the line reads the gauge this far ahead
 // (playtest 2: 6 of 9 "On target" bells at Tiered were then DENIED on the gauge).
-export const RALLY_MARGIN = Object.freeze({ 2: 0.25, 3: 0.1, 4: 0.1, 5: 0.1 });
+// Round 8 #1: Tiered 0.25 -> 0.5, so the Glow Rush deals the bowls job almost every bell.
+export const RALLY_MARGIN = Object.freeze({ 2: 0.5, 3: 0.1, 4: 0.1, 5: 0.1 });
 
 // Playtest round 2 #1: a second look this many seconds into Last Call. If the crew is still short, the server posts
 // one more line (the 'rally' event), at most once a shift.
@@ -139,7 +140,7 @@ export function dealJobs(jobs, rats, none = RALLY_LINES.onTarget, prev = null) {
     const open = new Set(jobs.map(j => j.line));
     for (const r of rats) if (open.has(prev[r.id])) out[r.id] = prev[r.id];
     left = rats.filter(r => !(r.id in out));
-    if (!left.length) return out;
+    if (!left.length) return reassign(jobs, rats, out);   // round 8: a brand-new job never goes to nobody
     const held = new Set(Object.values(out)), fresh = jobs.filter(j => !held.has(j.line));
     if (fresh.length) jobs = fresh;
   }
@@ -151,5 +152,29 @@ export function dealJobs(jobs, rats, none = RALLY_LINES.onTarget, prev = null) {
   for (let k = Math.ceil(left.length / 2); k > 0 && left.length; k--) take(jobs[0]);
   const rest = jobs.length > 1 ? jobs.slice(1) : jobs;   // the biggest job keeps its half; the rest go round
   for (let j = 0; left.length; j = (j + 1) % rest.length) take(rest[j]);
+  return out;
+}
+
+// Round 8: every Rat kept its line and a brand-new job opened (the gauge going short at the re-check, say). The new
+// job still gets a Rat: the nearest one off a doubled-up job (the lowest-ranked such job, the one closest to done),
+// else the holder of the lowest-ranked job, when the new job outranks it. A new job below every held one stays
+// undealt, as in a fresh deal with more jobs than Rats. jobs: ranked (index = priority); out: the kept lines.
+function reassign(jobs, rats, out) {
+  const rank = new Map(jobs.map((j, i) => [j.line, i]));
+  for (const job of jobs) {
+    const count = {};
+    for (const l of Object.values(out)) count[l] = (count[l] ?? 0) + 1;
+    if (count[job.line]) continue;
+    const lines = Object.keys(count).sort((a, b) => rank.get(b) - rank.get(a));   // lowest-ranked (closest to done) first
+    const donor = lines.find(l => count[l] > 1) ?? (rank.get(lines[0]) > rank.get(job.line) ? lines[0] : null);
+    if (donor == null) continue;
+    let best = null, bd = Infinity;
+    for (const r of rats) {
+      if (out[r.id] !== donor) continue;
+      const d = Math.hypot(r.x - job.at.x, r.z - job.at.z);
+      if (d < bd) { bd = d; best = r; }
+    }
+    out[best.id] = job.line;
+  }
   return out;
 }

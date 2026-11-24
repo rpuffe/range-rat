@@ -1,10 +1,11 @@
 // Tiered Entertainment Range (venue 2), client side: bowl decals, neon pins, the cup tween, gutter glass, the strobe.
 // Council round 6 (#4): 10 m pins with a flag showing the cup's count, light pillars over every bowl. Council round 7
-// (#2): the landing marker at a crew bay (aim.js predicts where a PURE strike rests): a constant-size disc + a beam.
+// (#2): the landing marker at a crew bay (aim.js predicts where a PURE strike rests): a constant-size disc
+// (round 8 #6 cut the beam).
 // The rules live in web/js/tiered.js (pure) and server/venues/tiered.mjs.
 import * as THREE from 'three';
 import { MAP } from '../map.js';
-import { TARGET, hasGutters } from '../tiered.js';
+import { TARGET, hasGutters, savedLine } from '../tiered.js';
 import { AIM, createAimer, ringBowl, flagNormal, cupWarn, markerState, markerPulse, markerScale } from '../aim.js';
 
 const FLAG = { red: 0xff3b5c, yellow: 0xffe14a, blue: 0x4aa8ff };
@@ -69,7 +70,7 @@ export default {
     root.add(pillars);
     // The landing marker (round 7 #2): where a PURE strike rests. A camera-facing disc, MARK_PX on a 1080p screen
     // whatever the distance, drawn on top, with a dark outline, in your colour (the bowl's inside its lip, pulsing),
-    // and a 6 m additive beam through it so depth reads at 54-150 m. 2 draw calls; the low tier drops the beam.
+    // 1 draw call (round 8 #6 cut the 6 m beam: invisible at 143 m, the disc does the work).
     const dc = document.createElement('canvas'); dc.width = dc.height = 64;
     {
       const g = dc.getContext('2d'), ow = 64 * AIM.MARK_OUTLINE_PX / AIM.MARK_PX;
@@ -80,13 +81,11 @@ export default {
     const markMat = new THREE.SpriteMaterial({ map: dtex, color: 0xffffff, sizeAttenuation: false, depthTest: false, depthWrite: false, transparent: true });
     const mark = new THREE.Sprite(markMat); mark.visible = false; mark.renderOrder = 10; mark.frustumCulled = false;
     root.add(mark);
-    const beamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: AIM.BEAM_OPACITY, depthWrite: false, blending: THREE.AdditiveBlending });
-    const beam = low ? null : new THREE.Mesh(new THREE.CylinderGeometry(AIM.BEAM_W / 2, AIM.BEAM_W / 2, AIM.BEAM_H, 8, 1, true).translate(0, AIM.BEAM_H / 2, 0), beamMat);
-    if (beam) { beam.visible = false; beam.renderOrder = 9; root.add(beam); }
     const MARK_Y = 0.6;
     // Your swings at this venue, read from the snapshot: a pocket that drops while you stand at a bay is a release.
     const aimSt = { venue: null, swung: false, releasedAt: -Infinity, lastPower: null, idleP: null, pocket: null, atBayAt: -Infinity, rest: null, color: null };
-    const hideMark = () => { mark.visible = false; if (beam) beam.visible = false; };
+    const hideMark = () => { mark.visible = false; };
+    let saved = null;   // round 8 #6: the snapshot's { by, name, left } for the report's "Saved by ..." line
     const aimer = createAimer({ hz: low ? AIM.LOW_HZ : AIM.HZ, now: () => performance.now() });
     ctx.scene.add(root);
     const tweens = [];
@@ -99,6 +98,7 @@ export default {
       show(on) { root.visible = on; if (!on) { hideMark(); aimer.update(null); } },
       onSnapshot(s, mine) {
         const own = hasGutters(ctx.crew()?.up);
+        saved = mine?.saved ?? null;
         bowls.forEach((w, i) => {
           w.glass.visible = own;
           const n = Math.max(0, mine?.cups?.[i] | 0);
@@ -141,7 +141,6 @@ export default {
         mark.position.set(rest.x, MARK_Y, rest.z);
         mark.scale.setScalar(markerScale(ctx.camera?.fov ?? 60) * k);
         markMat.color.set(col);
-        if (beam) { beam.visible = true; beam.position.set(rest.x, 0, rest.z); beam.scale.set(k, 1, k); beamMat.color.set(col); }
       },
       onEvent(e) {
         if (e.t === 'cup') {
@@ -191,7 +190,10 @@ export default {
           else w.pinMat.color.setHex(w.col);
         }
       },
-      reportLines: r => (r?.targets > 0 ? [`Target Practice: ${r.targets} direct hit${r.targets === 1 ? '' : 's'}`] : []),
+      reportLines: r => [
+        ...(r?.targets > 0 ? [`Target Practice: ${r.targets} direct hit${r.targets === 1 ? '' : 's'}`] : []),
+        ...(savedLine(saved, r) ? [savedLine(saved, r)] : []),   // round 8 #6: "Saved by Cy's TARGET at 0:12."
+      ],
     };
   },
 };

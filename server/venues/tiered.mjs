@@ -2,9 +2,9 @@
 // A ball that comes to rest inside a bowl rolls into its cup; a CREW ball in a bowl is a TARGET (flushes the cup to
 // the shooter, Hustle +0.25). Council round 7 (#1): at Tiered the gutters are linked (a TARGET drains all three cups);
 // from the Stadium on they drain 1 ball a second from each cup. The Upper Deck is another module.
-import { KIND_W, CART } from '../../web/js/sim.js';
+import { KIND_W, CART, QUOTA_KPI } from '../../web/js/sim.js';
 import { MAP } from '../../web/js/map.js';
-import { inBowl, cupSpot, bayUtil, TARGET, GUTTERS, drainsAll, guttersDrain } from '../../web/js/tiered.js';
+import { inBowl, cupSpot, bayUtil, TARGET, GUTTERS, drainsAll, guttersDrain, cupWeight } from '../../web/js/tiered.js';
 import { maxMult } from '../../web/js/owner.js';   // round 7 #9: the Owner's Hustle (x3 in endless)
 
 const ballWeight = b => (KIND_W[b.kind] ?? 1) * (b.kind === 'splitter' ? 3 : 1);
@@ -20,10 +20,11 @@ function recount(crew, st) {
   for (const b of crew.balls.values()) {
     if (!b.cup || !b.rest) continue;
     const i = MAP.BOWLS.findIndex(w => w.id === b.cup);
-    if (i >= 0) cups[i] += ballCount(b);
+    if (i >= 0) cups[i] += cupWeight(b, crew.venue);   // round 8 #1: a glow ball counts 2 at Tiered (the Glow Rush)
   }
   st.cups = cups;
   st.kpi = bayUtil(cups.reduce((a, c) => a + c, 0));
+  if (st.saved && st.kpi + 1e-9 < QUOTA_KPI) st.saved = null;     // round 8 #6: a later dip under the tick undoes the save
 }
 function remove(crew, b, by) {
   crew.balls.delete(b.id);
@@ -34,9 +35,9 @@ export default {
   id: 'tiered',
   venue: 2,
 
-  init: () => ({ cups: MAP.BOWLS.map(() => 0), kpi: 1, gt: MAP.BOWLS.map(() => 0), rc: 0 }),
+  init: () => ({ cups: MAP.BOWLS.map(() => 0), kpi: 1, gt: MAP.BOWLS.map(() => 0), rc: 0, saved: null }),
 
-  startShift(crew, st) { st.cups = MAP.BOWLS.map(() => 0); st.kpi = 1; st.gt = MAP.BOWLS.map(() => 0); st.rc = 0; },
+  startShift(crew, st) { st.cups = MAP.BOWLS.map(() => 0); st.kpi = 1; st.gt = MAP.BOWLS.map(() => 0); st.rc = 0; st.saved = null; },
 
   tick(crew, st, dt) {
     if ((st.rc += dt) >= 0.25) { st.rc = 0; recount(crew, st); }      // balls are picked up elsewhere: recount
@@ -65,6 +66,8 @@ export default {
     if (!bowl) return;
     if (target) {
       // TARGET! Flush the cup (and this ball) to the shooter at gear x1; with linked gutters, every cup.
+      recount(crew, st);
+      const before = st.kpi;                                          // round 8 #6: the gauge this TARGET lifts
       const all = drainsAll(crew.up, crew.venue);
       const cup = all ? MAP.BOWLS.flatMap(w => cupBalls(crew, w.id)) : cupBalls(crew, bowl.id);
       let n = ballCount(b), w = ballWeight(b);
@@ -78,6 +81,10 @@ export default {
       crew.events.push({ t: 'target', by: shooter.id, bowl: bowl.id, n, x: bowl.x, z: bowl.z, mult: crew.mult, cash: paid, ...(all ? { all: true } : {}) });
       crew.mods.signal('target', { by: shooter.id, bowl: bowl.id, n });
       recount(crew, st);
+      // Round 8 #6 (B2): in Last Call at Tiered, a TARGET that lifts Bay Utilization from under the tick to over it saved
+      // the stamp ("Saved by Cy's TARGET at 0:12." on a stamped bell). A later save replaces it; a dip clears it.
+      if (crew.venue === 2 && crew.lastCall() && before + 1e-9 < QUOTA_KPI && st.kpi + 1e-9 >= QUOTA_KPI)
+        st.saved = { by: shooter.id, name: shooter.name, left: Math.max(0, Math.round(crew.shiftSecs - crew.shiftT)) };
       return;
     }
     const s = cupSpot(b.id, bowl);
@@ -88,5 +95,6 @@ export default {
 
   kpi: (crew, st) => st.kpi,
   awards: () => [['Bullseye (Noted)', 'targets']],
-  snapshot: (crew, st) => ({ cups: st.cups, util: Math.round(st.kpi * 100) / 100 }),
+  // saved (round 8 #6): { by, name, left } until the next morning, so the report card can name the save.
+  snapshot: (crew, st) => ({ cups: st.cups, util: Math.round(st.kpi * 100) / 100, ...(st.saved ? { saved: st.saved } : {}) }),
 };

@@ -19,12 +19,16 @@ function makeCrew(save, n = 2, shiftSecs = 200) {
 }
 const toWarn = m => { m.crew.shiftT = m.crew.shiftSecs * GARY.AT - 0.01; m.step(0.1); assert.equal(m.crew.gary?.phase, 'warn'); };
 
-test('dealGary: nearest first, one failing stop each, extras double up on the mats', () => {
+test('dealGary: nearest first, one failing stop each, extras stall Gary (round 8 #2: never a duplicate stop)', () => {
   const stops = [{ id: 'sign', x: 14, z: 13 }, { id: 'mats', x: 0, z: 3.5 }, { id: 'stand', x: 26, z: 10 }];
   assert.deepEqual(dealGary(stops, [{ id: 'a', x: 25, z: 9 }, { id: 'b', x: 1, z: 3 }, { id: 'c', x: 15, z: 12 }, { id: 'd', x: 50, z: 50 }]),
-    { a: 'stand', b: 'mats', c: 'sign', d: 'mats' });
-  assert.deepEqual(dealGary([], [{ id: 'a', x: 0, z: 0 }]), {}, 'nothing failing: no line');
-  assert.deepEqual(dealGary([{ id: 'sign', x: 14, z: 13 }], [{ id: 'a', x: 0, z: 0 }, { id: 'b', x: 1, z: 1 }]), { a: 'sign', b: 'sign' }, 'no mats to double up on: the nearest failing stop');
+    { a: 'stand', b: 'mats', c: 'sign', d: 'stall' });
+  assert.deepEqual(dealGary([], [{ id: 'a', x: 0, z: 0 }]), { a: 'meet' }, 'nothing failing: meet him at the stand');
+  assert.deepEqual(dealGary([{ id: 'sign', x: 14, z: 13 }], [{ id: 'a', x: 0, z: 0 }, { id: 'b', x: 1, z: 1 }]), { b: 'sign', a: 'stall' }, 'one stop, two Rats: the nearer hoses, the other stalls');
+  assert.equal(nudgeLine('gary:stall'), 'Stall Gary: ping his cart!');
+  assert.equal(nudgeLine('gary:meet'), 'All clean. Meet Gary at the stand!');
+  assert.deepEqual(nudgeTarget('gary:stall', false, {}, { gary: { x: 40, z: 12 } }), { x: 40, z: 12, y: 2.6, s: 1 });
+  assert.ok(nudgeTarget('gary:meet'));
   for (const l of Object.values(GARY_TEXT)) assert.ok(l.split(/\s+/).length <= 8, l);
   assert.equal(nudgeLine('gary:sign'), 'Gary checks the sign. Hose it!');
   assert.equal(nudgeLine('mats3'), DAY3.TEXT);
@@ -43,10 +47,10 @@ test("Gary's warning deals only failing stops, nearest first; a stop that passes
   assert.deepEqual(m.nudges(), { [a.id]: 'gary:mats', [b.id]: 'gary:sign' });
   m.crew.fixtures.sign = 0;
   m.step(0.1);
-  assert.deepEqual(m.nudges(), { [a.id]: 'gary:mats' }, 'the sign passes: its line clears');
+  assert.deepEqual(m.nudges(), { [a.id]: 'gary:mats', [b.id]: 'gary:stall' }, 'the sign is Spotless: its Rat stalls Gary instead (round 8 #2)');
 });
 
-test('a late joiner gets one; every line clears when Gary reaches his first stop', () => {
+test('a late joiner gets one; the stop lines clear at his first stop and everyone stalls him (round 8 #2)', () => {
   const m = makeCrew({ day: 6 }, 1);
   const [a] = m.rats;
   a.x = 14; a.z = 12;
@@ -59,7 +63,9 @@ test('a late joiner gets one; every line clears when Gary reaches his first stop
   for (let i = 0; i < 2000 && !(m.crew.gary.checks?.length > 0); i++) m.step(0.1);
   assert.ok(m.crew.gary.checks.length > 0, 'he reached his first stop');
   m.step(0.1);
-  assert.deepEqual(m.nudges(), {}, 'all clear');
+  assert.deepEqual(m.nudges(), { [a.id]: 'gary:stall', [late.id]: 'gary:stall' }, 'the mats still fail ahead of him: stall');
+  m.mats(0); m.crew.fixtures.stand = 0; m.step(0.1);
+  assert.deepEqual(m.nudges(), { [a.id]: 'gary:meet', [late.id]: 'gary:meet' }, 'nothing ahead fails: meet him');
 });
 
 test('no Gary deal on Muni days 1 to 3 (Gary is day 4+)', () => {

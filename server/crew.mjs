@@ -20,7 +20,7 @@ import { ORBIT } from '../web/js/orbit.js';
 import { isStray } from '../web/js/county.js';
 import { shortfall, shortfalls, dealJobs, gaugeOk as gaugeHolds, GAUGE_MISS, RALLY_LINES, RALLY_MARGIN, RALLY_RECHECK, rallyAt, UPKEEP_MARGIN } from '../web/js/rally.js';
 import { GARY_COUNT } from '../web/js/huddlerules.js';   // playthrough 3 #2: the Board's count is the last 5 s
-import { maxMult, curveStep, finishCurve, cleanCurve, paceAt, OWNER } from '../web/js/owner.js';   // round 7 #9: endless
+import { maxMult, curveStep, finishCurve, cleanCurve, paceAt, OWNER, yesterdayPace, cleanYesterday, raceYesterday } from '../web/js/owner.js';   // round 7 #9: endless; round 8 #3: yesterday
 import { QUOTA_KPI } from '../web/js/sim.js';
 import { newMat, openShift as openMats, stepMat, matReady, shoot, matWire } from '../web/js/customers.js';
 import { mowerDue, newMower, stepMower, mowerSnap } from '../web/js/mowe.js';
@@ -124,6 +124,8 @@ export class Crew {
     this.stamps = int(save?.stamps, 0, 100);
     this.records = { cash: Number(save?.records?.cash) || 0, banked: int(save?.records?.banked, 0, 1e9), day: int(save?.records?.day, 0, 1e6) };
     { const c = cleanCurve(save?.records?.curve); if (c) this.records.curve = c; }   // round 7 #9: the record's own pace
+    { const y = cleanYesterday(save?.records?.yesterday); if (y) this.records.yesterday = y; const st = int(save?.records?.streak, 0, 1e6); if (st) this.records.streak = st; }   // round 8 #3
+    if (this.endless) this.up.owner = Math.max(this.up.owner ?? 0, OWNER.PAINT);   // round 8 #3: an endless save from before the deed
     // Balls Outstanding is a stored count (write-offs live here). Old saves derive it.
     this.outstanding = Number.isFinite(save?.outstanding) ? Math.max(0, Math.floor(save.outstanding)) : BALLS_OUTSTANDING - (this.totals.deposited ?? 0);
     const pr = Math.floor(Number(save?.pendingReveal));
@@ -1117,7 +1119,7 @@ export class Crew {
     const g = this.gary;
     if (!g) {
       if (this.shiftT >= this.shiftSecs * GARY.AT) {
-        this.gary = { phase: 'warn', t: GARY.WARN_SECS, x: GARY.START.x, z: GARY.START.z, yaw: Math.PI / 2, stop: 0, pause: 0, fails: 0, checks: [] };
+        this.gary = { phase: 'warn', t: GARY.WARN_SECS, x: GARY.START.x, z: GARY.START.z, yaw: Math.PI / 2, stop: 0, pause: 0, fails: 0, checks: [], stalls: 0 };
         this.events.push({ t: 'gary', phase: 'warn' });
         this.pa('gary', { once: true });
       }
@@ -1321,6 +1323,7 @@ export class Crew {
     this.outstanding = 0;
     this.lastBucket = { phase: 'done', by: p.id };
     this.endless = true; this.endlessFresh = true; this.endlessArmed = true;
+    this.up.owner = Math.max(this.up.owner ?? 0, OWNER.PAINT);   // round 8 #3: the crew colours are the deed
     this.events.push({ t: 'lastbucket', phase: 'banked', by: p.id, cash: pay });
     this.pa('last', { once: true });
     this.endShift(true, pay);
@@ -1435,7 +1438,10 @@ export class Crew {
       // Gary's cart rings too, but it isn't a PING. Gary has noted your enthusiasm.
       if (this.gary?.phase === 'drive' && b.kind !== 'one' && !b.pinged && ballHitsCart(x0, y0, z0, b, this.gary)) {
         b.pinged = true;
-        this.events.push({ t: 'enthusiasm', by: b.by ?? null, x: this.gary.x, z: this.gary.z });
+        // Council round 8 #2: a crew ball stalls him ("taking notes"): GARY.STALL s, GARY.STALLS times a visit.
+        const g = this.gary, stall = b.by && (g.stalls ?? 0) < GARY.STALLS ? (g.stalls = (g.stalls ?? 0) + 1) : 0;
+        if (stall) { g.pause = Math.max(0, g.pause) + GARY.STALL; this.dirty = true; }
+        this.events.push({ t: 'enthusiasm', by: b.by ?? null, x: g.x, z: g.z, ...(stall ? { stall } : {}) });
         const shooter = this.players.get(b.by); if (shooter) shooter.shift.pings++;
       }
       for (const p of [...this.players.values(), ...this.helpers]) {
@@ -1558,20 +1564,28 @@ export class Crew {
     // Crew records (from day 3).
     let record = null;
     const dayCash = cents(this.stats.cash - onePay);
+    // Round 8 #3: an endless bell races yesterday (the ending's shift and review days never write it).
+    const race = this.endless && !ending ? raceYesterday(this.records, dayCash, finishCurve(this.curveDay === this.day ? this.curve : [], dayCash)) : null;
     if (this.day >= 3 && dayCash > this.records.cash) {
       record = { cash: dayCash, was: this.records.cash };
-      this.records = { cash: dayCash, banked: this.stats.deposited - (onePay ? 1 : 0), day: this.day, curve: finishCurve(this.curveDay === this.day ? this.curve : [], dayCash) };
+      this.records = { ...this.records, cash: dayCash, banked: this.stats.deposited - (onePay ? 1 : 0), day: this.day, curve: finishCurve(this.curveDay === this.day ? this.curve : [], dayCash) };
       // Round 7 #3: the record PA plays only in endless, where the record is the game (no stamp to land on). On review
       // days the report card's "Record shift!" line says it (playtest round 2 #4: a record PA over DENIED).
       if (this.endless) this.pa('record', { big: true });
     }
+    if (race) { this.records.yesterday = race.yesterday; this.records.streak = race.streak; }
     for (const k of Object.keys(this.stats)) this.totals[k] = (this.totals[k] ?? 0) + this.stats[k];
-    this.report = { day: this.day, ...this.stats, left: this.balls.size, bank: this.cash, quota, record,
+    this.report = { day: this.day, ...this.stats, left: this.balls.size, bank: this.cash, quota, record, ...(race ? { race: race.result } : {}),
       ledger: this.ledger(), promo: this.promoInfo(), venue: this.venue, title: this.title(),
       tomorrow: tomorrowText(this.day + 1, this.venue, this.endless, !!this.promoInfo()?.ready) };
     if (ending) this.report.ending = { days: this.day, banked: this.totals.deposited, commendations: this.commendations, quotas: this.totals.stamps + this.stamps };
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'report', day: this.day, report: this.report });
+  }
+
+  racePace() {
+    const y = yesterdayPace(this.records);
+    return y ? { record: y.cash, now: cents(paceAt(y, this.shiftT, this.shiftSecs)), cash: this.stats.cash, vs: y.vs, best: this.records.cash } : null;
   }
 
   // Employee of the Shift and the personal ledger (council round 2, §5.2).
@@ -1616,6 +1630,7 @@ export class Crew {
       players: [...this.players.values()].map(p => ({
         id: p.id, name: p.name, color: p.color, x: +p.x.toFixed(2), z: +p.z.toFixed(2), yaw: +p.yaw.toFixed(3),
         pocket: p.pocket, down: +p.down.toFixed(2), online: p.online > 0, gear: p.gear, wand: p.wand,
+        spray: !!p.wand && now - p.washAt < 400,   // owner notes: mates see your spray (wash acts land every 250 ms)
         diving: p.diving, air: +p.air.toFixed(1), bag: p.bag, pumping: p.pumping, dive: p.dive, treasure: p.treasure, grime: p.grime, one: p.one,
         ready: this.ready.has(p.id), signed: this.signed.has(p.id),
       })),
@@ -1624,8 +1639,8 @@ export class Crew {
       stamps: this.stamps, title: this.title(), commendations: this.commendations,
       outstanding: this.outstanding, records: this.records,
       // Endless target: today's cash against the record's pace (round 7 #9: the record shift's own curve; linear for an old record).
-      pace: this.endless && this.records.cash > 0 && this.phase === 'shift' && this.shiftSecs > 0
-        ? { record: this.records.cash, now: cents(paceAt(this.records, this.shiftT, this.shiftSecs)), cash: this.stats.cash } : null,
+      // Round 8 #3: it races yesterday when there is one (yesterdayPace); `best` is the all-time record, a small line.
+      pace: this.endless && this.phase === 'shift' && this.shiftSecs > 0 ? this.racePace() : null,
       silo: this.stats.deposited, lastCall: this.lastCall(),
       promo: this.promoInfo(), revealT: +this.revealT.toFixed(1),
       promotedTo: this.phase === 'report' && this.pendingReveal ? VENUE_RULES[this.pendingReveal]?.name ?? null : null,   // the report says so (playtest)

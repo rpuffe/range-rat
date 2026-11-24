@@ -69,23 +69,38 @@ export const HINTS = Object.freeze({
   cctv: { kb: 'Press C for Corporate CCTV.', pad: 'D-pad down for Corporate CCTV.' },
   wand: { kb: 'The sign is filthy. Grab the pressure washer by the cart bay: E.', pad: 'The sign is filthy. Grab the pressure washer by the cart bay: Ⓧ.' },
   bank: { kb: 'Full. The bucket stand pays per ball: E there.', pad: 'Full. The bucket stand pays per ball: Ⓧ there.' },
-  crank: { kb: 'The ball washer has money in it. Hold the mouse at a handle and circle it.', pad: 'The ball washer has money in it. Tap Ⓐ at a handle and circle a stick.' },
-  dive: { kb: 'Walk in to dive. A buddy on the dock can pump your air.', pad: 'Walk in to dive. A buddy on the dock can pump your air.' },
+  // Owner notes (2026-11-24): one tip per new thing, 8 words or fewer; crank and dive fold in "it just appeared".
+  crank: { kb: 'Ball washer: hold Click at handle, circle mouse.', pad: 'Ball washer: tap Ⓐ at handle, circle stick.' },
+  dive: { kb: 'Walk in to dive. Buddies pump your air.', pad: 'Walk in to dive. Buddies pump your air.' },
+  mud: { kb: 'Muddy mat? E: pressure washer. Hold Click: spray.', pad: 'Muddy mat? Ⓧ: pressure washer. Hold Ⓐ: spray.' },
+  shed: { kb: 'Snack shed open! Click at the counter: kitchen.', pad: 'Snack shed open! Ⓐ at the counter: kitchen.' },
+  cart: { kb: 'New cart! F gets in. W/S drives.', pad: 'New cart! Ⓨ gets in. RT/LT drives.' },
+  tube: { kb: 'Red box on the dock: E feeds balls.', pad: 'Red box on the dock: Ⓧ feeds balls.' },
+  gutters: { kb: 'Gutters linked: one TARGET drains all three cups.', pad: 'Gutters linked: one TARGET drains all three cups.' },
+  lift: { kb: 'The Lift: E on the platform rides up.', pad: 'The Lift: Ⓧ on the platform rides up.' },
   bv: { kb: 'Ball Value: what Corporate pays per ball. Clean pays more.', pad: 'Ball Value: what Corporate pays per ball. Clean pays more.' },
   deck: { kb: 'Fill their orders. Rounds count double.', pad: 'Fill their orders. Rounds count double.' },   // council round 7 #8
 });
 // Context-driven hints (council round 4, §4.2): fires when its condition holds, once ever.
-// ctx: { day, playSecs, venue, signMud, pocketFull, washerCash, onDock, beers, deckOrder }
+// ctx: { day, playSecs, venue, signMud, pocketFull, washerCash, onDock, beers, deckOrder }, plus tips.js tipCtx:
+// { up, myDive, matMudNear, matMudMax } (owner notes: a tip right after buying or when a thing first appears)
 export const HINT_WHEN = Object.freeze({
   wand: c => c.day === 1 && c.playSecs >= 20 && (c.signMud ?? 0) > 0.5,
   bank: c => !!c.pocketFull,
-  crank: c => (c.washerCash ?? 0) >= 10,
-  dive: c => !!c.onDock,
+  crank: c => (c.up?.washer ?? 0) >= 1 || ((c.washerCash ?? 0) >= 10 && (c.up == null || (c.up.washer ?? 0) >= 1)),   // it appears, or it has money in it
+  dive: c => !!c.onDock || (c.myDive ?? 0) >= 1,
+  mud: c => (c.matMudNear ?? 0) >= 0.5 || (c.matMudMax ?? 0) >= 0.9,   // a muddy mat near you, or one a customer refuses
+  shed: c => (c.up?.shed ?? 0) >= 1,
+  cart: c => (c.up?.cart ?? 0) >= 1,
+  tube: c => (c.up?.pond ?? 0) >= 1,
+  gutters: c => (c.up?.gutters ?? 0) >= 1,
+  lift: c => (c.venue ?? 0) >= 5,
   deck: c => (c.venue ?? 0) >= 2 && ((c.beers ?? 0) > 0 || !!c.deckOrder),   // the first order (or the first beer)
   bv: c => (c.day ?? 1) >= 2 && (c.playSecs ?? 0) >= 8,   // the BV line appears on day 2: say what it is once
 });
 // Play-seconds before each hint is due; CCTV also needs the crew at venue 1+.
 export const HINT_AFTER = Object.freeze({ shop: 10, sprint: 30, cctv: 6 });
+export const HINT_ORDER = ['bv', 'wand', 'mud', 'bank', 'crank', 'shed', 'cart', 'dive', 'tube', 'gutters', 'lift', 'deck'];   // context hints, first due wins
 export const HINT_GAP = 12;   // seconds between hints
 export const SHOP_HINT_CASH = 20;   // the shop hint waits for cash >= this (ctx.cash): before that the crew can't buy anything
 
@@ -107,7 +122,7 @@ export function nextHint({ seen, playSecs, venue = 0, sinceLast = Infinity, ...c
     if (id === 'shop' && !((ctx.cash ?? 0) >= SHOP_HINT_CASH)) continue;   // nothing to buy yet, nothing to say
     return id;
   }
-  for (const id of ['bv', 'wand', 'bank', 'crank', 'dive', 'deck']) {
+  for (const id of HINT_ORDER) {
     if (!seen.includes(id) && HINT_WHEN[id]({ ...ctx, playSecs, venue })) return id;
   }
   return null;

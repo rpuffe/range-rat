@@ -16,6 +16,7 @@ export const DECK = {
   // it: +ROUND_DRINKS Drinks and a ROUND_TAB x BV tab. At 4 Drinks a filled round IS a fall (the overserving joke).
   ROUND_EVERY: 3, ROUND_FROM: 3, ROUND_TAB: 25, ROUND_DRINKS: 2,
   FINE: 50,                     // the Liability fine: 50 x BV (council round 7 #8: was 100)
+  FINE_CAP: 4,                  // council round 8 #5: the k-th fall of a shift costs FINE x min(2^(k-1), FINE_CAP)
   RESET_TO: 2,                  // drinks after an incident
   FALL_R: 1.5,                  // a Rat this close to the landing spot is knocked flat
   SEATS: [-14, -6, 6, 14],      // lounger x at the rail
@@ -81,7 +82,12 @@ export function fillOrder(d, item, quality) {
   const o = d.order; d.order = null;
   return o;
 }
-export const fineFor = bv => DECK.FINE * Math.max(0, bv);
+// Council round 8 #5: Liability escalates. The k-th fall of a shift (1-based) costs 50, 100, 200, 200... x BV: the first
+// fall stays the cheap joke, the third is a lawsuit.
+export const fineMult = k => Math.min(2 ** Math.max(0, (k | 0) - 1), DECK.FINE_CAP);
+export const fineFor = (bv, k = 1) => DECK.FINE * fineMult(k) * Math.max(0, bv);
+// "2nd", "3rd", "11th": the feed line's fall count.
+export const ordinal = k => { const n = k | 0, t = n % 100; return n + (t >= 11 && t <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th"); };
 
 // Apply a serve. Returns { delta, incident }; on an incident the caller pays the fine, then calls afterIncident.
 // filled: the order this serve filled (fillOrder), if any; a round is ROUND_DRINKS drinks, not 1.

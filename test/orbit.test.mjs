@@ -8,6 +8,7 @@ import { ORBIT, LIFT, debrisSpot, evaStep, rideHeight, spaceness, clampDisc, TET
 import { KIND_W, SHOP, nextPrice } from '../web/js/sim.js';
 import { MAP } from '../web/js/map.js';
 import { readFileSync } from 'node:fs';
+import { RALLY_LINES, dealJobs } from '../web/js/rally.js';
 
 function room(extra = {}, shiftSecs = 900) {
   const clock = { t: 1_000_000 };
@@ -179,24 +180,35 @@ test('out of O2: the tether reels you in, the bag goes back to orbit with the sa
   assert.equal(evaStep({ air: 20, dt: 1, tier: t, gain: 3 }).air, 20, 'never past the tank');
 });
 
-test('a buddy on the platform cranks the O2 (the pump rules, onLift for onDock)', () => {
+// Council round 8 #4: the platform crank is gone. EVA air is the dive tier's tank; everyone rides.
+test("round 8 #4: an orbpump input is ignored and changes no rider's air", () => {
   const a = afloat();
   const r = a.st.riders.get(a.p.id); r.air = 8;
   const q = a.crew.join('Quin'); a.crew.connect(q); at(q, 1.2, 0.5);
-  a.run(2);
-  const alone = r.air;
-  assert.ok(alone < 6.1 && alone > 5.9, `drains 1/s alone: ${alone}`);
-  // held button: +0.5 s of air a second; whole turns: +1.5 s a turn.
-  for (let i = 0; i < 20; i++) { a.crew.input(q, { a: [{ t: 'orbpump', held: true }] }); a.run(0.1); }
-  const held = r.air;
-  assert.ok(held > alone - 2.01 + 0.9 && held < alone, `held crank slows the drain: ${alone} -> ${held}`);
-  r.air = 8;
-  for (let i = 0; i < 20; i++) { a.crew.input(q, { a: [{ t: 'orbpump', turns: 0.5 }] }); a.run(0.1); }
-  assert.ok(r.air > 8, `whole turns outrun the drain: ${r.air}`);
-  assert.deepEqual(a.crew.snapshot().mods.orbit.p, [q.id]);
-  // a pumper far from the car does nothing
-  r.air = 8; at(q, 9, 0); a.crew.input(q, { a: [{ t: 'orbpump', turns: 1 }] }); a.run(1);
-  assert.ok(r.air < 7.1);
+  for (let i = 0; i < 20; i++) { a.crew.input(q, { a: [{ t: 'orbpump', held: true }, { t: 'orbpump', turns: 1 }] }); a.run(0.1); }
+  assert.ok(Math.abs(r.air - 6) < 0.06, `drains 1/s, crank or no crank: ${r.air}`);
+  assert.equal(a.crew.snapshot().mods.orbit.p, undefined, 'no pumpers on the wire');
+  assert.equal(a.st.pump, undefined);
+  const view = readFileSync(new URL('../web/js/views/orbit.js', import.meta.url), 'utf8');
+  assert.ok(!/crank their oxygen|orbpump/.test(view), 'no crank prompt, no crank input');
+});
+
+test('round 8 #4: four Rats can ride at once', () => {
+  const a = room();
+  const rats = [a.p, ...['Quin', 'Ros', 'Sal'].map(n => { const q = a.crew.join(n); a.crew.connect(q); return q; })];
+  for (const q of rats) { a.toLift(q); a.crew.input(q, { a: [{ t: 'lift' }] }); }
+  assert.equal(a.st.riders.size, 4);
+  a.run(ORBIT.RIDE + 0.3);
+  assert.ok(rats.every(q => a.st.riders.get(q.id)?.ph === 'out'), 'all four float');
+  for (const q of rats) a.crew.input(q, { a: [{ t: 'ridedown' }] });
+  a.run(ORBIT.RIDE + 0.3);
+  assert.equal(a.st.riders.size, 0, 'all four ride down');
+  // The sky line is everyone's: one job, every Rat gets it.
+  const line = RALLY_LINES.gauge[5];
+  assert.equal(line, 'Debris overhead. Everyone up the Lift!');
+  const dealt = dealJobs([{ line, at: LIFT }], rats.map((q, i) => ({ id: q.id, x: i * 10, z: 0 })));
+  assert.deepEqual(new Set(Object.values(dealt)), new Set([line]));
+  assert.equal(Object.keys(dealt).length, 4);
 });
 
 test('the tether winch clears 1 debris every 8 s and banks it', () => {

@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { WASHER_HANDLES, atHandle, WASH, VENUE_RULES, gearGrimeFactor, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
 import { createPA } from './pa.js';
+import { streakLine } from './owner.js';                                         // council round 8 #3: racing yesterday
 import { showPromo, promoPanelHtml, feeHeadline } from './promopanel.js';   // council round 6 #7: the fee line from 2 stamps; round 7 #10.1 the headline
 import { createWasher, createCrank } from './washer.js';
 import { createVenues, paintSign } from './venues.js';
@@ -236,7 +237,8 @@ export function setupRound2(ctx) {
     ledgerKey = key;
     const esc = s => String(s).replace(/[&<>"']/g, ch => '&#' + ch.charCodeAt(0) + ';');
     let html = '';
-    const head = c.promotedTo ? '' : feeHeadline(promo, c.cash);
+    // Council round 8 #3: in endless the headline races yesterday ("Beat yesterday · 4 in a row.", owner.js streakLine).
+    const head = c.promotedTo ? '' : c.endless && r.race ? streakLine(r.race) : feeHeadline(promo, c.cash);
     feeHead(head);   // round 7 #10.1: "3 stamps. $895 short." leads the report
     if (r.ledger?.length) {
       html += '<div class="sheet ledger"><h3>The ledger</h3>' + r.ledger.map(l =>

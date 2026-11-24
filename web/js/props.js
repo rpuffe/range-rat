@@ -16,13 +16,19 @@ import { SIM, WASH, FRIES, MATS, BAYS } from './sim.js';
 import { MAP } from './map.js';
 import { WASHER_POS } from './washer.js';
 import { detailFor, emit, wetStep, sagPoints, rollAngle, gaugeAngle, ease, throttle, rng, lightBalance } from './detail.js';
+import { createStations, findStations, REVEAL } from './stations.js';   // owner notes: the washer and shed appear when they matter
+import { sharedConfetti, confettiCount } from './confetti.js';
+import { MUD, mudField, paintClean, matAt, matUV, cameClean } from './mud.js';
 
 const TAU = Math.PI * 2;
 
-export function createProps({ scene, camera, renderer, perf, sky, me, cartViews = [], fpGear, myGear,
+export function createProps({ scene, camera, renderer, perf, sky, me, cartViews = [], fpGear, myGear, others = null,
   crew = () => ({}), sprayOn = () => false, ballCount = () => 0 } = {}) {
   if (/[?&]debug/.test(globalThis.location?.search ?? '')) globalThis.__props = { renderer, scene, camera, perf };   // ?debug: for timing renders
-  if (/[?&]noprops/.test(globalThis.location?.search ?? '')) return { tick() {}, detail: null };   // ?noprops: A/B the cost
+  if (/[?&]noprops/.test(globalThis.location?.search ?? '')) {   // ?noprops: A/B the cost (the stations still hide until they matter)
+    const bare = createStations({ scene, ...findStations(scene) });
+    return { tick() { bare.update(crew()); }, detail: null };
+  }
   const D = detailFor(perf?.profile);
   const rand = rng(91731);
   const R = (a, b) => a + (b - a) * rand();
@@ -204,6 +210,7 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
 
   // ---------------------------------------------------------------- contact shadows and worn ground
   // Soft dark blobs under everything that stands on the grass, and worn dirt where feet go.
+  const marks = { blob: null, dirt: null, of: { washer: { blob: [], dirt: [] }, shed: { blob: [], dirt: [] } }, saved: new Map() };   // the stations' own, hidden with them
   {
     const blobs = [
       [SIM.STAND.x, SIM.STAND.z, 2.8, 2.0], [WASHER_POS.x, WASHER_POS.z, 1.4, 1.4], [WASH.STATION.x, WASH.STATION.z, 1.6, 1.3],
@@ -214,18 +221,35 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
       new THREE.MeshBasicMaterial({ map: softDot, color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }), blobs.length);
     blobs.forEach(([x, z, sx, sz], i) => im.setMatrixAt(i, mtx(x, 0.014, z, 0, 0, 0, sx, 1, sz)));
     im.frustumCulled = false; im.renderOrder = 1; scene.add(im);
+    marks.blob = im; marks.of.washer.blob.push(1); marks.of.shed.blob.push(3);
 
     const dirt = [];
     for (const m of MATS) dirt.push([m.x, 1.25, 1.5, 1.0, R(0, 3)]);
     for (let x = -20; x <= 20; x += 2.6) dirt.push([x + R(-0.6, 0.6), 2.4 + R(-0.4, 0.4), R(2.2, 3.2), R(0.9, 1.4), R(-0.3, 0.3)]);   // the walkway behind the mats
     dirt.push([SIM.STAND.x, SIM.STAND.z - 1.0, 3.4, 1.8, 0], [SIM.STAND.x - 2.6, SIM.STAND.z - 0.6, 2.4, 1.3, 0.4], [23.5, 7.6, 1.8, 1.2, 0]);
+    marks.of.washer.dirt.push(dirt.length, dirt.length + 1);
     dirt.push([WASHER_POS.x - 1.4, WASHER_POS.z, 1.1, 1.1, 0], [WASHER_POS.x + 1.4, WASHER_POS.z, 1.1, 1.1, 0]);   // where the crankers stand
+    marks.of.shed.dirt.push(dirt.length + 3);
     dirt.push([31, 10, 3.4, 4.6, 0.2], [33.5, 6.8, 2.6, 3.4, 0.6], [36.8, 4.4, 2.2, 1.8, 0], [FRIES.SHED.x, FRIES.SHED.z - 0.1, 3.2, 1.6, 0]);   // the yard: cart park, wash pad, the counter
     for (const b of BAYS) dirt.push([b.x, b.z + 1.3, 1.6, 1.0, 0]);
     const dm = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ map: dirtTex, color: 0x7a5a36, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), dirt.length);
     dirt.forEach(([x, z, sx, sz, ry], i) => { dm.setMatrixAt(i, mtx(x, 0.012, z, 0, ry, 0, sx, 1, sz)); dm.setColorAt(i, new THREE.Color().setHSL(0.08 + R(-0.01, 0.01), R(0.3, 0.42), R(0.3, 0.42))); });
     dm.frustumCulled = false; dm.renderOrder = 1; scene.add(dm);
+    marks.dirt = dm;
+  }
+  // A station's contact shadow and worn dirt go with it (a zero-scale instance; the matrix is kept to put back).
+  const _zero = new THREE.Matrix4().makeScale(0, 0, 0), _keep = new THREE.Matrix4();
+  function stationMarks(name, on) {
+    for (const [im, list] of [[marks.blob, marks.of[name].blob], [marks.dirt, marks.of[name].dirt]]) {
+      if (!im) continue;
+      for (const i of list) {
+        const key = im.uuid + ':' + i;
+        if (!marks.saved.has(key)) { im.getMatrixAt(i, _keep); marks.saved.set(key, _keep.clone()); }
+        im.setMatrixAt(i, on ? marks.saved.get(key) : _zero);
+      }
+      im.instanceMatrix.needsUpdate = true;
+    }
   }
 
   // ---------------------------------------------------------------- ground: grass texture, yard mowing, variation, green rings
@@ -467,8 +491,8 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     add(g, new THREE.CylinderGeometry(0.03, 0.03, 0.04, 10), red, 0.32, 1.0, -1.16, { rx: Math.PI / 2 });     // quick-connect nozzle
     const coneMat = new THREE.MeshBasicMaterial({ color: 0xe6f6ff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
     const cone = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.6, 16, 1, true).translate(0, -0.8, 0).rotateX(Math.PI / 2), coneMat);
-    cone.position.set(0.32, 1.0, -1.2); cone.visible = false; g.add(cone);
-    wand.group = g; wand.cone = cone; wand.coneMat = coneMat;
+    cone.position.set(0.32, 1.0, -1.23); cone.visible = false; g.add(cone);
+    wand.group = g; wand.cone = cone; wand.coneMat = coneMat; wand.tipObj = g.getObjectByName('nozzleTip');
   }
   function decoratePicker(g, drum) {
     if (g.userData.props) return; g.userData.props = true;
@@ -716,6 +740,65 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     bake(g, [...orig, shed.glow]);
   }
 
+  // ---------------------------------------------------------------- stations appear when they matter (owner notes)
+  // The ball washer exists once the crew owns the Ball washer row; the snack shed once it's open. A pop and a puff.
+  const confetti = sharedConfetti(scene);
+  const stations = createStations({
+    scene, washer: found.washer, shed: found.shed, tube: findStations(scene).tube,
+    burst: (x, y, z) => confetti.burst(x, y, z, { n: confettiCount(REVEAL.CONFETTI, !D.standard, REVEAL.CONFETTI_LOW), secs: 1.6, speed: 3.5, up: 4 }),
+    onToggle: stationMarks,
+  });
+
+  // ---------------------------------------------------------------- mat mud (owner notes: "right now they are just brown")
+  // Each mat's own material (main.js cloned one per mat) gets a mud layer in its shader: splotches, footprints and
+  // smears from one generated field, shown where the mat's mud is above a per-texel threshold, so the mud breaks up
+  // and washes off in patches. Where my spray lands, a tiny per-mat memory raises the threshold along the jet, so
+  // streaks wash off first. No new meshes, no new draw calls. main.js paintFixtures skips the old flat tint.
+  const mats = { list: [], tex: null };
+  {
+    const F = mudField(MUD.TEX, 7), n = MUD.TEX;
+    const data = new Uint8Array(n * n * 4);
+    for (let i = 0; i < n * n; i++) { data[i * 4] = F.density[i] * 255; data[i * 4 + 1] = F.noise[i] * 255; data[i * 4 + 3] = 255; }
+    mats.tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
+    mats.tex.wrapS = mats.tex.wrapT = THREE.RepeatWrapping; mats.tex.magFilter = mats.tex.minFilter = THREE.LinearFilter; mats.tex.needsUpdate = true;
+    const byX = new Map(MATS.map(m => [m.x.toFixed(2), m]));
+    const f3 = v => v.toFixed(3);
+    for (const o of scene.children) {
+      const p = o.isMesh && o.geometry?.type === 'BoxGeometry' ? o.geometry.parameters : null;
+      if (!p || p.width !== MUD.SIZE || p.height !== 0.04 || !o.material?.isMeshLambertMaterial) continue;
+      const m = byX.get(o.position.x.toFixed(2)); if (!m) continue;
+      const mem = new Float32Array(MUD.MEM * MUD.MEM), memBytes = new Uint8Array(MUD.MEM * MUD.MEM * 4);
+      const memTex = new THREE.DataTexture(memBytes, MUD.MEM, MUD.MEM, THREE.RGBAFormat);
+      memTex.magFilter = memTex.minFilter = THREE.LinearFilter; memTex.needsUpdate = true;
+      const U = { uMudTex: { value: mats.tex }, uMem: { value: memTex }, uMud: { value: 0 }, uWet: { value: 0 }, uTime: { value: 0 } };
+      const mat = o.material;
+      mat.color.set(0x2f6b2a); mat.userData.mudOverlay = true;
+      mat.onBeforeCompile = sh => {
+        Object.assign(sh.uniforms, U);
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vMudUv;')
+          .replace('#include <begin_vertex>', `#include <begin_vertex>\nvMudUv = position.xz / ${f3(MUD.SIZE)} + 0.5;`);
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec2 vMudUv; uniform sampler2D uMudTex; uniform sampler2D uMem; uniform float uMud; uniform float uWet; uniform float uTime;`)
+          .replace('#include <map_fragment>', `#include <map_fragment>
+{ vec4 mt = texture2D(uMudTex, vMudUv); float mem = texture2D(uMem, vMudUv).r;
+  float c = min(0.98, ${f3(MUD.BASE)} + ${f3(MUD.NOISE)} * mt.g + ${f3(MUD.MEMK)} * mem);   // mud.js cleanThreshold
+  float a = mt.r * smoothstep(c - ${f3(MUD.EDGE)}, c + ${f3(MUD.EDGE)}, uMud);              // mud.js mudAlpha
+  vec3 mudCol = mix(vec3(0.115, 0.056, 0.016), vec3(0.05, 0.026, 0.009), mt.g);
+  diffuseColor.rgb = mix(diffuseColor.rgb, mudCol, a * 0.95);
+  diffuseColor.rgb *= 1.0 - 0.32 * uWet; }`)
+          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+{ float glint = texture2D(uMudTex, vMudUv * 2.3 + vec2(uTime * 0.07, -uTime * 0.05)).g * texture2D(uMudTex, vMudUv * 3.1 - vec2(uTime * 0.04, uTime * 0.06)).g;
+  totalEmissiveRadiance += vec3(0.55, 0.62, 0.7) * uWet * smoothstep(0.55, 0.9, glint) * 0.8; }   // drifting glints off the water film`);
+      };
+      mat.customProgramCacheKey = () => 'rr-mat-mud';
+      mat.needsUpdate = true;
+      mats.list.push({ i: m.i, x: m.x, z: o.position.z, U, mem, memBytes, memTex, mud: -1, wet: 0, hit: false, dirty: false });
+    }
+  }
+  const memUpload = M => { for (let i = 0; i < M.mem.length; i++) M.memBytes[i * 4] = M.mem[i] * 255; M.memTex.needsUpdate = true; M.dirty = false; };
+  const sparkle = puffs(D.sparkle, { color: 0xffffff, opacity: 1, blending: THREE.AdditiveBlending });
+  const jet = puffs(D.jet, { color: 0xdff4ff, opacity: 0.85 });   // crewmates' spray
+
   // ---------------------------------------------------------------- picker carts
   const cageBars = merge([
     ...[[-0.75, -0.85], [0.75, -0.85], [-0.75, 0.85], [0.75, 0.85]].map(([x, z]) => [new THREE.CylinderGeometry(0.025, 0.025, 1.55, 6), mtx(x, 0, z)]),
@@ -805,6 +888,8 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
   // ---------------------------------------------------------------- per frame
   const ray = new THREE.Raycaster(); ray.far = 9.5;
   const dir = new THREE.Vector3(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), warm = new THREE.Color(0xffb070);
+  const aim = new THREE.Vector3(), jetDir = new THREE.Vector3(), mateDir = new THREE.Vector3();
+  let splashCarry = 0, jetCarry = 0;
   let animAcc = 0, sprayT = 0, steamCarry = 0, ventCarry = 0, mistCarry = 0, bubCarry = 0, dripCarry = 0, clipCarry = 0, t0 = 0;
   const sprayTargets = [];
 
@@ -830,8 +915,10 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
       wand.cone.visible = wand.recoil > 0.05;
       wand.coneMat.opacity = wand.recoil * (0.1 + Math.random() * 0.05);
       wand.cone.scale.set(0.8 + Math.random() * 0.3, 1, 0.8 + Math.random() * 0.3);
-      tmp.set(0.32, 1.0, -1.2); wand.group.localToWorld(wand.tip.copy(tmp));
+      // The nozzle tip in the world (owner notes: the spray must come out of the nozzle): main.js's 'nozzleTip'.
+      if (wand.tipObj) wand.tipObj.getWorldPosition(wand.tip); else { tmp.set(0.32, 1.0, -1.23); wg.updateWorldMatrix(true, false); wg.localToWorld(wand.tip.copy(tmp)); }
     }
+    for (const M of mats.list) M.hit = false;
     if (on) {
       camera.getWorldDirection(dir);
       ray.set(camera.position, dir);
@@ -840,14 +927,33 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
       let hitPt = null;
       for (const w of wettable) w.hit = false;
       if (hits.length) { hitPt = hits[0].point; const w = wettable.find(x => x.mesh === hits[0].object); if (w) w.hit = true; }
-      else if (dir.y < -0.02) { const d = -camera.position.y / dir.y; if (d < 9) hitPt = tmp2.copy(camera.position).addScaledVector(dir, d); }
+      else if (dir.y < -0.02) { const d = (0.04 - camera.position.y) / dir.y; if (d < 9) hitPt = tmp2.copy(camera.position).addScaledVector(dir, d); }
+      // The jet runs from the nozzle tip to where the crosshair lands (or 7 m out): the cone and the mist follow it.
+      aim.copy(hitPt ?? tmp.copy(camera.position).addScaledVector(dir, 7));
+      jetDir.copy(aim).sub(wand.tip); const jetLen = jetDir.length() || 1; jetDir.divideScalar(jetLen);
+      if (wg && wand.cone) { wand.cone.lookAt(tmp.copy(wand.tip).multiplyScalar(2).sub(aim)); wand.cone.scale.z = Math.min(1.6, jetLen / 1.6); }
       // mist along the jet and a burst where it lands
       const em = emit(mist.cap * 1.6, dt, mistCarry); mistCarry = em.carry;
       for (let i = 0; i < em.n; i++) {
         if (hitPt && i % 2 === 0) mist.spawn(hitPt.x + R(-0.2, 0.2), hitPt.y + R(0.05, 0.3), hitPt.z + R(-0.2, 0.2), R(-0.6, 0.6), R(0.3, 1.0), R(-0.6, 0.6), R(0.5, 0.9), 0.15, 0.7, -0.2, 1.5);
-        else { const a = R(0.15, 0.6); mist.spawn(wand.tip.x + dir.x * a * 4, wand.tip.y + dir.y * a * 4, wand.tip.z + dir.z * a * 4, dir.x * 2 + R(-0.4, 0.4), dir.y * 2 + R(-0.2, 0.4), dir.z * 2 + R(-0.4, 0.4), R(0.3, 0.6), 0.05, 0.35, 0, 2); }
+        else { const a = R(0.05, 0.6) * Math.min(1, jetLen / 4); mist.spawn(wand.tip.x + jetDir.x * a * 4, wand.tip.y + jetDir.y * a * 4, wand.tip.z + jetDir.z * a * 4, jetDir.x * 2 + R(-0.4, 0.4), jetDir.y * 2 + R(-0.2, 0.4), jetDir.z * 2 + R(-0.4, 0.4), R(0.3, 0.6), 0.05, 0.35, 0, 2); }
       }
       if (hitPt && (sprayT += dt) > 0.12) { sprayT = 0; wetSpot(hitPt.x + R(-0.15, 0.15), hits.length ? hitPt.y + 0.003 : 0.016, hitPt.z + R(-0.15, 0.15), R(0.5, 0.9)); }
+      // Splashes: droplets bouncing up where it lands (not on Low).
+      if (hitPt && D.splash) {
+        const sp = emit(D.splash, dt, splashCarry); splashCarry = sp.carry;
+        for (let i = 0; i < sp.n; i++) drips.spawn(hitPt.x + R(-0.1, 0.1), hitPt.y + 0.03, hitPt.z + R(-0.1, 0.1), R(-1.2, 1.2) - jetDir.x * 0.8, R(1.2, 2.4), R(-1.2, 1.2) - jetDir.z * 0.8, R(0.35, 0.6), 0.03, 0.02, 9.8);
+      }
+      // On a mat? It gets wet, and (not on Low) my spray streaks the mud off from where it lands.
+      if (hitPt && !hits.length) {
+        const k = matAt(hitPt.x, hitPt.z, mats.list);
+        const M = k >= 0 ? mats.list[k] : null;
+        if (M) {
+          M.hit = true;
+          const uv = matUV(hitPt.x, hitPt.z, M.x, M.z);
+          if (D.matStreaks && uv && M.mud > MUD.CLEAN && paintClean(M.mem, MUD.MEM, uv.u, uv.v, jetDir.x, jetDir.z, 2.2 * dt)) M.dirty = M.memUsed = true;
+        }
+      }
     } else for (const w of wettable) w.hit = false;
     if (me?.wand && !on && wg) {   // a dripping nozzle
       const e = emit(1.6, dt, dripCarry); dripCarry = e.carry;
@@ -878,6 +984,41 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
         hose.mesh.instanceMatrix.needsUpdate = true;
         if (pw.reel) { pw.reelAng += (dist - pw.lastLen) * 2.5; pw.reel.rotation.x = pw.reelAng; }
         pw.lastLen = dist;
+      }
+    }
+  }
+
+  // The mats' mud, wet sheen and the sparkle when one comes clean (every frame: it's what you're spraying).
+  function tickMats(dt, t) {
+    const fx = crew()?.fixtures ?? {};
+    for (const M of mats.list) {
+      const mud = Math.max(0, Math.min(1, fx['mat' + M.i] ?? 0));
+      if (M.mud >= 0 && cameClean(M.mud, mud)) {   // clean! a glint over the mat
+        for (let i = 0; i < sparkle.cap; i++) sparkle.spawn(M.x + R(-0.7, 0.7), R(0.08, 0.3), M.z + R(-0.7, 0.7), R(-0.2, 0.2), R(0.4, 1.1), R(-0.2, 0.2), R(0.35, 0.7), R(0.08, 0.14), 0.01, 0, 1);
+      }
+      if (mud <= MUD.CLEAN && M.memUsed) { M.mem.fill(0); M.memUsed = false; M.dirty = true; }   // spotless: the next mud starts fresh
+      if (M.dirty) memUpload(M);
+      M.mud = mud;
+      M.U.uMud.value = mud;
+      if (D.matWet) { M.wet = wetStep(M.wet, M.hit, dt); M.U.uWet.value = M.wet * 0.9; M.U.uTime.value = t; }
+    }
+  }
+
+  // Crewmates' spray: droplets from their wand's nozzle (people.js: the lance runs down the wand's local -y to
+  // the yellow ring at y -1.15), while the server says they're washing (snapshot players[].spray).
+  function tickMates(dt) {
+    if (!others?.size || !jet.cap) return;
+    const players = crew()?.players ?? [];
+    for (const [id, o] of others) {
+      const w = o.person?.parts?.wand;
+      if (!o.g?.visible || !w?.visible || !players.find(p => p.id === id)?.spray) continue;
+      w.updateWorldMatrix(true, false);
+      tmp.set(0, -1.18, 0); w.localToWorld(tmp);
+      mateDir.set(0, -1, 0).transformDirection(w.matrixWorld);
+      const e = emit(D.jet * 2.5, dt, jetCarry); jetCarry = e.carry;
+      for (let i = 0; i < e.n; i++) {
+        const v = R(7, 10);
+        jet.spawn(tmp.x, tmp.y, tmp.z, mateDir.x * v + R(-0.5, 0.5), mateDir.y * v + R(-0.3, 0.5), mateDir.z * v + R(-0.5, 0.5), R(0.3, 0.45), 0.04, 0.12, 9.8);
       }
     }
   }
@@ -984,6 +1125,9 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
       if (fpGear) decorateGear(fpGear);
       if (myGear) decorateGear(myGear);
       tickSpray(dt, t, on);          // every frame: it's in your hands
+      tickMats(dt, t);
+      stations.update(crew()); stations.tick(dt);
+      tickMates(dt); jet.update(dt); sparkle.update(dt);
       tickCarts(dt);
       const th = throttle(animAcc, dt, D.animHz); animAcc = th.acc;
       if (th.run) {

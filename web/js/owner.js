@@ -15,9 +15,11 @@ export const OWNER = {
 export const OWNER_ROW = {
   id: 'owner', title: "Owner's projects", endless: true, tiers: [
     { name: 'Nothing yet', desc: 'Site 12 is yours. It looks exactly like it did when it was Corporate\'s.' },
-    { name: 'Crew colours', cost: 25_000_000, desc: 'The stand, the Board frame and the carts repaint in your colours. One stripe each.' },
-    { name: "The Owner's Hustle", cost: 60_000_000, desc: 'Hit the Cart caps at ×3, not ×2. Pings and TARGETs beat the record.' },
-    { name: 'The statue', cost: 150_000_000, desc: 'A bronze Range Rat holding Ball No. 1, by the stand. Your names on the plinth.' },
+    // Council round 8 #3: the colours are the deed, not a purchase. Ball No. 1 sets tier 1 (crew.mjs depositOne); cost 0
+    // keeps the index (no save migration) and makes the shop's next tier the Owner's Hustle.
+    { name: 'Crew colours', cost: 0, desc: "Site 12 is yours. It's in your colours now." },
+    { name: "The Owner's Hustle", cost: 120_000_000, desc: 'Hit the Cart caps at ×3, not ×2. Pings and TARGETs beat the record.' },
+    { name: 'The statue', cost: 300_000_000, desc: 'A bronze Range Rat holding Ball No. 1, by the stand. Your names on the plinth.' },
   ],
 };
 
@@ -66,6 +68,47 @@ export function paceAt(records, shiftT, shiftSecs) {
   const x = f * CURVE_N, k = Math.min(CURVE_N - 1, Math.floor(x));
   const a = k ? c[k - 1] : 0, b = c[k];
   return a + (b - a) * (x - k);
+}
+
+// ---- racing yesterday (council round 8 #3) -----------------------------------------------------------------------
+// The endless Board races yesterday's shift (its cash and its curve), not the all-time record; an old save with no
+// yesterday yet races the record. Returns { cash, curve?, vs: 'yesterday'|'record' }, or null with nothing to race.
+export function yesterdayPace(records) {
+  const y = records?.yesterday;
+  if (y && +y.cash > 0) return { cash: +y.cash, ...(cleanCurve(y.curve) ? { curve: y.curve } : {}), vs: 'yesterday' };
+  if (+records?.cash > 0) return { cash: +records.cash, ...(cleanCurve(records.curve) ? { curve: records.curve } : {}), vs: 'record' };
+  return null;
+}
+// A saved yesterday, or undefined.
+export function cleanYesterday(y) {
+  const cash = Number(y?.cash);
+  if (!Number.isFinite(cash) || cash < 0) return undefined;
+  const c = cleanCurve(y.curve);
+  return c ? { cash, curve: c } : { cash };
+}
+// At an endless bell: today against yesterday (or the record, before there is a yesterday). Returns the records' new
+// yesterday and streak, and the report's result { beat, streak, by }. Pure: crew.mjs assigns it.
+export function raceYesterday(records, dayCash, curve) {
+  const cash = Math.max(0, +dayCash || 0), target = yesterdayPace(records)?.cash ?? 0;
+  const beat = cash > target;
+  const streak = beat ? Math.max(0, (records?.streak | 0)) + 1 : 0;
+  const c = cleanCurve(curve);
+  return { yesterday: c ? { cash, curve: c } : { cash }, streak,
+    result: { beat, streak, by: Math.round(Math.abs(cash - target) * 100) / 100, vs: target } };
+}
+// "$2.1M", "$850K", "$900": the report's short money.
+export function shortMoney(v) {
+  const a = Math.abs(+v || 0), r1 = x => (Math.round(x * 10) / 10).toString();
+  if (a >= 1e9) return '$' + r1(a / 1e9) + 'B';
+  if (a >= 1e6) return '$' + r1(a / 1e6) + 'M';
+  if (a >= 1e4) return '$' + Math.round(a / 1e3) + 'K';
+  return '$' + Math.round(a).toLocaleString('en-US');
+}
+// The endless report's first line: "Beat yesterday · 4 in a row." or "Short of yesterday by $2.1M."
+export function streakLine(res) {
+  if (!res) return '';
+  if (res.beat) return res.streak > 1 ? `Beat yesterday · ${res.streak} in a row.` : 'Beat yesterday.';
+  return 'Short of yesterday by ' + shortMoney(res.by) + '.';
 }
 
 // ---- crew colours ----------------------------------------------------------------------------------------------

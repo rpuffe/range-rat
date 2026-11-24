@@ -1,10 +1,11 @@
 // The Orbital (venue 5): the Lift, orbit shots, the EVA and the tether (council round 4, §3.4, build item 9).
 // Orbit shots become saved debris ids; a Rat rides the Lift up, floats in a disc round the car (the dive tier's air
-// and bag, a buddy on the platform cranking the O2), grabs debris and rides down with it at weight 3 a ball.
+// and bag; council round 8 #4: no platform crank, the tank is the tank), grabs debris and rides down with it at weight
+// 3 a ball. Any number of Rats ride at once.
 // Orbital Debris (this venue's gauge) = 1 - debris / 30. The tether winch (crew row) clears one every 8 s.
 //
-// Actions (the `input` hook): {t:'lift'} {t:'grab'} {t:'ridedown'} {t:'orbpump', turns, held}.
-import { ORBIT, LIFT, debrisKpi, orbitShot, nearestDebris, clampDisc, atLift, evaStep, crankGain, maxGain, hasTether,
+// Actions (the `input` hook): {t:'lift'} {t:'grab'} {t:'ridedown'} ({t:'orbpump'} from an old client: swallowed).
+import { ORBIT, LIFT, debrisKpi, orbitShot, nearestDebris, clampDisc, atLift, evaStep, hasTether,
   diveTiers } from '../../web/js/orbit.js';
 
 const PLATFORM_R = 2.4;                       // "on the platform": this close to the car
@@ -18,9 +19,9 @@ export default {
   init(crew, saved) {
     const debris = new Set(cleanIds(saved?.d));
     const next = Math.max(Number.isInteger(saved?.n) ? saved.n : 0, debris.size ? Math.max(...debris) + 1 : 0);
-    return { debris, next, riders: new Map(), pump: new Map(), tetherAcc: 0, kpi: debrisKpi(debris.size) };
+    return { debris, next, riders: new Map(), tetherAcc: 0, kpi: debrisKpi(debris.size) };
   },
-  startShift(crew, st) { st.riders.clear(); st.pump.clear(); st.tetherAcc = 0; },
+  startShift(crew, st) { st.riders.clear(); st.tetherAcc = 0; },
 
   // 5% of customer shots go straight up. (Lead balls stay in the pond business.) None while the Last Bucket is on
   // (round 7 #5: the crew is clearing the sky for Ball No. 1, and the sky must not refill behind them).
@@ -36,21 +37,7 @@ export default {
       crew.balls.delete(b.id); crew.events.push({ t: 'gone', id: b.id });
       leave(crew, st);
     }
-    const now = crew.now();
-    // 2. Buddies on the platform crank the O2 (the pond's pump rules).
-    let gain = 0;
-    for (const p of crew.players.values()) {
-      const pm = st.pump.get(p.id);
-      if (!pm) continue;
-      const live = p.online > 0 && p.down <= 0 && !st.riders.has(p.id) && atLift(p, PLATFORM_R + 1);
-      const turns = live ? Math.min(pm.turns, 2.5 * dt) : 0;
-      pm.turns = live ? Math.max(0, pm.turns - turns) : 0;
-      const held = live && pm.held && now - pm.at < 1500;
-      pm.on = live && (held || now - pm.at < 400);
-      if (live) gain += crankGain({ turns, held: held && turns === 0, dt });
-    }
-    gain = Math.min(gain, maxGain(dt));
-    // 3. The riders.
+    // 2. The riders. (Council round 8 #4: the platform crank is gone; EVA air is the dive tier's tank.)
     for (const [id, r] of st.riders) {
       const p = crew.players.get(id);
       if (!p) { st.riders.delete(id); continue; }
@@ -65,7 +52,7 @@ export default {
       const tier = diveTiers(p.dive);
       if (r.ph === 'up') { r.t += dt; pin(p); if (r.t >= ORBIT.RIDE) { r.ph = 'out'; r.t = 0; } }
       else if (r.ph === 'out') {
-        const s = evaStep({ air: r.air, dt, tier, gain });
+        const s = evaStep({ air: r.air, dt, tier });
         r.air = s.air; clampDisc(p);
         if (s.gasp) reel(crew, st, p, r);
       } else {
@@ -73,7 +60,7 @@ export default {
         if (r.t >= ORBIT.RIDE) land(crew, st, p, r);
       }
     }
-    // 4. The tether winch: one piece every 8 s, banked at weight 3.
+    // 3. The tether winch: one piece every 8 s, banked at weight 3.
     if (crew.working() && hasTether(crew.up)) {
       st.tetherAcc += dt;
       while (st.tetherAcc >= ORBIT.TETHER_EVERY - 1e-9) {
@@ -113,15 +100,7 @@ export default {
         if (r && r.ph === 'out') { r.ph = 'down'; r.t = 0; pin(p); crew.events.push({ t: 'lift', id: p.id, dir: 'down' }); }
         return true;
       }
-      case 'orbpump': {
-        if (st.riders.has(p.id) || !atLift(p, PLATFORM_R + 1)) { st.pump.delete(p.id); return true; }
-        const pm = st.pump.get(p.id) ?? { turns: 0, held: false, at: 0, on: false };
-        const turns = Number(a.turns);
-        if (Number.isFinite(turns) && turns > 0) { pm.turns = Math.min(1, pm.turns + Math.min(turns, 1)); pm.at = crew.now(); }
-        pm.held = !!a.held; if (pm.held) pm.at = crew.now();
-        st.pump.set(p.id, pm);
-        return true;
-      }
+      case 'orbpump': return true;   // round 8 #4: the crank is gone; an old client's tap changes nothing
       default: return false;
     }
   },
@@ -140,7 +119,6 @@ export default {
       const p = crew.players.get(id);
       if (p) land(crew, st, p, r, true); else st.riders.delete(id);
     }
-    st.pump.clear();
   },
 
   kpi: (crew, st) => st.kpi,
@@ -148,8 +126,7 @@ export default {
   snapshot(crew, st) {
     const r = {};
     for (const [id, x] of st.riders) r[id] = [PH[x.ph], +x.t.toFixed(2), +x.air.toFixed(1), x.bag.length];
-    const pumping = []; for (const [id, pm] of st.pump) if (pm.on) pumping.push(id);
-    return { d: [...st.debris], r, p: pumping.length ? pumping : undefined, w: hasTether(crew.up) ? 1 : 0 };
+    return { d: [...st.debris], r, w: hasTether(crew.up) ? 1 : 0 };
   },
   toSave: (crew, st) => (st.next || st.debris.size ? { d: [...st.debris], n: st.next } : undefined),
 };

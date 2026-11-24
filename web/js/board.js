@@ -123,8 +123,11 @@ export function createBoard(scene, { x, z, onCross = null }) {
     g.fillText('TODAY', 44, 316);
     g.fillStyle = '#f5e6b8'; g.font = `700 64px ${MONO}`; g.fillText(dollars(pace.cash), 40, 360);
     g.textAlign = 'right'; g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`;
-    g.fillText('RECORD', W - 44, 316);
-    g.fillStyle = '#e06a5a'; g.font = `700 34px ${MONO}`; g.fillText(dollars(pace.record), W - 44, 356);
+    // Council round 8 #3: the bar races yesterday (pace.vs); the all-time BEST moves to a small line under it.
+    const vsYday = pace.vs === 'yesterday';
+    g.fillText(vsYday ? 'YESTERDAY' : 'RECORD', W - 44, 316);
+    g.fillStyle = '#e06a5a'; g.font = `700 34px ${MONO}`; g.fillText(dollars(pace.record), W - 44, vsYday ? 350 : 356);
+    if (vsYday && pace.best > 0) { g.fillStyle = '#7d8594'; g.font = `600 17px ${SANS}`; g.fillText('BEST ' + dollars(pace.best), W - 44, 377); }
     const bx = 44, bw = W - 88, by = 396, bh = 28;
     bar(bx, by, bw, bh, pace.cash / rec, pace.cash >= pace.now ? '#6fd36f' : '#e8b04a');
     const px = bx + 2 + (bw - 4) * clamp01(pace.now / rec);
@@ -343,7 +346,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
       state.curb == null ? 'x' : Math.round(clamp01(state.curb) * 100),
       state.pond == null ? 'x' : Math.round(clamp01(state.pond) * 100),
       state.fries == null ? 'x' : Math.round(clamp01(state.fries) * 100),
-      state.quota == null ? 'x' : money(state.quota), state.pace ? `${money(state.pace.now)}/${money(state.pace.record)}/${money(state.pace.cash)}` : '', commas(state.outstanding),
+      state.quota == null ? 'x' : money(state.quota), state.pace ? `${money(state.pace.now)}/${money(state.pace.record)}/${money(state.pace.cash)}/${state.pace.vs}/${state.pace.best}` : '', commas(state.outstanding),
       state.lastCall ? 'L' : '', state.gary || '', state.title || '',
       state.kpiLabel || '', state.kpi == null ? 'x' : Math.round(clamp01(state.kpi) * 100), sloganText(state.slogan),
     ].join('|');

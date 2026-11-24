@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { wordCount, SAY } from '../web/js/say.js';
 import { RALLY_LINES, GAUGE_MISS } from '../web/js/rally.js';
-import { NUDGE_TEXT } from '../web/js/nudge.js';
+import { NUDGE_TEXT, GARY_TEXT, GARY_STALLED } from '../web/js/nudge.js';
 import { PA_LINES } from '../web/js/pa.js';
 
 const MAX = SAY.MAX_WORDS;
@@ -15,6 +15,7 @@ test('rally lines, gauge misses and nudges are 8 words or fewer', () => {
   assert.deepEqual(over(flat(RALLY_LINES)), []);
   assert.deepEqual(over(flat(GAUGE_MISS)), []);
   assert.deepEqual(over(flat(NUDGE_TEXT)), []);
+  assert.deepEqual(over([...flat(GARY_TEXT), ['stalled', GARY_STALLED]]), []);   // council round 8 #2
 });
 
 test('every PA entry is { line, caption } and every caption is 8 words or fewer', () => {

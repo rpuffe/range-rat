@@ -11,7 +11,7 @@ test('only the gauge short: the venue\'s line', () => {
   assert.equal(shortfall({ value: val(2.5), quota: { q: 0.5 }, kpi: 0.4, fixtures: clean, venue: 2 }), RALLY_LINES.gauge[2]);
   assert.equal(shortfall({ value: val(2.5), quota: { q: 0.5 }, kpi: 0.2, fixtures: clean, venue: 3 }), 'The crowd is bored. Lap the Track!');
   assert.equal(shortfall({ value: val(2.5), quota: { q: 0.5 }, kpi: 0.49, fixtures: clean, venue: 4 }), 'Strays in the Yards. Go get them!');
-  assert.equal(shortfall({ value: val(2.5), quota: { q: 0.5 }, kpi: 0, fixtures: clean, venue: 5 }), 'Debris overhead. Ride the Lift!');
+  assert.equal(shortfall({ value: val(2.5), quota: { q: 0.5 }, kpi: 0, fixtures: clean, venue: 5 }), 'Debris overhead. Everyone up the Lift!');
 });
 
 test('only the mats dirty: the mats line; a filthy sign: the sign line', () => {
@@ -76,12 +76,12 @@ test('playtest 2: the Last Call line reads the gauge ahead of the rush at Tiered
   crew.mods.kpi = () => 0.6;                       // over the tick now, but the rush will fill the cups
   assert.ok(RALLY_MARGIN[2] >= 0.2);
   assert.equal(crew.rallyNeed(), L.gauge[2], 'warns before the rush instead of "On target"');
-  crew.mods.kpi = () => 0.9;
+  crew.mods.kpi = () => 1;                         // round 8 #1: the Glow Rush margin is 0.5: only empty cups are safe
   assert.notEqual(crew.rallyNeed(), L.gauge[2]);
 });
 
 test('round 7 #5: the Orbital has no review, so its line is the debris or nothing', () => {
-  assert.equal(shortfall({ value: val(1), quota: null, kpi: 0.2, fixtures: clean, venue: 5 }), 'Debris overhead. Ride the Lift!');
+  assert.equal(shortfall({ value: val(1), quota: null, kpi: 0.2, fixtures: clean, venue: 5 }), 'Debris overhead. Everyone up the Lift!');
   assert.equal(shortfall({ value: val(1), quota: null, kpi: 0.8, fixtures: clean, venue: 5 }), null);
   assert.equal(shortfall({ value: val(1), quota: null, kpi: 0.2, fixtures: clean, venue: 5, endless: true }), null);
   assert.equal(shortfall({ value: val(1), quota: null, kpi: 0.2, fixtures: clean, venue: 4 }), null, 'elsewhere no quota still means no line');
@@ -164,4 +164,33 @@ test('round 7 #4: the lastcall event carries needs per online Rat, and need (the
   assert.deepEqual(Object.keys(lc.needs).sort(), [a.id, b.id].sort());
   assert.equal(lc.needs[a.id], RALLY_LINES.mats, 'the nearest Rat gets the biggest job');
   assert.equal(lc.needs[b.id], RALLY_LINES.sign, 'the other gets the next one');
+});
+
+// ---- Council round 8 ----------------------------------------------------------------------------------------------
+test('round 8: every Rat kept its line and a new job opens: it goes to a Rat, never to nobody', async () => {
+  const { dealJobs } = await import('../web/js/rally.js');
+  const G = { id: 'gauge', line: RALLY_LINES.gauge[2], loss: 1, at: { x: 0, z: -60 } };
+  const M = { id: 'mats', line: RALLY_LINES.mats, loss: 0.2, at: { x: 0, z: 3.5 } };
+  const S = { id: 'sign', line: RALLY_LINES.sign, loss: 0.05, at: { x: 14, z: 13 } };
+  const rats = [{ id: 'a', x: 0, z: 3 }, { id: 'b', x: 14, z: 13 }];
+  const prev = { a: M.line, b: S.line };
+  assert.deepEqual(dealJobs([M, S], rats, undefined, prev), prev, 'nothing new: everyone keeps their line');
+  // The gauge goes short at the re-check: the holder of the lowest-ranked job (the sign, closest to done) takes it.
+  assert.deepEqual(dealJobs([G, M, S], rats, undefined, prev), { a: M.line, b: G.line });
+  // Doubled up: the new job takes the nearest Rat off the doubled job, and the single holder keeps theirs.
+  const three = [...rats, { id: 'c', x: 0, z: -20 }];
+  assert.deepEqual(dealJobs([G, M, S], three, undefined, { a: M.line, b: S.line, c: M.line }), { a: M.line, b: S.line, c: G.line });
+  // A new job ranked below every held one stays undealt (as with more jobs than Rats).
+  const F = { id: 'fries', line: RALLY_LINES.fries, loss: 0.01, at: { x: 40, z: 6 } };
+  assert.deepEqual(dealJobs([M, S, F], rats, undefined, prev), prev);
+});
+
+test('round 8 #1: at Tiered the Last Call line is the Glow Rush at a gauge of 0.6, and its miss line', () => {
+  assert.equal(RALLY_LINES.gauge[2], 'Glow rush! Cups fill double. Shoot late!');
+  assert.equal(GAUGE_MISS[2], 'Missed: the glow rush filled the bowls.');
+  const clock = { t: 1 };
+  const crew = new Crew('RLG', { venue: 2, day: 12, venueDay: 1, up: { shed: 1 } }, { shiftSecs: 120, seed: 3, now: () => clock.t });
+  crew.join('A'); crew.startShift();
+  crew.mods.kpi = () => 0.6;
+  assert.equal(crew.rallyNeed(), 'Glow rush! Cups fill double. Shoot late!');
 });

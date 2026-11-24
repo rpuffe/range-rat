@@ -3,8 +3,8 @@
 // sim.js (which appends TETHER_ROW to SHOP) all read the same numbers from here.
 //
 // DELIBERATELY does not import sim.js (sim.js imports THIS file for TETHER_ROW: a cycle is a TDZ crash). It reuses
-// the Deep End's air rules from dive.js (airStep, pumpGain, diveTiers), which imports nothing.
-import { airStep, pumpGain, diveTiers, PUMP } from './dive.js';
+// the Deep End's air rules from dive.js (airStep, diveTiers), which imports nothing.
+import { airStep, diveTiers } from './dive.js';
 import { MAP } from './map.js';
 
 export const ORBIT = {
@@ -22,7 +22,7 @@ export const ORBIT = {
   EYE0: 1.7,           // m: the camera at the platform
   TOP: MAP.LIFT.TOP,   // m: 120
   BAG_W: 3,            // KIND_W.debris (mirrored; test/orbit.test.mjs pins it)
-  PUMP_REACH: 3.4,     // m from the car: a buddy this close cranks the O2
+  PUMP_REACH: 3.4,     // m from the car: "at the Lift" (round 8 #4: the crank is gone; the reach stays for atLift)
   SKY_CLEAR: 15,       // council round 7 #5: Ball No. 1 falls only through a sky this clear (gauge >= 0.50)
 };
 // The sky gate's banner (the Board and the Last Bucket line): how many pieces still stand between Ball No. 1 and home.
@@ -85,13 +85,9 @@ export function clampDisc(p) {
 export const atLift = (p, r = ORBIT.PUMP_REACH) => Math.hypot(p.x - LIFT.x, p.z - LIFT.z) <= r;
 export const evaSwim = tier => tier.swim * ORBIT.SWIM_MUL;
 
-// One step of a spacewalker's oxygen: the dive tier's air, no Deep End drain (the Lift is nowhere near it), plus
-// whatever the buddy on the platform cranked. Returns { air, gasp }.
+// One step of a spacewalker's oxygen: the dive tier's air, no Deep End drain (the Lift is nowhere near it). Council
+// round 8 #4: no platform crank (it never ran short); gain stays for the pure rule's sake. Returns { air, gasp }.
 export function evaStep({ air, dt, tier, gain = 0 }) {
   return airStep({ air, dt, tier, x: LIFT.x, z: LIFT.z, gain });
 }
-// What one buddy cranks this step: the pond's pump rules (turns capped, or the held-button trickle).
-export const crankGain = ({ turns = 0, held = false, dt }) => pumpGain({ turns, held, dt });
-// The cap on the whole platform's gain: two pumpers' worth, like the dock.
-export const maxGain = dt => PUMP.MAX_TPS * PUMP.SECS_PER_TURN * 2 * dt;
 export { diveTiers };

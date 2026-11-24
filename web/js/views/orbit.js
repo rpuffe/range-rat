@@ -5,8 +5,8 @@
 //   * The Lift: Ⓧ on the platform. The car rises with you in it (venues.js parts.carY), the camera climbs from 1.7 m
 //     to 120 m over 5 s, the sky fades to stars, an Earth limb curves in and the fog pushes out.
 //   * The EVA: you float in an 11 m disc round the car (WASD / left stick, with a little inertia), Ⓐ grabs the nearest
-//     debris within 2.2 m, a tether line runs back to the car, Ⓧ rides down. A buddy on the platform cranks your O2
-//     (tap Ⓐ / click, or circle the right stick).
+//     debris within 2.2 m, a tether line runs back to the car, Ⓧ rides down. Your air is your dive tier's tank
+//     (council round 8 #4: the platform crank is gone; everyone rides).
 //   * Everyone sees the car go up, and the debris ring (slowly tumbling) above the Lift.
 import * as THREE from 'three';
 import { ORBIT, LIFT, debrisSpot, rideHeight, spaceness, clampDisc, atLift, evaSwim, skyBanner } from '../orbit.js';
@@ -19,8 +19,6 @@ const PH = ['up', 'out', 'down'];
 const SPACE_TOP = new THREE.Color(0x00020a), SPACE_MID = new THREE.Color(0x070618), SPACE_HORIZON = new THREE.Color(0x5a3552);
 const TETHER_SEGS = 26;
 const FIELD_YAW = Math.atan2(-(0 - LIFT.x), -(-60 - LIFT.z));   // the yaw that faces the middle of the range from the Lift
-// Either stick feeds the crank: whichever is pushed further.
-export const padStick = pad => !pad ? [0, 0] : Math.hypot(pad.rx ?? 0, pad.ry ?? 0) >= Math.hypot(pad.lx ?? 0, pad.ly ?? 0) ? [pad.rx ?? 0, pad.ry ?? 0] : [pad.lx ?? 0, pad.ly ?? 0];
 const clamp01 = v => Math.max(0, Math.min(1, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
@@ -103,16 +101,15 @@ export default {
     const tmp = { m: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1, 1), p: new THREE.Vector3(), e: new THREE.Euler(),
       a: new THREE.Vector3(), b: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), c: new THREE.Color() };
 
-    let snap = null;                       // s.mods.orbit: { d: [ids], r: { id: [ph, t, air, bag] }, p, w }
+    let snap = null;                       // s.mods.orbit: { d: [ids], r: { id: [ph, t, air, bag] }, w }
     let ids = [];
     let ph = null, rt = 0, air = 0, bag = 0;   // my ride, from the snapshot, with the clock run on locally
-    let wasRiding = false, v = { x: 0, z: 0 }, carY = 1.5, pumpUntil = 0, latched = false, lastAng = null, turnAcc = 0, turnSend = 0, heldSend = 0;
+    let wasRiding = false, v = { x: 0, z: 0 }, carY = 1.5;
     const hidden = new Set();                // first-person gear on the camera: out of sight while you're up there
     let speed01 = 0, fov0 = camera.fov, fovOn = false, shake = 0, clock = 0;
     const baseFog = { near: 120, far: 900 };
 
     const mine = () => ph != null;
-    const someoneOut = () => { for (const k in snap?.r ?? {}) if (k !== me.id && snap.r[k][0] === 1) return true; return false; };
     const reach = () => (me.x - LIFT.x) ** 2 + (me.z - LIFT.z) ** 2;
     // The server's working(): no ride while Ball No. 1 falls, is down, carried or in the huddle (the clock holds), only in 'sky'.
     const lbHolds = () => { const lb = ctx.crew()?.lastBucket?.phase; return !!lb && lb !== 'done' && lb !== 'sky'; };
@@ -160,25 +157,19 @@ export default {
           if (ph === 'out') return bag >= kitCap() ? `Bag full · ${ibtn} Ride down` : `${btn}  Grab debris (${bag}/${kitCap()})   ${ibtn}  Ride down`;
           return ph === 'up' ? 'Riding the Lift...' : 'Riding down...';
         }
-        if (latched) return `Cranking their oxygen: circle either stick   ${btn} or Ⓑ  Let go`;
         if (!canRide()) return null;
-        return someoneOut() ? `Tap ${btn} to crank their oxygen   ${ibtn}  Ride the Lift` : `${ibtn}  Ride the Lift`;
+        return `${ibtn}  Ride the Lift`;
       },
       interact() {
         if (mine()) { if (ph === 'out') ctx.act({ t: 'ridedown' }); return true; }
         if (!canRide()) return false;
         ctx.act({ t: 'lift' }); return true;
       },
-      use(fromPad) {
+      use() {
         if (mine()) { if (ph === 'out') ctx.act({ t: 'grab' }); return true; }
-        if (latched) { latched = false; return true; }     // a second tap lets go
-        if (!someoneOut() || !atLift(me, 3.4)) return false;
-        if (fromPad) { latched = true; lastAng = null; turnAcc = 0; return true; }   // the pad latches the crank (like the dock pump)
-        pumpUntil = clock + 1.2; return true;          // a tap keeps the crank held for a moment
+        return false;
       },
-      unlatch() { if (!latched) return false; latched = false; return true; },     // Ⓑ
-      lockLook() { return latched; },                    // the camera stays put while you crank
-      capturing() { return mine() || latched; },
+      capturing() { return mine(); },
       amb() { return mine() ? { underwater: true, crowd: 0, nearField: 0 } : null; },
       banner: () => (sky == null ? null : { text: skyBanner(sky), bg: '#2a1f05', fg: '#ffd54a' }),   // the Board (round 7 #5)
       reportLines(r) { return r?.debris ? [`Debris retrieved: ${r.debris}`] : []; },
@@ -264,9 +255,6 @@ export default {
         const showTether = riding && ph === 'out';
         tether.visible = clip.visible = showTether;
         if (showTether) this._tether(t);
-
-        // ---- the crank: a held tap, and the right stick circled (the pond's pump rules, server side)
-        this._crank(dt);
       },
 
       // Drifting: WASD / the left stick with some inertia, inside the disc.
@@ -310,21 +298,6 @@ export default {
         tmp.s.set(1, 1, 1);
         tether.instanceMatrix.needsUpdate = true;
         clip.position.set(ax, ay, az);
-      },
-
-      // Buddies on the platform: a tap of Ⓐ holds the crank for a moment; circling the right stick sends whole turns.
-      _crank(dt) {
-        if (mine() || !snap || !someoneOut() || !atLift(me, 3.4) || !ctx.playing()) { lastAng = null; turnAcc = 0; latched = false; return; }
-        heldSend -= dt; turnSend -= dt;
-        const pad = ctx.pad?.();
-        const [sx, sy] = padStick(pad);
-        if (pad && Math.hypot(sx, sy) > 0.5) {
-          const a = Math.atan2(sy, sx);
-          if (lastAng != null) { let d = a - lastAng; d = Math.atan2(Math.sin(d), Math.cos(d)); turnAcc += Math.abs(d) / (Math.PI * 2); }
-          lastAng = a;
-        } else lastAng = null;
-        if (turnAcc > 0.02 && turnSend <= 0) { ctx.act({ t: 'orbpump', turns: Math.min(1, turnAcc) }); turnAcc = 0; turnSend = 0.1; heldSend = 0.25; }
-        else if (clock < pumpUntil && heldSend <= 0) { ctx.act({ t: 'orbpump', held: true }); heldSend = 0.25; }
       },
 
       // main.js calls this after its own camera: the height, and a little rumble on the way up.

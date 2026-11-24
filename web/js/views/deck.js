@@ -4,7 +4,7 @@
 // Server module: server/venues/deck.mjs. Pure rules: web/js/deck.js.
 import * as THREE from 'three';
 import { buildPerson, animatePerson } from '../people.js';
-import { DECK, fallPose, climbPath, pathLength, pointAlong, bannerFor, money, mugTone } from '../deck.js';
+import { DECK, fallPose, climbPath, pathLength, pointAlong, bannerFor, money, mugTone, ordinal } from '../deck.js';
 
 const LOOKS = ['deck-a', 'deck-b', 'deck-c', 'deck-d'];
 const CLOTHES = [0xff4fa3, 0x35d6c8, 0xf2c230, 0x8a6bff];     // neon-ish, to match the Tiered signs
@@ -94,8 +94,10 @@ export default {
           const s = seats[e.seat % seats.length];
           if (s.state === 'seated') { s.state = 'fall'; s.t = 0; s.since = 0; voice(ctx.SFX, 'gasp', 0.1); }
           const who = e.by === ctx.me?.id ? 'You' : ctx.nameOf?.(e.by) ?? 'Someone';
-          // One message: the PA card says it. Others get a short feed line with the fine.
-          if (e.by !== ctx.me?.id) ctx.feed?.(`${who} overserved the deck. Fine ${money(e.fine)}.`);
+          // One message: the PA card says it (once ever). Others get a short feed line with the fine; from the 2nd fall
+          // of a shift (round 8 #5: the fine escalates) everyone does, the cook too, so the sting is seen.
+          if (e.k > 1) ctx.feed?.(`Liability: -${money(e.fine)} (${ordinal(e.k)} fall today).`);
+          else if (e.by !== ctx.me?.id) ctx.feed?.(`${who} overserved the deck. Fine ${money(e.fine)}.`);
         } else if (e.t === 'deckOrder') {          // a lounger orders: WOOO and a raised mug, no centre text
           const s = seats[e.seat % seats.length]; orderSeat = e.seat % seats.length; orderRound = !!e.round;
           if (s?.state === 'seated') { s.cheerT = 1.2; s.wooo.userData.t = 1.4; voice(ctx.SFX, 'wooo', 0.08); }

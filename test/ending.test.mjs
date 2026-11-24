@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Crew } from '../server/crew.mjs';
 import { POND, inPond, SIM } from '../web/js/sim.js';
-import { LIFT, ORBIT } from '../web/js/orbit.js';
+import { LIFT, ORBIT, debrisSpot, diveTiers } from '../web/js/orbit.js';
 
 function room(save, players = ['A']) {
   let t = 0;
@@ -425,6 +425,33 @@ test('sky: a rider aloft is not sent down; when the sky clears they ride down', 
   assert.equal(st.riders.get(a.id)?.ph, 'down', 'riding down as the ball falls');
   run(ORBIT.RIDE + 1);
   assert.equal(st.riders.has(a.id), false);
+});
+
+test('round 8 #4: everyone up the Lift: four Rats on masks clear the sky and Ball No. 1 falls', () => {
+  const { c, run, st, ps } = skyRoom(30, {}, ['A', 'B', 'C', 'D']);
+  assert.equal(c.lastBucket?.phase, 'sky');
+  let t = 0, most = 0, low = Infinity;
+  while (c.lastBucket?.phase === 'sky' && t < 120) {
+    for (const p of ps) {         // a simple bot: ride up, drift to the nearest piece, grab, ride down when full
+      const r = st.riders.get(p.id);
+      if (!r) { p.x = LIFT.x + 0.8; p.z = LIFT.z; c.input(p, { a: [{ t: 'lift' }] }); continue; }
+      if (r.ph !== 'out') continue;
+      if (r.bag.length >= diveTiers(p.dive).bag || !st.debris.size) { c.input(p, { a: [{ t: 'ridedown' }] }); continue; }
+      let best = null, bd = Infinity;
+      for (const id of st.debris) { const d = debrisSpot(id), dd = Math.hypot(LIFT.x + d.x - p.x, LIFT.z + d.z - p.z); if (dd < bd) { bd = dd; best = d; } }
+      if (bd <= ORBIT.GRAB) c.input(p, { a: [{ t: 'grab' }] });
+      else { const k = Math.min(0.5, bd) / bd; p.x += (LIFT.x + best.x - p.x) * k; p.z += (LIFT.z + best.z - p.z) * k; }
+    }
+    most = Math.max(most, [...st.riders.values()].filter(r => r.ph === 'out').length);
+    for (const r of st.riders.values()) if (r.ph === 'out') low = Math.min(low, r.air);
+    run(0.1); t += 0.1;
+  }
+  assert.equal(most, 4, 'all four were up at once');
+  assert.ok(low > 0.5, `nobody ran short of air (lowest ${low.toFixed(1)} s)`);
+  assert.equal(c.lastBucket.phase, 'falling', `the sky cleared in ${t.toFixed(0)} s`);
+  assert.ok(t <= 60, `4P on masks: under a minute (${t.toFixed(0)} s)`);
+  run(20);
+  assert.ok(one(c), 'Ball No. 1 came home');
 });
 
 test('sky: the self-heal never sends Ball No. 1 while the sky holds', () => {
