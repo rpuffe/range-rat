@@ -70,11 +70,12 @@ export default {
       let n = ballCount(b), w = ballWeight(b);
       for (const o of cup) { n += ballCount(o); w += ballWeight(o); remove(crew, o, shooter.id); }
       remove(crew, b, shooter.id);
-      crew.bank(n, shooter.id, null, w, TARGET.GEAR);
+      crew.bank(n, shooter.id, null, w, TARGET.GEAR, { target: true });   // the TARGET toast carries the cash (playtest 3)
+      const paid = crew.events.at(-1)?.t === 'cash' ? crew.events.at(-1).cash : null;
       crew.mult = Math.min(maxMult(crew.up, crew.endless, CART.MAX_MULT), crew.mult + TARGET.HUSTLE);
       crew.stats.targets = (crew.stats.targets ?? 0) + 1;
       shooter.shift.targets = (shooter.shift.targets ?? 0) + 1;
-      crew.events.push({ t: 'target', by: shooter.id, bowl: bowl.id, n, x: bowl.x, z: bowl.z, mult: crew.mult, ...(all ? { all: true } : {}) });
+      crew.events.push({ t: 'target', by: shooter.id, bowl: bowl.id, n, x: bowl.x, z: bowl.z, mult: crew.mult, cash: paid, ...(all ? { all: true } : {}) });
       crew.mods.signal('target', { by: shooter.id, bowl: bowl.id, n });
       recount(crew, st);
       return;

@@ -865,3 +865,15 @@ extras on the mats; a passing stop clears its line and all clear at his first st
 "Keep the mats clean." at half-shift to the Rat nearest the mats if their mud > 0.3. Measured (council7/dealt.mjs,
 4P spread, nobody hosing, 5 seeds): Last Call 3 distinct lines at the Muni, Tiered and Stadium; on target (1 line) at
 the Club and County; Gary 3 distinct stops at the Muni, 4 from the Club on.
+
+## Playthrough 3 fixes (playtester C)
+
+The Stadium's Two-Minute Warning now fires from the venue's day 1 (after the reveal); day 1 was always DENIED without
+it. The T-30 re-check at the Stadium reads the live crowd less the margin (`recheckNeeds`); live fine but the graded
+2-minute mean still short says "Keep lapping!". The report labels the two numbers "Crowd (last 2 min)" and "Crowd now".
+A sky gate still up at the bell holds the clock at 0:00 (Lift and tether keep working) for up to 90 s
+(`SKY_HOLD_SECS`); cleared inside the hold, Ball No. 1 falls and the huddle banks on the held clock, so the finale
+is one beat; past the cap the bell rings as before (no softlock when nobody rides). "Ride the Lift" hides while Ball
+No. 1 falls, is down, carried or in the huddle. The Board's BV flaps in $10 steps from $10,000. The huddle banner is one
+line ("ALL TO THE STAND · n / N", nowrap). The Orbital memo is "Today: clear the sky. N to bring home."; a full EVA bag
+prompts "Bag full · E Ride down". The Owner's projects row heads the endless shop.

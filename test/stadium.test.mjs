@@ -6,6 +6,7 @@ import { CROWD, gateAt, newLap, stepLap, stepSentiment, bump, pingDelta } from '
 import { Crew } from '../server/crew.mjs';
 import { MODULES } from '../server/venues/index.mjs';
 import stadium from '../server/venues/stadium.mjs';
+import { RALLY_LINES } from '../web/js/rally.js';
 
 const T = MAP.TRACK;
 test('onTrack: the centreline and both edges are on, past them is off', () => {
@@ -174,12 +175,39 @@ test('the snapshot raises w between the warning and Last Call only', () => {
   assert.equal(crew.snapshot().mods.stadium.w, undefined, 'Last Call takes the Board');
 });
 
-test('the Stadium\'s first day keeps Last Call at T-60', () => {
+test('playthrough 3 #1: the Stadium\'s first day gets the Two-Minute Warning too, once the reveal is over', () => {
   const { crew, run } = stadiumCrew();
   crew.venueDay = 1;                                 // (startShift counted the morning: this is its first day)
-  crew.shiftSecs = 300; crew.shiftT = 300 - 119; run(1);
-  assert.equal(crew.events.filter(e => e.t === 'lastcall').length, 0);
-  crew.shiftT = 300 - 60; run(0.2);
+  crew.shiftSecs = 300; crew.shiftT = 300 - 121; run(0.5);
+  assert.equal(crew.events.filter(e => e.t === 'lastcall').length, 0, 'not before T-120');
+  crew.revealT = 2; crew.shiftT = 300 - 119;
+  assert.equal(crew.warnDue(), false, 'not during the reveal');
+  crew.revealT = 0; run(0.2);
   const lc = crew.events.filter(e => e.t === 'lastcall');
-  assert.equal(lc.length, 1); assert.ok(!lc[0].warning);
+  assert.equal(lc.length, 1); assert.ok(lc[0].warning);
+  crew.shiftT = 300 - 59; run(0.2);
+  assert.equal(crew.events.filter(e => e.t === 'lastcall').length, 1, 'Last Call rings with no second line');
+});
+
+test('playthrough 3 #2: the T-30 re-check reads the live crowd; live fine but graded short says "Keep lapping!"', () => {
+  const { crew, run, st } = stadiumCrew();
+  crew.venueDay = 2; crew.shiftSecs = 300;
+  crew.fixtures = Object.fromEntries(Object.keys(crew.fixtures).map(k => [k, 0]));   // Upkeep clean: only the crowd counts
+  st.win.a = Array(120).fill(0.2); st.win.i = 0;     // the graded mean is short (from before the bell: no slip line)...
+  st.s = 1;                                          // ...but the Rats are lapping at 100% live
+  crew.shiftT = 300 - 60; run(0.2);
+  crew.events.length = 0;
+  crew.shiftT = 300 - 30.1; run(0.3);
+  const r = crew.events.filter(e => e.t === 'rally');
+  assert.equal(r.length, 1);
+  assert.equal(r[0].need, RALLY_LINES.keepLapping);
+  assert.equal(Object.values(r[0].needs)[0], RALLY_LINES.keepLapping);
+  // Live crowd bored too: the old line.
+  const b = stadiumCrew();
+  b.crew.venueDay = 2; b.crew.shiftSecs = 300;
+  b.st.win.a = Array(120).fill(0.2); b.st.win.i = 0; b.st.s = 0.3;
+  b.crew.shiftT = 300 - 60; b.run(0.2);
+  b.crew.events.length = 0;
+  b.crew.shiftT = 300 - 30.1; b.run(0.3);
+  assert.equal(b.crew.events.find(e => e.t === 'rally')?.need, RALLY_LINES.gauge[3]);
 });

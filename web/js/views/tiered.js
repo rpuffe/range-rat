@@ -155,7 +155,8 @@ export default {
           ctx.SFX.jackpot?.();
           if (e.all) bowls.forEach((x, i) => { x.thunk = i * THUNK_GAP; x.count = { from: x.flag.n, age: -i * THUNK_GAP }; });
           const mine = e.by === ctx.me.id;
-          if (mine) ctx.toast(e.all ? 'TARGET! Every cup drained.' : `TARGET! +${e.n} ball${e.n === 1 ? '' : 's'}`, 3);
+          const paid = e.cash ? ` · +$${Math.round(e.cash).toLocaleString('en-US')}` : '';   // one toast, cash folded in (playtest 3)
+          if (mine) ctx.toast(e.all ? `TARGET! Every cup drained${paid}` : `TARGET! +${e.n} ball${e.n === 1 ? '' : 's'}${paid}`, 3);
           else ctx.feed(`${ctx.nameOf(e.by)} hit TARGET on Bowl ${e.bowl}: ${e.n} balls`, 3);
         } else if (e.t === 'gutter' && t - lastThunk > 0.4) { lastThunk = t; ctx.SFX.bonk?.(); }
       },

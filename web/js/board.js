@@ -58,7 +58,8 @@ function drawDimples(g, cx, cy, r) {
 
 // From $100 up the Board shows whole dollars, so cents of drift don't restart the split-flap (playtest: it
 // never stopped scrambling at the Stadium).
-const boardMoney = v => (v >= 100 ? '$' + Math.round(v).toLocaleString('en-US') : money(v));
+// Playthrough 3: from $10,000 it flaps in $10 steps (endless BV ~$19k moved every 1–2 s).
+const boardMoney = v => (v >= 10_000 ? '$' + (Math.round(v / 10) * 10).toLocaleString('en-US') : v >= 100 ? '$' + Math.round(v).toLocaleString('en-US') : money(v));
 
 export function createBoard(scene, { x, z, onCross = null }) {
   const root = new THREE.Group();

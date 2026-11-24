@@ -18,7 +18,8 @@ const CSS = `
   background: radial-gradient(circle at 50% 55%, rgba(255, 236, 170, 0.75), rgba(255, 179, 71, 0.25) 45%, rgba(255, 179, 71, 0) 75%); }
 #ending-huddle { position: fixed; top: 9%; left: 50%; transform: translateX(-50%); z-index: 30; pointer-events: none; text-align: center;
   background: rgba(28, 22, 40, 0.86); color: #fff8ec; border: 0.12em solid #ffb347; border-radius: 0.5em; padding: 0.3em 1em;
-  font-size: clamp(22px, 5vmin, 64px); font-weight: 800; letter-spacing: 0.08em; text-shadow: 0 0.06em 0.25em #000a; max-width: calc(100vw - 32px); }
+  font-size: clamp(16px, min(5vmin, 4.2vw), 64px); font-weight: 800; letter-spacing: 0.08em; text-shadow: 0 0.06em 0.25em #000a; max-width: calc(100vw - 32px);
+  white-space: nowrap; }
 #ending-huddle b { color: #ffb347; }
 #endcard { z-index: 85; background: linear-gradient(rgba(14, 12, 28, 0.82), rgba(14, 12, 28, 0.95)); }
 #endcard .sheet { min-width: min(calc(100vw - 32px), 30em); }
@@ -106,7 +107,7 @@ export function createEnding({ scene, root, camera }) {
     ensureStyle();
     if (!huddleEl) { huddleEl = document.createElement('div'); huddleEl.id = 'ending-huddle'; huddleEl.setAttribute('role', 'status'); document.body.appendChild(huddleEl); }
     huddleEl.classList.remove('hidden');
-    huddleEl.innerHTML = typeof n === 'string' ? n : `EVERYONE TO THE STAND · <b>${n} / ${of}</b>`;
+    huddleEl.innerHTML = typeof n === 'string' ? n : `ALL TO THE STAND · <b>${n} / ${of}</b>`;
   }
 
   // ---- finale ----

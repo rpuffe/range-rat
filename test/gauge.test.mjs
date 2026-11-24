@@ -91,7 +91,7 @@ test('round 7 #5: the Orbital memo is the countdown', () => {
   const crew = makeCrew({ venue: 5, day: 12, venueDay: 1, outstanding: 1123 });
   crew.startShift();
   const memo = crew.flush().ev.find(e => e.t === 'memo');
-  assert.equal(memo.text, 'Today: bring them home. 1,123 to go.');
+  assert.equal(memo.text, 'Today: clear the sky. 1,123 to bring home.');
   assert.equal(memo.target, null);
 });
 

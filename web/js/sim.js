@@ -489,7 +489,8 @@ export const GARY = {
     { id: 'stand', x: 26, z: 10 },
   ],
 };
-export const money = v => `$${Number.isInteger(v) ? v.toLocaleString('en-US') : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;   // $6,000 and $1,234.50
+// $6,000, $1.23, and whole dollars from $100 up (playtest 3: "+$150,645.01" everywhere).
+export const money = v => `$${Number.isInteger(v) || Math.abs(v) >= 100 ? Math.round(v).toLocaleString('en-US') : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export const atStand = p =>Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < SIM.STAND_REACH;
 

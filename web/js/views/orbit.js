@@ -114,7 +114,9 @@ export default {
     const mine = () => ph != null;
     const someoneOut = () => { for (const k in snap?.r ?? {}) if (k !== me.id && snap.r[k][0] === 1) return true; return false; };
     const reach = () => (me.x - LIFT.x) ** 2 + (me.z - LIFT.z) ** 2;
-    const canRide = () => ctx.playing() && ctx.crew()?.phase === 'shift' && me.down <= 0 && !ctx.driving() && atLift(me, 2.4);
+    // The server's working(): no ride while Ball No. 1 falls, is down, carried or in the huddle (the clock holds), only in 'sky'.
+    const lbHolds = () => { const lb = ctx.crew()?.lastBucket?.phase; return !!lb && lb !== 'done' && lb !== 'sky'; };
+    const canRide = () => ctx.playing() && ctx.crew()?.phase === 'shift' && !lbHolds() && me.down <= 0 && !ctx.driving() && atLift(me, 2.4);
     const kitCap = () => diveTiers(me.dive).bag;
 
     function enter() {                      // the helmet goes on
@@ -155,7 +157,7 @@ export default {
 
       prompt(btn, ibtn) {
         if (mine()) {
-          if (ph === 'out') return `${btn}  Grab debris (${bag}/${kitCap()})   ${ibtn}  Ride down`;
+          if (ph === 'out') return bag >= kitCap() ? `Bag full · ${ibtn} Ride down` : `${btn}  Grab debris (${bag}/${kitCap()})   ${ibtn}  Ride down`;
           return ph === 'up' ? 'Riding the Lift...' : 'Riding down...';
         }
         if (latched) return `Cranking their oxygen: circle either stick   ${btn} or Ⓑ  Let go`;

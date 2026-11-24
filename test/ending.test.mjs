@@ -381,10 +381,26 @@ test('sky: a clear sky at 1 outstanding drops the ball at once (the tether crew 
   assert.equal(c.lastBucket.phase, 'falling');
 });
 
-test('sky: the bell during sky is a normal report, and the next morning reopens the gate', () => {
+test('playthrough 3 #3: the sky at the bell holds the clock; cleared inside the hold, the finale runs on to the bank', () => {
+  const { c, run, st, ps: [a] } = skyRoom(30);
+  c.shiftT = c.shiftSecs - 0.05; run(30);
+  assert.equal(c.phase, 'shift', 'the bell waits on the sky');
+  assert.equal(c.shiftT, c.shiftSecs, 'the clock holds at 0:00');
+  assert.equal(c.working(), true, 'the Lift and the tether still work');
+  clearTo(st, 15); run(0.2);
+  assert.equal(c.lastBucket.phase, 'falling');
+  run(20);
+  assert.equal(c.phase, 'shift', 'no bell while Ball No. 1 comes home');
+  assert.ok(bankOne(c, a, run), 'the huddle banks it');
+  assert.ok(c.report?.ending, 'the ending, not a morning');
+});
+
+test('sky: the hold is capped at 90 s (nobody rides): a normal report, and the next morning reopens the gate', () => {
   const { c, run, ps: [a] } = skyRoom(30);
-  c.shiftT = c.shiftSecs - 0.05; run(0.2);
-  assert.equal(c.phase, 'report');
+  c.shiftT = c.shiftSecs - 0.05; run(89);
+  assert.equal(c.phase, 'shift', 'still holding at 89 s');
+  run(1.5);
+  assert.equal(c.phase, 'report', 'the cap rings the bell');
   assert.equal(c.report.quota, null, 'no review at the Orbital');
   assert.ok(!c.report.ending);
   assert.equal(c.outstanding, 1);

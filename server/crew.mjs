@@ -39,6 +39,7 @@ const READY_HOLD_SECS = 120;      // ...held (for signatures) at most this long 
 const REVEAL_SECS = 6;            // a venue reveal holds the clock this long
 const PA_CAP = 3, PA_GAP_MS = 20_000;
 // Round 7 #10.2: an idle Rat counts as present (and holding) in the huddle and Gary's ring after 20 s, not GRACE_MS.
+export const SKY_HOLD_SECS = 90;   // playthrough 3: the longest the bell waits on the sky gate
 const HUDDLE_R = 8, HUDDLE_IDLE_MS = 20_000, HUDDLE_HOLD = 3.0;   // the huddle beat: everyone holds Use this long (round 6 #5)
 
 // What a ping on the cage pays out, and how often.
@@ -755,7 +756,7 @@ export class Crew {
     // Ball No. 1 is never swept: losing it would hold the clock for ever.
     for (const [id, b] of this.balls) if (!b.sunk && b.kind !== 'one') { this.balls.delete(id); this.events.push({ t: 'gone', id }); }
     this.shiftSecs = this.shiftOverride ?? (this.endless || this.venue > 0 ? SIM.SHIFT_SECS : shiftSecsFor(this.day));
-    this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false; this.reRallied = false; this.gaugeWas = null; this.warned = false;
+    this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false; this.reRallied = false; this.gaugeWas = null; this.warned = false; this.skyHoldT = 0;
     this.gary = null; this.mower = null; this.paShift = 0; this.jackpotSaid = false;
     this.ready.clear(); this.readyAt = 0; this.signed.clear();
     this.hopper = { n: 0, credit: 0, frac: 0 };
@@ -827,6 +828,18 @@ export class Crew {
     const ahead = kpi == null ? null : kpi - (RALLY_MARGIN[this.venue] ?? 0.1);
     const jobs = shortfalls({ value: this.valueNow(), quota: this.quota, kpi: ahead, fixtures: this.fixtures, venue: this.venue, endless: this.endless, cups: this.mods.state('tiered')?.cups });
     return { need, needs: dealJobs(jobs, this.online().map(p => ({ id: p.id, x: p.x, z: p.z }))) };
+  }
+  // Playthrough 3 #2: the T-30 re-check at the Stadium reads the LIVE crowd (less the margin), not the graded 2-minute
+  // mean, so Rats lapping at 100% live aren't told the crowd is bored. Live fine, graded still short: "Keep lapping!".
+  recheckNeeds() {
+    const live = this.venue === 3 ? this.mods.state('stadium')?.s : null;
+    if (live == null) return this.rallyNeeds();
+    const r = this.rallyNeeds(live);
+    if ((r.need == null || r.need === RALLY_LINES.onTarget) && !gaugeHolds(this.mods.kpi())) {
+      const need = RALLY_LINES.keepLapping;
+      return { need, needs: Object.fromEntries(this.online().map(p => [p.id, need])) };
+    }
+    return r;
   }
 
   // The clock holds for venue reveals and for the Last Bucket's moment.
@@ -1199,10 +1212,11 @@ export class Crew {
   lastCall() {
     return this.phase === 'shift' && this.day >= LAST_CALL.FROM_DAY && this.shiftT >= this.shiftSecs - LAST_CALL.SECS;
   }
-  // Round 7 #7: a rally earlier than Last Call (rally.js RALLY_AT: the Stadium's T-120), from that venue's day 2.
+  // Round 7 #7: a rally earlier than Last Call (rally.js RALLY_AT: the Stadium's T-120). Playthrough 3 #1: from the
+  // venue's day 1 too (day 1 was always DENIED without it), once the reveal is over.
   warnDue() {
     const at = rallyAt(this.venue);
-    return at > LAST_CALL.SECS && !this.endless && this.phase === 'shift' && this.venueDay >= 2 && this.day >= LAST_CALL.FROM_DAY
+    return at > LAST_CALL.SECS && !this.endless && this.phase === 'shift' && this.venueDay >= 1 && !(this.revealT > 0) && this.day >= LAST_CALL.FROM_DAY
       && this.shiftT >= this.shiftSecs - at;
   }
 
@@ -1330,12 +1344,12 @@ export class Crew {
     if (lastCall && !this.lastCallRung) { this.lastCallRung = true; this.gaugeWas = this.mods.kpi(); if (!this.warned) this.events.push({ t: 'lastcall', ...this.rallyNeeds() }); }
     if (lastCall && this.lastCallRung && !this.reRallied && !this.endless) {   // the gauge slipped under the tick mid-rush: say it once
       const k = this.mods.kpi();
-      if (k != null && this.gaugeWas != null && this.gaugeWas >= QUOTA_KPI && k < QUOTA_KPI) { this.reRallied = true; this.events.push({ t: 'rally', need: RALLY_LINES.gauge[this.venue] ?? null }); }
+      if (k != null && this.gaugeWas != null && this.gaugeWas >= QUOTA_KPI && k < QUOTA_KPI) { this.reRallied = true; this.events.push({ t: 'rally', ...this.rallyNeeds() }); }   // dealt like the rest (playtest 3)
       if (k != null) this.gaugeWas = k;
       // Playtest round 2 #1: a second look ~30 s into Last Call. Still short: one more line, on the same 'rally' event.
       if (!this.reRallied && this.shiftT >= this.shiftSecs - LAST_CALL.SECS + Math.min(RALLY_RECHECK, LAST_CALL.SECS / 2)) {
         this.reRallied = true;
-        const r = this.rallyNeeds();   // round 7 #4: the re-check re-deals
+        const r = this.recheckNeeds();   // round 7 #4: the re-check re-deals
         if (r.need && r.need !== RALLY_LINES.onTarget) this.events.push({ t: 'rally', ...r });
       }
     }
@@ -1455,7 +1469,14 @@ export class Crew {
     // up to READY_HOLD_SECS, so one Rat gone idle at the keyboard can't stall the crew for ever.
     if (this.phase === 'report' && this.readyAt && now - this.readyAt >= READY_SECS * 1000
       && (!this.awaitingSignatures() || now - this.readyAt >= READY_HOLD_SECS * 1000)) this.startShift();
-    if (this.phase === 'shift' && this.shiftT >= this.shiftSecs) this.endShift();
+    if (this.phase === 'shift' && this.shiftT >= this.shiftSecs) {
+      // Playthrough 3 #3: the sky gate at the bell holds the clock (the Lift and the tether keep working) so the finale
+      // stays one beat, up to SKY_HOLD_SECS: a crew where nobody rides still gets its bell. Once the sky clears inside
+      // the hold, Ball No. 1's fall and huddle run on the held clock to the bank.
+      const lb = this.lastBucket?.phase;
+      if (lb === 'sky' && (this.skyHoldT ?? 0) < SKY_HOLD_SECS) { this.skyHoldT = (this.skyHoldT ?? 0) + dt; this.shiftT = this.shiftSecs; }
+      else if (!(this.skyHoldT > 0 && lb && lb !== 'sky' && lb !== 'done')) this.endShift();
+    }
   }
 
   knockDown(p, by = null) {
@@ -1666,7 +1687,7 @@ const TODO_PICK = 1, TODO_BANK = 3;   // the day-1 checklist: one ball, then a p
 const RAT_MEMOS = ["Today's target: whatever. — the Rats", 'Reminder: we are Corporate now. Please do not tell us.', 'Fries are free. For us. — the Rats'];
 // The memo is one short line (the owner: less text at once); the joke rides along as `flavor`, in small type.
 // The Orbital's memo (round 7 #5): no review there, only the countdown.
-const orbitMemo = n => 'Today: bring them home. ' + Math.max(0, n | 0).toLocaleString('en-US') + ' to go.';
+const orbitMemo = n => 'Today: clear the sky. ' + Math.max(0, n | 0).toLocaleString('en-US') + ' to bring home.';   // playthrough 3: name the sky
 function memoText(day, target, endless, rng) {
   if (endless) return RAT_MEMOS[Math.floor(rng() * RAT_MEMOS.length)];
   if (target == null) return day === 1 ? 'Welcome to the Muni Range. Pick up balls.' : 'Pick up balls. Bank them. Corporate pays per ball.';

@@ -17,6 +17,7 @@ export const RALLY_LINES = {
   fries: 'Fries are low. Cook!',
   pond: 'The pond is murky. Dive!',
   onTarget: 'On target. Hold it till the bell.',
+  keepLapping: 'Keep lapping!',              // playthrough 3: the Stadium re-check, live crowd fine, graded mean short
 };
 
 // The report's miss line when the gauge, not Upkeep, cost the stamp (by venue).

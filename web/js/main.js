@@ -455,6 +455,7 @@ function setMyGear(level) {
 // ---------------------------------------------------------------- crew mates
 const others = new Map();           // id -> { g, to: {x, z, yaw}, down }
 
+const tagTmp = new THREE.Vector3();
 function nameTag(text, color) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64;
   const x = c.getContext('2d');
@@ -463,6 +464,8 @@ function nameTag(text, color) {
   x.fillStyle = color; x.fillText(text, 128, 33);
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, transparent: true }));
   s.scale.set(1.6, 0.4, 1); s.renderOrder = 10;
+  // Up close a tag would fill the screen (playtest 3: a teenager at the next bay): hide it within 3 m.
+  s.onBeforeRender = (r, sc, cam) => { s.material.opacity = Math.min(1, Math.max(0, (s.getWorldPosition(tagTmp).distanceTo(cam.position) - 2.5) / 1.5)); };
   return s;
 }
 
@@ -576,7 +579,7 @@ function onEvent(e) {
       break;
     case 'cash':
       floatPay(e);
-      if (e.by === me.id) { toast(e.kind === 'cart' ? `Cart unloaded: +${money(e.cash)}` : `+${money(e.cash)}`, undefined, 'cash'); SFX.cash(e.n); }
+      if (e.by === me.id && !e.target) { toast(e.kind === 'cart' ? `Cart unloaded: +${money(e.cash)}` : `+${money(e.cash)}`, undefined, 'cash'); SFX.cash(e.n); }
       break;
     case 'enthusiasm':
       SFX.ping();
@@ -793,7 +796,9 @@ function renderShop() {
   const scale = priceScale(size);
   const html = `<h3>${crew.phase === 'report' ? 'Overnight shop' : 'Shop'} <span>${money(crew.cash)} to spend</span></h3>
     ${size > 1 ? `<p class="note">Prices are ×${scale.toFixed(1)} for a crew of ${size}.</p>` : ''}
-    <ul>${SHOP.filter(item => shopShows(item, crew.venue ?? 0, day, crew.endless)).map(item => {
+    <ul>${SHOP.filter(item => shopShows(item, crew.venue ?? 0, day, crew.endless))
+      .sort((a, b) => (crew.endless ? !!b.endless - !!a.endless : 0))   // playthrough 3: the Owner's projects row first in endless
+      .map(item => {
       const mineLvl = item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0;
       const lvl = item.personal ? mineLvl : crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
       const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0, day, crew.endless);
@@ -1061,7 +1066,7 @@ function showPhase() {
       ${report.unwashed > 0 ? `<p>Unwashed at the bell <b>${report.unwashed} balls · −${money(report.lostPremium ?? 0)}</b></p>` : ''}
       <p>In the bank <b>${money(report.bank)}</b></p>
       ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b>BV ${money(report.quota.bv >= 100 ? Math.round(report.quota.bv) : report.quota.bv)} / ${money(report.quota.target >= 100 ? Math.round(report.quota.target) : report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
-      ${report.quota?.gauge != null ? `<p>Venue gauge at the bell <b>${Math.round(report.quota.gauge * 100)}% · ${report.quota.gaugeOk ? 'held' : report.quota.why ?? 'under 50%'}</b></p>` : ''}
+      ${report.quota?.gauge != null ? `<p>${crew.venue === 3 ? 'Crowd (last 2 min)' : 'Venue gauge at the bell'} <b>${Math.round(report.quota.gauge * 100)}% · ${report.quota.gaugeOk ? 'held' : report.quota.why ?? 'under 50%'}</b></p>` : ''}
       ${report.quota ? `<p>Review stamps <b>${report.quota.stamps} · ${report.quota.title}</b></p>` : ''}
       ${report.tomorrow ? `<p class="dim">${report.tomorrow}</p>` : ''}`;
   }
@@ -1347,7 +1352,7 @@ function hud(dt = 0) {
     : nearStation() ? `${ibtn}  Grab the pressure washer${crewCarts().some(c => (c.mud ?? 0) > 0.05) ? crewCarts().length > 1 ? ' (a cart is muddy)' : ' (the cart is muddy)' : ''}`
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up${nearCart() ? `   ·   ${cbtn}  Drive the cart` : ''}`
     : nearCart() ? `${cbtn}  Drive the cart`
-    : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `${pad ? 'Pull the right stick back, push it through' : 'Drag down, flick up'} to swing · ${(crew.venue ?? 0) >= 2 ? 'land it in a green' : 'aim at the cart'} (${me.pocket})` : 'Bring balls to hit them')
+    : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `${pad ? 'Pull back, push through' : 'Flick'} to swing · ${(crew.venue ?? 0) >= 2 ? 'land it in a green' : 'hit the cart'} (${me.pocket})` : 'Bring balls to hit them')
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up`
     : n >= cap ? 'Full: head to the bucket stand' : '';
   $('air').classList.toggle('hidden', !me.diving);
