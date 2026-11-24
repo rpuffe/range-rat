@@ -159,12 +159,17 @@ export function createBoard(scene, { x, z }) {
 
     // target
     g.textBaseline = 'middle';
-    const hasQuota = st.quota != null;
-    g.textAlign = 'left'; g.font = `700 30px ${MONO}`;
+    const pace = st.quota == null ? st.pace : null;         // endless: record pace instead of a target
+    const hasQuota = st.quota != null || pace != null;
+    g.textAlign = 'left'; g.font = `700 ${pace ? 26 : 30}px ${MONO}`;
     g.fillStyle = hasQuota ? '#f5e6b8' : '#4a4f5a';
-    g.fillText(hasQuota ? show('quota', 'TARGET ' + money(st.quota)) : 'TARGET  --', 24, 322);
+    g.fillText(pace ? 'RECORD PACE ' + money(pace.now) : hasQuota ? show('quota', 'TARGET ' + money(st.quota)) : 'TARGET  --', 24, 322);
     const tx = 360, tw = 640;
-    bar(tx, 308, tw, 28, hasQuota ? st.bv / Math.max(st.quota, 0.0001) : 0, '#e8b04a');
+    bar(tx, 308, tw, 28, pace ? pace.cash / Math.max(pace.record, 0.0001) : hasQuota ? st.bv / Math.max(st.quota, 0.0001) : 0, '#e8b04a');
+    if (pace) {                                // the red line is the record; the pale tick is where pace says you should be
+      const px = tx + 4 + (tw - 8) * clamp01(pace.now / Math.max(pace.record, 0.0001));
+      g.fillStyle = '#f5e6b8'; g.fillRect(px - 2, 304, 4, 36);
+    }
     if (hasQuota) {
       const mx = tx + tw - 4;                 // quota marks the bar's end; the bar is BV / quota
       g.fillStyle = '#e03a3a'; g.fillRect(mx - 3, 300, 6, 44);
@@ -277,7 +282,7 @@ export function createBoard(scene, { x, z }) {
       state.curb == null ? 'x' : Math.round(clamp01(state.curb) * 100),
       state.pond == null ? 'x' : Math.round(clamp01(state.pond) * 100),
       state.fries == null ? 'x' : Math.round(clamp01(state.fries) * 100),
-      state.quota == null ? 'x' : money(state.quota), commas(state.outstanding),
+      state.quota == null ? 'x' : money(state.quota), state.pace ? `${money(state.pace.now)}/${money(state.pace.record)}/${money(state.pace.cash)}` : '', commas(state.outstanding),
       state.lastCall ? 'L' : '', state.gary || '', state.title || '',
       state.kpiLabel || '', state.kpi == null ? 'x' : Math.round(clamp01(state.kpi) * 100), sloganText(state.slogan),
     ].join('|');

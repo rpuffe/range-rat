@@ -502,3 +502,23 @@ Built to council-round4.md §3.4 (the full EVA, not the "Orbital lite" fallback)
   v3 save with one cart loads unchanged.
 - **Client.** `cartViews[]` (mesh, reels, mud, flash, and its own drawn `pose`; `cartPose` is still the first one's). You drive whichever cart
   you boarded; the others ease to the server.
+
+## Round 4 summary
+
+The one place to see round 4 whole; the per-venue sections above hold the rules, numbers and files.
+Source: `design/council-round4.md` (§3.5 the side-by-side, §5 the build items).
+
+| | Tiered | Stadium | County | Orbital |
+| --- | --- | --- | --- | --- |
+| Map change | 3 Target Greens (cups) | The Ping Track | The right net comes down: the Yards | The Lift |
+| Live KPI | Bay Utilization | Crowd Sentiment | Zoning Compliance | Orbital Debris |
+| Chore | Empty the cups | Keep the show going | Walk the Yards | EVA: collect the debris |
+| Toy | Target Practice, the Upper Deck | The second cart | Drones | The ride, Ball No. 1 |
+| Automation | Gutters | The fleet | Drones | The tether winch |
+| New verb | Aiming | Lapping | Leaving the field | Floating |
+| PA (once) | `overserved` | `fleet` | `drones` | `eva` |
+
+- **Upper Deck rules** (Tiered): drinks 0..6, reset each morning; beer +1 and pays a bar tab, 30 s of shift time -1, hot dog -2, fries -1; at 6 an incident (a lounger falls, a fine, drinks back to 2, Gary's kitchen stop fails). Full detail: [The Upper Deck](#the-upper-deck-round-4-build-item-5).
+- **Venue seam**: how venues plug in is [Round 4 venue seam](#round-4-venue-seam-build-item-3-how-to-add-a-venue-module).
+- **Venues**: [Tiered](#tiered-entertainment-range-venue-2-round-4-item-4-the-target-greens), [Stadium](#stadium-venue-3-round-4-item-7-the-ping-track-and-crowd-sentiment), [County](#the-county-venue-4-round-4-build-item-8), [Orbital](#round-4-the-orbital-venue-5-build-item-9-the-lift-orbit-shots-the-eva-the-tether), [the fleet](#the-fleet-round-4-build-item-10-the-second-cart).
+- **Measuring**: `?pace` records the per-shift pace log (item 11); `?perf` the frame overlay (item 6). See the README.

@@ -120,6 +120,7 @@ export default {
       },
       tick(dt, t) {
         spin += dt;
+        ctx.SFX?.droneBuzz?.(root.visible ? drones.size : 0);   // capped at 3 voices in sfx.js
         for (const e of drones.values()) {
           const k = Math.min(1, dt * 8);
           e.g.position.x += (e.to.x - e.g.position.x) * k;

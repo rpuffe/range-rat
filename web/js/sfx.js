@@ -12,6 +12,18 @@ let noiseBuf = null;
 let muted = false;
 let out = null;                 // master volume -> destination; `master` below is the SFX bus feeding it
 let vMaster = 1, vSfx = 1;      // settings volumes (web/js/settings.js)
+let duckG = null;               // SFX + ambience meet here: PA ducking sits on it. master -> sfxLP -> duckG -> out
+let sfxLP = null;               // low-pass on the SFX bus only (underwater / EVA)
+let hornBus = null;             // +3 dB and a high shelf, so Gary's and MOW-E's horns cut through
+let ducked = false, muffled = false;
+
+// ---- pure helpers (tested in test/audiomix.test.mjs) ----
+export const DUCK_DB = -9;          // the PA ducks SFX and ambience by this much while it speaks
+export const HORN_DB = 3;           // horns sit this far above the rest of the SFX bus
+export const MAX_DRONE_VOICES = 3;  // the drone buzz never has more voices than this
+export const MUFFLE_HZ = 450;       // SFX low-pass cutoff underwater / on EVA
+export const dbToGain = (db) => Math.pow(10, (Number(db) || 0) / 20);
+export const droneVoices = (n) => Math.max(0, Math.min(MAX_DRONE_VOICES, Math.floor(Number(n) || 0)));
 
 // Create or resume the context. Call from click / keydown / gamepad handlers.
 export function unlock() {
@@ -23,16 +35,38 @@ export function unlock() {
       out = ctx.createGain();
       out.gain.value = muted ? 0 : MASTER_LEVEL * vMaster;
       out.connect(ctx.destination);
+      duckG = ctx.createGain();
+      duckG.gain.value = ducked ? dbToGain(DUCK_DB) : 1;
+      duckG.connect(out);
+      sfxLP = ctx.createBiquadFilter();
+      sfxLP.type = 'lowpass'; sfxLP.Q.value = 0.7;
+      sfxLP.frequency.value = muffled ? MUFFLE_HZ : 20000;
+      sfxLP.connect(duckG);
       master = ctx.createGain();
       master.gain.value = vSfx;
-      master.connect(out);
+      master.connect(sfxLP);
     }
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   } catch {
     ctx = null;
     master = null;
     out = null;
+    duckG = sfxLP = hornBus = null;
   }
+}
+
+// The PA is speaking: pull SFX and ambience down 9 dB (smooth in, slower out).
+export function duck(on) {
+  ducked = !!on;
+  try { if (duckG) duckG.gain.setTargetAtTime(ducked ? dbToGain(DUCK_DB) : 1, ctx.currentTime, ducked ? 0.05 : 0.4); } catch { /* ignore */ }
+}
+
+// Underwater (scuba) or on EVA (orbit): low-pass the SFX bus. Ambience has its own underwater filter.
+export function setUnderwater(on) {
+  const m = !!on;
+  if (m === muffled) return;
+  muffled = m;
+  try { if (sfxLP) sfxLP.frequency.setTargetAtTime(muffled ? MUFFLE_HZ : 20000, ctx.currentTime, 0.15); } catch { /* ignore */ }
 }
 
 export function setMuted(m) {
@@ -72,7 +106,7 @@ function noise(c) {
 }
 
 // Sine/other tone with a fast attack and exponential decay. Disconnects itself.
-function tone(c, { freq, endFreq, type = 'sine', t = 0, dur = 0.2, vol = 0.2, attack = 0.003 }) {
+function tone(c, { freq, endFreq, type = 'sine', t = 0, dur = 0.2, vol = 0.2, attack = 0.003, pan, dest }) {
   const t0 = c.currentTime + t;
   const o = c.createOscillator();
   const g = c.createGain();
@@ -82,8 +116,10 @@ function tone(c, { freq, endFreq, type = 'sine', t = 0, dur = 0.2, vol = 0.2, at
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.linearRampToValueAtTime(vol, t0 + attack);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  o.connect(g).connect(master);
-  o.onended = () => { o.disconnect(); g.disconnect(); };
+  const p = pan !== undefined && typeof c.createStereoPanner === 'function' ? c.createStereoPanner() : null;
+  if (p) p.pan.value = Math.max(-1, Math.min(1, Number(pan) || 0));
+  if (p) o.connect(g).connect(p).connect(dest || master); else o.connect(g).connect(dest || master);
+  o.onended = () => { o.disconnect(); g.disconnect(); if (p) p.disconnect(); };
   o.start(t0);
   o.stop(t0 + dur + 0.02);
 }
@@ -253,5 +289,76 @@ export function sprayLoop() {
   };
 }
 
-// Hand the live context and master to other audio modules (ambience.js).
-export function audioHandle() { return ctx && master ? { ctx, master: out, isMuted } : null; }
+// Treasure glint: a short bright bell, stereo-panned (scuba.js pings with the treasure's side).
+export function glint(pan = 0) {
+  const c = live();
+  if (!c) return;
+  const j = 1 + (Math.random() - 0.5) * 0.02;
+  tone(c, { freq: 2637 * j, dur: 0.5, vol: 0.12, pan });
+  tone(c, { freq: 3951 * j, t: 0.06, dur: 0.38, vol: 0.08, pan });
+  tone(c, { freq: 5274 * j, t: 0.12, dur: 0.25, vol: 0.04, pan });
+}
+
+function hornDest(c) {
+  if (!hornBus) {
+    const sh = c.createBiquadFilter(); sh.type = 'highshelf'; sh.frequency.value = 2000; sh.gain.value = 6;
+    const g = c.createGain(); g.gain.value = dbToGain(HORN_DB);
+    sh.connect(g).connect(master);
+    hornBus = sh;
+  }
+  return hornBus;
+}
+
+// Gary's cart horn (who = 'gary': a flat two-note parp) and MOW-E's (who = 'mower': two quick beeps).
+export function horn(who = 'gary') {
+  const c = live();
+  if (!c) return;
+  const d = hornDest(c);
+  if (who === 'mower') {
+    [0, 0.17].forEach((t) => {
+      tone(c, { freq: 880, type: 'square', t, dur: 0.12, vol: 0.09, dest: d });
+      tone(c, { freq: 1320, type: 'triangle', t, dur: 0.12, vol: 0.08, dest: d });
+    });
+  } else {
+    tone(c, { freq: 311, type: 'sawtooth', dur: 0.28, vol: 0.12, dest: d });
+    tone(c, { freq: 392, type: 'sawtooth', t: 0.3, dur: 0.4, vol: 0.12, dest: d });
+    tone(c, { freq: 622, type: 'square', t: 0.3, dur: 0.4, vol: 0.04, dest: d });
+  }
+}
+
+// Drone buzz: call every frame with how many drones are flying. Never more than MAX_DRONE_VOICES
+// detuned buzz voices however many drones; fades itself out if the caller stops calling.
+let buzz = null;
+export function droneBuzz(count = 0) {
+  const n = droneVoices(count);
+  try {
+    if (!n && !buzz) return;
+    const c = live();
+    if (!c) return;
+    if (!buzz) {
+      const gain = c.createGain(); gain.gain.value = 0;
+      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+      gain.connect(lp).connect(master);
+      buzz = { gain, lp, voices: [], last: 0, watch: null };
+    }
+    const b = buzz;
+    while (b.voices.length < n) {
+      const o = c.createOscillator(); o.type = 'sawtooth';
+      o.frequency.value = 150 + b.voices.length * 11 + Math.random() * 6;
+      o.connect(b.gain); o.start();
+      b.voices.push(o);
+    }
+    while (b.voices.length > n) { const o = b.voices.pop(); try { o.stop(); o.disconnect(); } catch { /* ignore */ } }
+    b.gain.gain.setTargetAtTime(n ? 0.012 : 0, c.currentTime, 0.2);
+    b.last = Date.now();
+    if (n && !b.watch) b.watch = setInterval(() => { if (Date.now() - b.last > 600) droneBuzz(0); }, 300);
+    if (!n) {
+      clearInterval(b.watch);
+      setTimeout(() => { if (buzz === b && !b.voices.length) { try { b.gain.disconnect(); b.lp.disconnect(); } catch { /* ignore */ } buzz = null; } }, 600);
+    }
+  } catch { /* ignore */ }
+}
+
+// Hand the live context and buses to other audio modules. `master` is where ambience plugs in (it is
+// ducked along with the SFX); `pa` bypasses the duck (the PA chime itself).
+export function audioHandle() { return ctx && master ? { ctx, master: duckG, pa: out, isMuted, duck } : null; }

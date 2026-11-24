@@ -158,7 +158,7 @@ export function createPA({ root, audio } = {}) {
       const h = audio && audio();
       if (!h || !h.ctx || isMuted()) return 0;
       const { ctx } = h;
-      const dest = ctx.createGain(); dest.gain.value = volume; dest.connect(h.master || ctx.destination);
+      const dest = ctx.createGain(); dest.gain.value = volume; dest.connect(h.pa || h.master || ctx.destination);
       if (ctx.state === 'suspended' && ctx.resume) ctx.resume();
       const t0 = ctx.currentTime + 0.02;
       // 60 ms bandpass mic-click
@@ -208,10 +208,16 @@ export function createPA({ root, audio } = {}) {
     } catch { /* captions still show */ }
   }
 
+  // Duck SFX and ambience while the PA speaks (the audio handle's duck(on); a no-op without it).
+  function duck(on) {
+    try { const h = audio && audio(); if (h && typeof h.duck === 'function') h.duck(on); } catch { /* ignore */ }
+  }
+
   function finish() {
     if (playing) { clearTimeout(playing.timer); clearTimeout(playing.speakTimer); }
     playing = null;
     if (card) card.classList.remove('on');
+    if (!queue.length) duck(false);
     const next = queue.shift();
     if (next) setTimeout(() => { if (!playing) play(next); }, 300);
   }
@@ -224,6 +230,7 @@ export function createPA({ root, audio } = {}) {
       textEl.textContent = '“' + item.text + '”';
       card.classList.add('on');
     }
+    duck(true);
     const lead = chime();
     playing = { timer: setTimeout(finish, ms + lead), speakTimer: null };
     if (lead) playing.speakTimer = setTimeout(() => speak(item.text), lead);
@@ -250,6 +257,7 @@ export function createPA({ root, audio } = {}) {
     queue = [];
     if (playing) { clearTimeout(playing.timer); clearTimeout(playing.speakTimer); playing = null; }
     if (card) card.classList.remove('on');
+    duck(false);
     try { if (synth) synth.cancel(); } catch { /* ignore */ }
   }
 

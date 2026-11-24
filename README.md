@@ -62,18 +62,65 @@ Next: the potato line (Fry Satisfaction), more ball types, the first promotion.
 
 ## Controls
 
-| | Keyboard and mouse | Controller |
+| | Keyboard and mouse | Xbox controller |
 | --- | --- | --- |
 | Walk | WASD | Left stick |
 | Look | Mouse (click to capture), or the arrow keys | Right stick |
+| Sprint | Shift | Click the right stick |
 | Pick up | Left click or Space | Ⓐ |
-| Swing at a crew bay (hold to wind up, release to hit) | Hold left click or Space | Hold Ⓐ |
-| Drop balls in the bucket, grab or stow the washer wand | E | Ⓧ |
+| Swing at a crew bay (the real swing, with power) | Hold left click or Space, drag back and flick through | Hold Ⓐ, then pull the right stick back and push through |
+| Bucket stand and ball washer (drop balls, grab or stow the wand) | E | Ⓧ |
 | Spray the cart (holding the wand) | Hold left click or Space | Hold Ⓐ |
-| Get in / out of the cart | F | Ⓨ |
+| Get in / out of the cart (a second cart at the Stadium) | F | Ⓨ |
 | Drive the cart | W/S throttle, A/D steer | RT/LT throttle, left stick steer |
-| Pause | Esc | ☰ |
+| Shop (any time; the range keeps going) | Tab | D-pad up |
+| CCTV (the security cameras) | C | D-pad down |
+| Crank the washer or the dock and Lift air pump | Hold and circle the mouse | Tap Ⓐ at the handle to latch it, then circle either stick; Ⓐ or Ⓑ lets go |
+| Pause (Settings, Leave crew) | Esc | ☰ |
 | Menus | Tab and Enter | D-pad or left stick, Ⓐ, Ⓑ |
+
+Settings (volumes, PA voice or captions, look sensitivity and invert Y, text
+size, reduce motion, Graphics) live behind the pause card and are saved in the
+browser. Add `?pace` to the URL to record a per-shift pace log (see below).
+
+## The venues
+
+Promotion (review stamps plus a fee, at the overnight report) moves the crew up
+a venue. Each adds a map change, a Board gauge, a chore and a toy; the hub (the
+stand, the washer, the shed, the dock) never moves.
+
+| Venue | What it adds |
+| --- | --- |
+| Muni Range | The start: the pond, the fry shed, the washer, Gary from Regional. |
+| Range Club | The kitchen and the Club's second gear; Upkeep matters. |
+| Tiered Entertainment Range | Target Greens (cups to empty), Bay Utilization, and the Upper Deck: beer pays a bar tab, six drinks in a row is an incident, a fine, and a lounger falling off. |
+| Stadium Range | The Ping Track, Crowd Sentiment, and a second cart to race it. |
+| County Range | The Yards (the right net comes down), Zoning Compliance, drones. |
+| Orbital Range | The Lift, orbit shots, the EVA to collect Orbital Debris, and the tether winch. |
+
+Per-venue rules, numbers and files: [design/game-design.md](design/game-design.md#round-4-summary).
+
+## The map: Dimple Creek
+
+The range is built around Dimple Creek: the pond (dry ground at the Muni until
+the creek runs), the Deep End dock for diving, the bucket stand and the big
+Board. The pond's balls sink; the Muni's pond is drained at first.
+
+## Diving and the EVA
+
+Buy dive gear at the shop, then dive the pond from the dock: a buddy cranks the
+air pump (latch it on the pad) while you walk the bottom for sunk balls and
+treasure. At the Orbital the same system goes to space: ride the Lift, float in
+a disc round the car on a tank of air, grab debris and ride it down, with a
+buddy cranking the O2. The tether winch automates it.
+
+## Pace log
+
+Add `?pace` to the URL (it works on any crew). At every shift report it
+records day, venue, session minutes, cash, balls banked, review stamps, the
+KPIs at the bell, incidents and debris in `sessionStorage` (it never throws if
+storage is blocked). The pause card then shows **Copy pace log**, which copies
+tab-separated rows for a spreadsheet. Code: `web/js/pace.js`.
 
 ## How it fits together
 

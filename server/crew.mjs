@@ -1380,6 +1380,9 @@ export class Crew {
       quota: this.quota && { q: +this.quota.q.toFixed(4), target: this.quotaTarget() },
       stamps: this.stamps, title: this.title(), commendations: this.commendations,
       outstanding: this.outstanding, records: this.records,
+      // Endless target: today's cash against the record's pace (record x shiftT / shiftSecs).
+      pace: this.endless && this.records.cash > 0 && this.phase === 'shift' && this.shiftSecs > 0
+        ? { record: this.records.cash, now: cents(this.records.cash * Math.min(1, this.shiftT / this.shiftSecs)), cash: this.stats.cash } : null,
       silo: this.stats.deposited, lastCall: this.lastCall(),
       promo: this.promoInfo(), revealT: +this.revealT.toFixed(1),
       readyIn: this.phase === 'report' && this.readyAt ? Math.max(0, Math.ceil(READY_SECS - (now - this.readyAt) / 1000)) : null,

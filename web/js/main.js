@@ -33,6 +33,7 @@ import { createTerrain } from './terrain.js';
 import { wadeFactor, stepDrift, cartSpeedAt, MAP } from './map.js';
 import { createViews } from './views/index.js';
 import { createPerf } from './perf.js';
+import { createPace } from './pace.js'; const pace = createPace({ search: location.search, storage: (() => { try { return sessionStorage; } catch { return null; } })(), clipboard: navigator.clipboard }); pace.bind(document.getElementById('pace-copy'));   // ?pace: the pace log
 import { setHeavyRate } from './venues.js';
 
 const EYE = 1.65;
@@ -531,12 +532,12 @@ function onEvent(e) {
       break;
     }
     case 'mower':
-      if (e.phase === 'warn') { SFX.bonk(); toast(`MOW-E is mowing by ${laneName(e.lane)} in 12 s. Get out of the lane (or grab what you can).`, 4); }
+      if (e.phase === 'warn') { SFX.horn('mower'); toast(`MOW-E is mowing by ${laneName(e.lane)} in 12 s. Get out of the lane (or grab what you can).`, 4); }
       break;
     case 'rake':
       for (const m of e.moves ?? []) { const b = balls.get(m.id); if (b) { b.x = m.x; b.z = m.z; b.y = SIM.BALL_R; b.vx = b.vy = b.vz = 0; b.rest = true; } }
       break;
-    case 'honk': SFX.bonk(); break;
+    case 'honk': SFX.horn('mower'); break;
     case 'garyFed': (e.by === me.id ? toast : feed)(GARY_LINE, 3); break;
     case 'custwait': if (playing()) feed(`A customer is waiting for a clean mat (Mat ${e.mat + 1}).`); break;
     case 'refuse': if (playing()) feed(`A customer gave up on Mat ${e.mat + 1} and left. Hose the mats!`); break;
@@ -565,7 +566,7 @@ function onEvent(e) {
     }
     case 'board': break;
     case 'gary':
-      if (e.phase === 'warn') { SFX.bonk(); toast('GARY FROM REGIONAL is 45 seconds out. Clean the sign, the mats, the cart and the stand. Then huddle at the stand.', 5); }
+      if (e.phase === 'warn') { SFX.horn('gary'); toast('GARY FROM REGIONAL is 45 seconds out. Clean the sign, the mats, the cart and the stand. Then huddle at the stand.', 5); }
       else toast('Gary is inspecting. Stay out of his way.', 3);
       break;
     case 'check': {
@@ -625,6 +626,7 @@ function onEvent(e) {
     case 'leave': removeMate(e.id); break;
     case 'shift':
       report = e.report ?? null;
+      if (e.phase === 'report') pace.record(report, { venueName: VENUE_RULES[report?.venue ?? 0]?.name, value: crew.value, debris: crew.mods?.orbit?.d?.length });
       if (e.phase === 'shift') { toast(`Day ${e.day}: the range is open`, 2.4); me.placed = false; }
       crew.phase = e.phase;
       showPhase();
@@ -676,7 +678,7 @@ function applySnapshot(s) {
   const v = s.value ?? {};
   board.update({ bv: v.bv, rate: v.rate, upkeep: v.upkeep, hustle: v.hustle, curb: v.curb, pond: s.pond?.unlocked ? v.pond ?? 0 : null, fries: s.fries?.open ? v.fries ?? 0 : null,
     kpiLabel: VENUE_RULES[s.venue ?? 0]?.kpi ?? null, kpi: v.kpi ?? null, slogan: views?.banner(s) ?? null,   // round 4: the venue's own gauge
-    quota: s.quota?.target ?? null, outstanding: s.outstanding, lastCall: s.lastCall, title: s.title, silo: s.silo,
+    quota: s.quota?.target ?? null, pace: s.pace ?? null, outstanding: s.outstanding, lastCall: s.lastCall, title: s.title, silo: s.silo,
     gary: s.gary?.phase === 'warn' ? `GARY FROM REGIONAL · 0:${String(Math.ceil(s.gary.t)).padStart(2, '0')}` : s.gary?.phase === 'drive' ? 'GARY IS INSPECTING' : mowerBoard(s.mower) });
   if (s.gary && s.gary.phase !== 'warn') {
     if (!garyView) { garyView = buildGary(); Object.assign(garyPose, { x: s.gary.x, z: s.gary.z, yaw: s.gary.yaw }); }
@@ -981,7 +983,7 @@ function showPhase() {
   if (crew.phase === 'shift' && link && joinToastFor !== link) {
     joinToastFor = link;
     const left = Math.max(0, crew.shiftSecs - crew.shiftT);
-    if (crew.shiftT > 3) toast(`You've joined day ${crew.day} with ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')} left. Pick up balls, bank them at the bucket stand (by the big board).`, 6);
+    if (crew.shiftT > 3 && left > 5) toast(`You've joined day ${crew.day} with ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')} left. Pick up balls, bank them at the bucket stand (by the big board).`, 6);
   }
   if (crew.phase === 'report' && report) {
     $('report-body').innerHTML = `<h2>Day ${report.day} is done</h2>
@@ -1175,7 +1177,7 @@ function hud() {
   $('cash').textContent = money(crew.cash);
   const v = crew.value;
   // One line: BV · target · gear (the KPIs live on the Board, council round 3).
-  $('value').textContent = v ? `BV ${money(v.bv)}${v.hustle > 1 ? ` ×${v.hustle}` : ''}${crew.quota ? ` · target ${money(crew.quota.target)}` : ''}${r2 ? ' · ' + r2.hudLine() : ''}${crew.lastCall ? ' · LAST CALL' : ''}` : '';
+  $('value').textContent = v ? `BV ${money(v.bv)}${v.hustle > 1 ? ` ×${v.hustle}` : ''}${crew.quota ? ` · target ${money(crew.quota.target)}` : crew.pace ? ` · record pace ${money(crew.pace.now)}` : ''}${r2 ? ' · ' + r2.hudLine() : ''}${crew.lastCall ? ' · LAST CALL' : ''}` : '';
   const n = carrying(), cap = gp.pocket, pad = document.body.classList.contains('pad');
   const btn = pad ? GLYPH.A : 'Click';          // use: pick up, swing
   const ibtn = pad ? GLYPH.X : 'E';             // the bucket stand

@@ -1672,3 +1672,25 @@ test('Gary\'s mats check ignores mats that are not in play (solo uses 6 of 10)',
   for (let i = 0; i < 2; i++) crew.fixtures['mat' + i] = 1;             // 2 of 6 active are filthy: 4/6 < 0.8
   assert.equal(crew.inspect('mats'), false);
 });
+
+// ---- round 4 item 12: the endless target (record pace) --------------------------------------------
+test('Endless target: snapshot.pace is record pace in endless, null otherwise, and scales with shiftT', () => {
+  const e = makeCrew({ venue: 5, endless: true, day: 9, records: { cash: 400, banked: 10, day: 4 } }, 600);
+  openShift(e.crew);
+  assert.equal(e.crew.snapshot().quota, null);
+  e.crew.shiftT = 0;
+  assert.equal(e.crew.snapshot().pace.now, 0);
+  assert.equal(e.crew.snapshot().pace.record, 400);
+  e.crew.shiftT = 150;
+  near(e.crew.snapshot().pace.now, 100);
+  e.crew.shiftT = 300;
+  near(e.crew.snapshot().pace.now, 200);
+  e.crew.stats.cash = 55;
+  assert.equal(e.crew.snapshot().pace.cash, 55);
+  const plain = makeCrew({ venue: 5, day: 9, outstanding: 10, records: { cash: 400, banked: 10, day: 4 } }, 600);
+  openShift(plain.crew);
+  assert.equal(plain.crew.snapshot().pace, null, 'not endless');
+  const noRec = makeCrew({ venue: 5, endless: true, day: 9 }, 600);
+  openShift(noRec.crew);
+  assert.equal(noRec.crew.snapshot().pace, null, 'no record yet');
+});

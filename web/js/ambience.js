@@ -1,6 +1,6 @@
 // Range Rat ambient soundscape: birds, crickets, wind, distant club strikes,
 // Last Call floodlight hum and an underwater filter, all synthesised with Web
-// Audio (no files). Imports nothing.
+// Audio (no files). Imports only sfx.js's setUnderwater (so the SFX bus muffles with the ambience).
 //
 // Wiring: this module does NOT create its own AudioContext. The host calls
 // attach(ctx, destination[, isMutedFn]) once, with sfx.js's context and master
@@ -9,6 +9,8 @@
 // silent no-op that never throws. Mute is respected through the sfx master
 // (our output feeds it) and, if given, isMutedFn is also polled so we skip
 // scheduling one-shots while muted.
+
+import { setUnderwater as muffleSfx } from './sfx.js';
 
 const LEVEL = 0.35; // ambience master, relative to the sfx master
 
@@ -352,7 +354,7 @@ export function setAmbience(p) {
     const s = state;
     if (p.timeOfDay01 !== undefined) s.tod = clamp01(p.timeOfDay01);
     if (p.lastCall !== undefined) s.lastCall = !!p.lastCall;
-    if (p.underwater !== undefined) s.underwater = !!p.underwater;
+    if (p.underwater !== undefined) { s.underwater = !!p.underwater; muffleSfx(s.underwater); }
     if (p.nearField !== undefined) s.nearField = clamp01(p.nearField);
     if (p.crowd !== undefined) s.crowd = clamp01(p.crowd);
     if (started) apply(false);
