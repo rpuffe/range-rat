@@ -877,3 +877,16 @@ is one beat; past the cap the bell rings as before (no softlock when nobody ride
 No. 1 falls, is down, carried or in the huddle. The Board's BV flaps in $10 steps from $10,000. The huddle banner is one
 line ("ALL TO THE STAND · n / N", nowrap). The Orbital memo is "Today: clear the sky. N to bring home."; a full EVA bag
 prompts "Bag full · E Ride down". The Owner's projects row heads the endless shop.
+
+## Playthrough 3 fixes (A)
+
+Gary's lines clear only once the stop is Spotless (`GARY_SPOTLESS` 0.1, `inspectBase(id, clean)`), not at the 0.34
+pass mark; during the warning a Rat with no line takes a failing stop nobody holds (`redealGary`), so a stop that
+scuffs back is dealt again and a solo Rat works down the list. The GARY 3 · 2 · 1 is the last `GARY_COUNT` (5) s of
+his route at every venue, cart or not. The rally says "On target" only with `UPKEEP_MARGIN` (0.06) of Upkeep to spare
+(Last Call and the 30 s re-check both use it; the review itself doesn't). The re-check passes the last deal as `prev`
+to `dealJobs`: each Rat keeps a line whose job is still short, and only new jobs are dealt. "Record shift!" shows in
+endless only. The report scrolls inside `.split`, which ends above the Next bar; the fee headline sits below the
+pocket dots and the panel drops its "Fee: $X short" note while it shows; no PROMOTED toast over the report. Shorter
+text: "NEW: the GOLD BALL. Worth ×10. Dimples watches.", "Your gear is caked. Hose your boots.", and on day 5 with
+stamps and fee in hand "Tomorrow: sign at the bell for the Club."

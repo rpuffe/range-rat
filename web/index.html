@@ -50,8 +50,13 @@
   .big-stat small { display: block; font-size: 0.4em; font-weight: 500; opacity: 0.8; }
   #storehint.hidden, #value.hidden, #hud.in-lobby { display: none; }
   #report .shop .desc, #lobby .shop .desc { display: none; }                 /* the overnight shop: names and prices */
-  #report > .row { position: sticky; bottom: 0; padding: 0.6em 0; background: linear-gradient(transparent, rgba(14, 12, 28, 0.92) 35%); }   /* Next shift always on screen */
-  #report { padding-bottom: calc(16px + 3.8em); scroll-padding-bottom: 3.8em; }   /* playtest round 2 #9: the pinned bar's height, so the overnight shop's last rows scroll clear of it */
+  /* Playthrough 3 #6: the report scrolls inside .split, which ends above the Next bar, so the bar never covers the
+     shop (the old sticky bar sat over its rows). The fee headline (#fee-head) starts below the HUD's pocket dots (#9). */
+  #report { display: flex; flex-direction: column; align-items: center; justify-content: safe center; overflow: hidden;
+    padding-top: calc(max(16px, env(safe-area-inset-top)) + 2.2em); }
+  #report > .split { align-self: stretch; min-height: 0; flex: 0 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+  #report > .row { flex: none; padding: 0.2em 0; }   /* Next shift always on screen */
+  #report > .keys, #report > #fee-head { flex: none; }
   #crewline small { color: var(--dim); font-weight: 500; }
   #code { letter-spacing: 0.15em; }
   #roster { list-style: none; margin: 0.4em 0 0; padding: 0; font-size: 0.85em; }

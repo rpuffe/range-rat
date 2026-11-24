@@ -71,7 +71,8 @@ export function setupRound2(ctx) {
         else if (e.cash > 0) board.floatText(21.5, 2.6, 6, '+' + money(e.cash), '#9fe8ff');
         break;
       case 'grime':
-        if (e.id === me.id && e.v > 0) toast(['', 'Your gear is grubby (×1.17).', 'Your gear is filthy (×1.08).', 'Caked in mud (×1.00). Use the wash pad.'][e.v], 2.4);
+        // Playthrough 3 #10: plain words, no "(×1.00)" (the Gear multiplier lives on the HUD).
+        if (e.id === me.id && e.v > 0) toast(['', 'Your gear is grubby.', 'Your gear is filthy. Hose your boots.', 'Your gear is caked. Hose your boots.'][e.v], 2.4);
         break;
       case 'hosed':
         SFX.scoop();
@@ -80,7 +81,8 @@ export function setupRound2(ctx) {
       case 'sign': toast(e.on ? nameOf(e.by) + ' signed the franchise agreement (' + e.n + ' of ' + e.of + ')' : nameOf(e.by) + ' unsigned', 2.5); renderReport(); break;
       case 'promoted':
         SFX.jackpot();
-        ctx.say('ALERT', 'PROMOTED: ' + VENUE_RULES[e.venue].name + '. Fee ' + money(e.fee) + '.', { secs: 4 });
+        // Playthrough 3 #6: the report's "Promoted!" panel says it; a centre toast there sat on the Next button.
+        if (c.phase !== 'report') ctx.say('ALERT', 'PROMOTED: ' + VENUE_RULES[e.venue].name + '. Fee ' + money(e.fee) + '.', { secs: 4 });
         renderReport(true);
         break;
       case 'ready': renderReport(); break;
@@ -234,18 +236,20 @@ export function setupRound2(ctx) {
     ledgerKey = key;
     const esc = s => String(s).replace(/[&<>"']/g, ch => '&#' + ch.charCodeAt(0) + ';');
     let html = '';
-    feeHead(c.promotedTo ? '' : feeHeadline(promo, c.cash));   // round 7 #10.1: "3 stamps. $895 short." leads the report
+    const head = c.promotedTo ? '' : feeHeadline(promo, c.cash);
+    feeHead(head);   // round 7 #10.1: "3 stamps. $895 short." leads the report
     if (r.ledger?.length) {
       html += '<div class="sheet ledger"><h3>The ledger</h3>' + r.ledger.map(l =>
         '<p style="color:' + l.color + '"><span>' + esc(l.name) + ' · banked ' + l.banked + ' · ' + money(l.cash) + (l.hosed ? ' · hosed ' + l.hosed : '') + ' · knocked down ' + l.knockdowns + '</span><b>' + esc(l.award) + ' — Corporate</b></p>').join('') + '</div>';
     }
-    if (r.record) html += '<p class="note">Record shift! Best shift: ' + money(r.record.cash) + ' (was ' + money(r.record.was) + ').</p>';
+    // Playthrough 3 #5: endless only, where the record is the game ("Record shift! (was $0)" sat by QUOTA MISSED).
+    if (r.record && c.endless) html += '<p class="note">Record shift! Best shift: ' + money(r.record.cash) + ' (was ' + money(r.record.was) + ').</p>';
     for (const line of ctx.views?.()?.reportLines(r) ?? []) html += '<p class="note">' + esc(line) + '</p>';   // round 4: venue report lines
     if (c.promotedTo) {
       html += '<div class="sheet promo"><h3>Promoted!</h3><p>The ' + esc(c.promotedTo) + ' opens tomorrow.</p></div>';
       const tm = document.querySelector('#report-body .dim'); if (tm) tm.textContent = 'Tomorrow: the ' + c.promotedTo + '.';
     } else if (showPromo(promo)) {   // nothing to request before the first stamp (playtest); the fee from 2 stamps (round 6 #7)
-      html += promoPanelHtml(promo, { cash: c.cash, signed: !!mine?.signed, signedN: promo.signed.length, onlineN: online.length, esc });
+      html += promoPanelHtml(promo, { cash: c.cash, signed: !!mine?.signed, signedN: promo.signed.length, onlineN: online.length, esc, headShown: !!head });
     }
     el.innerHTML = html;
     $('sign-btn')?.addEventListener('click', () => link()?.act({ t: 'sign', on: !mine?.signed }));

@@ -66,11 +66,14 @@ export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = { x: 26, z: 6 }) 
 // Playtest round 2 #2: when the server sends { eta, span } (seconds to the stand, and that eta when he left the mats),
 // the count runs from the mats instead, a third of the route per digit, so it lasts several seconds.
 // `stop` is his stand stop (sim.js GARY.STOPS), `speed` GARY.SPEED; he arrives within 0.3 m (crew.mjs stepGary).
+// Playthrough 3 #2: the count is the last GARY_COUNT seconds (crew.mjs garyEta sends nothing earlier), so it lasts
+// about 5 s at every venue, cart or no cart (from the mats it ran 11–67 s with a cart).
+export const GARY_COUNT = 5;
 export function garyCountdown(gary, stop = { x: 26, z: 10 }, speed = 5) {
   if (!gary || gary.phase !== 'drive') return null;
   if (gary.eta != null && gary.span > 0) {
-    if (gary.eta <= 0) return null;
-    const n = Math.max(1, Math.min(3, Math.ceil(3 * gary.eta / gary.span - 1e-9)));
+    if (gary.eta <= 0 || gary.eta > GARY_COUNT + 0.5) return null;   // an older server's long span: wait for the last 5 s
+    const n = Math.max(1, Math.min(3, Math.ceil(3 * gary.eta / Math.min(gary.span, GARY_COUNT) - 1e-9)));
     return 'GARY ' + [3, 2, 1].filter(k => k >= n).join(' · ');
   }
   if (gary.to !== 'stand') return null;

@@ -18,7 +18,8 @@ import { VenueHooks, MODULES } from './venues/index.mjs';
 import { debrisLeft } from './venues/orbit.mjs';
 import { ORBIT } from '../web/js/orbit.js';
 import { isStray } from '../web/js/county.js';
-import { shortfall, shortfalls, dealJobs, gaugeOk as gaugeHolds, GAUGE_MISS, RALLY_LINES, RALLY_MARGIN, RALLY_RECHECK, rallyAt } from '../web/js/rally.js';
+import { shortfall, shortfalls, dealJobs, gaugeOk as gaugeHolds, GAUGE_MISS, RALLY_LINES, RALLY_MARGIN, RALLY_RECHECK, rallyAt, UPKEEP_MARGIN } from '../web/js/rally.js';
+import { GARY_COUNT } from '../web/js/huddlerules.js';   // playthrough 3 #2: the Board's count is the last 5 s
 import { maxMult, curveStep, finishCurve, cleanCurve, paceAt, OWNER } from '../web/js/owner.js';   // round 7 #9: endless
 import { QUOTA_KPI } from '../web/js/sim.js';
 import { newMat, openShift as openMats, stepMat, matReady, shoot, matWire } from '../web/js/customers.js';
@@ -756,7 +757,7 @@ export class Crew {
     // Ball No. 1 is never swept: losing it would hold the clock for ever.
     for (const [id, b] of this.balls) if (!b.sunk && b.kind !== 'one') { this.balls.delete(id); this.events.push({ t: 'gone', id }); }
     this.shiftSecs = this.shiftOverride ?? (this.endless || this.venue > 0 ? SIM.SHIFT_SECS : shiftSecsFor(this.day));
-    this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false; this.reRallied = false; this.gaugeWas = null; this.warned = false; this.skyHoldT = 0;
+    this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1; this.lastCallRung = false; this.reRallied = false; this.rallyDeal = null; this.gaugeWas = null; this.warned = false; this.skyHoldT = 0;
     this.gary = null; this.mower = null; this.paShift = 0; this.jackpotSaid = false;
     this.ready.clear(); this.readyAt = 0; this.signed.clear();
     this.hopper = { n: 0, credit: 0, frac: 0 };
@@ -819,22 +820,28 @@ export class Crew {
     const value = this.valueNow();
     // Forecast the rush (playtest 2: "On target", then DENIED): Last Call swings x1.5, so read the gauge with a margin.
     const ahead = kpi == null ? null : kpi - (RALLY_MARGIN[this.venue] ?? 0.1);
-    return shortfall({ value, quota: this.quota, kpi: ahead, fixtures: this.fixtures, venue: this.venue, endless: this.endless });
+    // Playthrough 3 #3: and Upkeep too ("On target" only with UPKEEP_MARGIN to spare for the x1.5 scuff).
+    return shortfall({ value, quota: this.quota, kpi: ahead, fixtures: this.fixtures, venue: this.venue, endless: this.endless, margin: UPKEEP_MARGIN });
   }
   // Round 7 #4: the rally dealt round the crew. { need: the top line (solo, old clients), needs: { ratId: line } }.
-  rallyNeeds(kpi = this.mods.kpi()) {
+  // prev: the last deal (playthrough 3 #4: the 30 s re-check keeps each Rat's line while its job is still short).
+  rallyNeeds(kpi = this.mods.kpi(), prev = null) {
     const need = this.rallyNeed(kpi);
-    if (need == null) return { need };
+    if (need == null) { this.rallyDeal = null; return { need }; }
     const ahead = kpi == null ? null : kpi - (RALLY_MARGIN[this.venue] ?? 0.1);
-    const jobs = shortfalls({ value: this.valueNow(), quota: this.quota, kpi: ahead, fixtures: this.fixtures, venue: this.venue, endless: this.endless, cups: this.mods.state('tiered')?.cups });
-    return { need, needs: dealJobs(jobs, this.online().map(p => ({ id: p.id, x: p.x, z: p.z }))) };
+    const jobs = shortfalls({ value: this.valueNow(), quota: this.quota, kpi: ahead, fixtures: this.fixtures, venue: this.venue, endless: this.endless, cups: this.mods.state('tiered')?.cups, margin: UPKEEP_MARGIN });
+    const needs = dealJobs(jobs, this.online().map(p => ({ id: p.id, x: p.x, z: p.z })), undefined, prev);
+    this.rallyDeal = needs;
+    return { need, needs };
   }
   // Playthrough 3 #2: the T-30 re-check at the Stadium reads the LIVE crowd (less the margin), not the graded 2-minute
   // mean, so Rats lapping at 100% live aren't told the crowd is bored. Live fine, graded still short: "Keep lapping!".
+  // Playthrough 3 #4: the re-check keeps the last deal's lines that are still short (rallyDeal) and deals only new jobs.
   recheckNeeds() {
     const live = this.venue === 3 ? this.mods.state('stadium')?.s : null;
-    if (live == null) return this.rallyNeeds();
-    const r = this.rallyNeeds(live);
+    const prev = this.rallyDeal ?? null;
+    if (live == null) return this.rallyNeeds(undefined, prev);
+    const r = this.rallyNeeds(live, prev);
     if ((r.need == null || r.need === RALLY_LINES.onTarget) && !gaugeHolds(this.mods.kpi())) {
       const need = RALLY_LINES.keepLapping;
       return { need, needs: Object.fromEntries(this.online().map(p => [p.id, need])) };
@@ -1078,13 +1085,13 @@ export class Crew {
     return stops;
   }
 
-  // Seconds until Gary reaches the stand, once he has left the mats (the Board's GARY 3 · 2 · 1, playtest round 2 #2):
-  // the legs still to drive at GARY.SPEED plus the pauses still to sit. null before then, or when he isn't driving.
+  // Seconds until Gary reaches the stand, for the Board's GARY 3 · 2 · 1 (playtest round 2 #2): the legs still to
+  // drive at GARY.SPEED plus the pauses still to sit. Playthrough 3 #2: only the last GARY_COUNT (5) seconds, so the
+  // count lasts ~5 s at every venue, cart or no cart; null before then, or when he isn't driving.
   garyEta() {
     const g = this.gary;
     if (!g || g.phase !== 'drive') return null;
-    const stops = this.garyStops(), mi = stops.findIndex(st => st.id === 'mats');
-    if (g.stop <= mi || (g.stop === mi + 1 && g.pause > 0)) return null;
+    const stops = this.garyStops();
     let t = Math.max(0, g.pause), x = g.x, z = g.z;
     for (let i = g.stop; i < stops.length; i++) {
       const st = stops[i];
@@ -1094,10 +1101,10 @@ export class Crew {
       t += Math.max(0, Math.hypot(tx - x, tz - z) - 0.3) / GARY.SPEED + (st.id === 'stand' ? 0 : GARY.PAUSE);
       x = tx; z = tz;
     }
-    return t;
+    return t > GARY_COUNT ? null : t;
   }
 
-  // { eta, span } for the snapshot: span is the eta when he left the mats, so the client splits it into 3 · 2 · 1.
+  // { eta, span } for the snapshot: span is the eta when the count began, so the client splits it into 3 · 2 · 1.
   garyEtaWire() {
     const eta = this.garyEta(), g = this.gary;
     if (eta == null) { if (g) g.span = null; return {}; }
@@ -1195,16 +1202,17 @@ export class Crew {
 
   // A stop passes on its own rule, unless a venue module vetoes it (the Upper Deck incident fails the kitchen).
   inspect(id) { return this.inspectBase(id) && !this.mods.veto('inspect', id); }
-  inspectBase(id) {
+  // clean: the mud a stop may carry (playthrough 3 #1: Gary's lines clear only at GARY_SPOTLESS, nudge.js).
+  inspectBase(id, clean = GARY.CLEAN) {
     const f = this.fixtures;
-    if (id === 'sign') return f.sign <= GARY.CLEAN;
-    if (id === 'stand') return f.stand <= GARY.CLEAN;
-    if (id === 'cart') return !this.cart || this.muddiestCart().mud <= GARY.CLEAN;
+    if (id === 'sign') return f.sign <= clean;
+    if (id === 'stand') return f.stand <= clean;
+    if (id === 'cart') return !this.cart || this.muddiestCart().mud <= clean;
     if (id === 'kitchen') return !!this.gary?.fed || this.fries >= FRIES.MAX * 0.5;   // Gary had a hot dog
     if (id === 'mats') {
       const nAct = activeMats(this.onlineCount());   // only the mats in play: solo never washes mats nobody uses
       const mats = Object.entries(f).filter(([k]) => k.startsWith('mat') && +k.slice(3) < nAct);
-      return mats.filter(([, v]) => v <= GARY.CLEAN).length >= mats.length * 0.8;
+      return mats.filter(([, v]) => v <= clean).length >= mats.length * 0.8;
     }
     return true;
   }
@@ -1560,7 +1568,7 @@ export class Crew {
     for (const k of Object.keys(this.stats)) this.totals[k] = (this.totals[k] ?? 0) + this.stats[k];
     this.report = { day: this.day, ...this.stats, left: this.balls.size, bank: this.cash, quota, record,
       ledger: this.ledger(), promo: this.promoInfo(), venue: this.venue, title: this.title(),
-      tomorrow: tomorrowText(this.day + 1, this.venue, this.endless) };
+      tomorrow: tomorrowText(this.day + 1, this.venue, this.endless, !!this.promoInfo()?.ready) };
     if (ending) this.report.ending = { days: this.day, banked: this.totals.deposited, commendations: this.commendations, quotas: this.totals.stamps + this.stamps };
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'report', day: this.day, report: this.report });
@@ -1700,11 +1708,13 @@ function memoFlavor(day, venue, endless, rng) {
   if (day === 2 && venue === 0) return 'Corporate has sent a teenager to help.';
   return line;
 }
-function tomorrowText(day, venue, endless) {
+// ready: the stamps and the fee are already in hand (playthrough 3 #10: don't re-explain them, say what's left).
+function tomorrowText(day, venue, endless, ready = false) {
   if (endless) return 'Tomorrow: Range Rats LLC opens as usual. The job never ends.';
   if (day === 2) return 'Tomorrow: a target. Hose before the bell.';
   if (day === 3) return 'Tomorrow: the first gold balls. Worth ten.';
   if (day === 4) return 'Tomorrow: Gary from Regional inspects. Clean everything, then huddle at the stand.';
+  if (venue === 0 && ready) return 'Tomorrow: sign at the bell for the Club.';
   if (venue === 0) return 'Tomorrow: three review stamps plus the fee earn the Range Club.';
   return 'Tomorrow: more balls. Corporate thanks you for your continued compliance.';
 }

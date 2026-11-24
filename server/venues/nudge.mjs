@@ -5,7 +5,7 @@
 // Nothing checks or rewards it beyond clearing the line.
 // Round 7 #4: the same slot carries Gary's warning, dealt (one failing stop per Rat, nearest first, at every venue:
 // a venue-0 module runs everywhere), and the Muni's day-3 rhythm line ("Keep the mats clean." at half-shift).
-import { NUDGE, DAY3, dealFor, nudgeDay, nudgeDone, dealGary } from '../../web/js/nudge.js';
+import { NUDGE, DAY3, dealFor, nudgeDay, nudgeDone, dealGary, redealGary, GARY_SPOTLESS } from '../../web/js/nudge.js';
 import { FRIES, GARY, activeMats } from '../../web/js/sim.js';
 
 const todoOpen = crew => !!crew.todo && !(crew.todo.pick && crew.todo.bank && crew.todo.sign && crew.todo.buy);
@@ -35,7 +35,7 @@ export function failingStops(crew) {
   return out;
 }
 
-// Gary's warning: deal while it runs (a late joiner gets one too), clear a stop's lines once it passes, clear them all
+// Gary's warning: deal while it runs (a late joiner gets one too), clear a stop's lines once it's Spotless, clear them all
 // when he reaches his first stop. st.gary: { by: { ratId: stopId }, seen: { ratId: true }, over }.
 function stepGary(crew, st) {
   const g = crew.gary;
@@ -44,13 +44,22 @@ function stepGary(crew, st) {
   const G = st.gary;
   if (G.over) return;
   if (g.phase !== 'warn' && (g.checks?.length ?? 0) > 0) { G.over = true; G.by = {}; crew.dirty = true; return; }   // his first stop
-  for (const [id, stop] of Object.entries(G.by)) if (crew.inspectBase(stop)) { delete G.by[id]; crew.dirty = true; }   // it passes now
+  // Playthrough 3 #1: a line clears once its stop is Spotless, not merely passing (it scuffed back and failed).
+  for (const [id, stop] of Object.entries(G.by)) if (crew.inspectBase(stop, GARY_SPOTLESS)) { delete G.by[id]; crew.dirty = true; }
   if (g.phase !== 'warn') return;   // only the warning deals; the drive to his first stop only clears
+  const at = p => ({ id: p.id, x: p.x, z: p.z });
   const fresh = crew.online().filter(p => !G.seen[p.id]);
-  if (!fresh.length) return;
-  for (const p of fresh) G.seen[p.id] = true;
-  Object.assign(G.by, dealGary(failingStops(crew), fresh.map(p => ({ id: p.id, x: p.x, z: p.z }))));
-  crew.dirty = true;
+  if (fresh.length) {
+    for (const p of fresh) G.seen[p.id] = true;
+    Object.assign(G.by, dealGary(failingStops(crew), fresh.map(at)));
+    crew.dirty = true;
+  }
+  // Playthrough 3 #1/#12: a Rat whose stop went Spotless takes the next failing stop nobody holds (a stop that
+  // failed again is dealt again; solo works down the list).
+  const free = crew.online().filter(p => G.seen[p.id] && !G.by[p.id]);
+  if (!free.length) return;
+  const more = redealGary(failingStops(crew), free.map(at), Object.values(G.by));
+  if (Object.keys(more).length) { Object.assign(G.by, more); crew.dirty = true; }
 }
 
 // The Muni's day 3 (A3): at half-shift, "Keep the mats clean." to the Rat nearest the mats, if they're over 0.3 mud.

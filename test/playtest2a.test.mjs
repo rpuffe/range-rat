@@ -82,7 +82,7 @@ test('Gary never runs over a Rat in the huddle ring, even on the mats → cart l
   assert.ok(a.down > 0, 'out on the range he still knocks you down');
 });
 
-test('GARY 3 · 2 · 1 starts when he leaves the mats and lasts several seconds', () => {
+test('GARY 3 · 2 · 1 lasts several seconds (playthrough 3 #2: the last ~5 s)', () => {
   const { crew } = garyCrew();
   crew.cart = { x: 30, z: -10, yaw: 0, v: 0, driver: null, load: 0, loadW: 0, boostT: 0, mud: 0, movedAt: 1 };
   const mats = crew.garyStops().find(s => s.id === 'mats');
@@ -101,10 +101,11 @@ test('GARY 3 · 2 · 1 starts when he leaves the mats and lasts several seconds'
   assert.deepEqual([...new Set(seen.map(x => x.s))], ['GARY 3', 'GARY 3 · 2', 'GARY 3 · 2 · 1']);
 });
 
-test('garyCountdown splits the route from the mats into thirds', () => {
+test('garyCountdown splits the last ~5 s into thirds (playthrough 3 #2: was the whole route from the mats)', () => {
   const g = eta => garyCountdown({ phase: 'drive', to: 'cart', x: 0, z: 0, eta, span: 9 });
-  assert.equal(g(9), 'GARY 3'); assert.equal(g(6.5), 'GARY 3');
-  assert.equal(g(5), 'GARY 3 · 2'); assert.equal(g(2), 'GARY 3 · 2 · 1');
+  assert.equal(g(9), null, 'a long span from an older server: wait for the last 5 s');
+  assert.equal(g(5), 'GARY 3'); assert.equal(g(3.5), 'GARY 3');
+  assert.equal(g(3), 'GARY 3 · 2'); assert.equal(g(1), 'GARY 3 · 2 · 1');
   assert.equal(g(0), null);
   assert.equal(garyCountdown({ phase: 'drive', to: 'cart', x: 0, z: 0 }), null, 'before the mats: no count');
 });

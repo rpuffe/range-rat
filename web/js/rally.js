@@ -35,18 +35,23 @@ export const POND_MURKY = 0.6;
 // Is the gauge holding? No gauge (the Muni, the Club) always is.
 export const gaugeOk = kpi => kpi == null || kpi + 1e-9 >= QUOTA_KPI;
 // The same test the review uses: Upkeep (BV / Rate) against 1 + q.
-export const upkeepOk = (value, quota) => !quota || value.bv / value.rate + 1e-9 >= 1 + quota.q;
+// margin: Upkeep the rally asks for above that (UPKEEP_MARGIN); the review itself uses 0.
+export const upkeepOk = (value, quota, margin = 0) => !quota || value.bv / value.rate + 1e-9 >= 1 + quota.q + margin;
+// Playthrough 3 #3: Last Call scuffs ×1.5, so "On target" at the bell was DENIED 25 of 31 times (4P). The rally
+// forecasts Upkeep at the bell: it says "On target" only with this much Upkeep to spare. The Last Call rally and the
+// 30 s re-check both use it, so they agree.
+export const UPKEEP_MARGIN = 0.06;
 
 // The single biggest shortfall, as one line, or null (endless, or no review today).
 //   value: the crew's valueNow() (bv, rate, curb, pond, fries); quota: { q }; kpi: the venue gauge or null;
-//   fixtures: { id: mud 0..1 }; fries / pond: 0..1 or null (locked).
-export function shortfall({ value, quota, kpi = null, fixtures = {}, fries = value?.fries ?? null, pond = value?.pond ?? null, venue = 0, endless = false }) {
+//   fixtures: { id: mud 0..1 }; fries / pond: 0..1 or null (locked); margin: Upkeep to spare (UPKEEP_MARGIN).
+export function shortfall({ value, quota, kpi = null, fixtures = {}, fries = value?.fries ?? null, pond = value?.pond ?? null, venue = 0, endless = false, margin = 0 }) {
   if (endless || !value) return null;
   // Round 7 #5: the Orbital has no review, only the sky gate: the line is the debris, or nothing.
   if (venue === 5 && !quota) return gaugeOk(kpi) ? null : RALLY_LINES.gauge[5];
   if (!quota) return null;
   if (!gaugeOk(kpi)) return RALLY_LINES.gauge[venue] ?? null;
-  if (upkeepOk(value, quota)) return RALLY_LINES.onTarget;
+  if (upkeepOk(value, quota, margin)) return RALLY_LINES.onTarget;
   // Under target: name the term costing the most Upkeep (playtest round 2 #1). Upkeep = 1 + 0.5 × (Curb + pond +
   // fries + gauge) and Curb = 1 − the mean mud of every fixture, so one fixture costs 0.5 × mud / N and the mats,
   // as one group, 0.5 × their summed mud / N: one filthy sign (1 of 12) rarely outweighs ten scuffed mats.
@@ -99,13 +104,13 @@ export function gaugeAt(venue, cups = null) {
 // cost (Upkeep's biggest term always, when Upkeep is under target). [] = on target (or no review). [{ id, line, loss, at }].
 // shortfall() is this list's head (or the on-target line): the solo line and old clients' `need`.
 export const JOB_MIN_LOSS = 0.01;
-export function shortfalls({ value, quota, kpi = null, fixtures = {}, fries = value?.fries ?? null, pond = value?.pond ?? null, venue = 0, endless = false, cups = null }) {
+export function shortfalls({ value, quota, kpi = null, fixtures = {}, fries = value?.fries ?? null, pond = value?.pond ?? null, venue = 0, endless = false, cups = null, margin = 0 }) {
   if (endless || !value) return [];
   if (venue === 5 && !quota) return gaugeOk(kpi) ? [] : [{ id: 'gauge', line: RALLY_LINES.gauge[5], loss: 1, at: gaugeAt(5) }];
   if (!quota) return [];
   const out = [];
   if (!gaugeOk(kpi) && RALLY_LINES.gauge[venue]) out.push({ id: 'gauge', line: RALLY_LINES.gauge[venue], loss: 1, at: gaugeAt(venue, cups) });
-  if (!out.length && upkeepOk(value, quota)) return out;   // on target. A short gauge still deals the Upkeep terms to the rest
+  if (!out.length && upkeepOk(value, quota, margin)) return out;   // on target. A short gauge still deals the Upkeep terms to the rest
   const ids = Object.keys(fixtures), n = ids.length;
   const share = id => (n ? 0.5 * (fixtures[id] ?? 0) / n : 0);
   const terms = [{ id: 'mats', loss: n ? ids.filter(id => id.startsWith('mat')).reduce((a, id) => a + share(id), 0) : 0.5 * (1 - (value.curb ?? 1)) }];
@@ -113,7 +118,7 @@ export function shortfalls({ value, quota, kpi = null, fixtures = {}, fries = va
   if (fries != null) terms.push({ id: 'fries', loss: 0.5 * (1 - fries) });
   if (pond != null) terms.push({ id: 'pond', loss: 0.5 * (1 - pond) });
   terms.sort((a, b) => b.loss - a.loss);   // stable: ties keep the mats first, as shortfall() does
-  const under = !upkeepOk(value, quota);
+  const under = !upkeepOk(value, quota, margin);
   const real = terms.filter((t, i) => (under && i === 0) || t.loss >= JOB_MIN_LOSS);   // under target names at least its biggest term
   for (const t of real) out.push({ ...t, line: RALLY_LINES[t.id], at: JOB_AT[t.id] });
   return out;
@@ -122,17 +127,28 @@ export function shortfalls({ value, quota, kpi = null, fixtures = {}, fries = va
 // Deal the ranked jobs round the crew: the biggest job gets ceil(N/2) Rats (the nearest), then each next job the
 // nearest undealt Rat, round the other jobs again until every Rat has a line. No jobs: everyone gets `none` (the on-target
 // line). rats: [{ id, x, z }]. Returns { [ratId]: line }.
-export function dealJobs(jobs, rats, none = RALLY_LINES.onTarget) {
+// Playthrough 3 #4: prev ({ [ratId]: line }, the last deal) keeps each Rat's line while that job is still short, and
+// deals only the new jobs to the rest (with no new job, the rest go round the open ones), so the 30 s re-check
+// doesn't swap the sign and the stand between Rats by where they stand.
+export function dealJobs(jobs, rats, none = RALLY_LINES.onTarget, prev = null) {
   const out = {};
   if (!rats.length) return out;
   if (!jobs.length) { for (const r of rats) out[r.id] = none; return out; }
-  const left = [...rats];
+  let left = [...rats];
+  if (prev) {
+    const open = new Set(jobs.map(j => j.line));
+    for (const r of rats) if (open.has(prev[r.id])) out[r.id] = prev[r.id];
+    left = rats.filter(r => !(r.id in out));
+    if (!left.length) return out;
+    const held = new Set(Object.values(out)), fresh = jobs.filter(j => !held.has(j.line));
+    if (fresh.length) jobs = fresh;
+  }
   const take = job => {
     let bi = 0, bd = Infinity;
     left.forEach((r, i) => { const d = Math.hypot(r.x - job.at.x, r.z - job.at.z); if (d < bd) { bd = d; bi = i; } });
     out[left[bi].id] = job.line; left.splice(bi, 1);
   };
-  for (let k = Math.ceil(rats.length / 2); k > 0 && left.length; k--) take(jobs[0]);
+  for (let k = Math.ceil(left.length / 2); k > 0 && left.length; k--) take(jobs[0]);
   const rest = jobs.length > 1 ? jobs.slice(1) : jobs;   // the biggest job keeps its half; the rest go round
   for (let j = 0; left.length; j = (j + 1) % rest.length) take(rest[j]);
   return out;

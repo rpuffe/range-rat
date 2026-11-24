@@ -359,7 +359,7 @@ export function pickKind(day, venue, rng) {
 export const KIND_NAMES = { range: 'range ball', glow: 'glow ball', lead: 'lead ball', square: 'square ball', gold: 'GOLD BALL', splitter: 'splitter', bouncy: 'super-bouncy ball', debris: 'orbital debris' };
 export const KIND_BLURB = {
   square: "Worth ×2. The reels can't take it.",
-  gold: 'Worth ×10. Dimples is watching you pick it up.',
+  gold: 'Worth ×10. Dimples watches.',   // playthrough 3 #10: the debut memo in 8 words ("NEW: the GOLD BALL. ...")
   lead: 'Worth ×3. It always ends up in the pond.',
   splitter: 'Pick one up and it becomes three.',
   bouncy: 'Worth ×1.5. It does not want to be picked up.',

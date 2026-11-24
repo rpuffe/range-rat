@@ -80,3 +80,43 @@ One text: bells, finale and sky one centre element each.
 5. Make the pump matter in the sky: shorter EVA air, or debris drifting out of reach unless a buddy
    cranks (S).
 - **Cut:** the pumper role at the sky gate as tuned, or the Crew colours tier.
+
+## Playtester A — a new crew to the Range Club
+
+**Scores:** Fun 6 · Clarity 6.5 · Text load 7 · Pacing 6 · Co-op 6.5 · Meaningful 6 · Look & feel 7 ·
+Polish 6 · One more shift 6.5 · **Overall 6.5**. "The plumbing fix landed; the remaining issues are rules
+tuning." **0 frames with two centre messages** across days 1–5 and the Club morning.
+
+**Best:** the day-2 Last Call deal: mats for me, the sign for Cy, the stand for Di, three ways with no talking.
+**Flattest:** day 4: we followed Gary's lines, they vanished, "Gary found 3 problems."
+
+**Findings:**
+1. A Gary line clears at the pass threshold (0.34), the stop scuffs back and fails: following the lines
+   literally passed Gary 0 of 12; hosing to < 0.1 passed 16 of 16.
+2. With a cart, the GARY 3·2·1 lasts 11–67 s (the cart leg comes after the mats).
+3. "On target" then DENIED: no Upkeep margin for Last Call's ×1.5 scuff (4P 6 of 31, solo 2 of 31).
+4. The 30 s re-check reshuffles everyone's job by position (sign ↔ stand).
+5. "Record shift! (was $0)" on day 3, next to QUOTA MISSED.
+6. The report's bottom bar still covers the shop's rows; "PROMOTED" toast over the Next button.
+7. The dark Club roof fills the top third at the Club spawn.
+8. Gary's arrival: one centre message but five texts on screen.
+9. The fee shortfall is said twice (headline and panel); the headline sits over the Board's dots.
+10. Long lines: the gold-ball debut memo (13 words), "Caked in mud (×1.00)", the day-5 tomorrow line
+    when stamps and fee are in hand.
+11. The day-3 mats line is easy to miss (fine).
+12. Solo Gary is near-impossible (0 of 18): one line names one of three failing stops.
+
+**Checks:** dealt Last Call: 3 different lines in 16 of 32 bells (the rest "On target" for all); Rats in
+3–4 places 10 s later in 31 of 32. Gary deals 3 different stops 15 of 16. Following the dealt rally lines
+won 24 of 24 stamps (4P), 31 of 33 solo. Gary never ran over the ring (0 of 64). Fee headline shows.
+
+**Pace:** 4P 4 shifts (24 min) with one hoser all day, 5 (31 min) dealt-only; solo 5–6 (31–38 min);
+idle never promotes.
+
+**Ideas for council 8**
+1. Gary lines stay up until "Spotless", re-dealt if a stop fails again during the warning (S).
+2. A 5 s countdown from the last stop before the stand (XS).
+3. An Upkeep margin on "On target" (XS).
+4. Keep each Rat's job at the 30 s re-check; re-deal only what changed (XS).
+5. One reason to hose mid-shift at 4P (a refused customer costs real Upkeep or cash) (S).
+- **Cut:** the Record line on review days (endless only).

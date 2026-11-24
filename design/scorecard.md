@@ -107,3 +107,26 @@ load (+1.0) moved most: earned stamps, the gauge and the bell gave each day a go
 the crew still splits only at the bell. Text load is still the lowest score (5): every tester saw two or
 three centre texts at once at the bell or the finale. Biggest drags: the rally pointing at the wrong
 thing (A), gutters switching off Tiered's greens (B), endless having nothing to do (C).
+
+
+## Round 3 (2026-11-24, build f43665a: council round 7 built)
+
+| Metric | A | B | C | **Avg** | R2 avg | R1 avg | Δ vs R1 |
+|---|---|---|---|---|---|---|---|
+| Fun | 6 | 6.5 | 6.5 | **6.3** | 6.3 | 6.0 | +0.3 |
+| Clarity | 6.5 | 7 | 6.5 | **6.7** | 6.0 | 5.7 | +1.0 |
+| Text load | 7 | 7 | 7 | **7.0** | 5.0 | 4.0 | **+3.0** |
+| Pacing | 6 | 6 | 6 | **6.0** | 6.5 | 5.0 | +1.0 |
+| Co-op | 6.5 | 6 | 6.5 | **6.3** | 6.0 | 6.0 | +0.3 |
+| Meaningful features | 6 | 6 | 6 | **6.0** | 5.8 | 4.7 | +1.3 |
+| Look & feel | 7 | 7 | 7.5 | **7.2** | 7.2 | 7.0 | +0.2 |
+| Polish | 6 | 6 | 6.5 | **6.2** | 5.8 | 4.7 | +1.5 |
+| One more shift | 6.5 | 6.5 | 5.5 | **6.2** | 6.2 | 6.0 | +0.2 |
+| **Overall** | **6.5** | **6.5** | **6.5** | **6.5** | 6.2 | 5.5 | **+1.0** |
+
+**Read:** the single centre-text queue landed: Text load 5.0 → 7.0, the biggest single jump so far, and
+every tester counted zero overlapping centre messages. Clarity and Polish keep climbing. Co-op finally
+moved (+0.3): dealt jobs split the crew at Last Call and Gary's warning. Pacing dipped slightly (6.5 →
+6.0): Stadium day 1 was a guaranteed DENIED (fixed since) and the late game's sky gate slid to a morning
+(fixed). What holds Fun at ~6.3: Tiered can't fail once anyone shoots (B), Gary lines that vanish before
+the job is done (A), and endless's record freezing (C).

@@ -100,3 +100,12 @@ export function dealGary(stops, rats) {
   for (const r of left) out[r.id] = (mats ?? stops.reduce((a, s) => (d(r, s) < d(r, a) ? s : a))).id;
   return out;
 }
+
+// Playthrough 3 #1: a Gary line clears only once its stop is Spotless (this much mud or less), not at the pass mark
+// (GARY.CLEAN 0.34), so a hosed stop doesn't scuff straight back into a fail.
+export const GARY_SPOTLESS = 0.1;
+
+// Playthrough 3 #1 and #12: during the warning, a Rat with no line (theirs went Spotless) takes a failing stop nobody
+// holds, nearest first: solo works down the list, and a stop that fails again is dealt again. held: the stop ids
+// still dealt. Returns { [ratId]: stopId } (empty when every failing stop is held).
+export const redealGary = (stops, rats, held = []) => dealGary(stops.filter(s => !held.includes(s.id)), rats);

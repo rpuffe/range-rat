@@ -18,13 +18,14 @@ export const feeHeadline = (promo, cash = 0) =>
     : promo.stamps + ' stamps. ' + money(Math.ceil(promo.fee - cash)) + ' short.';
 
 // promo: crew.snapshot().promo; cash: the crew's cash; signed: did I sign; signedN / onlineN: the counts on the button.
-export function promoPanelHtml(promo, { cash = 0, signed = false, signedN = 0, onlineN = 1, esc = s => String(s) } = {}) {
+// headShown: the report's #fee-head headline already says the shortfall (playthrough 3 #9: say it once, not twice).
+export function promoPanelHtml(promo, { cash = 0, signed = false, signedN = 0, onlineN = 1, esc = s => String(s), headShown = false } = {}) {
   if (!showPromo(promo)) return '';
   const dots = '●'.repeat(Math.min(promo.stamps, promo.need)) + '○'.repeat(Math.max(0, promo.need - promo.stamps));
   return '<div class="sheet promo"><h3>Request promotion: ' + esc(promo.next) + '</h3>' +
     '<p>Review stamps <b>' + dots + '</b></p>' +
     (showFee(promo) ? '<p>Franchise fee <b>' + money(promo.fee) + (promo.ready ? '' : ' · you have ' + money(cash)) + '</b></p>' : '') +
-    (!promo.ready && promo.stamps >= promo.need && promo.fee > cash ? '<p class="note">' + feeShort(promo, cash) + '</p>' : '') +
+    (!headShown && !promo.ready && promo.stamps >= promo.need && promo.fee > cash ? '<p class="note">' + feeShort(promo, cash) + '</p>' : '') +
     (promo.ready ? '<button id="sign-btn">' + (signed ? 'Unsign' : 'Sign the franchise agreement') + ' (' + signedN + ' of ' + onlineN + ' signed)</button>'
       : promo.stamps >= promo.need ? ''
       : '<p class="note">Earn ' + promo.need + ' review stamps (hit the daily quota), then sign at the bell.</p>') + '</div>';
