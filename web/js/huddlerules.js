@@ -3,6 +3,7 @@
 // The server owns the truth (crew.mjs stepHuddle); this only draws it.
 
 import { skyBanner } from './orbit.js';
+import { SIM } from './sim.js';
 
 export const HUDDLE = {
   R: 8,              // the ring round the stand (crew.mjs HUDDLE_R, GARY.HUDDLE_R)
@@ -48,7 +49,7 @@ export function sweepNow(lb, since) {
 
 // The Last Bucket's one banner line (round2.js shows it; one centre text at a time). '' hides it.
 // `glyph` is the Use control (Ⓐ on a pad, SPACE on a keyboard). The huddle line is ≤ 8 words.
-export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = { x: 26, z: 6 }) {
+export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = SIM.STAND) {   // the ball return (owner layout)
   const lb = c?.lastBucket;
   if (!lb || lb.phase === 'done' || c.phase !== 'shift') return '';
   const on = (c.players ?? []).filter(p => p.online);
@@ -57,7 +58,7 @@ export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = { x: 26, z: 6 }) 
   const carrier = on.find(p => p.one);
   if (carrier) {
     const missing = on.filter(p => dist(p, stand) >= HUDDLE.R).map(p => p.id === meId ? 'you' : esc(p.name));
-    return `BALL NO. 1 → THE STAND · <b>${on.length - missing.length} / ${on.length}</b>${missing.length ? ` · waiting: ${missing.slice(0, 3).join(', ')}` : ''}`;
+    return `BALL NO. 1 → THE RETURN · <b>${on.length - missing.length} / ${on.length}</b>${missing.length ? ` · waiting: ${missing.slice(0, 3).join(', ')}` : ''}`;
   }
   return lb.phase === 'down' ? 'BALL NO. 1 IS DOWN · follow the beam' : '';
 }

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Crew } from '../server/crew.mjs';
-import { SHOP, SHOP_BY_ID, nextPrice, shopShows, shopDay } from '../web/js/sim.js';
+import { SHOP, SHOP_BY_ID, nextPrice, shopShows, shopDay, SIM } from '../web/js/sim.js';
 
 function makeCrew(save = null) {
   const clock = { t: 1_000_000 };
@@ -175,7 +175,7 @@ test('doing it clears the line; otherwise it goes after 45 s of working time', (
   const { crew, run, rats } = day2(3);
   const [hoser, far, stander] = rats;
   run(1);
-  stander.pocket = 2; stander.pocketW = 2; stander.x = 26; stander.z = 6; crew.deposit(stander);
+  stander.pocket = 2; stander.pocketW = 2; stander.x = SIM.STAND.x; stander.z = SIM.STAND.z; crew.deposit(stander);
   run(0.1);
   assert.equal(nudges(crew)[stander.id], undefined, 'banked: done');
   far.x = 26; far.z = -76; far.pocket = 1; run(0.1);

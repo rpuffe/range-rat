@@ -31,7 +31,8 @@ export function findStations(scene) {
   for (const o of scene?.children ?? []) {
     if (o.isGroup && near(o, WASHER_AT) && o.children.length > 8) out.washer = o;
     else if (o.isGroup && near(o, SHED_AT)) out.shed = o;
-    else if (o.isMesh && o.geometry?.type === 'TubeGeometry' && Math.abs(o.geometry.parameters?.path?.points?.[0]?.x - (WASHER_AT.x + 0.45)) < 0.01) out.tube = o;
+    else if (o.isMesh && o.geometry?.type === 'TubeGeometry' && Math.abs(o.geometry.parameters?.path?.points?.[0]?.x - WASHER_AT.x) < 0.01
+      && Math.abs(o.geometry.parameters?.path?.points?.[0]?.z - (WASHER_AT.z + 0.45)) < 0.01) out.tube = o;   // washer.js: the chute leaves by the back
   }
   return out;
 }

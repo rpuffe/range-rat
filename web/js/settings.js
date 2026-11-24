@@ -68,7 +68,7 @@ export const HINTS = Object.freeze({
   sprint: { kb: 'Hold Shift to sprint. It costs stamina.', pad: 'Click the right stick to sprint. It costs stamina.' },
   cctv: { kb: 'Press C for Corporate CCTV.', pad: 'D-pad down for Corporate CCTV.' },
   wand: { kb: 'The sign is filthy. Grab the pressure washer by the cart bay: E.', pad: 'The sign is filthy. Grab the pressure washer by the cart bay: Ⓧ.' },
-  bank: { kb: 'Full. The bucket stand pays per ball: E there.', pad: 'Full. The bucket stand pays per ball: Ⓧ there.' },
+  bank: { kb: 'Full. The ball return pays per ball: E there.', pad: 'Full. The ball return pays per ball: Ⓧ there.' },
   // Owner notes (2026-11-24): one tip per new thing, 8 words or fewer; crank and dive fold in "it just appeared".
   crank: { kb: 'Ball washer: hold Click at handle, circle mouse.', pad: 'Ball washer: tap Ⓐ at handle, circle stick.' },
   dive: { kb: 'Walk in to dive. Buddies pump your air.', pad: 'Walk in to dive. Buddies pump your air.' },

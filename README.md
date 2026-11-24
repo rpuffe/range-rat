@@ -45,7 +45,7 @@ night) and the post-1.0 ideas in [design/council-round5.md](design/council-round
 | Sprint | Shift | Click the right stick |
 | Pick up | Left click or Space | Ⓐ |
 | Swing at a crew bay (the real swing, with power) | Hold left click or Space, drag back and flick through | Hold Ⓐ, then pull the right stick back and push through |
-| Bucket stand and ball washer (drop balls, grab or stow the wand) | E | Ⓧ |
+| Ball return and ball washer (drop balls, grab or stow the wand) | E | Ⓧ |
 | Spray the cart (holding the wand) | Hold left click or Space | Hold Ⓐ |
 | Get in / out of the cart (a second cart at the Stadium) | F | Ⓨ |
 | Drive the cart | W/S throttle, A/D steer | RT/LT throttle, left stick steer |
@@ -63,7 +63,7 @@ browser. Add `?pace` to the URL to record a per-shift pace log (see below).
 
 Promotion (review stamps plus a fee, at the overnight report) moves the crew up
 a venue. Each adds a map change, a Board gauge, a chore and a toy; the hub (the
-stand, the washer, the shed, the dock) never moves.
+ball return, the washer, the Board, the shed, the dock) never moves.
 
 | Venue | What it adds |
 | --- | --- |
@@ -79,8 +79,10 @@ Per-venue rules, numbers and files: [design/game-design.md](design/game-design.m
 ## The map: Dimple Creek
 
 The range is built around Dimple Creek: the pond (dry ground at the Muni until
-the creek runs), the Deep End dock for diving, the bucket stand and the big
-Board. The pond's balls sink; the Muni's pond is drained at first.
+the creek runs), the Deep End dock for diving, and the hub: a ball return by
+the mats whose clear pipe runs (through the ball washer, once bought) to the
+big Board's silo, the bank. Customers take a bucket from the basket by the
+BUCKETS machine. The pond's balls sink; the Muni's pond is drained at first.
 
 ## Diving and the EVA
 

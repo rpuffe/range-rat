@@ -12,7 +12,7 @@ import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall
   SHOP_BY_ID, nextPrice, shopDay, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
   gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT, FIXTURES, FIXTURE_BY_ID, KIND_W, BALLS_OUTSTANDING, payFor,
   upkeepCeiling, quotaQ, LAST_CALL, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed, pickKind,
-  VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor, cartGearOf } from '../web/js/sim.js';
+  VENUE_RULES, PROMO_STAMPS, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor, cartGearOf, BANK } from '../web/js/sim.js';
 import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor, cartSpeedAt } from '../web/js/map.js';
 import { VenueHooks, MODULES } from './venues/index.mjs';
 import { debrisLeft } from './venues/orbit.mjs';
@@ -173,7 +173,7 @@ export class Crew {
       token: crypto.randomBytes(16).toString('hex'),
       name: cleanName(name) || `Rat ${this.players.size + 1}`,
       color: COLORS.find(c => !used.has(c)) ?? COLORS[0],
-      x: SIM.STAND.x - 3 - this.players.size * 1.2, z: SIM.STAND.z - 4, yaw: Math.PI / 2,
+      x: SIM.SPAWN.x - this.players.size * 1.2, z: SIM.SPAWN.z, yaw: Math.PI / 2,
       pocket: 0, pocketW: 0, down: 0, online: 0, seenAt: this.now(), movedAt: this.now(), swungAt: 0,
       gear: 0, wand: false, washAt: 0, diving: false, air: POND.AIR, bag: 0, bagW: 0, bagKinds: [], pumping: false,
       dive: 0, treasure: null, pumpTurns: 0, pumpHeld: false, pumpAt: 0, haulHeld: 0, haulAt: 0,
@@ -702,7 +702,7 @@ export class Crew {
     while (this.helpers.length < this.perks.helpers) {
       const i = this.helpers.length;
       this.helpers.push({ id: `h${i}`, name: HELPER_NAMES[i] ?? `Helper ${i + 1}`, helper: true,
-        x: SIM.STAND.x + 2 + i * 1.2, z: SIM.STAND.z + 1.5, yaw: Math.PI, pocket: 0, down: 0, target: null });
+        x: SIM.STAND.x + 2 + i * 1.2, z: SIM.STAND.z - 0.5, yaw: Math.PI, pocket: 0, down: 0, target: null });   // they wait beside the return, on the field side
     }
   }
 
@@ -1144,7 +1144,7 @@ export class Crew {
       for (const o of [...this.players.values(), ...this.helpers]) {     // he drives like he owns the place
         if (stop.id === 'stand') break;          // ...except into the huddle he asked for (playtest)
         if (o.down > 0 || this.driving(o) || this.aloft(o)) continue;
-        if (Math.hypot(o.x - 26, o.z - 6) < GARY.HUDDLE_R) continue;   // nor over anyone in the ring, on any leg (playtest round 2 #2)
+        if (Math.hypot(o.x - SIM.STAND.x, o.z - SIM.STAND.z) < GARY.HUDDLE_R) continue;   // nor over anyone in the ring (round the return), on any leg (playtest round 2 #2)
         if (Math.hypot(o.x - g.x, o.z - g.z) < 1.3) { this.knockDown(o, 'gary'); this.stats.runOver++; }
       }
       return;
@@ -1159,7 +1159,7 @@ export class Crew {
       const fails = g.fails + (ok ? 0 : 1);
       const online = this.online();
       const now = this.now();
-      const huddle = online.length > 0 && online.every(p => Math.hypot(p.x - 26, p.z - 6) < GARY.HUDDLE_R || now - (p.movedAt ?? now) > HUDDLE_IDLE_MS);
+      const huddle = online.length > 0 && online.every(p => Math.hypot(p.x - SIM.STAND.x, p.z - SIM.STAND.z) < GARY.HUDDLE_R || now - (p.movedAt ?? now) > HUDDLE_IDLE_MS);   // the huddle is at the return
       const gained = fails <= 1 ? Math.min(10 - this.commendations, huddle ? 2 : 1) : 0;
       this.commendations += gained;
       g.phase = 'done';
@@ -1728,7 +1728,7 @@ function tomorrowText(day, venue, endless, ready = false) {
   if (endless) return 'Tomorrow: Range Rats LLC opens as usual. The job never ends.';
   if (day === 2) return 'Tomorrow: a target. Hose before the bell.';
   if (day === 3) return 'Tomorrow: the first gold balls. Worth ten.';
-  if (day === 4) return 'Tomorrow: Gary from Regional inspects. Clean everything, then huddle at the stand.';
+  if (day === 4) return 'Tomorrow: Gary from Regional inspects. Clean everything, then huddle at the return.';
   if (venue === 0 && ready) return 'Tomorrow: sign at the bell for the Club.';
   if (venue === 0) return 'Tomorrow: three review stamps plus the fee earn the Range Club.';
   return 'Tomorrow: more balls. Corporate thanks you for your continued compliance.';

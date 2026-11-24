@@ -12,7 +12,8 @@
 // it can't find is skipped. Station props attach to the station's own group, in its local
 // frame, so a later rotation of a group carries them along.
 import * as THREE from 'three';
-import { SIM, WASH, FRIES, MATS, BAYS } from './sim.js';
+import { SIM, WASH, FRIES, MATS, BAYS, BANK } from './sim.js';
+import { BASKET } from './layout.js';
 import { MAP } from './map.js';
 import { WASHER_POS } from './washer.js';
 import { detailFor, emit, wetStep, sagPoints, rollAngle, gaugeAngle, ease, throttle, rng, lightBalance } from './detail.js';
@@ -215,7 +216,7 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     const blobs = [
       [SIM.STAND.x, SIM.STAND.z, 2.8, 2.0], [WASHER_POS.x, WASHER_POS.z, 1.4, 1.4], [WASH.STATION.x, WASH.STATION.z, 1.6, 1.3],
       [FRIES.SHED.x, FRIES.SHED.z + 2.25, 4.0, 3.4], [23.5, 8.5, 1.4, 1.2], [18, 8.7, 2.2, 0.9], [-14, 8.7, 2.2, 0.9], [48, 6.5, 2.2, 0.9],
-      [20.5, 8.8, 0.9, 0.9], [-9, 8.7, 0.9, 0.9], [45.5, 6.5, 0.9, 0.9], [-16.5, 8.7, 0.9, 0.9], [SIM.STAND.x, SIM.STAND.z + 1.2, 1.4, 1.4],
+      [20.5, 8.8, 0.9, 0.9], [-9, 8.7, 0.9, 0.9], [45.5, 6.5, 0.9, 0.9], [-16.5, 8.7, 0.9, 0.9], [BANK.x, BANK.z + 1.2, 1.4, 1.4], [BASKET.x, BASKET.z, 0.9, 0.9],
     ];
     const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ map: softDot, color: 0x000000, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }), blobs.length);
@@ -226,7 +227,7 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     const dirt = [];
     for (const m of MATS) dirt.push([m.x, 1.25, 1.5, 1.0, R(0, 3)]);
     for (let x = -20; x <= 20; x += 2.6) dirt.push([x + R(-0.6, 0.6), 2.4 + R(-0.4, 0.4), R(2.2, 3.2), R(0.9, 1.4), R(-0.3, 0.3)]);   // the walkway behind the mats
-    dirt.push([SIM.STAND.x, SIM.STAND.z - 1.0, 3.4, 1.8, 0], [SIM.STAND.x - 2.6, SIM.STAND.z - 0.6, 2.4, 1.3, 0.4], [23.5, 7.6, 1.8, 1.2, 0]);
+    dirt.push([SIM.STAND.x, SIM.STAND.z - 1.0, 3.4, 1.8, 0], [SIM.STAND.x - 2.6, SIM.STAND.z - 0.6, 2.4, 1.3, 0.4], [BASKET.x, BASKET.z - 0.7, 1.8, 1.2, 0]);   // the return's apron; the customers' spot at the basket
     marks.of.washer.dirt.push(dirt.length, dirt.length + 1);
     dirt.push([WASHER_POS.x - 1.4, WASHER_POS.z, 1.1, 1.1, 0], [WASHER_POS.x + 1.4, WASHER_POS.z, 1.1, 1.1, 0]);   // where the crankers stand
     marks.of.shed.dirt.push(dirt.length + 3);
@@ -587,7 +588,7 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     }
   }
 
-  // ---------------------------------------------------------------- the bucket stand and the dispenser
+  // ---------------------------------------------------------------- the ball return (the old bucket stand) and the dispenser
   const disp = { win: null, level: -1, ctx: null, tex: null };
   if (found.stand) {
     const s = found.stand, orig = [...s.children];
@@ -595,12 +596,12 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     add(s, merge([[-0.98, -0.58], [0.98, -0.58], [-0.98, 0.58], [0.98, 0.58]].map(([x, z]) => [new THREE.BoxGeometry(0.07, 1.02, 0.07), mtx(x, 0.51, z)])), M(0x5e3c20, 0.85, 0), 0, 0, 0, { shadow: true });
     add(s, new THREE.BoxGeometry(2.08, 0.05, 1.28), M(0x5e3c20, 0.85, 0), 0, 1.02, 0);
     const sten = canvasTex(256, 96, (x, w, h) => {
-      x.fillStyle = 'rgba(245,240,225,0.85)'; x.font = 'bold 40px Impact, system-ui, sans-serif'; x.textAlign = 'center'; x.fillText('BANK BALLS', w / 2, 46);
+      x.fillStyle = 'rgba(245,240,225,0.85)'; x.font = 'bold 40px Impact, system-ui, sans-serif'; x.textAlign = 'center'; x.fillText('BALL RETURN', w / 2, 46);
       x.font = 'italic 18px system-ui, sans-serif'; x.fillText('Every Ball Matters.™', w / 2, 78);
       x.globalCompositeOperation = 'destination-out'; const r = rng(4); for (let i = 0; i < 260; i++) x.fillRect(r() * w, r() * h, 2, 2);
     });
     decal(s, 1.4, 0.52, sten, 0, 0.55, -0.606, { ry: Math.PI, alpha: true });
-    // A stack of wire buckets beside the stand, dented, and one knocked over.
+    // A stack of wire buckets beside the return (the Rats' own), dented, and one knocked over.
     const wireTex = canvasTex(64, 32, (x, w, h) => { x.strokeStyle = '#fff'; x.lineWidth = 2; for (let i = 0; i <= 8; i++) { x.beginPath(); x.moveTo(i * 8, 0); x.lineTo(i * 8, h); x.stroke(); } for (let j = 0; j <= 4; j++) { x.beginPath(); x.moveTo(0, j * 8); x.lineTo(w, j * 8); x.stroke(); } }, { srgb: false });
     const wireMat = D.standard ? new THREE.MeshStandardMaterial({ color: 0xb9c0c8, alphaMap: wireTex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.4, metalness: 0.7 })
       : new THREE.MeshLambertMaterial({ color: 0xb9c0c8, alphaMap: wireTex, alphaTest: 0.5, side: THREE.DoubleSide });

@@ -9,7 +9,7 @@
 //
 // The builders read their yaw (and, where practical, their position) from this table, and tag each mesh with
 // tagSign(mesh, id). `?signs` (signsdebug.js) then compares every tagged mesh's world normal with the table.
-import { SIM, MATS, WASHER, FRIES, FIXTURE_BY_ID, POND } from './sim.js';
+import { SIM, MATS, WASHER, FRIES, FIXTURE_BY_ID, POND, BANK } from './sim.js';
 import { MAP } from './map.js';
 
 export const yawOf = n => Math.atan2(n.x, n.z);
@@ -22,15 +22,15 @@ const flip = n => ({ x: -n.x, y: -n.y, z: -n.z });
 
 // ---- the places players stand ----------------------------------------------------------------------------------
 export const VIEWERS = {
-  spawn: at(SIM.STAND.x - 3, SIM.STAND.z - 4),     // where a Rat drops in (main.js `me`)
-  standFront: at(SIM.STAND.x, 3),
+  spawn: at(SIM.SPAWN.x, SIM.SPAWN.z),             // where a Rat drops in (main.js `me`)
+  standFront: at(SIM.STAND.x, SIM.STAND.z - 1),    // in front of the ball return (owner layout), where everyone banks
   teeCentre: at(0, 0.5),                          // the middle of the mat line
   mat1: at(MATS[0].x, 0.5), mat10: at(MATS[9].x, 0.5),
   walkway: at(-3, 4),                             // just inside the gate
   path: at(12, 5.5),                              // the customers' path along the yard (scenery.js ENTRANCE.path)
   lotPath: at(-3, 28),                            // outside: the path from the lot to the gate
   reveal: { x: 20, y: 6, z: 22 },                 // the promotion reveal camera (round2.js REVEAL_POS)
-  fieldBack: at(SIM.STAND.x, -40),                // out on the range, turned round to the yard
+  fieldBack: at(BANK.x, -40),                     // out on the range, turned round to the yard
   fieldMid: at(0, -20),
   kerbLeft: at(MAP.FIELD.xMin, -30),
   track: at(MAP.TRACK.x, MAP.TRACK.z),
@@ -58,17 +58,18 @@ export const SIGNS = [
   // The Board over the stand (DAYS WITHOUT AN INCIDENT and the slogans ride its banner).
   // Turned 35° toward the gate (playtest: it was edge-on to anyone walking the path from the lot); it
   // now also reads far better from the middle of the mat line.
-  { id: 'board.front', file: 'board.js', pos: { x: SIM.STAND.x, y: 5, z: SIM.STAND.z + 1.26 }, normal: facing(BOARD_YAW), viewers: ['reveal'] },
-  { id: 'board.back', file: 'board.js', pos: { x: SIM.STAND.x, y: 5, z: SIM.STAND.z + 1.14 }, normal: facing(BOARD_YAW + Math.PI),
+  // Owner layout: the Board stays at the bank (BANK, the old stand spot) and reads from the ball return in front.
+  { id: 'board.front', file: 'board.js', pos: { x: BANK.x, y: 5, z: BANK.z + 1.26 }, normal: facing(BOARD_YAW), viewers: ['reveal'] },
+  { id: 'board.back', file: 'board.js', pos: { x: BANK.x, y: 5, z: BANK.z + 1.14 }, normal: facing(BOARD_YAW + Math.PI),
     viewers: ['spawn', 'standFront', 'fieldBack', 'path', 'teeCentre'] },
-  // The ball washer: BALL WASHER angled toward the path and the drop-in spot, a back face for anyone behind it,
-  // and the UNWASHED board on the front of the post.
+  // The ball washer, on the pipe between the return and the bank (owner layout): BALL WASHER angled toward the
+  // drop-in spot and the return, a back face for anyone behind it, and the UNWASHED board on the front of the post.
   { id: 'washer.sign', file: 'washer.js', pos: { x: WASHER.x, y: 2.3, z: WASHER.z }, normal: facing(Math.PI + 0.55),
-    viewers: ['spawn', 'path', 'fieldMid'] },
+    viewers: ['spawn', 'standFront', 'fieldMid'] },
   { id: 'washer.sign.back', file: 'washer.js', pos: { x: WASHER.x, y: 2.3, z: WASHER.z }, normal: flip(facing(Math.PI + 0.55)),
     viewers: [at(WASHER.x, 8.8)] },
   { id: 'washer.board', file: 'washer.js', pos: { x: WASHER.x, y: 0.85, z: WASHER.z - 0.19 }, normal: facing(WASHER_YAW),
-    viewers: ['spawn', at(WASHER.x, 3.5)] },
+    viewers: ['standFront', at(WASHER.x + 1, WASHER.z - 2.8)] },
   // The snack shed and, from the Club, its KITCHEN board under the eave.
   { id: 'shed.sign', file: 'main.js', pos: { x: FRIES.SHED.x, y: 2.15, z: SHED_Z - 1.22 }, normal: SOUTH,
     viewers: [at(FRIES.SHED.x, FRIES.SHED.z), at(FRIES.SHED.x - 4, 0)] },
@@ -88,7 +89,7 @@ export const SIGNS = [
   { id: 'lostfound', file: 'scuba.js', from: 1, pos: { x: POND.DOCK.x + 3.4, y: 0.25, z: POND.DOCK.z + 1.2 + 0.35 }, normal: NORTH,
     viewers: [at(POND.DOCK.x + 3.4, POND.DOCK.z + 6.5), at(0, -50)] },
   // The Stadium jumbotron, behind the stand.
-  { id: 'jumbo', file: 'venues.js', from: 3, pos: { x: SIM.STAND.x, y: 12.8, z: 14 - 0.31 }, normal: SOUTH,
+  { id: 'jumbo', file: 'venues.js', from: 3, pos: { x: BANK.x, y: 12.8, z: 14 - 0.31 }, normal: SOUTH,
     viewers: ['standFront', 'track', 'fieldBack'] },
   // COUNTY LINE, out past the left kerb.
   { id: 'county', file: 'venues.js', from: 4, pos: { x: -118.9, y: 2.6, z: -30 }, normal: { x: 1, y: 0, z: 0 },

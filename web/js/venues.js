@@ -90,7 +90,7 @@ export function createVenues(scene) {
       // old shed position). Faces the counter side (-z).
       const K = SIGN_BY_ID.kitchen, k = textPlane('KITCHEN', 2.0, 0.5, '#fff8ec', '#8a3b2e', 38, false);
       k.position.set(K.pos.x, K.pos.y, K.pos.z); k.rotation.y = yawOf(K.normal); g.add(tagSign(k, 'kitchen'));
-      // two club flags on the stand (26, 6)
+      // two club flags at the bank (the Board, sim.js BANK 26, 6; the ball return moved to the mats)
       for (const dx of [-1.8, 1.8]) {
         const pole = box(0.07, 5, 0.07, lambert(0xcccccc), 26 + dx, 2.5, 6.0); g.add(pole);
         const geo = new THREE.PlaneGeometry(1.4, 0.8); geo.translate(0.7, 0, 0);
@@ -153,7 +153,7 @@ export function createVenues(scene) {
         im.frustumCulled = false; sg.add(im);
         live.crowd.push({ im, base, side: side < 0 ? 'left' : 'right', stand: sg, m: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1.2, 1), p: new THREE.Vector3() });
       }
-      // jumbotron frame behind the stand (stand 26,6; board at z 7.2)
+      // jumbotron frame behind the bank (sim.js BANK 26,6; board at z 7.2)
       const fr = lambert(0x2a2d33), j = new THREE.Group();
       for (const dx of [-5.4, 5.4]) j.add(box(0.4, 16, 0.4, fr, dx, 8, 0));
       j.add(box(11.2, 0.4, 0.6, fr, 0, 16, 0)); j.add(box(11.2, 0.4, 0.6, fr, 0, 9.6, 0));

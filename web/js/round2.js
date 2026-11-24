@@ -5,7 +5,7 @@
 // main.js hands over a context of the things it owns and calls these hooks.
 
 import * as THREE from 'three';
-import { WASHER_HANDLES, atHandle, WASH, VENUE_RULES, gearGrimeFactor, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
+import { WASHER_HANDLES, WASHER, atHandle, WASH, VENUE_RULES, gearGrimeFactor, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
 import { createPA } from './pa.js';
 import { streakLine } from './owner.js';                                         // council round 8 #3: racing yesterday
 import { showPromo, promoPanelHtml, feeHeadline } from './promopanel.js';   // council round 6 #7: the fee line from 2 stamps; round 7 #10.1 the headline
@@ -68,8 +68,8 @@ export function setupRound2(ctx) {
         washer.washed(Math.min(10, e.n));
         if (e.by === me.id) SFX.cash(e.n);
         // The machine washes every 0.5 s: one rolling popup every 2 s instead of a stack (playtest).
-        if (e.cash > 0 && e.by === 'machine') { machineCash += e.cash; if (now() - machineAt > 2000) { board.floatText(21.5, 2.6, 6, '+' + money(Math.round(machineCash * 100) / 100) + ' · washer', '#9fe8ff'); machineCash = 0; machineAt = now(); } }
-        else if (e.cash > 0) board.floatText(21.5, 2.6, 6, '+' + money(e.cash), '#9fe8ff');
+        if (e.cash > 0 && e.by === 'machine') { machineCash += e.cash; if (now() - machineAt > 2000) { board.floatText(WASHER.x, 2.6, WASHER.z, '+' + money(Math.round(machineCash * 100) / 100) + ' · washer', '#9fe8ff'); machineCash = 0; machineAt = now(); } }
+        else if (e.cash > 0) board.floatText(WASHER.x, 2.6, WASHER.z, '+' + money(e.cash), '#9fe8ff');
         break;
       case 'grime':
         // Playthrough 3 #10: plain words, no "(×1.00)" (the Gear multiplier lives on the HUD).
@@ -92,7 +92,7 @@ export function setupRound2(ctx) {
       case 'huddle': break;   // the Last Bucket banner (tick) shows who is still missing
       case 'lastbucket':
         if (e.phase === 'falling') toast('Corporate has paused the sun.', 3);
-        if (e.phase === 'carried' && !e.back) ctx.say('ALERT', e.by === me.id ? 'You have Ball No. 1. Walk it home.' : nameOf(e.by) + ' has Ball No. 1. To the stand!', { key: 'one', secs: 4 });
+        if (e.phase === 'carried' && !e.back) ctx.say('ALERT', e.by === me.id ? 'You have Ball No. 1. Walk it home.' : nameOf(e.by) + ' has Ball No. 1. To the return!', { key: 'one', secs: 4 });
         if (e.phase === 'banked') {
           ring.hide(); holdingUse = false;
           // Two confetti cannons at the stand and the crowd's roar, then the $∞ finale (round 6 #5).

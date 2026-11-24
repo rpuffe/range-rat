@@ -14,7 +14,7 @@ export const NUDGE = {
 export const NUDGE_TEXT = {
   hose: 'Try hosing the mats.',
   far: 'Try picking the far field.',
-  stand: 'Try banking at the stand.',
+  stand: 'Try banking at the ball return.',
   washer: 'Try the ball washer crank.',
   shop: 'Try the shop: get a washer.',
 };
@@ -75,13 +75,13 @@ export function nudgeTarget(id, wand = false, at = { x: 0, z: 0 }, { cart = null
 export const GARY_TEXT = {
   sign: 'Gary checks the sign. Hose it!',
   mats: 'Gary checks the mats. Hose them!',
-  stand: 'Gary checks the stand. Hose it!',
+  stand: 'Gary checks the return. Hose it!',
   cart: 'Gary checks the cart. Hose it!',
   kitchen: "Gary's hungry. Serve a hot dog!",
   // Council round 8 #2: no duplicate stops. An extra Rat stalls him while something fails, else meets him at the
   // stand (a full huddle counts twice). 'meet', not 'stand': gary:stand is already the hose-the-stand line.
   stall: 'Stall Gary: ping his cart!',
-  meet: 'All clean. Meet Gary at the stand!',
+  meet: 'All clean. Meet Gary at the return!',
 };
 // The two lines that aren't a stop (nothing to hose, nothing to clear at Spotless).
 export const GARY_EXTRA = ['stall', 'meet'];

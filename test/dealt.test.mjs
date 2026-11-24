@@ -26,7 +26,7 @@ test('dealGary: nearest first, one failing stop each, extras stall Gary (round 8
   assert.deepEqual(dealGary([], [{ id: 'a', x: 0, z: 0 }]), { a: 'meet' }, 'nothing failing: meet him at the stand');
   assert.deepEqual(dealGary([{ id: 'sign', x: 14, z: 13 }], [{ id: 'a', x: 0, z: 0 }, { id: 'b', x: 1, z: 1 }]), { b: 'sign', a: 'stall' }, 'one stop, two Rats: the nearer hoses, the other stalls');
   assert.equal(nudgeLine('gary:stall'), 'Stall Gary: ping his cart!');
-  assert.equal(nudgeLine('gary:meet'), 'All clean. Meet Gary at the stand!');
+  assert.equal(nudgeLine('gary:meet'), 'All clean. Meet Gary at the return!');
   assert.deepEqual(nudgeTarget('gary:stall', false, {}, { gary: { x: 40, z: 12 } }), { x: 40, z: 12, y: 2.6, s: 1 });
   assert.ok(nudgeTarget('gary:meet'));
   for (const l of Object.values(GARY_TEXT)) assert.ok(l.split(/\s+/).length <= 8, l);

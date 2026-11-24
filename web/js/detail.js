@@ -29,6 +29,7 @@ export function detailFor(profile = {}) {
     splash: low ? 0 : steps >= 1 ? 10 : 20, // droplets per second bouncing up where the spray lands
     sparkle: low ? 5 : 14,                  // glints when a mat comes clean
     jet: low ? 16 : 48,                     // crewmates' spray droplets (from their nozzle)
+    pipeBalls: low ? 8 : 24,                // owner layout: balls rolling down the return's pipe at once (one InstancedMesh)
   };
 }
 
