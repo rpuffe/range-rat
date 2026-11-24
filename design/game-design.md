@@ -91,8 +91,37 @@ lives in `web/js/sim.js` (`SHOP`, `perks`).
 | Shoes | Walk 15% / 30% / 45% faster ($15 / $45 / $120) |
 | Hard hats | Knockdowns last 1 s instead of 2.2 ($35) |
 
-Still to come: the caged cart, range expansions (cash plus stars), and the
-side jobs.
+| Picker cart | Caged picker cart $600 (holds 300, 2.4 m reels, 9 m/s) → wide gang reels $1500 (holds 600, 4.2 m, 11 m/s) |
+
+Still to come: range expansions (cash plus stars), and the side jobs.
+
+## The cart and Hit the Cart (built)
+
+- There's one cart per crew, parked by the stand, and whoever climbs in
+  drives (E / Ⓨ). It gets a chase camera.
+- The reels scoop up resting balls in their lane, and the hopper unloads
+  itself within reach of the bucket stand.
+- The cage makes the driver immune to ball hits. Driving faster than 3 m/s
+  through someone on foot knocks them flat.
+- Each morning a driverless cart goes back to its parking spot. At closing
+  its load is banked.
+- **Crew bays** are two orange mats beside the customers. Hold use to wind
+  up (a full second is a full swing), aim with your view (looking up lofts
+  it), and release.
+  - You hit balls from your own pocket, so swinging never creates money.
+  - Your own swing can't hit you.
+  - There's a 0.8 s cooldown between swings.
+- A crew ball that rings the cage while someone drives is a **PING** and pays
+  the whole crew one prize:
+  - jackpot (40%): every resting ball within 15 m goes into the hopper
+  - turbo (30%): ×1.6 cart speed for 20 s
+  - multiplier (30%): ball price +1×, up to ×3, for the rest of the day
+- A customer's ball, or a ball off an empty cart, just goes ping.
+
+**Controls are split so nothing guesses:**
+- Use (left click / Space / Ⓐ) picks up, or swings at a bay.
+- Bucket is E / Ⓧ.
+- Cart is E / Ⓨ.
 
 ## Jobs (anyone, anytime)
 

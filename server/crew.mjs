@@ -1,16 +1,21 @@
 // A crew: up to 6 players sharing one range. The server owns everything that
-// players could fight over (balls, pockets, cash, the shift clock); a player's
-// own position is theirs to report, clamped to a plausible walking speed.
+// players could fight over (balls, pockets, the cart, cash, the shift clock);
+// a player's own position (and the cart's, while they drive it) is theirs to
+// report, clamped to a plausible speed.
 
 import crypto from 'node:crypto';
 import { SIM, MATS, activeMats, mulberry32, swingGap, launch, spill, advanceBall, ballHitsPlayer, atStand, clampToField,
-  SHOP_BY_ID, nextPrice, perks, HELPER_NAMES } from '../web/js/sim.js';
+  SHOP_BY_ID, nextPrice, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart } from '../web/js/sim.js';
 
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: codes get read aloud
 export const CODE_LEN = 4;
 const COLORS = ['#e8604c', '#4c9be8', '#f2c94c', '#6fcf7c', '#b07ce8', '#f29e4c'];
 const GRACE_MS = 60_000;          // an offline player keeps their spot this long (page reloads)
+const DRIVER_GRACE_MS = 5_000;    // an offline driver gives up the cart this fast
 const NAME_MAX = 16;
+
+// What a ping on the cage pays out, and how often.
+export const PING_PRIZES = [['jackpot', 0.4], ['boost', 0.3], ['mult', 0.3]];
 
 export const newCode = () => Array.from(crypto.randomBytes(CODE_LEN), b => CODE_CHARS[b % CODE_CHARS.length]).join('');
 export const validCode = c => typeof c === 'string' && c.length === CODE_LEN && [...c].every(ch => CODE_CHARS.includes(ch));
@@ -20,7 +25,7 @@ export function cleanName(s) {
   return [...s].slice(0, NAME_MAX).join('').trim();
 }
 
-const freshStats = () => ({ picked: 0, deposited: 0, cash: 0, knockdowns: 0, helped: 0 });
+const freshStats = () => ({ picked: 0, deposited: 0, cash: 0, knockdowns: 0, helped: 0, carted: 0, swings: 0, pings: 0, runOver: 0 });
 
 // Only known items, only whole tiers inside the catalog.
 function cleanUpgrades(up) {
@@ -47,7 +52,9 @@ export class Crew {
     this.up = cleanUpgrades(save?.up);
     this.perks = perks(this.up);
     this.helpers = [];
-    this.hireHelpers();
+    this.cart = null;
+    this.mult = 1;                 // Hit the Cart's price multiplier, for the rest of the shift
+    this.applyUpgrades();
     this.phase = 'lobby';          // lobby -> shift -> report -> shift ...
     this.shiftT = 0;
     this.stats = freshStats();
@@ -69,7 +76,7 @@ export class Crew {
       name: cleanName(name) || `Rat ${this.players.size + 1}`,
       color: COLORS.find(c => !used.has(c)) ?? COLORS[0],
       x: SIM.STAND.x - 3 - this.players.size * 1.2, z: SIM.STAND.z - 4, yaw: Math.PI / 2,
-      pocket: 0, down: 0, online: 0, seenAt: this.now(), movedAt: this.now(),
+      pocket: 0, down: 0, online: 0, seenAt: this.now(), movedAt: this.now(), swungAt: 0,
     };
     this.players.set(p.id, p);
     this.events.push({ t: 'join', id: p.id, name: p.name });
@@ -86,6 +93,19 @@ export class Crew {
   connect(p) { p.online++; p.seenAt = this.now(); this.lastActive = this.now(); }
   disconnect(p) { p.online = Math.max(0, p.online - 1); p.seenAt = this.now(); }
   onlineCount() { let n = 0; for (const p of this.players.values()) if (p.online > 0) n++; return n; }
+  driving(p) { return !!this.cart && this.cart.driver === p.id; }
+
+  // ---- money -------------------------------------------------------------------
+
+  ballPrice() { return this.perks.price * this.mult; }
+
+  bank(n, by, kind = null) {
+    if (n <= 0) return;
+    const cash = n * this.ballPrice();
+    this.cash += cash; this.stats.deposited += n; this.stats.cash += cash; this.dirty = true;
+    if (kind === 'helper') this.stats.helped += n;
+    this.events.push({ t: 'cash', by, n, cash, kind });
+  }
 
   // ---- inputs ----------------------------------------------------------------
 
@@ -93,7 +113,8 @@ export class Crew {
     const now = this.now();
     p.seenAt = now; this.lastActive = now;
     const denied = [];
-    if (Number.isFinite(msg.x) && Number.isFinite(msg.z) && p.down <= 0) {
+    if (this.driving(p)) this.driveTo(p, msg.cart, now);
+    else if (Number.isFinite(msg.x) && Number.isFinite(msg.z) && p.down <= 0) {
       // Trust the reported position up to a generous walking speed.
       const dt = Math.min(1, Math.max(0.05, (now - p.movedAt) / 1000));
       const max = this.perks.walk * 1.5 * dt + 0.5;
@@ -103,19 +124,22 @@ export class Crew {
       p.x += dx; p.z += dz; clampToField(p);
       p.movedAt = now;
     }
-    if (Number.isFinite(msg.yaw)) p.yaw = msg.yaw;
+    if (Number.isFinite(msg.yaw) && !this.driving(p)) p.yaw = msg.yaw;
     for (const a of Array.isArray(msg.a) ? msg.a.slice(0, 8) : []) {
-      if (a?.t === 'pickup' && !this.pickup(p, a.ball)) denied.push(a.ball);
+      if (a?.t === 'pickup') { if (!(a.cart ? this.cartPickup(p, a.ball) : this.pickup(p, a.ball))) denied.push(a.ball); }
       else if (a?.t === 'deposit') this.deposit(p);
       else if (a?.t === 'start') this.startShift();
       else if (a?.t === 'buy') this.buy(p, a.id);
+      else if (a?.t === 'board') this.board(p);
+      else if (a?.t === 'leave') this.leaveCart(p);
+      else if (a?.t === 'swing') this.swing(p, a);
     }
     return { denied };
   }
 
   pickup(p, id) {
     const b = this.balls.get(id);
-    if (!b || p.down > 0 || p.pocket >= this.perks.pocket || this.phase === 'lobby') return false;
+    if (!b || p.down > 0 || this.driving(p) || p.pocket >= this.perks.pocket || this.phase === 'lobby') return false;
     if (b.y > 0.4) return false;                           // still in the air
     if (Math.hypot(b.x - p.x, b.z - p.z) > this.perks.reach + 1) return false;  // slack for a rolling ball
     this.balls.delete(id);
@@ -126,10 +150,9 @@ export class Crew {
 
   deposit(p) {
     if (p.pocket <= 0 || p.down > 0 || !atStand(p)) return;
-    const n = p.pocket, cash = n * this.perks.price;
+    const n = p.pocket;
     p.pocket = 0;
-    this.cash += cash; this.stats.deposited += n; this.stats.cash += cash; this.dirty = true;
-    this.events.push({ t: 'cash', by: p.id, n, cash });
+    this.bank(n, p.id);
   }
 
   // The shop is open overnight and before the first shift, never mid-shift.
@@ -139,11 +162,120 @@ export class Crew {
     if (price === null || price > this.cash) return false;
     this.cash -= price;
     this.up[id] = (this.up[id] ?? 0) + 1;
-    this.perks = perks(this.up);
-    this.hireHelpers();
+    this.applyUpgrades();
     this.dirty = true;
     this.events.push({ t: 'buy', by: p.id, id, level: this.up[id], price });
     return true;
+  }
+
+  applyUpgrades() {
+    this.perks = perks(this.up);
+    this.hireHelpers();
+    if (this.perks.cart && !this.cart) {
+      this.cart = { ...CART.PARK, v: 0, driver: null, load: 0, boostT: 0, movedAt: this.now() };
+    }
+  }
+
+  // ---- the cart --------------------------------------------------------------
+
+  board(p) {
+    const c = this.cart;
+    if (!c || c.driver || p.down > 0 || Math.hypot(c.x - p.x, c.z - p.z) > CART.BOARD_REACH) return false;
+    c.driver = p.id; c.movedAt = this.now(); c.v = 0;
+    p.x = c.x; p.z = c.z;
+    this.events.push({ t: 'board', by: p.id });
+    return true;
+  }
+
+  leaveCart(p) {
+    const c = this.cart;
+    if (!c || c.driver !== p.id) return false;
+    c.driver = null; c.v = 0;
+    // Step out on the driver's side.
+    p.x = c.x - Math.cos(c.yaw) * 1.4; p.z = c.z + Math.sin(c.yaw) * 1.4; clampToField(p);
+    p.yaw = c.yaw; p.movedAt = this.now();
+    this.events.push({ t: 'unboard', by: p.id });
+    return true;
+  }
+
+  // The driver reports where the cart is; the server keeps it plausible.
+  driveTo(p, pose, now) {
+    const c = this.cart;
+    if (!pose || !Number.isFinite(pose.x) || !Number.isFinite(pose.z)) return;
+    const dt = Math.min(1, Math.max(0.05, (now - c.movedAt) / 1000));
+    const vmax = this.perks.cartSpeed * (c.boostT > 0 ? CART.BOOST : 1);
+    const max = vmax * 1.3 * dt + 0.6;
+    let dx = pose.x - c.x, dz = pose.z - c.z;
+    const d = Math.hypot(dx, dz);
+    if (d > max) { dx *= max / d; dz *= max / d; }
+    c.x += dx; c.z += dz;
+    c.x = Math.max(SIM.FIELD.xMin, Math.min(SIM.FIELD.xMax, c.x));
+    c.z = Math.max(SIM.FIELD.zMin, Math.min(SIM.FIELD.zMax + 6, c.z));
+    if (Number.isFinite(pose.yaw)) c.yaw = pose.yaw;
+    c.v = Math.min(d, max) / dt;
+    c.movedAt = now;
+    p.x = c.x; p.z = c.z; p.yaw = c.yaw;
+    // Anyone on foot in the way goes flying.
+    if (c.v > CART.RUN_OVER_SPEED) {
+      for (const o of [...this.players.values(), ...this.helpers]) {
+        if (o === p || o.down > 0 || this.driving(o)) continue;
+        if (Math.hypot(o.x - c.x, o.z - c.z) < 1.3) { this.knockDown(o, 'cart'); this.stats.runOver++; }
+      }
+    }
+  }
+
+  cartPickup(p, id) {
+    const c = this.cart, b = this.balls.get(id);
+    if (!b || !c || c.driver !== p.id || c.load >= this.perks.cartCap || this.phase === 'lobby') return false;
+    if (b.y > 0.4) return false;
+    const rx = c.x - Math.sin(c.yaw) * CART.REEL_AHEAD, rz = c.z - Math.cos(c.yaw) * CART.REEL_AHEAD;
+    if (Math.hypot(b.x - rx, b.z - rz) > this.perks.cartReel / 2 + 1.5) return false;   // slack for lag
+    this.balls.delete(id);
+    c.load++; this.stats.picked++; this.stats.carted++; this.dirty = true;
+    this.events.push({ t: 'gone', id, by: p.id });
+    return true;
+  }
+
+  // ---- Hit the Cart ----------------------------------------------------------
+  // From a crew bay you hit the balls you're carrying. One that rings the cage
+  // while someone's driving pays the whole crew.
+
+  swing(p, a) {
+    const now = this.now();
+    if (this.phase !== 'shift' || p.down > 0 || this.driving(p) || p.pocket <= 0) return false;
+    if (now - p.swungAt < SIM.SWING_COOLDOWN * 1000) return false;
+    const bay = BAYS.find(b => Math.hypot(p.x - b.x, p.z - b.z) < BAY_REACH);
+    if (!bay || ![a.yaw, a.pitch, a.power].every(Number.isFinite)) return false;
+    p.pocket--; p.swungAt = now;
+    this.stats.swings++;
+    const b = this.addBall(swingLaunch(bay, a.yaw, a.pitch, a.power));
+    if (b) b.by = p.id;
+    return true;
+  }
+
+  ping(b) {
+    const c = this.cart;
+    b.pinged = true;
+    b.vx *= -0.3; b.vz *= -0.3; b.vy = Math.abs(b.vy) * 0.4;    // it rattles off the cage
+    if (!b.by || !c.driver || this.phase !== 'shift') {          // a customer's ball, or nobody driving: just noise
+      this.events.push({ t: 'ping', by: b.by ?? null });
+      return;
+    }
+    this.stats.pings++; this.dirty = true;
+    let r = this.rng(), prize = PING_PRIZES[PING_PRIZES.length - 1][0];
+    for (const [name, w] of PING_PRIZES) { if (r < w) { prize = name; break; } r -= w; }
+    let n = 0;
+    if (prize === 'jackpot') {
+      for (const o of [...this.balls.values()]) {
+        if (c.load >= this.perks.cartCap) break;
+        if (!o.rest || Math.hypot(o.x - c.x, o.z - c.z) > CART.JACKPOT_R) continue;
+        this.balls.delete(o.id); c.load++; n++;
+        this.stats.picked++; this.stats.carted++;
+        this.events.push({ t: 'gone', id: o.id, by: c.driver });
+      }
+    } else if (prize === 'boost') c.boostT = CART.BOOST_SECS;
+    else this.mult = Math.min(CART.MAX_MULT, this.mult + 1);
+    this.events.push({ t: 'ping', by: b.by, prize, n, mult: this.mult });
   }
 
   // ---- hired help ----------------------------------------------------------
@@ -186,10 +318,8 @@ export class Crew {
       if (!goal) continue;
       const dx = goal.x - h.x, dz = goal.z - h.z, d = Math.hypot(dx, dz);
       if (goal === SIM.STAND && atStand(h)) {
-        const cash = h.pocket * this.perks.price;
-        this.cash += cash; this.stats.deposited += h.pocket; this.stats.helped += h.pocket; this.stats.cash += cash;
-        this.events.push({ t: 'cash', by: h.id, n: h.pocket, cash });
-        h.pocket = 0; this.dirty = true;
+        this.bank(h.pocket, h.id, 'helper');
+        h.pocket = 0;
         continue;
       }
       if (goal !== SIM.STAND && d < 0.5) {
@@ -210,7 +340,8 @@ export class Crew {
     // The night crew clears the field: every morning starts clean.
     for (const id of this.balls.keys()) this.events.push({ t: 'gone', id });
     this.balls.clear();
-    this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null;
+    this.phase = 'shift'; this.shiftT = 0; this.stats = freshStats(); this.report = null; this.mult = 1;
+    if (this.cart) { this.cart.boostT = 0; if (!this.cart.driver) Object.assign(this.cart, CART.PARK, { v: 0 }); }
     for (const m of this.mats) m.next = 1 + this.rng() * 5;
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'shift', day: this.day });
@@ -242,17 +373,32 @@ export class Crew {
 
     this.stepHelpers(dt);
 
+    const c = this.cart;
     for (const b of this.balls.values()) {
       if (b.rest) continue;
       const x0 = b.x, y0 = b.y, z0 = b.z;
       const stopped = advanceBall(b, dt);
+      if (c && !b.pinged && ballHitsCart(x0, y0, z0, b, c)) { this.ping(b); continue; }
       for (const p of [...this.players.values(), ...this.helpers]) {
+        if (!p.helper && this.driving(p)) continue;            // the cage keeps the driver safe
+        if (b.by === p.id) continue;                           // your own swing leaves from your feet
         if (!ballHitsPlayer(x0, y0, z0, b, p)) continue;
         this.knockDown(p);
         b.vx *= -0.25; b.vz *= -0.25; b.vy = Math.abs(b.vy) * 0.3;  // it bounces off you
         break;
       }
       if (stopped) this.events.push({ t: 'rest', id: b.id, x: b.x, z: b.z });
+    }
+
+    if (c) {
+      if (c.boostT > 0) c.boostT = Math.max(0, c.boostT - dt);
+      const d = c.driver && this.players.get(c.driver);
+      if (c.driver && (!d || (d.online === 0 && now - d.seenAt > DRIVER_GRACE_MS))) { c.driver = null; c.v = 0; }
+      // Pull up to the stand and the hopper empties itself.
+      if (c.load > 0 && Math.hypot(c.x - SIM.STAND.x, c.z - SIM.STAND.z) < SIM.STAND_REACH + 2.5) {
+        this.bank(c.load, c.driver ?? 'cart', 'cart');
+        c.load = 0;
+      }
     }
 
     for (const p of this.players.values()) {
@@ -264,17 +410,18 @@ export class Crew {
     if (this.phase === 'shift' && this.shiftT >= this.shiftSecs) this.endShift();
   }
 
-  knockDown(p) {
+  knockDown(p, by = null) {
     p.down = this.perks.knockSecs;
     if (p.helper) p.target = null;
     this.stats.knockdowns++; this.dirty = true;
-    this.events.push({ t: 'knock', id: p.id });
+    this.events.push({ t: 'knock', id: p.id, by });
     // Whatever you were carrying goes everywhere.
     for (const s of spill(p.x, p.z, p.pocket, this.rng)) this.addBall(s);
     p.pocket = 0;
   }
 
   removePlayer(p) {
+    if (this.driving(p)) { this.cart.driver = null; this.cart.v = 0; }
     for (const s of spill(p.x, p.z, p.pocket, this.rng)) this.addBall(s);
     this.players.delete(p.id);
     this.events.push({ t: 'leave', id: p.id });
@@ -282,14 +429,9 @@ export class Crew {
 
   endShift() {
     this.phase = 'report';
-    // Closing time: hired help turns in what they're carrying, so it counts today.
-    for (const h of this.helpers) {
-      if (!h.pocket) continue;
-      const cash = h.pocket * this.perks.price;
-      this.cash += cash; this.stats.deposited += h.pocket; this.stats.helped += h.pocket; this.stats.cash += cash;
-      this.events.push({ t: 'cash', by: h.id, n: h.pocket, cash });
-      h.pocket = 0; h.target = null;
-    }
+    // Closing time: hired help and the cart turn in what they're carrying, so it counts today.
+    for (const h of this.helpers) { this.bank(h.pocket, h.id, 'helper'); h.pocket = 0; h.target = null; }
+    if (this.cart) { this.bank(this.cart.load, this.cart.driver ?? 'cart', 'cart'); this.cart.load = 0; this.cart.boostT = 0; }
     for (const k of Object.keys(this.stats)) this.totals[k] = (this.totals[k] ?? 0) + this.stats[k];
     this.report = { day: this.day, ...this.stats, left: this.balls.size, bank: this.cash };
     this.dirty = true;
@@ -299,13 +441,16 @@ export class Crew {
   // ---- what goes over the wire ----------------------------------------------
 
   snapshot() {
+    const c = this.cart;
     return {
       phase: this.phase, day: this.day, shiftT: Math.round(this.shiftT * 10) / 10, shiftSecs: this.shiftSecs, cash: this.cash,
+      mult: this.mult,
       players: [...this.players.values()].map(p => ({
         id: p.id, name: p.name, color: p.color, x: +p.x.toFixed(2), z: +p.z.toFixed(2), yaw: +p.yaw.toFixed(3),
         pocket: p.pocket, down: +p.down.toFixed(2), online: p.online > 0,
       })),
       helpers: this.helpers.map(h => ({ id: h.id, name: h.name, x: +h.x.toFixed(2), z: +h.z.toFixed(2), yaw: +h.yaw.toFixed(3), pocket: h.pocket, down: +h.down.toFixed(2) })),
+      cart: c && { x: +c.x.toFixed(2), z: +c.z.toFixed(2), yaw: +c.yaw.toFixed(3), driver: c.driver, load: c.load, boost: +c.boostT.toFixed(1) },
       up: this.up,
     };
   }

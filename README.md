@@ -32,7 +32,17 @@ The design lives in [design/game-design.md](design/game-design.md).
   - hired helpers, who walk the field and bank balls on their own
   - a ball washer, advertising, shoes, and hard hats
 
-Next: the caged cart, range expansions, and the side jobs.
+- **The picker cart:** a shared, caged cart anyone can drive, with a chase
+  camera. Its gang reels scoop up whatever they roll over, and it unloads
+  itself at the bucket stand. The cage keeps the driver safe, and the cart
+  runs over anyone in the way.
+- **Hit the Cart:** from the orange crew bays, hit the balls you're carrying
+  at the cart while someone drives it. A ball that rings the cage pays the
+  crew a prize: a jackpot that hoovers up nearby balls, a turbo, or a price
+  multiplier for the rest of the day.
+- **Sound effects,** made in the browser with no audio files.
+
+Next: range expansions (cash plus stars), and the side jobs.
 
 ## Controls
 
@@ -40,7 +50,11 @@ Next: the caged cart, range expansions, and the side jobs.
 | --- | --- | --- |
 | Walk | WASD | Left stick |
 | Look | Mouse (click to capture), or the arrow keys | Right stick |
-| Pick up / drop in bucket | E, Space or click | Ⓐ |
+| Pick up | Left click or Space | Ⓐ |
+| Swing at a crew bay (hold to wind up, release to hit) | Hold left click or Space | Hold Ⓐ |
+| Drop balls in the bucket | E | Ⓧ |
+| Get in / out of the cart | E | Ⓨ |
+| Drive the cart | W/S throttle, A/D steer | RT/LT throttle, left stick steer |
 | Pause | Esc | ☰ |
 | Menus | Tab and Enter | D-pad or left stick, Ⓐ, Ⓑ |
 

@@ -22,7 +22,68 @@ export const SIM = {
   HIT_R: 0.45,         // m, a player's body radius for ball hits
   HIT_H: 1.9,          // m, a player's height for ball hits
   HIT_MIN_SPEED: 5,    // m/s, slower balls just bump your shoes
+  SWING_COOLDOWN: 0.8, // s between a player's own swings at a crew bay
 };
+
+// The picker cart. One per crew, shared: whoever climbs in drives. Its cage
+// keeps the driver safe, and a crew ball that hits the cage pays out (Hit the Cart).
+export const CART = {
+  PARK: { x: 31, z: 10, yaw: Math.PI / 2 },   // where it lives (and starts each morning)
+  BOARD_REACH: 3,       // m, how close you must be to climb in
+  REEL_AHEAD: 1.9,      // m, the gang reels' centre, ahead of the cart's middle
+  REEL_DEPTH: 0.7,      // m, front to back of the reels
+  CAGE_R: 1.3,          // m, how close a ball must pass to ring the cage
+  CAGE_H: 2.3,          // m
+  RUN_OVER_SPEED: 3,    // m/s, faster than this and people on foot go flying
+  BOOST: 1.6,           // speed multiplier during a ping boost
+  BOOST_SECS: 20,
+  JACKPOT_R: 15,        // m, a jackpot hoovers every resting ball this close
+  MAX_MULT: 3,
+};
+
+// Crew bays: two mats of the crew's own, either side of the customers.
+// You hit the balls you're carrying, so swinging never makes money from nothing.
+export const BAYS = [{ x: 23, z: 0 }, { x: -23, z: 0 }];
+export const BAY_REACH = 1.4;
+export const atBay = p => BAYS.some(b => Math.hypot(p.x - b.x, p.z - b.z) < BAY_REACH);
+
+// A crew swing: aim with your view, power from how long you held the button.
+export function swingLaunch(bay, yaw, pitch, power) {
+  const speed = 12 + 43 * Math.max(0, Math.min(1, power));
+  const loft = Math.max(0.03, Math.min(1.0, 0.12 + pitch));
+  const h = speed * Math.cos(loft);
+  return { x: bay.x, y: 0.1, z: bay.z - 0.4, vx: -Math.sin(yaw) * h, vy: speed * Math.sin(loft), vz: -Math.cos(yaw) * h };
+}
+
+// Is a resting ball under the cart's gang reels? (cart frame: forward is -z at yaw 0)
+export function underReels(cart, b, width) {
+  const fx = -Math.sin(cart.yaw), fz = -Math.cos(cart.yaw);      // forward
+  const dx = b.x - cart.x, dz = b.z - cart.z;
+  const ahead = dx * fx + dz * fz, side = dx * fz - dz * fx;
+  return Math.abs(ahead - CART.REEL_AHEAD) <= CART.REEL_DEPTH / 2 + 0.15 && Math.abs(side) <= width / 2;
+}
+
+// Did a ball moving from (x0, y0, z0) to where it is now pass through the cage?
+export function ballHitsCart(x0, y0, z0, b, cart) {
+  if (b.rest) return false;
+  const dx = b.x - x0, dz = b.z - z0, len2 = dx * dx + dz * dz;
+  const t = len2 > 0 ? Math.max(0, Math.min(1, ((cart.x - x0) * dx + (cart.z - z0) * dz) / len2)) : 0;
+  const cx = x0 + dx * t, cz = z0 + dz * t, cy = y0 + (b.y - y0) * t;
+  return Math.hypot(cx - cart.x, cz - cart.z) < CART.CAGE_R && cy < CART.CAGE_H && cy > 0.2;
+}
+
+// The cart's driving model, shared so the server can sanity-check the driver.
+export function stepCart(c, throttle, steer, dt, vmax) {
+  const accel = throttle > 0 ? 5 : throttle < 0 ? (c.v > 0.3 ? 12 : 3) : 0;
+  c.v += throttle * accel * dt;
+  if (!throttle) c.v -= Math.sign(c.v) * Math.min(Math.abs(c.v), 3.5 * dt);   // rolls to a stop
+  c.v = Math.max(-3, Math.min(vmax, c.v));
+  c.yaw -= steer * Math.max(-1, Math.min(1, c.v / 3)) * 1.25 * dt;
+  c.x += -Math.sin(c.yaw) * c.v * dt;
+  c.z += -Math.cos(c.yaw) * c.v * dt;
+  const x = Math.max(SIM.FIELD.xMin, Math.min(SIM.FIELD.xMax, c.x)), z = Math.max(SIM.FIELD.zMin, Math.min(SIM.FIELD.zMax + 6, c.z));
+  if (x !== c.x || z !== c.z) { c.x = x; c.z = z; c.v *= 0.3; }
+}
 
 // Ten mats along z = 0, everyone hitting toward -z.
 export const MATS = Array.from({ length: 10 }, (_, i) => ({ i, x: -18 + i * 4 }));
@@ -111,6 +172,11 @@ export const SHOP = [
     { name: 'Range bucket', cost: 75, desc: 'Holds 25. You look like you work here.' },
     { name: 'Push picker', cost: 250, desc: 'Walk over balls and it scoops them up. Holds 60.' },
   ] },
+  { id: 'cart', title: 'Picker cart', tiers: [
+    { name: 'No cart', desc: 'Everything on foot.' },
+    { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 300, unloads itself at the stand, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
+    { name: 'Wide gang reels', cost: 1500, desc: 'Scoops a lane almost twice as wide, holds 600, a bit faster.' },
+  ] },
   { id: 'helpers', title: 'Hired help', tiers: [
     { name: 'Nobody', desc: 'It is just the crew.' },
     { name: 'One teenager', cost: 60, desc: 'Picks up balls and banks them, with the crew\'s gear (up to a bucket). Paid in pizza.' },
@@ -163,6 +229,10 @@ export function perks(up = {}) {
     swingGapMult: [1, 0.8, 0.645, 0.5][up.ads ?? 0],
     walk: SIM.WALK * (1 + 0.15 * (up.shoes ?? 0)),
     knockSecs: up.hardhat ? 1 : SIM.KNOCK_SECS,
+    cart: up.cart ?? 0,
+    cartCap: [0, 300, 600][up.cart ?? 0],
+    cartReel: [0, 2.4, 4.2][up.cart ?? 0],
+    cartSpeed: [0, 9, 11][up.cart ?? 0],
   };
 }
 

@@ -65,7 +65,11 @@ export function connect(seat, onMsg, onStatus = () => {}) {
   const timer = setInterval(flush, SEND_MS);
 
   return {
-    move(x, z, yaw) { pos = { x: +x.toFixed(2), z: +z.toFixed(2), yaw: +yaw.toFixed(3) }; },
+    // cart: the cart's pose while this player drives it ({x, z, yaw}), else omit.
+    move(x, z, yaw, cart) {
+      pos = { x: +x.toFixed(2), z: +z.toFixed(2), yaw: +yaw.toFixed(3) };
+      if (cart) pos.cart = { x: +cart.x.toFixed(2), z: +cart.z.toFixed(2), yaw: +cart.yaw.toFixed(3) };
+    },
     act(a) { actions.push(a); if (performance.now() - lastSent > 30) flush(); },
     close() { closed = true; clearInterval(timer); es.close(); },
   };
