@@ -964,7 +964,7 @@ test('fleet: each cart pings on its own (driver, boost, event)', () => {
   assert.equal(ev0[0].prize, undefined, 'nobody drives cart 0: just noise');
 });
 
-test('fleet: both hoppers unload at the stand, each at its own gear', () => {
+test('fleet: both hoppers unload at the stand at the one price (round 11: mud counts in the Clean %)', () => {
   const { crew, run } = fleetCrew();
   openShift(crew);
   crew.carts[0].load = 4; crew.carts[0].loadW = 4; crew.carts[0].mud = 0;
@@ -975,7 +975,7 @@ test('fleet: both hoppers unload at the stand, each at its own gear', () => {
   const ev = crew.flush().ev.filter(e => e.t === 'cash' && e.kind === 'cart');
   assert.deepEqual(ev.map(e => e.cart).sort(), [0, 1]);
   const by = Object.fromEntries(ev.map(e => [e.cart, e.cash]));
-  assert.ok(Math.abs(by[0] / by[1] - 1.25) < 0.01, 'the clean cart pays x1.25, the muddy one x1');
+  assert.ok(Math.abs(by[0] / by[1] - 1) < 0.005, 'both pay the Board (round 11: the muddy one lowers the Clean % for both)');
   assert.equal(crew.stats.deposited, 8);
 });
 

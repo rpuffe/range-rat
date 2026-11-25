@@ -110,7 +110,7 @@ test('the crew reads commendations (clamped to 0..10), washer and curb into its 
 
 test('curb is 1 minus the average mud over the twelve fixtures', () => {
   const { crew } = makeCrew();
-  assert.equal(FIXTURES.length, 12);
+  assert.equal(FIXTURES.length, 18);   // round 11: the new wing's six (bays.js); a crew's fixtures hold only BUILT wing bays
   assert.deepEqual(Object.keys(crew.fixtures), ['sign', 'stand', ...Array.from({ length: 10 }, (_, i) => `mat${i}`)]);
   setMud(crew, 0);
   assert.equal(crew.curb(), 1);
@@ -154,7 +154,7 @@ function washAt(fxId, dist, save = { up: { cart: 1 } }) {
 }
 
 test('washing a fixture: range is measured to the fixture, WASH.RANGE + 1.5 + its radius', () => {
-  assert.equal(WASH.HOSE, 60);
+  assert.equal(WASH.HOSE, 86);   // round 11: 60 -> 86, it reaches the new wing (bays.js)
   const { crew, clock, p, fx } = washAt('sign', 0);
   assert.equal(fx.r, 1.8);
   setMud(crew, 0.8);
@@ -403,7 +403,7 @@ test('a knock-down spills the pocket and resets its weight', () => {
   act(crew, a, { t: 'pickup', ball: restingBall(crew, a.x, a.z, 'range').id });
   assert.equal(a.pocketW, 1, 'only the new ball counts');
   act(crew, a, { t: 'deposit' });
-  assert.equal(crew.cash, 1.75, 'BV 1.88 x Gear 0.9333: the knock-down left one layer of grime');
+  assert.equal(crew.cash, 1.86, 'round 11: no gear cut; the knock-down\'s layer of grime is a third of a fixture of mud on the Clean % (1.88 -> 1.86)');
 });
 
 test('the cart\'s load carries weights, and a cart deposit pays Gear 1 - 0.2 x mud', () => {
@@ -427,18 +427,21 @@ test('the cart\'s load carries weights, and a cart deposit pays Gear 1 - 0.2 x m
   assert.equal(ev.cash, 9.35);
 });
 
-test('a filthy cart only loses its Gear bonus; Hustle stacks on top', () => {
+test('round 11: a filthy cart pays the Board price (Hustle stacks on top); its mud lowers the Clean % for everyone', () => {
   const { crew } = makeCrew({ up: { cart: 1 } }, 600);
   setMud(crew, 0);
   crew.mult = 2;
+  crew.cart.mud = 0;
+  crew.bank(4, 'x', 'cart', 4);
+  assert.equal(crew.cash, 15.04, '4 x 1.88 x 2');
   crew.cart.mud = 1;
+  const bv = crew.valueNow().bv;
+  assert.ok(bv < 1.88, 'the muddy cart is half a fixture of dirt on the Clean %');
+  const c0 = crew.cash;
   crew.bank(4, 'x', 'cart', 4);
-  assert.equal(crew.cash, 12.03, '4 x 1.88 x 2 x Gear 0.8');
-  crew.cart.mud = 0.5;
-  crew.bank(4, 'x', 'cart', 4);
-  assert.equal(crew.cash, 25.57, '+ 4 x 1.88 x 2 x Gear 0.9 = 13.54');
+  const cartPay = crew.cash - c0;
   crew.bank(4, 'x', 'helper', 4);
-  assert.equal(crew.cash, 40.61, '+ 15.04: helpers pay the full price (Gear 1)');
+  assert.ok(Math.abs((crew.cash - c0 - cartPay) - cartPay) < 0.011, 'helpers pay the same price as the cart');
 });
 
 test('helpers pick up by weight and bank it', () => {
@@ -471,10 +474,12 @@ test('at closing, helpers and the cart turn in their weighted loads', () => {
 
 const spawns = ev => ev.filter(e => e.t === 'spawn');
 
-// Owner playtest 3 §2: Last Call at T-90 (glow, swings x3 for 30 s), then the cleanup minute from T-60.
-test('Last Call: from day 2, at T-90; customer balls glow and the bell rings once; out at T-60, nothing after', () => {
-  assert.equal(LAST_CALL.SECS, 90);
-  assert.equal(CLEANUP, 60);
+// Round 11 (owner): the taper from T-3:00, Last Call's glow at T-2:30, the two-minute cleanup from T-2:00 (on a full
+// 420 s shift; the windows scale with a shorter one: a 240 s shift tapers at T-103, glows at T-86, closes at T-69).
+test('Last Call: from day 2; customer balls glow and the bell rings once; the last customer out at the cleanup, nothing after', () => {
+  assert.equal(LAST_CALL.SECS, 150);
+  assert.equal(CLEANUP, 120);
+  assert.equal(LAST_CALL.TAPER, 180);
   assert.equal(LAST_CALL.FROM_DAY, 2);
   const { crew } = makeCrew({ day: 2 }, 240);
   crew.startShift();
@@ -482,40 +487,40 @@ test('Last Call: from day 2, at T-90; customer balls glow and the bell rings onc
   assert.equal(crew.lastCall(), false);
   let all = [], rung = 0;
   const step = secs => { for (let i = 0; i < secs * 20; i++) { crew.basket.n = 12; crew.tick(0.05); const ev = crew.flush().ev; rung += ev.filter(e => e.t === 'lastcall').length; all = all.concat(ev); } };
-  step(149);
+  step(153);
   assert.equal(crew.lastCall(), false);
   assert.equal(crew.snapshot().lastCall, false);
   const before = spawns(all);
   assert.ok(before.length > 3, `${before.length} customer swings`);
-  assert.ok(before.every(e => e.kind === 'range'), 'ordinary balls before Last Call');
+  assert.ok(before.every(e => e.kind !== 'glow'), 'ordinary balls before Last Call (a spill carries no kind)');
   assert.equal(all.filter(e => e.t === 'lastcall').length, 0);
   step(1.5);
   assert.equal(crew.lastCall(), true);
   assert.equal(crew.closing(), false);
   assert.equal(crew.snapshot().lastCall, true);
   all = [];
-  step(28);
+  step(16);
   const during = spawns(all);
-  assert.ok(during.length > 3, `${during.length} swings in Last Call`);
+  assert.ok(during.length >= 1, `${during.length} swings in Last Call`);
   assert.ok(during.every(e => e.kind === 'glow'), 'glow balls');
   assert.equal(rung, 1, 'rung once, not every tick');
   assert.ok([...crew.balls.values()].filter(b => b.kind).every(b => b.kind === 'glow' || b.kind === 'range'));
   step(1.6);
-  assert.equal(crew.closing(), true, 'T-60: the cleanup minute');
+  assert.equal(crew.closing(), true, 'the cleanup');
   const mud = { ...crew.fixtures };
   all = [];
   step(CUST.LEAVE_HOLD + 0.5);
   assert.ok(crew.mats.every(m => m.st === 'empty' || m.st === 'leave') && crew.mats.every(m => !m.inc), 'every customer has walked out');
   step(10);
-  assert.equal(spawns(all).length, 0, 'no customer ball after T-60');
+  assert.equal(spawns(all).length, 0, 'no customer ball in the cleanup');
   for (const k of Object.keys(mud)) if (k.startsWith('mat')) assert.equal(crew.fixtures[k], mud[k], `${k} does not scuff`);
   assert.equal(typeof crew.snapshot().left, 'number', 'the live count from 1:00');
   assert.ok(online);
 });
 
-test('Last Call: the swings come 3x as often (owner playtest 3 §2)', () => {
+test('round 11: the taper slows the swings smoothly from T-3:00 and empties the bays by T-2:00 (no x3 rush)', () => {
   const gap = shiftT => {
-    const { crew } = makeCrew({ day: 2 }, 300);
+    const { crew } = makeCrew({ day: 2 }, 420);
     openShift(crew);
     crew.rng = () => 0.5;                              // swingGap = 4 + 0.5 x 8 = 8
     crew.shiftT = shiftT;
@@ -523,10 +528,23 @@ test('Last Call: the swings come 3x as often (owner playtest 3 §2)', () => {
     crew.tick(0.05);
     return crew.mats[0].next;
   };
-  near(gap(10), 8);
-  near(gap(300 - 91), 8, 1e-9);
-  near(gap(300 - 89), 8 / LAST_CALL.SWING);
-  near(gap(300 - 89) * 3, 8);
+  const D = LAST_CALL.DAY_RATE;                         // the final pass: a busier daytime crowd
+  near(gap(10), 8 / D);
+  near(gap(420 - 181), 8 / D, 1e-9);
+  near(gap(420 - 150), 8 / D / (LAST_CALL.MIN_RATE + (1 - LAST_CALL.MIN_RATE) * 0.5), 0.02);   // halfway through the taper
+  assert.ok(gap(420 - 125) > gap(420 - 160) && gap(420 - 160) > gap(420 - 175), 'the gap grows smoothly');
+  const { crew } = makeCrew({ day: 3 }, 420);
+  openShift(crew);
+  addPlayer(crew, 'A', 100, 5); addPlayer(crew, 'B', 100, 6);
+  const busy = () => crew.snapshot().mats?.filter?.(m => m.st && m.st !== 'empty' && m.st !== 'leave').length;
+  crew.shiftT = 420 - 182; crew.tick(0.05);
+  const n0 = crew.custK();
+  crew.shiftT = 420 - 150; crew.tick(0.05);
+  const n1 = crew.custK();
+  crew.shiftT = 420 - 119; crew.tick(0.05);
+  assert.equal(n0, 1); near(n1, 0.5, 0.01); assert.equal(crew.custK(), 0);
+  assert.equal(crew.closing(), true);
+  assert.ok(busy);
 });
 
 test('Last Call does not happen on day 1, and rings again on the next day\'s shift', () => {
@@ -551,7 +569,7 @@ test('Last Call does not happen on day 1, and rings again on the next day\'s shi
     let ev = [];
     for (let i = 0; i < 25 * 20; i++) { crew.tick(0.05); ev = ev.concat(crew.flush().ev); }
     assert.equal(ev.filter(e => e.t === 'lastcall').length, 0, 'the first 25 s of a 120 s day: not yet');
-    for (let i = 0; i < 50 * 20; i++) { crew.tick(0.05); ev = ev.concat(crew.flush().ev); }
+    for (let i = 0; i < 70 * 20; i++) { crew.tick(0.05); ev = ev.concat(crew.flush().ev); }
     assert.equal(ev.filter(e => e.t === 'lastcall').length, 1, `day ${day}`);
   }
   assert.ok(run);
@@ -885,7 +903,7 @@ test('a full week: day 1 clean, then quota, mud and Last Call from day 2', () =>
   assert.equal(crew.quota.q, 0.3);
   assert.equal(crew.fixtures.sign, 0.9);
   assert.equal(crew.snapshot().quota.target, 1.63);
-  crew.shiftT = 61;
+  crew.shiftT = 80;   // round 11: a 120 s shift glows from T-43
   assert.equal(crew.snapshot().lastCall, true);
   assert.ok(run);
 });

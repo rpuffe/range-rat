@@ -17,7 +17,7 @@ test('day 1 at the Muni shows only gear, the teenagers, shoes and hard hats', ()
   assert.deepEqual(rows(0, 1), ['gear', 'helpers', 'shoes', 'hardhat']);
 });
 test('the washer and ads join on day 2, the cart on day 3', () => {
-  assert.deepEqual(rows(0, 2), ['gear', 'bays', 'helpers', 'washer', 'wand', 'ads', 'shoes', 'hardhat']);   // owner playtest 3 §4, §5.1: Open every bay and the pressure washer on day 2
+  assert.deepEqual(rows(0, 2), ['gear', 'build', 'helpers', 'washer', 'wand', 'filler', 'ads', 'shoes', 'hardhat']);   // owner playtest 3 §4, §5.1: Open every bay (round 11: Build more bays) and the pressure washer on day 2; round 11: the bucket filler
   assert.ok(rows(0, 3).includes('cart'));
   assert.ok(!rows(0, 9).includes('shed'), 'no kitchen at the Muni, ever');
 });

@@ -60,7 +60,7 @@ export function clearDrive(x0, z0, x1, z1, world) {
 export function harvestTarget(c, balls, { world, t = 0, skip = new Map() } = {}) {
   let best = null, bd = Infinity;
   for (const b of balls) {
-    if (!b.rest || b.sunk || b.creek || b.drifting || b.kind === 'one' || b.kind === 'square' || b.y > 0.4) continue;
+    if (!b.rest || b.sunk || b.creek || b.drifting || b.kind === 'one' || b.kind === 'square' || b.hands || b.y > 0.4) continue;   // round 11: b.hands is Rats only
     if ((skip.get(b.id) ?? -1) > t) continue;
     const d = Math.hypot(b.x - c.x, b.z - c.z);
     if (d < bd) { bd = d; best = b; }
@@ -125,7 +125,7 @@ export function stepAutopilot(c, a, ctx) {
   let load = c.load;
   for (const o of balls) {
     if (load >= ctx.cap) break;
-    if (!o.rest || o.sunk || o.creek || o.drifting || o.kind === 'one' || o.kind === 'square' || o.y > 0.4) continue;
+    if (!o.rest || o.sunk || o.creek || o.drifting || o.kind === 'one' || o.kind === 'square' || o.hands || o.y > 0.4) continue;
     if (ctx.underReels(c, o) || (a.target === o.id && Math.hypot(o.x - c.x, o.z - c.z) < 2.2)) { out.scooped.push(o); load += o.kind === 'splitter' ? 3 : 1; }
   }
   if (out.scooped.some(o => o.id === a.target)) a.target = null;

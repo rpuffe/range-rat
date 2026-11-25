@@ -35,6 +35,14 @@ export async function createCrew(name) {
   return seat;
 }
 
+// Round 11, skip ahead (test): a new test crew from a starting point (dev + localhost only; web/js/skip.js).
+// The reply also carries `tips`: the first-time tips a crew there would already have seen.
+export async function skipCrew(name, preset) {
+  const { tips = [], ...seat } = await post('/api/skip', { name, preset });
+  saveSeat({ code: seat.code, p: seat.p, k: seat.k });
+  return { ...seat, tips };
+}
+
 export async function joinCrew(code, name) {
   code = code.trim().toUpperCase();
   const prev = loadSeat();

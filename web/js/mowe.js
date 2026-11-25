@@ -5,6 +5,7 @@
 // State (plain JSON, safe to snapshot as-is except `hit`, use mowerSnap()):
 //   { phase: 'warn'|'drive'|'done', t, lane, x, z, yaw, blocked, hit: [ids], raked: n }
 // Space: the mower crosses +x at z = lane. Windrow goes to lane + RAKE_OFFSET (toward the mats).
+import { clubOpen } from './clubdays.js';   // round 11: MOW-E from Club day 3
 
 export const MOWER = {
   FROM_VENUE: 1,            // the Range Club
@@ -29,7 +30,7 @@ const balls_ = balls => (balls instanceof Map ? [...balls.values()] : balls ? [.
 
 // Should MOW-E start now? venueDay is 1-based days spent at this venue. Once a shift.
 export function mowerDue({ venue, venueDay, shiftT, shiftSecs, mower, endless = false }) {
-  return !mower && !endless && venue >= MOWER.FROM_VENUE && venueDay >= MOWER.FROM_DAY && shiftT >= shiftSecs * MOWER.AT;
+  return !mower && !endless && venue >= MOWER.FROM_VENUE && venueDay >= MOWER.FROM_DAY && clubOpen('mower', venue, venueDay) && shiftT >= shiftSecs * MOWER.AT;   // round 11: Club day 3
 }
 
 // The lane is the candidate with the most resting, rakeable balls within +-RAKE_HALF.

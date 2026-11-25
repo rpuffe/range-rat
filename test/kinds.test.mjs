@@ -6,6 +6,7 @@ import { Crew } from '../server/crew.mjs';
 import { SIM, WASH, CART, KIND_W, KIND_NAMES, KIND_BLURB, advanceBall, pickKind, mulberry32 } from '../web/js/sim.js';
 
 function makeCrew(save = null, shiftSecs = 100000, seed = 11) {
+  if (save?.venue === 1 && save.venueDay == null) save = { ...save, venueDay: 3 };   // round 11 (clubdays.js): a Club crew past the stagger unless a test says otherwise
   const clock = { t: 1_000_000 };
   const crew = new Crew('KIND', save, { shiftSecs, seed, now: () => clock.t });
   const run = secs => { for (let i = 0; i < secs * 20; i++) { clock.t += 50; crew.tick(0.05); } };

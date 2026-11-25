@@ -10,6 +10,7 @@
 // with sim.js (BALL_R, STEP, ROLL_DECEL, POND) are mirrored below and pinned equal by test/map.test.mjs.
 // Council round 10 #5: the creek dive's numbers come from dive.js, which imports nothing (no cycle).
 import { CREEK_DIVE } from './dive.js';
+import { clubOpenAt } from './clubdays.js';   // round 11: stagger the Club (imports nothing either; no cycle)
 
 export const MAP = {
   // What walkers and the cart are held inside. The nets sit half a metre outside it (NETS), because a ball
@@ -96,7 +97,7 @@ const ROLL_DECEL = 3.2;    // SIM.ROLL_DECEL
 const { HW } = MAP.CREEK;
 const venueOf = world => world?.venue ?? 0;
 const wetAt = world => venueOf(world) >= 1;                 // the water is on
-const pondOpen = world => venueOf(world) >= MAP.POND.FROM_VENUE;
+const pondOpen = world => venueOf(world) >= MAP.POND.FROM_VENUE && clubOpenAt('pond', world);   // round 11: Club day 2
 
 // ---- creek geometry: two polylines, precomputed -----------------------------------------------------------
 function buildBranch(pts) {
@@ -228,6 +229,18 @@ export const cartSpeedAt = (x, z, world) => (venueOf(world) >= MAP.TRACK.FROM &&
 // + 1 m; within a rock or box + 1.2 m; outside the field (the cart's z limit is zMax + 6, the parking spot).
 // Wet or dry makes no difference: what the driver learns on day 4 stays true. The venue adds only new
 // obstacles: the County kerb (4+) and the Lift's platform (5). Venues 0-3 are identical.
+// Round 11: the field returns' pneumatic tube stands on posts (layout.js TUBE_POSTS, registered here at its import so
+// map.js keeps importing nothing). A post blocks the cart like a rock while the crew owns that line (world.ret: the
+// 'returns' row's tier; posts carry the tier their line needs). The cart fits between them (9 m apart).
+let TUBE_POSTS = [];
+export const setTubePosts = posts => { TUBE_POSTS = posts; };
+export const TUBE_POST_R = 1.3;   // the post (0.09) + the cart's 1.2 m, as MAP.ROCKS
+function postBlocked(x, z, world) {
+  const ret = world?.ret ?? 0;
+  if (!(ret > 0) || x < -8 || z > 2) return false;   // every post stands east of x -8 and south of z 2 (cheap reject)
+  for (const p of TUBE_POSTS) if (p.tier <= ret && Math.abs(x - p.x) < TUBE_POST_R && Math.abs(z - p.z) < TUBE_POST_R && Math.hypot(x - p.x, z - p.z) < TUBE_POST_R) return true;
+  return false;
+}
 export function cartBlocked(x, z, world) {
   const F = MAP.FIELD;
   if (x < F.xMin || x > F.xMax || z < F.zMin || z > F.zMax + 6) return true;
@@ -240,6 +253,7 @@ export function cartBlocked(x, z, world) {
   }
   if (kerbBlocked(x, z, world)) return true;
   if (venueOf(world) >= MAP.LIFT.FROM && Math.hypot(x - MAP.LIFT.x, z - MAP.LIFT.z) < MAP.LIFT.r + 1.2) return true;
+  if (postBlocked(x, z, world)) return true;
   return false;
 }
 
@@ -357,7 +371,7 @@ export function startDrift(b, world) {
   if (L.action !== 'drift') return null;
   b.drift = { branch: L.branch, s0: L.s0, v: MAP.CREEK.DRIFT, s: L.s0 };   // s0 is what the event carries; s is progress
   const sn = snagS(b.id, b.kind, L.branch, L.s0);
-  if (sn != null) b.drift.snag = sn;   // council round 10 #5: it will snag on the creekbed there
+  if (sn != null && clubOpenAt('creekDive', world)) b.drift.snag = sn;   // council round 10 #5: it will snag on the creekbed there (round 11: once divers can reach it, Club day 3)
   b.drifting = true;
   return b.drift;
 }

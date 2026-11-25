@@ -94,7 +94,8 @@ test('§3.3 filling: a 1.5 s hold drops one in, two chutes, a third is busy, wal
   for (let i = 0; i < 400; i++) stepBasket(b, 0.05, { where: id => where[id] });
   assert.equal(b.n, BUCKETS.BASKET, 'full at 12');
   assert.equal(holdFill(b, 'c', true, at), 'full');
-  assert.equal(siloFill(100, 2), 440);
+  assert.equal(siloFill(100, 2), 760);   // round 11: SILO_START 720
+  assert.equal(siloFill(0, 100), 30, "never reads empty (SILO_RESERVE)");
 });
 
 test('§3.3 the Bucket machine adds one every 10 s up to 12; the crew\'s basket is empty every morning', () => {

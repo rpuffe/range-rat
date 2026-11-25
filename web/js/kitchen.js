@@ -16,7 +16,8 @@
 
 import { MENU_UNLOCK, menuPayoff } from './menu.js';
 import { DECK, mugTone, MUG_CAPTION, tabFor } from './deck.js';
-import { FRIES } from './sim.js';
+import { FRIES, FED } from './sim.js';
+import { TRAY } from './tray.js';   // round 11: the warm tray
 const PAYOFF = '#7fe07f';   // council round 10 #2: the card's one payoff, in money
 
 const W = 640, H = 420;
@@ -342,7 +343,8 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
     S.payoff = q === 'burnt' ? null : S.item === 'beer' ? payoffFor('beer') : null;
     if (q === 'perfect') snd('ding');
     const fries = S.item === 'fries';
-    try { onServe && onServe({ item: S.item, quality: q, onePeel: fries ? S.onePeel : false, chops: fries ? S.chops : 0, secs: S.secs }); } catch { /* host callback must not wedge the shed */ }
+    const ahead = S.item === 'beer' && pourAheadNow();   // round 11: no order open: the mug waits on the bar, cold
+    try { onServe && onServe({ item: S.item, quality: q, onePeel: fries ? S.onePeel : false, chops: fries ? S.chops : 0, secs: S.secs, ahead }); } catch { /* host callback must not wedge the shed */ }
   }
 
   function setHeld(src, v) {
@@ -745,6 +747,10 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
     if (o !== ordSeen) { ordSeen = o; ordAt = Date.now(); }
     return Math.max(0, o.left - (Date.now() - ordAt) / 1000);
   }
+  // Round 11 (expert #7): orders queue (deck.queue waiting behind the head) and the bartender can pour ahead: with the
+  // deck open and no order, a beer goes on the bar as a cold mug (deck.cold of DECK.COLD_MAX) for the next order.
+  function deckSnap() { try { return state?.()?.mods?.deck ?? null; } catch { return null; } }
+  function pourAheadNow() { const d = deckSnap(); return !!d && !d.order && (d.cold ?? 0) < DECK.COLD_MAX; }
   // The order timer: a gold ring that empties over DECK.ORDER_OPEN seconds.
   function drawOrderRing(cx, cy, r, left) {
     const u = Math.max(0, Math.min(1, left / DECK.ORDER_OPEN));
@@ -788,6 +794,18 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
         if (ordered && ITEMS[i] === lastItem && !(ITEMS[i] === 'beer' && deckOrderRound())) text(c, 'LAST ORDER', cx, CARD.y + 168, 14, DIM);
       }
       if (ITEMS[i] === 'beer' && !locked) { const n = deckDrinks(); if (n != null) drawMugs(cx, CARD.y + 30, n, 0.85); }
+      if (ITEMS[i] === 'hotdog' && !locked) {                    // round 11: spare dogs wait on the warm tray (tray.js)
+        let s = null; try { s = state?.(); } catch { s = null; }
+        const n = s?.tray ?? 0, full = (s?.value?.fed ?? 1) >= FED.MAX - 1e-9;
+        if (n || full) text(c, `${full ? 'SPARES → ' : ''}TRAY ${n}/${TRAY.MAX}`, cx, CARD.y + 190, 14, '#9fe8ff', 'center', CARD.w - 12);
+      }
+      if (ITEMS[i] === 'beer' && !locked) {                      // round 11: the bar line: "+2 WAITING" / "POUR AHEAD · 1 COLD"
+        const d = deckSnap();
+        if (d) {
+          const line = d.order ? ((d.queue ?? 0) > 0 ? `+${d.queue} WAITING` : '') : `POUR AHEAD · ${d.cold ?? 0}/${DECK.COLD_MAX} COLD`;
+          if (line) text(c, line, cx, CARD.y + 190, 14, d.order ? '#ffd34a' : '#9fe8ff', 'center', CARD.w - 12);
+        }
+      }
       if (ITEMS[i] === 'beer' && !locked) {                      // an open order: the BEER card glows gold, with its timer
         const left = deckOrderLeft();
         if (left != null) {

@@ -46,7 +46,7 @@ const HATS = [0xf4f1e6, 0x1f3a6e, 0xd6455d, 0x2f9e6b, 0x222428, 0xf2b134, 0x3b7d
 const SHOES = [0xf4f1e6, 0x2a2a30, 0x6b4a2e, 0xdddddd];
 const BAGS = [0x2f6b9a, 0xb23a48, 0x2b2f3a, 0x3f7d4a, 0xc9892b];
 const STAFF_SHIRTS = [0x24304a, 0xf4f1e6, 0x2b2f3a];
-const VEST = 0xff7a1a, VEST_TAPE = 0xf3ee9a, BUCKET = 0xe8552e;
+const VEST = 0xff7a1a, VEST_TAPE = 0xf3ee9a, BUCKET = 0x2f6fbf;   // round 11: the range bucket is blue everywhere (the rack, the bays, in hand)
 
 const hexOf = c => new THREE.Color(c).getHex();
 const shade = (hex, k) => new THREE.Color(hex).multiplyScalar(k).getHex();
@@ -122,11 +122,11 @@ let _mat = null;
 const sharedMat = () => _mat || (_mat = new THREE.MeshLambertMaterial({ vertexColors: true }));
 
 // ---------------------------------------------------------------- part geometry (cached)
-function torsoGeo(shirt, skin, staff) {
-  return cached(`torso|${shirt}|${skin}|${staff}`, () => {
+function torsoGeo(shirt, skin, staff, vest = VEST) {   // round 11: vest recolours (the stars' cosmetics)
+  return cached(`torso|${shirt}|${skin}|${staff}|${vest}`, () => {
     const prof = [[0.001, -0.04], [0.13, -0.03], [0.14, 0.1], [0.16, 0.28], [0.19, 0.42], [0.205, 0.5], [0.15, 0.555], [0.06, 0.585], [0.001, 0.595]];
     const body = lathe(prof, [0.2, 0.25, 0.44], (x, y) => staff
-      ? (y < 0.44 ? (y > 0.2 && y < 0.25 ? VEST_TAPE : VEST) : y > 0.54 ? shade(shirt, 0.85) : shirt)
+      ? (y < 0.44 ? (y > 0.2 && y < 0.25 ? VEST_TAPE : vest) : y > 0.54 ? shade(shirt, 0.85) : shirt)
       : (y > 0.54 ? shade(shirt, 0.85) : shirt));
     return merge([body, cyl(0.05, 0.056, 0.12, 8, 0, 0.57, 0, skin)]);
   });
@@ -232,7 +232,7 @@ export function buildPerson(opts = {}) {
   const hair = pick(HAIRS, rv[6]);
   let hatStyle = 'none', hatCol = pick(HATS, rv[8]);
   const hv = rv[7], ho = opts.hat;
-  if (staff) { hatStyle = 'cap'; hatCol = shirt; }
+  if (staff) { hatStyle = 'cap'; hatCol = typeof ho === 'number' ? ho : shirt; }   // round 11: a staff cap may be recoloured (hat: 0xRRGGBB)
   else if (ho === false) hatStyle = 'none';
   else if (typeof ho === 'string' && HAT_STYLES.has(ho)) hatStyle = ho;
   else if (ho != null && ho !== true) { hatStyle = 'cap'; hatCol = hexOf(ho); }
@@ -259,7 +259,7 @@ export function buildPerson(opts = {}) {
   }
   const pelvis = mk(pelvisGeo(pants), rig, 0, D.hipY, 0); pelvis.scale.set(build, 1, 1);
   const torso = new THREE.Group(); torso.position.y = D.hipY; rig.add(torso);
-  const chest = mk(torsoGeo(shirt, skin, !!staff), torso); chest.castShadow = true;
+  const chest = mk(torsoGeo(shirt, skin, !!staff, opts.vest != null ? hexOf(opts.vest) : VEST), torso); chest.castShadow = true;
   const bz = 0.62 * (0.95 + 0.1 * (build - 0.92) / 0.2);
   chest.scale.set(build, 1, bz);
   const head = new THREE.Group(); head.position.set(0, D.sY + 0.06, 0.01); torso.add(head);

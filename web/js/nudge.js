@@ -3,7 +3,7 @@
 // depends on what the crew owns; it goes once you've done it, or after 45 s. No roles: nothing rewards it.
 // Pure (no THREE, no DOM): server/venues/nudge.mjs deals and clears it, main.js shows it in the checklist's slot.
 import { MAP } from './map.js';
-import { SIM, WASHER_HANDLES, WASH, MATS, FIXTURE_BY_ID, FRIES } from './sim.js';
+import { SIM, WASHER_HANDLES, WASH, LINE, FIXTURE_BY_ID, FRIES } from './sim.js';
 import { morningLine, morningTarget } from './morning.js';   // owner playtest 3 §3.4: the morning deal ('am:*', builder 2)
 
 export const NUDGE = {
@@ -55,17 +55,18 @@ export function dealFor(i, p, up) {
 
 // Where the yellow arrow goes (client). wand: does this Rat hold the wand; at: where they stand (the nearest mat).
 // null = no place (the shop is a menu).
-export function nudgeTarget(id, wand = false, at = { x: 0, z: 0 }, { cart = null, gary = null } = {}) {
-  if (id?.startsWith('am:')) return id === 'am:mats' || ((id === 'am:sign' || id === 'am:stand') && !wand) ? nudgeTarget(id === 'am:mats' ? 'hose' : 'gary:' + id.slice(3), wand, at) : morningTarget(id);
+// nMats (round 11, bays.js): the bays built; the hose points only at one of them.
+export function nudgeTarget(id, wand = false, at = { x: 0, z: 0 }, { cart = null, gary = null, nMats = 10 } = {}) {
+  if (id?.startsWith('am:')) return id === 'am:mats' || ((id === 'am:sign' || id === 'am:stand') && !wand) ? nudgeTarget(id === 'am:mats' ? 'hose' : 'gary:' + id.slice(3), wand, at, { nMats }) : morningTarget(id);
   if (id === 'gary:stall' || id === 'gary:chat') return gary ? { x: gary.x, z: gary.z, y: 2.6, s: 1 } : null;   // round 8 #2: his cart, wherever it is
   if (id === 'gary:meet') return nudgeTarget('stand');
-  if (id === 'mats3' || id === 'gary:mats') return nudgeTarget('hose', wand, at);   // the wash station, then the nearest mat
+  if (id === 'mats3' || id === 'gary:mats') return nudgeTarget('hose', wand, at, { nMats });   // the wash station, then the nearest mat
   if (id === 'gary:sign') return wand ? { x: FIXTURE_BY_ID.sign.x, z: FIXTURE_BY_ID.sign.z, y: 3.4, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
   if (id === 'gary:stand') return wand ? { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
   if (id === 'gary:cart') return wand && cart ? { x: cart.x, z: cart.z, y: 2.2, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
   if (id === 'order') return { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6, s: 1 };   // the beer comes from the kitchen
   if (id === 'gary:kitchen') return { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6, s: 1 };
-  if (id === 'hose') return wand ? { x: MATS.reduce((b, m) => Math.abs(m.x - at.x) < Math.abs(b.x - at.x) ? m : b).x, z: 0, y: 2.2, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
+  if (id === 'hose') return wand ? { x: LINE.slice(0, Math.max(1, Math.min(LINE.length, nMats))).reduce((b, m) => Math.abs(m.x - at.x) < Math.abs(b.x - at.x) ? m : b).x, z: 0, y: 2.2, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
   if (id === 'far') { const f = MAP.FLAGS.find(g => g.id === 'yellow'); return { x: f.x, z: f.z, y: 3, s: 1 }; }
   if (id === 'stand') return { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6, s: 1 };
   if (id === 'washer') return { x: (WASHER_HANDLES.L.x + WASHER_HANDLES.R.x) / 2, z: WASHER_HANDLES.L.z, y: 2.4, s: 1 };

@@ -156,6 +156,12 @@
   .srow output { text-align: right; color: var(--dim); }
   .srow input[type=range] { width: 100%; padding: 0.3em 0; background: none; accent-color: var(--accent); }
   .srow button { grid-column: 2; justify-self: start; min-width: 11em; }
+  /* Round 11: skip ahead (test), dev + localhost only (web/js/skip.js) */
+  #skip-list { max-width: 36em; margin: 0 auto; gap: 0.4em; }
+  #skip-list button, #skip-toggle { font-size: 0.85em; }
+  .test-tag { display: none; font-size: 0.7em; font-weight: 700; letter-spacing: 0.12em; color: #1b1b1b; background: #ffcf3f; padding: 0.15em 0.6em; border-radius: 0.3em; }
+  body.test-crew .test-tag { display: inline-block; }
+  #report > .test-tag { flex: none; }
 </style>
 <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
 </head>
@@ -168,6 +174,7 @@
   <p class="own-screen">Each Rat plays on their own screen: an Xbox, a PC or a laptop. Up to 6 per crew.</p>
   <div class="row"><input id="name" data-primary maxlength="16" placeholder="Your name" autocomplete="nickname" aria-label="Your name"></div>
   <div class="row"><button id="create">Start a crew</button></div>
+  <div id="skip" class="hidden"><div class="row"><button id="skip-toggle" class="quiet" type="button" aria-expanded="false">Skip ahead (test)</button></div><div id="skip-list" class="row hidden"></div></div>
   <p class="or">or join friends with their code</p>
   <div class="row">
     <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off" aria-label="Crew code">
@@ -182,7 +189,7 @@
   <div class="top"><span id="cash">$0</span><span id="pocket"></span><span id="clock"></span></div>
   <div id="value"></div>
   <div id="todo" aria-live="polite"></div>
-  <div id="crewline"><small>Crew</small> <span id="code"></span><ul id="roster"></ul></div>
+  <div id="crewline"><span class="test-tag">TEST CREW</span> <small>Crew</small> <span id="code"></span><ul id="roster"></ul></div>
   <div id="crosshair"></div>
   <div id="prompt"></div>
   <div id="swinghud"></div>
@@ -194,6 +201,7 @@
 </div>
 
 <div id="lobby" class="card hidden">
+  <p><span class="test-tag">TEST CREW</span></p>
   <p>Your crew code</p>
   <div class="big" id="lobby-code"></div>
   <p>Friends join with this code, from any browser (Edge on Xbox too). Up to 6.</p>
@@ -205,6 +213,7 @@
 </div>
 
 <div id="report" class="card hidden">
+  <span class="test-tag">TEST CREW</span>
   <div class="split">
     <div class="sheet" id="report-body"></div>
     <div id="report-extra"></div>

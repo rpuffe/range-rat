@@ -8,7 +8,7 @@
 //   const end = dusk.queue({ at: stampUntil, ending, onDone });   // performance.now() ms the card may open, or null
 //   dusk.tick(dt);   // every frame, after everything else has placed the camera
 //   dusk.stop();     // a new shift (or the lobby): everything back as it was
-// Owner playtest 3 §2: from 1:00 (the snapshot's `closing`) the same label shows live on the top edge and counts down
+// Owner playtest 3 §2: from the cleanup (the snapshot's `closing`; 2:00 since round 11) the same label shows live on the top edge and counts down
 // as the crew picks: the cleanup minute's scoreboard. The walk-off then shows the final number as before.
 import * as THREE from 'three';
 import { DUSK, duskPlan, duskStage, camPath, leftOut, outThere, leftLine, glowBudget, holdEnd, walkRoute, walkAt, padEdge } from './dusk.js';

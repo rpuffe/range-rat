@@ -170,6 +170,7 @@ test('round 7 #6: a seeded 4P County shift with four teenagers and no Yards visi
     for (const p of crew.players.values()) { p.seenAt = clock.t; p.movedAt = clock.t; }
     crew.tick(0.05);
   }
-  const strays = crew.mods.state('county').strays;
-  assert.ok(strays >= 16, `strays at the bell ${strays}`);
+  // Round 11: nobody tends Zoning here, so the van tows (strays first): count what it took too.
+  const st = crew.mods.state('county'), strays = st.strays + st.towed;
+  assert.ok(strays >= 16, `strays at the bell ${st.strays} + towed ${st.towed}`);
 });

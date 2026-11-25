@@ -4,6 +4,7 @@
 // through the WASHER on the way: the pipe climbs into its hopper and its chute (washer.js) runs on to the silo.
 // Customers take their bucket from a BASKET by the red BUCKETS dispenser (scenery.js), never from the return.
 import { SIM, WASHER, SILO } from './sim.js';
+import { MAP, creekProject, setTubePosts } from './map.js';   // round 11: the tube's posts block the cart
 
 // The return bin is the old stand's box (main.js: 2 x 1 x 1.2 m); the pipe leaves its back (+z), low down.
 export const RETURN = { x: SIM.STAND.x, z: SIM.STAND.z, W: 2, D: 1.2, H: 1 };
@@ -39,22 +40,87 @@ export const DISPENSER = { x: 23.5, z: 8.5 };
 export const BASKET = { x: DISPENSER.x, z: 7.5, r: 0.32 };
 export const BASKET_POINT = { x: DISPENSER.x, z: 6.8 };
 // Owner playtest 3 §3.3: where a Rat fills buckets, 1.2 m east of the dispenser (beside its east side), clear of the
-// customers' spot (BASKET_POINT). The basket's 12 bucket slots: a little heap on the ground beside the basket.
+// customers' spot (BASKET_POINT).
 export const FILL_POINT = { x: DISPENSER.x + 1.2, z: 8.2 };
+// Round 11 (owner: "buckets overlap"): the basket's 12 bucket slots are a low rack west of the basket, 2 rows of 6,
+// 0.4 m apart (a bucket is 0.34 m across: no two touch). y is the rack's top, where a bucket's base sits.
+export const BUCKET = { R: 0.17, R0: 0.13, H: 0.26 };   // the range bucket: top radius, base radius, height
+export const RACK = { x: DISPENSER.x - 1.55, z: 7.42, W: 2.5, D: 0.9, H: 0.1, GAP: 0.4 };
 export const BASKET_SLOTS = Array.from({ length: 12 }, (_, i) => {
-  const row = i < 5 ? 0 : i < 9 ? 1 : i < 11 ? 2 : 3, k = [0, 5, 9, 11][row], m = [5, 4, 2, 1][row];
-  return { x: BASKET.x - 0.85 + (i - k - (m - 1) / 2) * 0.34, y: 0.15 + row * 0.26, z: BASKET.z + 0.05 };
+  const row = i < 6 ? 0 : 1, k = i % 6;
+  return { x: RACK.x + (2.5 - k) * RACK.GAP, y: RACK.H, z: RACK.z + (row ? 0.21 : -0.21) };   // slot 0 nearest the dispenser
 });
+// Where buckets fill (round 11: "make it obvious"): one under each Rat chute on the dispenser's east side (main.js's
+// stream of balls), and one under the filler's spout on its west side (SHOP `filler`; it shows only once bought).
+export const CHUTE_BUCKETS = [{ x: DISPENSER.x + 0.66, z: 8.22 }, { x: DISPENSER.x + 0.66, z: 8.66 }];
+export const FILLER = { x: DISPENSER.x - 0.72, z: 8.5, W: 0.5, D: 0.62, H: 1.25, SPOUT_Y: 0.78 };
+export const FILLER_BUCKET = { x: FILLER.x, z: FILLER.z - 0.42 };
+
+// The silo (board.js draws it: 2.5 m of clear tube, 2000 instanced balls in 33 layers of 62). Round 11: its fill shows the
+// banked supply (basket.js siloFill), so the chutes drop their balls to that level. The y of the top of n balls.
+export const SILO_BALLS = { MAX: 2000, PER_LAYER: 62, H: 2.5 };
+export function siloLevelY(n) {
+  const layers = Math.ceil(SILO_BALLS.MAX / SILO_BALLS.PER_LAYER), dy = (SILO_BALLS.H - 0.22) / (layers - 1);
+  const k = Math.max(0, Math.min(SILO_BALLS.MAX, n | 0));
+  return k <= 0 ? 0.1 : 0.16 + Math.floor((k - 1) / SILO_BALLS.PER_LAYER) * dy + 0.05;
+}
+// Round 11: the silo feeds the dispenser: a clear pipe from the silo's foot, low behind the Board, up the dispenser's
+// back and into its glass dome (scenery.js: dome top at y 1.92). Balls run along it while a bucket fills.
+export const PIPE_FEED = [
+  [SILO.x - 0.1, 0.3, SILO.z + SILO.R + 0.02],
+  [SILO.x - 0.4, 0.22, SILO.z + 1.6],
+  [DISPENSER.x + 2.2, 0.22, DISPENSER.z + 1.05],
+  [DISPENSER.x + 0.3, 0.3, DISPENSER.z + 0.75],
+  [DISPENSER.x + 0.1, 1.2, DISPENSER.z + 0.5],
+  [DISPENSER.x, 1.86, DISPENSER.z + 0.2],
+];
 
 // Council round 10 §C: the field ball returns (the crew row 'returns', sim.js perks().returns: 1 = the Field
 // return, 2 = + the Back return). A red FHI box out in the field: Ⓧ there sends your pocket home through its
 // buried pneumatic pipe, and it THUNKs into the main RETURN TUBE_SECS later (dive.js TUBE.DELAY, the pond tube's
 // queue), through the washer like any bank. Rats on foot and drones use them; the cart and teenagers never do.
+// Round 11 (owner): both returns sit across the creek (the outflow), far out, and their pneumatic tube runs above ground
+// on posts all the way back to the main RETURN (TUBE_TRUNK, TUBE_BRANCH): balls whoosh through it in batches.
 export const FIELD_RETURNS = [
-  { id: 'field', tier: 1, x: 10, z: -62, label: 'RETURN 2' },   // between Red and Yellow, north of both creek branches
-  { id: 'back', tier: 2, x: -6, z: -128, label: 'RETURN 3' },   // by Blue (the Club)
+  { id: 'field', tier: 1, x: 44, z: -130, label: 'RETURN 2' },  // the Far return: across the creek, past the Stones
+  { id: 'back', tier: 2, x: -6, z: -128, label: 'RETURN 3' },   // by Blue (the Club); its tube joins the Far return's
 ];
 export const FIELD_RETURN = { REACH: 2.0, W: 0.8, D: 0.6, H: 1.5 };   // the pond tube's box, taller
+// The tube: up out of the Far return's lid, north along x 50 (clear of the Track, the bowls and the County kerb) at
+// 3.8 m, then west over the hub and down into the main RETURN's bin top. The Back return's branch runs east along
+// z -124 and meets the trunk at TUBE_JOIN. [x, y, z] control points; posts stand under the high stretches.
+export const RETURN_TUBE = { R: 0.3, HIGH: 3.8, SECS: 5.6, POST_EVERY: 9 };   // SECS: the whoosh, just inside dive.js TUBE.DELAY (6 s)
+export const TUBE_JOIN = [49, RETURN_TUBE.HIGH, -124];
+export const TUBE_TRUNK = [
+  [44, 1.62, -130], [44, 3.0, -130.1], [45.6, 3.7, -128.4], TUBE_JOIN,
+  [50, RETURN_TUBE.HIGH, -112], [50, RETURN_TUBE.HIGH, -84], [50, RETURN_TUBE.HIGH, -56], [50, RETURN_TUBE.HIGH, -28],
+  [48.6, RETURN_TUBE.HIGH, -9], [42, 3.7, -2.6], [33.5, 3.4, 0.2], [29.2, 2.8, 1.5], [27.75, 1.9, 1.8], [27.6, 1.08, 1.8],
+];
+export const TUBE_BRANCH = [
+  [-6, 1.62, -128], [-6, 3.0, -127.9], [-4.6, 3.7, -126], [2, RETURN_TUBE.HIGH, -124], [18, RETURN_TUBE.HIGH, -124], [34, RETURN_TUBE.HIGH, -124], TUBE_JOIN,
+];
+// The tube's posts (round 11): every POST_EVERY m along each line (from half a step in), under the high stretches
+// (y ≥ 2.6) and never in the creek. { x, z, y, yaw, tier }: tier 1 the trunk (the Far return), 2 the Back branch.
+// One list for the drawing (ballreturn.js) and the cart's collision (map.js cartBlocked, registered here).
+function linePosts(pts, tier) {
+  const out = [];
+  let acc = 0, next = RETURN_TUBE.POST_EVERY / 2;
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0, z0] = pts[i - 1], [x1, y1, z1] = pts[i], L = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+    while (L > 0 && next <= acc + L) {
+      const t = (next - acc) / L, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t, z = z0 + (z1 - z0) * t;
+      next += RETURN_TUBE.POST_EVERY;
+      if (y < 2.6 || (z < -30 && z > -125 && creekProject(x, z).d < MAP.CREEK.HW + 0.6)) continue;
+      out.push({ x, y, z, yaw: Math.atan2(x1 - x0, z1 - z0), tier });
+    }
+    acc += L;
+  }
+  return out;
+}
+export const TUBE_POSTS = [...linePosts(TUBE_TRUNK, 1), ...linePosts(TUBE_BRANCH, 2)];
+setTubePosts(TUBE_POSTS);
+// The whole run from a return to the bin (the Back return's: its branch, then the trunk from the join on).
+export const tubeRoute = id => (id === 'back' ? [...TUBE_BRANCH, ...TUBE_TRUNK.slice(TUBE_TRUNK.indexOf(TUBE_JOIN) + 1)] : TUBE_TRUNK);
 // The returns the crew owns (from the row's tier).
 export const fieldReturns = (tier = 0) => FIELD_RETURNS.filter(r => r.tier <= (tier | 0));
 // The owned field return a point is at (within REACH), or null.

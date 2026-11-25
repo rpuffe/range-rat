@@ -12,6 +12,14 @@ export const DECK = {
   ORDER_LOUD_SECS: 20,          // ...every 20 s once the deck is amber (Drinks >= WARN)
   ORDER_OPEN: 30,               // an order stays open 30 s (council round 7 #8: was 20), then expires quietly
   ORDER_TAB: 10,                // a good beer while an order is open pays 10 x BV
+  // Round 11 (expert #7, "stations never make you wait"): orders queue, and the bartender pours ahead.
+  // - QUEUE: up to 3 orders open at once (the head, d.order, plus d.queue), each on its own ORDER_OPEN timer. A new
+  //   order no longer waits for the last one to be filled.
+  // - COLD: a good beer poured with no order open goes on the bar as a cold mug (up to COLD_MAX). It stays cold
+  //   COLD_SECS; the next order takes it at once (the full ORDER_TAB, credited to whoever poured it). A mug left too
+  //   long goes warm and is poured away: no tab, no drink. With the bar full, a beer is an unordered beer as before.
+  // (The expert asked for 20 s order timers; the council measured a human cook at ~24 s a fill, so they stay 30 s.)
+  QUEUE: 3, COLD_SECS: 30, COLD_MAX: 2,
   // Rounds (council round 7 #8): from ROUND_FROM Drinks, every ROUND_EVERY-th order is a ROUND. One good pour fills
   // it: +ROUND_DRINKS Drinks and a ROUND_TAB x BV tab. At 4 Drinks a filled round IS a fall (the overserving joke).
   ROUND_EVERY: 3, ROUND_FROM: 3, ROUND_TAB: 25, ROUND_DRINKS: 2,
@@ -38,7 +46,28 @@ const clampDrinks = n => Math.max(0, Math.min(DECK.MAX, n));
 // seat; norders counts the orders raised this shift (every ROUND_EVERY-th from ROUND_FROM Drinks is a round).
 // Council round 10 #3: the one Drinks count is split across the seats, d.mugs[6], always summing to drinks. `seats` (every
 // rule below takes it, default all six) is the list of upper bays in play (customers.js upperOpen).
-export const newDeck = () => ({ drinks: 0, seat: 0, soberT: 0, orderT: 0, oseat: 0, order: null, norders: 0, mugs: DECK.SEATS.map(() => 0) });
+export const newDeck = () => ({ drinks: 0, seat: 0, soberT: 0, orderT: 0, oseat: 0, order: null, queue: [], cold: [], norders: 0, mugs: DECK.SEATS.map(() => 0) });
+// Round 11: the open orders, head first ([d.order, ...d.queue]), and how many.
+export const openOrders = d => (d.order ? [d.order, ...(d.queue ?? [])] : []);
+export const openCount = d => (d.order ? 1 + (d.queue?.length ?? 0) : 0);
+// Round 11: room on the bar for a cold mug?
+export const coldRoom = d => (d.cold?.length ?? 0) < DECK.COLD_MAX;
+// Put a poured beer on the bar (by: the pourer's id). Returns false when the bar is full.
+export function pourAhead(d, by = null) {
+  d.cold ??= [];
+  if (!coldRoom(d)) return false;
+  d.cold.push({ left: DECK.COLD_SECS, by });
+  return true;
+}
+// The head order is done (filled or lapsed): the next queued one moves up.
+function nextOrder(d) { d.order = d.queue?.length ? d.queue.shift() : null; }
+// A cold mug fills the head order: returns { order, by } (the filled order and who poured the mug), or null.
+export function coldFill(d) {
+  if (!d.order || !d.cold?.length) return null;
+  const mug = d.cold.shift(), o = d.order;
+  nextOrder(d);
+  return { order: o, by: mug.by ?? null };
+}
 const ALL = DECK.SEATS.map((_, i) => i);
 const seatsOf = seats => (seats?.length ? seats : ALL);
 const mugsOf = d => (d.mugs ??= DECK.SEATS.map(() => 0));
@@ -69,29 +98,36 @@ export const isRoundOrder = (n, drinks) => (n | 0) > 0 && (n | 0) % DECK.ROUND_E
 // Seconds between orders: 30, or 20 once the deck is amber ("they're getting loud").
 export const orderEvery = drinks => drinks >= DECK.WARN ? DECK.ORDER_LOUD_SECS : DECK.ORDER_SECS;
 
-// Time passes (call only while the shift clock runs). Returns { sobered, order, expired }: sobered when the deck
-// sobered up by one, order when a lounger just ordered (d.order is the new order), expired when an order lapsed.
+// Time passes (call only while the shift clock runs). Returns { sobered, order, expired, raised, warm }: sobered when
+// the deck sobered up by one, order when a lounger just ordered (raised is the new order: the head, d.order, or the
+// back of d.queue), expired when an order lapsed, warm: cold mugs that went warm (poured away) this step.
+// Round 11: up to DECK.QUEUE orders open at once, each on its own timer; cold mugs on the bar count down.
 export function stepDeck(d, dt, seats) {
-  const out = { sobered: false, order: false, expired: false };
+  const out = { sobered: false, order: false, expired: false, raised: null, warm: 0 };
   if (!(dt > 0)) return out;
+  d.queue ??= []; d.cold ??= [];
   d.soberT += dt;
   while (d.soberT >= DECK.SOBER_SECS) {
     d.soberT -= DECK.SOBER_SECS;
     if (d.drinks > 0) { d.drinks = clampDrinks(d.drinks - 1); settleMugs(d, seats); out.sobered = true; }   // off the drunkest
   }
+  for (let i = d.queue.length - 1; i >= 0; i--) if ((d.queue[i].left -= dt) <= 0) { d.queue.splice(i, 1); out.expired = true; }
   if (d.order) {
     d.order.left -= dt;
-    if (d.order.left <= 0) { d.order = null; out.expired = true; }
+    if (d.order.left <= 0) { nextOrder(d); out.expired = true; }
   }
   d.orderT = (d.orderT ?? 0) + dt;
-  if (!d.order && d.orderT >= orderEvery(d.drinks)) {
+  if (openCount(d) < DECK.QUEUE && d.orderT >= orderEvery(d.drinks)) {
     d.orderT = 0;
     const s = seatsOf(seats), k = s.findIndex(i => i >= (d.oseat ?? 0)), seat = s[k < 0 ? 0 : k];   // round robin over the bays in play
     d.oseat = (seat + 1) % DECK.SEATS.length;
     d.norders = (d.norders ?? 0) + 1;
-    d.order = { seat, left: DECK.ORDER_OPEN, ...(isRoundOrder(d.norders, d.drinks) ? { round: true } : {}) };
-    out.order = true;
+    const o = { seat, left: DECK.ORDER_OPEN, ...(isRoundOrder(d.norders, d.drinks) ? { round: true } : {}) };
+    if (d.order) d.queue.push(o); else d.order = o;
+    out.order = true; out.raised = o;
   }
+  // Cold mugs warm up; one that lasts until an order is open is taken first (the server's coldFill, this same tick).
+  for (let i = d.cold.length - 1; i >= 0; i--) if ((d.cold[i].left -= dt) <= 0 && !d.order) { d.cold.splice(i, 1); out.warm++; }
   return out;
 }
 
@@ -105,10 +141,11 @@ export function serveEffect(item, quality) {
 export const paysTab = (item, quality) => item === 'beer' && (quality === 'perfect' || quality === 'good');
 // ordered: false (an unordered beer), true or an order (a filled order), or an order with round: true (a round).
 export const tabFor = (bv, ordered = false) => (ordered?.round ? DECK.ROUND_TAB : ordered ? DECK.ORDER_TAB : DECK.TAB) * Math.max(0, bv);
-// A paying beer fills the open order, if there is one. Returns the filled order (or null) and closes it.
+// A paying beer fills the open order (the head, the oldest), if there is one. Returns the filled order (or null) and
+// closes it; round 11: the next queued order moves up.
 export function fillOrder(d, item, quality) {
   if (!d.order || !paysTab(item, quality)) return null;
-  const o = d.order; d.order = null;
+  const o = d.order; nextOrder(d);
   return o;
 }
 // Council round 8 #5: Liability escalates. The k-th fall of a shift (1-based) costs 50, 100, 200, 200... x BV: the first

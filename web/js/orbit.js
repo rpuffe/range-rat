@@ -8,7 +8,7 @@ import { airStep, diveTiers } from './dive.js';
 import { MAP } from './map.js';
 
 export const ORBIT = {
-  SHOT: 0.05,          // the share of customer shots that go straight up
+  SHOT: 0.10,          // the share of customer shots that go straight up (round 11: 0.05 -> 0.10, debris is the countdown)
   VY: 70,              // m/s, straight up
   LEAVE_Y: 150,        // a ball above this has left: it becomes a debris id
   CAP: 60,             // debris ids kept (a saved Set); a shot past the cap just leaves
@@ -63,6 +63,20 @@ export function nearestDebris(ids, lx, lz, reach = ORBIT.GRAB) {
 export const orbitShot = shot => ({ ...shot, vx: 0, vz: 0, vy: ORBIT.VY, curve: 0, orbit: true });
 // The live gauge.
 export const debrisKpi = n => Math.max(0, Math.min(1, 1 - n / ORBIT.KPI_AT));
+
+// Round 11 (expert #10a): the Orbital is 2 full shifts plus the finale. "1,958 balls remain. They are all in orbit."
+// So at the Orbital only what comes down from orbit counts toward Balls Outstanding: each piece of debris brought down
+// (the EVA or the tether winch) counts DEBRIS_BALLS (10) balls for a crew of 3+, a little more for a smaller crew
+// (DEBRIS_BY_CREW: solo 15; the winch's 1 every 8 s is the same for everyone, so the scaling is mild).
+// Balls the customers hit there pay as usual but don't count: they never left Earth. Measured (late.mjs, ladder bot):
+// at ORBIT.SHOT 0.10, 4P brings ~90-110 pieces down a shift, 2P ~85, solo ~60-70, so the 1,958 last about 2 full
+// shifts and the finale opens shift 3 (4P and solo; 2P ends early in shift 3 or late in shift 2).
+export const DEBRIS_BALLS = 10;
+export const DEBRIS_BY_CREW = { 1: 15 };
+export const debrisBalls = (n, crew = 4) => {
+  const c = Math.max(1, Math.floor(Number(crew) || 4));
+  return Math.max(0, (n | 0) * (DEBRIS_BY_CREW[c] ?? DEBRIS_BALLS));
+};
 
 // ---- the ride and the float --------------------------------------------------------------------------------------
 const ease = x => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };

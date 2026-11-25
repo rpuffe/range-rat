@@ -1,7 +1,7 @@
 // First-time tips for new things (owner notes, 2026-11-24): the context settings.js's hinter needs to decide
 // them, and a soft pointer at the thing a tip names (main.js reuses the day-1 yellow arrow for it).
 // Pure: no three, no DOM (test/tips.test.mjs).
-import { FIXTURES, WASH, WASHER_HANDLES, FRIES, POND, BAYS } from './sim.js';
+import { FIXTURES, WASH, WASHER_HANDLES, FRIES, POND, BAYS, LINE } from './sim.js';
 import { TUBE } from './dive.js';
 import { LIFT } from './orbit.js';
 import { MAP, creekProject } from './map.js';
@@ -34,7 +34,10 @@ export function tipCtx(crew, me) {
   const creekNear = !!me && (crew?.venue ?? 0) >= 1 && creekProject(me.x, me.z).d < MAP.CREEK.HW + 4;
   // Council round 10 #6: standing at a crew bay (the 'on the green' tip, Muni and Club).
   const atBay = !!me && BAYS.some(b => Math.hypot(me.x - b.x, me.z - b.z) < 1.4);
-  return { up: crew?.up ?? null, myDive: me?.dive ?? 0, matMudNear: near, matMudMax: worst, ...(creekNear ? { creekNear } : {}), ...(atBay ? { atBay } : {}) };
+  // Round 11: the first souvenir (Stadium) and the first hazard (County) of the run, for their first-time tips.
+  const souvOut = (crew?.venue ?? 0) === 3 && !!crew?.mods?.stadium?.sv, hazOut = (crew?.venue ?? 0) === 4 && !!crew?.mods?.county?.hz;
+  return { up: crew?.up ?? null, myDive: me?.dive ?? 0, matMudNear: near, matMudMax: worst, ...(creekNear ? { creekNear } : {}), ...(atBay ? { atBay } : {}),
+    ...(souvOut ? { souvOut } : {}), ...(hazOut ? { hazOut } : {}) };
 }
 
 // The muddiest mat (for the pointer), or null.
@@ -62,6 +65,8 @@ export function tipTarget(id, crew, me) {
     case 'tube': return { x: TUBE.BOX.x, z: TUBE.BOX.z, y: 2, s: 0.8 };
     case 'lift': return { x: LIFT.x, z: LIFT.z, y: 4, s: 1.2 };
     case 'gutters': { const f = MAP.FLAGS?.[0]; return f ? { x: f.x, z: f.z, y: 4, s: 2 } : null; }
+    case 'bays': { const m = LINE[Math.min(LINE.length, crew?.nMats ?? 10) - 1]; return m ? { x: m.x, z: 0, y: 1.6, s: 1 } : null; }   // round 11: the newest bay
+    case 'souvenir': return me ? { x: (me.x < 0 ? -1 : 1) * 62, z: Math.max(-110, Math.min(-30, me.z)), y: 3, s: 1.5 } : null;   // round 11: the crowd rail (stadium.js SOUV)
     default: return null;
   }
 }

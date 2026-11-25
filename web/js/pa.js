@@ -4,6 +4,7 @@
 // The voice speaks the full `line`; the card shows the `caption` (8 words or fewer: council round 7 #3, the one-text rule).
 export const PA_LINES = {
   welcome: { line: 'Good morning, Range Rats. Corporate pays per ball. Corporate is always counting.', caption: 'Good morning, Range Rats. Corporate is counting.' },
+  promoday: { line: 'Regional has seen enough. The franchise agreement is signed. Please do not frame it.', caption: 'Promotion Day passed. Signed on the spot.' },   // round 11
   glow: { line: 'Last call. The balls are now glowing. This is a lighting decision, not a medical one.', caption: 'Last call. The balls are glowing.' },
   square: { line: 'Corporate has introduced a square ball. It does not roll. Neither does Corporate.', caption: 'A square ball. It does not roll.' },
   gold: { line: 'A gold ball has been hit. It belongs to Corporate. You may hold it briefly.', caption: 'A gold ball. It belongs to Corporate.' },

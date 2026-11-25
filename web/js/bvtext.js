@@ -1,7 +1,8 @@
 // Ball Value in one look (owner playtest 3 §1): every word and number the Board, the HUD, the memo, the report and the
 // floats say about what a ball pays. Pure: no THREE, no DOM (node tests it; board.js, main.js and crew.mjs call it).
 //
-//   The price  = BV × Hustle × Gary's Seal: what one ball pays right now ("$2.62 A BALL").
+//   The price  = BV × Hustle × Gary's Seal (× FED): what one ball pays right now ("$2.62 A BALL"), whoever carries it
+//                (round 11: gear grime folded into the Clean %, see returnMud).
 //   The bar    = (Upkeep − 1) / (ceiling − 1): the grounds' cleanliness at the Muni ("CLEAN 62%"), the average of the
 //                unlocked gauges from the Club ("UPKEEP 48%").
 //   The tick   = q / (ceiling − 1): today's target on the same bar ("TARGET 60%").
@@ -84,14 +85,30 @@ export function reviewPcts(upkeep, q, ceiling, ok) {
 }
 export const sealRow =cash => `Gary's Seal: +${money(Math.round((cash ?? 0) * 100) / 100)}`;
 
-// The bank popup over you: "8 × $2.62"; a washer holding part of it: "8 × $1.31 + wash"; muddy boots: "· muddy boots".
-// Returns { text, wash } so the caller can colour "+ wash" in the washer's blue.
+// The bank popup over you: "8 × $2.62"; a washer holding part of it: "8 × $1.31 + wash".
+// Round 11 (expert, "simplify the price stack"): no "· muddy boots" chip any more. Grime no longer cuts a carrier's
+// pay; it muddies the ball return instead (returnMud below), so it shows in the Clean % like any other dirt.
+// `boots` stays in the result, always false. Returns { text, wash } so the caller can colour "+ wash" in blue.
 export function popupLine(e) {
   const n = Math.max(1, e?.n | 0), per = e?.per ?? (e?.cash ?? 0) / n;
   const base = `${n} × ${money(c2(per))}`;
   const wash = (e?.credit ?? 0) > 0;
-  const boots = e?.clean === false;
-  return { text: base + (wash ? ' + wash' : '') + (boots ? ' · muddy boots' : ''), base, wash, boots };
+  return { text: base + (wash ? ' + wash' : ''), base, wash, boots: false };
+}
+
+// Round 11, the one price: "muddy boots make you dirtier, not cheaper". A ball pays BV × Hustle × Gary's Seal × FED
+// whoever carries it. The crew's muddy gear counts in the Clean % instead, as if it were one more dirty fixture on the
+// Curb average: bootsMud = BOOTS × the mean grime of the Rats online (0..3 layers, as 0..1) + CART × the fleet's mean
+// mud (0..1). A whole crew caked is one fully muddy fixture (Curb -1/12 at the Muni: -4% on every ball); clean gear
+// changes nothing. Gary's stops never see it (his return stop is the fixture). Hose your boots, wash the cart: the
+// Clean % comes back for everybody. (A first cut muddied the ball return instead; measured with mid.mjs it made a
+// 2P crew that never hoses its boots fail Gary's return stop for 3-25 extra Club shifts, so it moved here.)
+export const MUDDY = { BOOTS: 1, CART: 0.5 };
+export function bootsMud(grimes = [], carts = []) {
+  let g = 0, gn = 0, c = 0, cn = 0;
+  for (const x of grimes) { g += Math.max(0, Math.min(3, Number(x) || 0)) / 3; gn++; }
+  for (const m of carts) { c += clamp01(m); cn++; }
+  return (gn ? MUDDY.BOOTS * g / gn : 0) + (cn ? MUDDY.CART * c / cn : 0);
 }
 
 // The "+$0.05 a ball" float when a spray makes a fixture Spotless: what that fixture's mud was costing every ball.

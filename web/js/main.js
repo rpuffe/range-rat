@@ -13,15 +13,19 @@ import { primaryOf, focusMemo, focusRestore, menuA } from './menufocus.js';     
 import { goalShopIds, shopSort } from './promopanel.js';   // playthrough 5: the shop's order and ✦ GOAL tags
 import { createPadlog } from './padlog.js';                                            // §7.3: ?padlog
 import { garyParked, garyPlate, chatBit, CHAT_END, CHAT_FEED, SEAL_LINE } from './garyvisit.js';   // owner playtest 3 §6: Gary
-import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, shopShows, tierLock, shopDay, priceScale, perks,
+import { createBayLine } from './bayline.js';                                          // round 11 (owner): Build more bays
+import { fixtureBuilt } from './bays.js';
+import { SIM, MATS, LINE, advanceBall, atStand, clampToField, SHOP, nextPrice, shopShows, tierLock, shopDay, priceScale, perks,
   CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB,
-  VENUE_RULES, GARY, BANK } from './sim.js';
+  VENUE_RULES, GARY, BANK, BUCKETS } from './sim.js';
 import { createBallReturn, createFieldReturns } from './ballreturn.js';   // owner layout: the pipe from the return to the bank, the basket
 import { atFieldReturn, FILL_POINT } from './layout.js';   // council round 10 §C: the field ball returns
 import { detailFor } from './detail.js';
 import { stationsShown } from './stations.js';
 import * as NET from './net.js';
 import * as SFX from './sfx.js';
+import { createSweep } from './sweep.js';
+import { worldVday } from './clubdays.js';   // round 11: stagger the Club, one idea a day   // round 11 (builder "feel", expert #4): picking juice
 import { createBoard } from './board.js';
 import { sharedConfetti } from './confetti.js';   // round 6: one pooled confetti Points, shared (#3 bell, #5 huddle)
 import * as AMB from './ambience.js';
@@ -50,8 +54,9 @@ import { setHeavyRate } from './venues.js';
 import { createProps } from './props.js';
 import { tipCtx, createTipPointer, tipsAllowed, emptyBasketRat, withBasketAlarm } from './tips.js'; const tipPointer = createTipPointer();   // owner notes: a tip per new thing, and the arrow
 import { PAYFLOAT, payRoute, createRoller } from './payfloat.js';   // council round 6 #7: only your own cash floats over you
-import { bvLine, ceilingOf, priceOf, popupLine, reportRow, sealRow, gainText, signedMoney, targetStamp } from './bvtext.js';   // owner playtest 3 §1 (builder 1): Ball Value in one look
-import { atFill } from './basket.js';   // owner playtest 3 §3.3: the bucket basket (builder 2)
+import { bvLine, ceilingOf, priceOf, popupLine, reportRow, sealRow, gainText, signedMoney, targetStamp } from './bvtext.js';
+import { spotlessRow } from './dayend.js';   // round 11: the SPOTLESS RANGE stamp on the report   // owner playtest 3 §1 (builder 1): Ball Value in one look
+import { atFill, siloFill } from './basket.js';   // owner playtest 3 §3.3: the bucket basket (builder 2)
 import { nudgeLine, nudgeTarget, GARY_STALLED, garyExtra } from './nudge.js';    // council round 6 #10 / round 7 #4: day 2, Gary's dealt stops, day 3
 import { createSay } from './say.js';                     // council round 7 #3: the one centre-text queue
 import { DECKCAM, CUT_LABEL, cutPlan, skips, cutAt } from './deckcam.js';   // council round 10 #4: the Deck Cam
@@ -61,6 +66,9 @@ import { cardHtml, LAST_CARD } from './goals.js';         // council round 10 #1
 import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';   // sign facings (test/signs.test.mjs; ?signs checks the meshes)
 import { createDusk } from './duskview.js';                // end of the day: the overhead walk-off between the stamp and the report
 import { actPick } from './actpick.js';                    // playthrough 4 C1: Ball No. 1 before a full pocket
+import { createRecap } from './recap.js';                  // round 11 (builder "today"): the night card, contracts, the locker
+import { skyK, floodsOn, lookHex } from './today.js';       // round 11 (builder "today"): Night Range, the cosmetics
+import { initSkip } from './skip.js';                      // round 11: skip ahead (test), dev + localhost only
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
@@ -68,6 +76,7 @@ const $ = id => document.getElementById(id);
 // ?debug warns on lines over 8 words; window.rr.say shows the queue and its dropped count.
 const sayer = createSay({ $, dev: new URLSearchParams(location.search).has('debug') });
 const say = sayer.say;
+const sweep = createSweep({ root: document.getElementById('crosshair')?.parentElement ?? document.body, sfx: SFX });   // round 11: the sweep
 
 // ---------------------------------------------------------------- scene
 const canvas = $('c');
@@ -94,11 +103,14 @@ for (let i = 0; i < 16; i++) {
 // Dimple Creek: the creek, its crossings, the flags, Dimples Rock, the Old Tractor (map.js rules).
 const terrain = createTerrain({ scene });
 let terrainVenue = -1;
-const world = () => ({ venue: crew?.venue ?? 0 });
+const world = () => ({ venue: crew?.venue ?? 0, vday: worldVday(crew?.venue, crew?.venueDay, crew?.endless), ret: crew?.up?.returns ?? 0 });   // round 11: ret, the tube's posts   // round 11: the Club day (clubdays.js)
+const shopVday = () => worldVday(crew?.venue, shopDay(crew?.phase, crew?.venueDay ?? 0), crew?.endless);   // the Club day the shop shops for
 
 // The mats. Customers (crowd.js) walk in at the gate, grab a bucket at the
 // stand, hit it from a mat, and walk out. A filthy mat gets refused.
-for (const m of MATS) {
+// Round 11 (owner, bays.js): the whole line (the new wing too); only the built bays show (bayline.js, per snapshot).
+const bayMeshes = [];
+for (const m of LINE) {
   const mat = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 1.6), lambert(0x2f6b2a));
   mat.position.set(m.x, 0.02, 0); mat.receiveShadow = true; scene.add(mat);
   // The mat's number (1-10) on its back edge, so "Mat 4" is a callout (a waiting customer names it).
@@ -109,7 +121,9 @@ for (const m of MATS) {
   const num = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.5).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false }));
   num.position.set(m.x, 0.045, 0.62); num.renderOrder = 1; scene.add(tagSign(num, `mat.${m.i + 1}`, { x: 0, y: 1, z: 0 }));
+  bayMeshes.push({ mat, num });
 }
+const bayLine = createBayLine({ meshes: bayMeshes });
 import { matOfShot } from './customers.js';   // round 10 #3 (builder 2): the swing cue for the upper bays
 const crowd = createCrowd({ scene, people: { buildPerson, animatePerson, SWING_IMPACT, SWING_SECS } });
 // A ball leaving a mat: that mat's golfer swings (catch the swing just before impact).
@@ -186,7 +200,7 @@ const MUD = new THREE.Color(0x5a3d1e);
 fixtureMats.stand = { mat: box.material, base: box.material.color.clone() };
 scene.traverse(o => {   // the customer mats were built above; find them by position
   if (o.isMesh && o.geometry?.parameters?.width === 1.6 && o.geometry.parameters.height === 0.04) {
-    const m = MATS.find(m => Math.abs(m.x - o.position.x) < 0.01);
+    const m = LINE.find(m => Math.abs(m.x - o.position.x) < 0.01);
     if (m) { o.material = o.material.clone(); fixtureMats['mat' + m.i] = { mat: o.material, base: o.material.color.clone() }; }
   }
 });
@@ -347,7 +361,7 @@ function buildCart() {
     m.visible = false; splotches.push(m); g.add(m);
   }
   scene.add(g);
-  return { g, targets, reels, fill, tipper, tipK: 0, driver, torso, body, cage, splotches, reelWidth: 0, flash: 0, wheelSpin: 0 };
+  return { g, targets, reels, fill, tipper, tipK: 0, driver, torso, body, cage, splotches, reelWidth: 0, flash: 0, wheelSpin: 0, hood };   // round 11: the hood wears the cart paint
 }
 function setReels(c, width) {
   if (c.reelWidth === width) return;
@@ -405,7 +419,8 @@ const glowMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(SIM.BALL_R, 12
 glowMesh.frustumCulled = false; glowMesh.count = 0; scene.add(glowMesh);
 const squareMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(SIM.BALL_R * 1.7, SIM.BALL_R * 1.7, SIM.BALL_R * 1.7), lambert(0xffffff), 400);
 squareMesh.frustumCulled = false; squareMesh.count = 0; scene.add(squareMesh);
-const KIND_COLOR = { range: 0xf4f1e8, lead: 0x7d8790, gold: 0xffc928, splitter: 0x8fd3ff, bouncy: 0xb36bff, square: 0xf4f1e8 };
+const KIND_COLOR = { range: 0xf4f1e8, lead: 0x7d8790, gold: 0xffc928, splitter: 0x8fd3ff, bouncy: 0xb36bff, square: 0xf4f1e8,
+  souvenir: 0xff4f9a, hazard: 0x8cff1a, hazwet: 0x3fd8ff };   // round 11: Stadium souvenirs; County hazards (hazwet: sprayed, views/county.js)
 const kindColor = {}; for (const [k, c] of Object.entries(KIND_COLOR)) kindColor[k] = new THREE.Color(c);
 ballMesh.castShadow = true;
 ballMesh.frustumCulled = false;
@@ -437,7 +452,7 @@ function drawBalls() {
     if (b.kind === 'glow') glowMesh.setMatrixAt(g++, ballM);
     else if (b.kind === 'square') { if (q < squareMesh.instanceMatrix.count) squareMesh.setMatrixAt(q++, ballM); }
     else { ballMesh.setColorAt(i, kindColor[b.kind] ?? kindColor.range); ballMesh.setMatrixAt(i++, ballM); }
-    if (b.kind === 'gold' && b.rest && beacons < 8) {
+    if ((b.kind === 'gold' || b.kind === 'souvenir') && b.rest && beacons < 8) {   // round 11: a souvenir's gold ring
       const pulse = 1 + 0.08 * Math.sin(performance.now() / 300 + beacons);
       ballM.compose(ballP.set(b.x, 0, b.z), ballQ, ballS.set(pulse, 1, pulse));
       beaconMesh.setMatrixAt(beacons++, ballM);
@@ -536,14 +551,14 @@ function nameTag(text, color) {
 function addMate(p) {
   const g = new THREE.Group();
   const seed = [...p.id].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 7);
-  const person = buildPerson({ seed, staff: true, shirt: parseInt(p.color.slice(1), 16) });
+  const person = buildPerson({ seed, staff: true, shirt: parseInt(p.color.slice(1), 16), hat: lookHex(p.look?.hat) ?? undefined, vest: lookHex(p.look?.vest) ?? undefined });   // round 11: the stars' cosmetics
   const body = person.root;
   g.add(body);
   const tag = nameTag(p.name, p.color); tag.position.y = (body.userData.height ?? 1.8) + 0.35; g.add(tag);
   if (p.helper) { body.scale.setScalar(0.88); tag.position.y -= 0.2; }
   g.position.set(p.x, 0, p.z);
   scene.add(g);
-  others.set(p.id, { g, body, person, tag, gear: null, gearLevel: -1, helper: !!p.helper, to: { x: p.x, z: p.z, yaw: p.yaw }, down: 0, last: { x: p.x, z: p.z } });
+  others.set(p.id, { g, body, person, tag, gear: null, gearLevel: -1, helper: !!p.helper, lookKey: lookKeyOf(p), to: { x: p.x, z: p.z, yaw: p.yaw }, down: 0, last: { x: p.x, z: p.z } });
 }
 // What a crewmate is carrying: the bucket and tube are held; the push picker rolls ahead.
 function setMateGear(o, level) {
@@ -553,6 +568,7 @@ function setMateGear(o, level) {
   if (o.gear) { o.body.remove(o.gear); o.gear = null; }
   if (level !== 'wand' && level >= 3) { o.gear = gearModel(level); o.body.add(o.gear); }
 }
+const lookKeyOf = p => (p.look ? (p.look.hat ?? '') + '|' + (p.look.vest ?? '') : '');   // round 11: a new look rebuilds the mate
 function removeMate(id) { const o = others.get(id); if (o) { scene.remove(o.g); others.delete(id); } }
 
 // ---------------------------------------------------------------- me
@@ -560,6 +576,7 @@ const me = { id: null, x: SIM.SPAWN.x, z: SIM.SPAWN.z, yaw: Math.PI / 2, pitch: 
 let crew = { phase: 'lobby', day: 1, shiftT: 0, shiftSecs: SIM.SHIFT_SECS, cash: 0, players: [] };
 let link = null, seat = null, report = null, paused = false;
 const nameOf = id => crew.players.find(p => p.id === id)?.name ?? 'Someone';
+const recap = createRecap({ link: () => link, crew: () => crew, report: () => report, me });   // round 11 (builder "today")
 
 function onMsg(m) {
   if (m.k === 'welcome') {
@@ -571,7 +588,9 @@ function onMsg(m) {
     const mine = m.s.players.find(p => p.id === me.id);
     if (mine && !me.placed) { me.x = mine.x; me.z = mine.z; me.yaw = mine.yaw; me.placed = true; }
     $('code').textContent = m.code;
+    document.body.classList.toggle('test-crew', !!m.s.test);   // round 11: the TEST CREW tag (skip ahead)
     if (crew.phase !== 'report') sayer.open();   // a rejoin: nothing replays (the PA card never re-queues), nothing stays locked
+    if (!m.s.test) recap.welcome(m);   // round 11: a saved crew coming back sees "Previously on Range Rat" (not a skip-ahead test crew: that night was the bots')
     showPhase();
   } else if (m.k === 'tick') {
     for (const e of m.ev) onEvent(e);
@@ -581,11 +600,19 @@ function onMsg(m) {
   }
 }
 
+// Round 11, builder "feel": the sweep's word, the bank rattle, the warm tray and the bar's cold mugs.
+function feelEvent(e) {
+  if (e.t === 'sweep') (e.by === me.id ? m => say('TOAST', m, { key: 'sweep' }) : feed)(e.by === me.id ? (e.bonus ? 'Clean sweep! +1% Hustle.' : 'Clean sweep!') : `${nameOf(e.by)}: clean sweep!`);
+  else if (e.t === 'cash' && e.n >= SFX.RATTLE.FROM && e.kind !== 'helper' && e.kind !== 'machine') SFX.rattle(e.n);
+  else if (e.t === 'tray') { if (!e.on && e.by === me.id) toast('You carried a hot dog out. Crew fed.', 2); else if (e.on && e.by === me.id) toast(`Spare dog on the warm tray (${e.n}).`, 1.6); }
+  else if (e.t === 'deckCold' && e.by === me.id) toast(`On the bar, cold (${e.n}). The next order takes it.`, 1.8);
+}
 function onEvent(e) {
   r2?.onEvent(e);
   views?.onEvent(e);
+  feelEvent(e);
   if (e.t === 'deckFall') onDeckFall(e);   // council round 10 #4: the Deck Cam (views/deck.js plays the fall)
-  if (e.t === 'tube' && e.at) fieldReturns.thunk();   // council round 10 §C: a pocket went in a field return
+  if (e.t === 'tube' && e.at) { fieldReturns.thunk(); fieldReturns.whoosh(e.at, e.n ?? 8, camera.position); }   // round 11: the batch whooshes home   // council round 10 §C: a pocket went in a field return
   if (e.t === 'auto') { if (e.by === me.id) toast(e.mode === 'harvest' ? 'Autopilot: harvesting.' : 'Autopilot: lapping the Track.', 2); else feed(`${nameOf(e.by)} set the cart to ${e.mode}`); }
   if (e.t === 'clockout' && e.on && e.by !== me.id && e.of > 1) feed(`${nameOf(e.by)} wants to clock out (${e.n} / ${e.of}). Hold ${document.body.classList.contains('pad') ? GLYPH.Y : 'F'} to agree.`);
   if (e.t === 'dispatch') { if (e.by === me.id) { toast('Drones, here!', 2); } else feed(`${nameOf(e.by)}: "Drones, here!"`); dispatchRing.show(e); }
@@ -647,7 +674,7 @@ function onEvent(e) {
     case 'freehelper': feed(`${e.name} has clocked in to pick up balls. Paid in pizza.`); break;
     case 'custwait': if (playing()) feed(`A customer is waiting for a clean mat (Mat ${e.mat + 1}).`); break;
     case 'refuse': if (playing()) feed(e.why === 'nobucket' ? 'No buckets. A customer left.' : `A customer gave up on Mat ${e.mat + 1} and left. Hose the mats!`); break;
-    case 'bucket': if (e.by === me.id) SFX.scoop(); break;   // owner playtest 3 §3.3: a bucket you filled dropped in
+    case 'bucket': ballReturn.bucketIn(e.by); if (e.by === me.id) SFX.scoop(); break;   // owner playtest 3 §3.3: a bucket you filled dropped in
     case 'gone':
       if (pendingCart.delete(e.id)) SFX.scoop();
       removeBall(e.id);
@@ -716,7 +743,7 @@ function onEvent(e) {
       break;
     case 'kick': { const b = balls.get(e.id); if (b) Object.assign(b, { x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, acc: 0 }); break; }
     case 'memo':
-      if (!e.quiet) showMemo(e.text, e.target, 7, e.flavor);   // a PA line in the same tick still goes first (PA outranks MEMO)
+      if (!e.quiet) showMemo(e.text, e.target, 7, e.today ? 'TODAY · ' + e.today : e.flavor);   // round 11: Today's line takes the flavour's slot   // a PA line in the same tick still goes first (PA outranks MEMO)
       break;
     case 'rally': rallyLine(e); break;   // the gauge slipped, or the 30 s re-check (the bell lock drops it after the bell)
     case 'lastcall': {   // the Closing Bell (round 6 #3): the horn, then the server's one-line rally (null when endless)
@@ -805,6 +832,7 @@ function applySnapshot(s) {
   if (paused) pauseGoals();   // council round 10 #1: the Goals panel stays live while paused
   my = perks(s.up);
   if (s.mats) crowd.sync(s.mats, s.ct);
+  bayLine.update(s, r2?.venueParts);   // round 11 (owner): only the built bays exist; a new one looks fresh for its first day
   const mine = s.players.find(p => p.id === me.id);
   if (mine && !me.placed) { me.x = mine.x; me.z = mine.z; me.yaw = mine.yaw; me.pitch = 0; me.placed = true; }   // clocked in at the yard
   me.gear = mine?.gear ?? 0; if (!!mine?.wand && !me.wand) wandAt = performance.now(); me.wand = !!mine?.wand;   // the wand's full prompt runs 3 s from here
@@ -827,28 +855,31 @@ function applySnapshot(s) {
   const v = s.value ?? {};
   board.update({ bv: v.bv, rate: v.rate, upkeep: v.upkeep, hustle: v.hustle, curb: v.curb, pond: s.pond?.unlocked ? v.pond ?? 0 : null, fries: s.fries?.open ? v.fries ?? 0 : null,
     kpiLabel: VENUE_RULES[s.venue ?? 0]?.kpi ?? null, kpi: v.kpi ?? null, slogan: views?.banner(s) ?? null,   // round 4: the venue's own gauge
-    quota: s.quota?.target ?? null, pace: s.pace ?? null, outstanding: s.outstanding, lastCall: s.lastCall, title: s.title, silo: s.silo, live: s.phase === 'shift',
+    quota: s.quota?.target ?? null, pace: s.pace ?? null, outstanding: s.outstanding, lastCall: s.lastCall, title: s.title, silo: siloFill(s.silo, s.filled), live: s.phase === 'shift',
     // Owner playtest 3 §1.1/§6.4 (builder 1): the price, the bar's ceiling and target share, the pips, the Seal, the banner.
     price: priceOf(v, s.seal ?? v.seal ?? 1), seal: s.seal ?? v.seal ?? 1, ceiling: ceilingOf(v), q: s.quota?.q ?? null, venue: s.venue ?? 0,
     fixtures: s.fixtures, nMats: s.nMats, garyToday: s.phase === 'shift' && !!s.garyToday && !s.gary,
     // Council round 10 (builder 1): the goal strip (goals.js strip), the FED chip and its ring.
     goals: s.goals?.strip ?? null, fed: v.fed ?? 1, fedLeft: s.fedRing ?? 0,
+    today: s.phase === 'shift' ? s.today?.chip ?? null : null, stars: s.endless ? s.stars ?? 0 : null,   // round 11 (builder "today"): the Board's TODAY chip, endless stars
     gary: s.gary?.phase === 'warn' ? `GARY FROM REGIONAL · 0:${String(Math.ceil(s.gary.t)).padStart(2, '0')}` : s.gary?.phase === 'drive' ? garyCountdown(s.gary) ?? 'GARY IS INSPECTING' : mowerBoard(s.mower) });
   // Owner playtest 3 §6: he's on show through his warning too (parked at the gate, where you can chat to him), and
   // on the once-ever drive-by (s.garyIntro).
-  const gw = s.gary ?? (s.garyIntro ? { ...s.garyIntro, phase: 'intro' } : null);
+  // Round 11: on Promotion Day he rides along again once his verdict is in (s.garyIntro.ride).
+  const gw = (s.gary && !(s.gary.phase === 'done' && s.garyIntro?.ride) ? s.gary : null) ?? (s.garyIntro ? { ...s.garyIntro, phase: 'intro' } : null);
   if (gw) {
     if (!garyView) { garyView = buildGary(); Object.assign(garyPose, { x: gw.x, z: gw.z, yaw: gw.yaw }); }
     garyView.g.visible = gw.phase === 'drive' || gw.phase === 'warn' || gw.phase === 'intro' || garyView.salute > 0;   // he stays for his salute
     garyView.to = gw;
     garyView.plate.set(garyPlate(!!gw.first));
   } else if (garyView) garyView.g.visible = false;
-  floods.forEach(l => { l.intensity = s.lastCall ? FLOOD_I : 0; });
+  floods.forEach(l => { l.intensity = floodsOn(s.phase === 'shift' ? s.today : null, s.lastCall) ? FLOOD_I : 0; });   // round 11: Night Range keeps them on
   const seen = new Set();
   const people = [...s.players, ...(s.helpers ?? []).map(h => ({ ...h, helper: true, color: '#b9c0c8', online: true }))];
   for (const p of people) {
     seen.add(p.id);
     if (p.id === me.id) { me.pocket = p.pocket; me.down = p.down; continue; }
+    if (others.has(p.id) && others.get(p.id).lookKey !== lookKeyOf(p)) removeMate(p.id);   // round 11: they changed hats overnight
     if (!others.has(p.id)) addMate(p);
     const o = others.get(p.id);
     o.to = { x: p.x, z: p.z, yaw: p.yaw }; o.down = p.down;
@@ -859,6 +890,7 @@ function applySnapshot(s) {
   renderRoster();
   renderShop();
   r2?.onSnapshot(s);
+  recap.render();   // round 11 (builder "today"): the report's Today / contract / locker panel
   views?.onSnapshot(s);     // after r2: venues.js has built this venue's parts by now
 }
 
@@ -879,6 +911,7 @@ function applyCarts(list) {
     const d = c.driver && crew.players.find(p => p.id === c.driver);
     v.driver.visible = !!d;
     if (d) v.torso.material.color.set(d.color);
+    v.hood?.material.color.setHex(lookHex(crew.cartPaint) ?? 0x2e7d4f);   // round 11: the crew's cart paint (stars)
   });
   const mine = list.findIndex(c => c.driver === me.id);
   if (mine >= 0 && mine !== wasCart) { const c = list[mine]; Object.assign(cartViews[mine].pose, { x: c.x, z: c.z, yaw: c.yaw, v: 0 }); pendingCart.clear(); }
@@ -897,9 +930,9 @@ function applyCarts(list) {
 let shopKey = '';
 function renderShop() {
   const size = Math.max(1, crew.players.filter(p => p.online).length);   // the server prices by Rats online
-  const day = shopDay(crew.phase, crew.day ?? 1);
+  const day = shopDay(crew.phase, crew.day ?? 1), vday = shopVday();
   const goalIds = goalShopIds(crew.goals?.rows);   // playthrough 5: a row the card asks for wears ✦ GOAL
-  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase, me.gear, me.dive, crew.venue, day, [...goalIds]]);
+  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase, me.gear, me.dive, crew.venue, day, vday, [...goalIds]]);
   if (key === shopKey) return;
   shopKey = key;
   const root0 = menuRoot(), memo = focusMemo(document.activeElement, root0);   // §7.3: focus survives the re-render
@@ -907,15 +940,15 @@ function renderShop() {
   const scale = priceScale(size);
   const html = `<h3>${crew.phase === 'report' ? 'Overnight shop' : 'Shop'} <span>${money(crew.cash)} to spend</span></h3>
     ${size > 1 ? `<p class="note">Prices are ×${scale.toFixed(1)} for a crew of ${size}.</p>` : ''}
-    <ul>${shopSort(SHOP.filter(item => shopShows(item, crew.venue ?? 0, day, crew.endless, size)),   // playthrough 3: the Owner's projects first in endless
+    <ul>${shopSort(SHOP.filter(item => shopShows(item, crew.venue ?? 0, day, crew.endless, size, vday)),   // playthrough 3: the Owner's projects first in endless
       { endless: !!crew.endless, maxed: item => !item.tiers[(item.personal ? (item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0) : crew.up?.[item.id] ?? 0) + 1] })   // playthrough 5: maxed rows last
       .map(item => {
       const mineLvl = item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0;
       const lvl = item.personal ? mineLvl : crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
-      const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0, day, crew.endless);
+      const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0, day, crew.endless, vday);
       return `<li>
         <div><b>${item.title}</b>${next && goalIds.has(item.id) ? ' <span class="goal-tag">✦ GOAL</span>' : ''}: ${now.name}${next ? `<small>Next: <i>${next.name}</i><span class="desc">. ${next.desc}</span></small>` : `<small>${now.desc} (maxed out)</small>`}</div>
-        ${!next ? '<span class="max">✓</span>' : price == null ? `<span class="max">🔒 ${tierLock(item, lvl, crew.venue ?? 0, day) ?? VENUE_RULES[next.minVenue ?? item.minVenue ?? 0]?.name ?? 'later'}</span>` : `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>${money(price)}</button>`}
+        ${!next ? '<span class="max">✓</span>' : price == null ? `<span class="max">🔒 ${tierLock(item, lvl, crew.venue ?? 0, day, vday) ?? VENUE_RULES[next.minVenue ?? item.minVenue ?? 0]?.name ?? 'later'}</span>` : `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>${money(price)}</button>`}
       </li>`;
     }).join('')}</ul>`;
   for (const el of document.querySelectorAll('.shop')) el.innerHTML = html;
@@ -1063,7 +1096,7 @@ const SIZZLE = { on: null };
 const kitchen = createKitchen({
   state: () => crew,   // the live snapshot, for venue additions to the kitchen (the Upper Deck mug meter reads state().mods?.deck)
   root: document.body,
-  onServe({ item, quality, onePeel }) { link?.act({ t: 'serve', item: item ?? 'fries', quality, onePeel: !!onePeel }); },
+  onServe({ item, quality, onePeel, ahead }) { link?.act({ t: 'serve', item: item ?? 'fries', quality, onePeel: !!onePeel, ...(ahead ? { ahead: true } : {}) }); },   // round 11: pour ahead
   onSound(name) {
     if (name === 'peel' || name === 'salt') SFX.scoop();
     else if (name === 'chop' || name === 'roll') SFX.swing(0.15);
@@ -1132,10 +1165,14 @@ function driveCart(dt, px, py, lt, rt) {
     b.hidden = true; pendingCart.add(b.id); n++;
     link.act({ t: 'pickup', ball: b.id, cart: true });
   }
+  if (n) sweep.pick(performance.now() / 1000, n);   // round 11: the reels sweep too
   if (engine) engine.set(Math.min(1, Math.abs(P.v) / my.cartSpeed));   // §7.4: over the base top speed, so turbo never raises the pitch
 }
 function grab(b) {
   b.hidden = true; pending.add(b.id);
+  // Round 11 (sweep.js): ×N by the crosshair, the climbing blip. Not for pond-dive grabs: they go to the dive bag, which
+  // the server's sweep doesn't count, so the ×N would show a bonus that is never paid.
+  if (!b.sunk && !me.diving) sweep.pick(performance.now() / 1000);
   link.act(b.sunk ? { t: 'pickup', ball: b.id, pond: true } : { t: 'pickup', ball: b.id });
 }
 // The push picker scoops up whatever you roll over, no button needed.
@@ -1150,13 +1187,14 @@ function scoop() {
 const startShift = () => link?.act({ t: 'start' });
 
 // ---------------------------------------------------------------- joining
-async function enter(how) {
+async function enter(how, preset) {
   const name = $('name').value.trim();
   const code = $('join-code').value.trim().toUpperCase();
   $('join-error').textContent = '';
   try {
-    seat = how === 'create' ? await NET.createCrew(name) : await NET.joinCrew(code, name);
+    seat = how === 'create' ? await NET.createCrew(name) : how === 'skip' ? await NET.skipCrew(name, preset) : await NET.joinCrew(code, name);
   } catch (e) { if (/No crew/.test(e.message)) crewClosed(); else $('join-error').textContent = e.message; return; }
+  if (seat.tips) { hinter.markSeen(seat.tips); delete seat.tips; }   // round 11: skip ahead (test): old things' tips are seen
   NET.rememberUsed(seat.code, name);
   go();
 }
@@ -1257,6 +1295,7 @@ function showPhase() {
       ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${targetStamp(report.quota)} <b${!report.quota.hit && (report.quota.need != null ? report.quota.clean >= report.quota.need : report.quota.bv >= report.quota.target) ? ' class="pass"' : ''}>${report.quota.need != null ? reportRow(report.quota) : `BV ${money(report.quota.bv >= 100 ? Math.round(report.quota.bv) : report.quota.bv)} / ${money(report.quota.target >= 100 ? Math.round(report.quota.target) : report.quota.target)}`}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
       ${report.quota?.gauge != null ? `<p${report.quota.gaugeOk ? '' : ' class="stamp miss"'}>${crew.venue === 3 ? 'Crowd (last 2 min)' : 'Venue gauge at the bell'} <b>${Math.round(report.quota.gauge * 100)}% · ${report.quota.gaugeOk ? 'held' : report.quota.why ?? 'under 50%'}</b></p>` : ''}
       ${report.sealCash > 0 ? `<p>${sealRow(report.sealCash).replace(': ', ': <b>')}</b></p>` : ''}
+      ${report.spotless ? `<p class="stamp hit"><b>${spotlessRow(report.spotless, money)}</b></p>` : ''}
       ${report.tomorrow ? `<p class="dim">${report.tomorrow}</p>` : ''}`;
   }
   if (crew.phase === 'shift') relockMouse();
@@ -1264,6 +1303,7 @@ function showPhase() {
 }
 
 $('create').addEventListener('click', () => enter('create'));
+initSkip({ onPick: id => enter('skip', id) });   // round 11: "Skip ahead (test)" on dev + localhost only (web/js/skip.js)
 $('join').addEventListener('click', () => enter('join'));
 $('join-code').addEventListener('keydown', e => { if (e.key === 'Enter') enter('join'); });
 $('start').addEventListener('click', startShift);
@@ -1383,8 +1423,8 @@ function pause(on) {
 
 // ---------------------------------------------------------------- controller
 // Menus are driven with the D-pad or left stick plus Ⓐ, like a console app.
-const menuOpen = () => kitchen.isOpen || !!$('endcard') || ['title', 'lobby', 'report', 'pause', 'settings', 'store'].some(id => !$(id).classList.contains('hidden'));
-const menuRoot = () => $('endcard') ?? ['settings', 'pause', 'store', 'report', 'lobby', 'title'].map($).find(el => !el.classList.contains('hidden')) ?? null;
+const menuOpen = () => kitchen.isOpen || !!$('endcard') || !!recap.el() || ['title', 'lobby', 'report', 'pause', 'settings', 'store'].some(id => !$(id).classList.contains('hidden'));
+const menuRoot = () => $('endcard') ?? recap.el() ?? ['settings', 'pause', 'store', 'report', 'lobby', 'title'].map($).find(el => !el.classList.contains('hidden')) ?? null;
 // Owner playtest 3 §7.3: a card's primary button ([data-primary], the shop's first affordable Buy) takes focus.
 const focusPrimary = root => { if (root) primaryOf(navTargets(root), root.id)?.focus(); };
 function focusFirst(root) { if (root && !root.contains(document.activeElement)) focusPrimary(root); }
@@ -1431,6 +1471,7 @@ function pollPad(dt) {
     if (pad.pressed[BTN.Y] && root.id === 'report' && crew.players.filter(p => p.online).length > 1) $('next').click();   // Ⓨ: Ready
     if (pad.pressed[BTN.B] && (root.id === 'report' || root.id === 'lobby') && shopOpenIn(root)) { setShopOpen(root, false); root.querySelector('.shop-toggle')?.focus(); }   // Ⓑ folds the shop
     if (pad.pressed[BTN.B] && root.id === 'pause') pause(false);
+    if (pad.pressed[BTN.B] && root.id === 'recapcard') recap.close();   // round 11: the night card
     if ((pad.pressed[BTN.B] || pad.pressed[BTN.MENU]) && root.id === 'settings') openSettings(false);
     if (pad.pressed[BTN.B] && root.id === 'store') toggleStore(false);   // §7.3: View no longer opens or closes the shop
     if (pad.pressed[BTN.MENU] && root.id === 'pause') pause(false);
@@ -1484,7 +1525,8 @@ const TODO_TEXT = {
 function cheapest() {
   const size = Math.max(1, crew.players.filter(p => p.online).length), day = shopDay(crew.phase, crew.day ?? 1);
   let best = Infinity;
-  for (const item of SHOP) if (shopShows(item, crew.venue ?? 0, day, crew.endless)) { const p = nextPrice(item.id, crew.up, size, item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0, crew.venue ?? 0, day, crew.endless); if (p != null && p < best) best = p; }
+  const vday = shopVday();
+  for (const item of SHOP) if (shopShows(item, crew.venue ?? 0, day, crew.endless, 1, vday)) { const p = nextPrice(item.id, crew.up, size, item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0, crew.venue ?? 0, day, crew.endless, vday); if (p != null && p < best) best = p; }
   return Number.isFinite(best) ? best : 15;
 }
 const TODO_DONE = { pick: 'Picked up!', bank: 'Banked!', sign: 'Spotless!', buy: 'Bought!' };
@@ -1525,7 +1567,7 @@ function renderTodo(dt) {
   ballReturn.alarm(!!basketRat);   // the dispenser's lamp
   const nudge = !list || todoDoneT >= 3 ? garyExtra(withBasketAlarm(crew.mods?.nudge?.[me.id] ?? null, basketRat === me.id), garyParked(crew.gary)) : null;   // §6.3: parked, chat him
   const show = (!!list && todoDoneT < 3 || !!nudge) && playing() && !textBusy();
-  const tg = show && nudge ? nudgeTarget(nudge, me.wand, me, { cart: crewCarts().reduce((m, c) => (!m || (c.mud ?? 0) > (m.mud ?? 0) ? c : m), null), gary: crew.gary ? (crew.gary.phase === 'drive' ? garyPose : crew.gary) : null }) : show && cur ? todoTarget(cur.id)
+  const tg = show && nudge ? nudgeTarget(nudge, me.wand, me, { cart: crewCarts().reduce((m, c) => (!m || (c.mud ?? 0) > (m.mud ?? 0) ? c : m), null), gary: crew.gary ? (crew.gary.phase === 'drive' ? garyPose : crew.gary) : null, nMats: crew.nMats ?? 10 }) : show && cur ? todoTarget(cur.id)
     : !list && !nudge ? tipPointer.target(dt, crew, me, playing() && !textBusy()) : null;   // owner notes: the arrow points at a new thing's tip
   todoArrow.g.visible = todoArrow.ring.visible = !!tg;
   if (tg) {
@@ -1585,7 +1627,7 @@ function hud(dt = 0) {
     : nearestBall()?.kind === 'one' ? `${btn}  Pick up Ball No. 1`
     : chatting ? ''   // §6.3: his bubble is the exchange
     : canChat() ? `Hold ${btn}: chat to Gary`
-    : canFill() ? (crew.filling?.includes(me.id) ? `Basket ${crew.basket ?? 0}/12` : (crew.basket ?? 0) >= 12 ? 'Basket full' : (crew.filling?.length ?? 0) >= 2 ? 'Both chutes busy' : `Hold ${btn}: fill a bucket`)
+    : canFill() ? (crew.filling?.includes(me.id) ? `Basket ${crew.basket ?? 0}/${crew.basketMax ?? BUCKETS.BASKET}` : (crew.basket ?? 0) >= (crew.basketMax ?? BUCKETS.BASKET) ? 'Basket full' : (crew.filling?.length ?? 0) >= 2 ? 'Both chutes busy' : `Hold ${btn}: fill a bucket`)
     : views?.prompt(btn, ibtn) ? views.prompt(btn, ibtn)
     : r2?.prompt(btn) ? r2.prompt(btn)
     : me.diving ? `${crew.pond?.treasure && !me.treasure && Math.hypot(crew.pond.treasure.x - me.x, crew.pond.treasure.z - me.z) <= POND.REACH + 0.5 ? `${btn}  Take the ${TREASURE_BY_ID[crew.pond.treasure.id]?.name ?? 'treasure'}` : nearestBall(POND.REACH) ? `${btn}  Grab` : 'Feel around for balls'}${me.bag > 0 ? `  ·  ${ibtn}  Send up ${me.bag}/${diveTiers(me.dive).bag}` : ''}`   // air is the bar
@@ -1668,7 +1710,8 @@ function updateSpray(dt, now) {
     };
     crewCarts().forEach((c, i) => { const P = cartViews[i]?.pose; if (P) consider(i ? 'cart' + i : 'cart', P.x, 1.0, P.z, 1.5); });   // 'cart' is the first
     for (const [id, o] of others) if (!o.helper && o.g.visible) consider('p:' + id, o.g.position.x, 1.0, o.g.position.z, 0.6);   // Hose a Friend
-    for (const fx of FIXTURES) consider(fx.id, fx.x, fx.id === 'sign' ? 2.0 : fx.id === 'stand' ? 0.6 : 0.1, fx.z, fx.r);
+    for (const fx of FIXTURES) if (fixtureBuilt(fx.id, crew?.nMats ?? 10)) consider(fx.id, fx.x, fx.id === 'sign' ? 2.0 : fx.id === 'stand' ? 0.6 : 0.1, fx.z, fx.r);   // round 11: no unbuilt bay
+    if (crew?.venue === 4) for (const b of balls.values()) if (b.rest && (b.kind === 'hazard' || b.kind === 'hazwet')) consider('h:' + b.id, b.x, 0.1, b.z, 0.7);   // round 11: County hazards
     if (me.pitch < -1.0 && (me.grime ?? 0) > 0) best = 'self';   // looking down at your boots: the server rinses a layer every 1.5 s
     if (best) { if (washTarget !== best) { flushWash(now); washTarget = best; } washSecs += dt; }
     sprayStats.frames++; if (best) sprayStats.hits++;
@@ -1767,6 +1810,7 @@ function deckCamPad(p) {
 
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  sweep.update(now / 1000, dt);   // round 11: the ×N fades after the sweep
   const [px, py] = pollPad(dt);
 
   const drivingNow = driving();
@@ -1858,7 +1902,7 @@ function frame(now) {
 
   // Knocked flat: the camera drops to the grass and tips over, then gets up.
   fall += ((me.down > 0 ? 1 : 0) - fall) * Math.min(1, dt * (me.down > 0 ? 12 : 4));
-  sky.setTime(crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);
+  sky.setTime(crew.phase === 'shift' ? skyK(crew.today, crew.shiftT / crew.shiftSecs) : crew.phase === 'report' ? 1 : 0);   // round 11: Night Range holds the dusk
   sky.follow(skyAt.set(me.x, 0, me.z));
   if (drivingNow) {
     // Chase cam: behind and above my cart, looking a little ahead of it.
@@ -1900,6 +1944,7 @@ function frame(now) {
     // (owner notes: venue/pad/show used to sit inside the comment above, so every hint was marked seen and never shown)
     venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: (msg, id) => { showHint(msg); tipPointer.point(id); },
     day: crew.day, cash: crew.cash, signMud: crew.fixtures?.sign ?? 0, pocketFull: gp.pocket > 0 && carrying() >= gp.pocket, washerCash: crew.washer?.credit ?? 0, onDock: dockOpen(me), beers: beersPoured, deckOrder: !!crew.mods?.deck?.order,
+    baysFresh: !!bayLine.fresh,   // round 11 (owner): a just-built bay (bayline.js) gets its one tip
     ...tipCtx(crew, me) });   // owner notes: up, myDive, mats' mud (tips.js)
   board.tick(dt);
   confetti.tick(dt);        // the shared confetti pool (round 6: the bell's stamp, the huddle)
@@ -1943,7 +1988,7 @@ function frame(now) {
     garyView.plate.sprite.visible = !garyView.bubble.sprite.visible;   // one label over him at a time (the bubble may sit at the plate's height)
   }
   if (link) hud(dt);
-  ballReturn.update(stationsShown(crew).washer); ballReturn.basket(crew.basket ?? 0, crew.filling?.length ?? 0); ballReturn.tick(dt); fieldReturns.update(crew.up?.returns ?? 0); fieldReturns.tick(dt); dispatchRing.sync(crew.mods?.county?.zone);   // §3.3: the basket's heap   // the pipe runs through the washer once it's in the world
+  ballReturn.update(stationsShown(crew).washer); ballReturn.basket(crew.basket ?? 0, crew.filling?.length ?? 0, crew.basketMax ?? BUCKETS.BASKET); ballReturn.machine(crew.up?.filler ?? 0, crew.machT ?? null); ballReturn.bays(crew.phase === 'shift' ? crew.mats : null, crew.venue); ballReturn.silo(siloFill(crew.silo, crew.filled)); ballReturn.tick(dt); fieldReturns.update(crew.up?.returns ?? 0); fieldReturns.tick(dt, camera.position); dispatchRing.sync(crew.mods?.county?.zone);   // §3.3: the basket's heap   // the pipe runs through the washer once it's in the world
   props.tick(dt, sceneT, crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);   // station details (props.js)
   perf.tick(now);
   renderer.render(scene, camera);
@@ -1977,6 +2022,6 @@ SET.set({});   // re-apply saved settings now the PA exists
 requestAnimationFrame(frame);
 
 // Dev hook: /?debug exposes live state for poking at from the console.
-if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats, todoArrow, say: sayer, ballReturn, deckCam, onDeckFall, pauseGoals };
+if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats, todoArrow, say: sayer, ballReturn, fieldReturns, deckCam, onDeckFall, pauseGoals };
 // ?signs: draw each sign's facing and log any mesh whose world normal disagrees with signs.js (loaded only then).
 if (new URLSearchParams(location.search).has('signs')) import('./signsdebug.js').then(m => m.installSignDebug({ scene, venue: () => crew ? (crew.endless ? 6 : crew.venue ?? 0) : 0 }));

@@ -65,15 +65,19 @@ export default {
     };
     draw();
 
-    let warn = false;                     // round 7 #7: the Two-Minute Warning is up (the server's mods.stadium.w)
+    let warn = false;                     // round 7 #7: the Three-Minute Warning is up (round 11: T-3:00; the server's mods.stadium.w)
+    let hands = 0, booSaid = false, venue = 3;   // round 11: my souvenirs (negative: relayed), the first boo of the shift
     return {
-      banner: () => (warn ? { text: 'TWO-MINUTE WARNING', bg: '#d98a12', fg: '#1a1203' } : null),   // the Board, T-120 to Last Call
+      banner: () => (warn ? { text: 'THREE-MINUTE WARNING', bg: '#d98a12', fg: '#1a1203' } : null),   // the Board, T-3:00 to Last Call (T-2:30)
       show(on) {
         group.visible = on;
         if (!on && ctx.venues) ctx.venues.crowdBob = 0.15;
       },
       onSnapshot(_snap, mine) {
         warn = !!mine?.w;
+        venue = _snap?.venue ?? venue;
+        hands = mine?.hands?.[ctx.me?.id] ?? 0;
+        if (_snap?.phase !== 'shift') booSaid = false;
         if (!mine) return;
         s = mine.s; laps = mine.laps; knocks = mine.knocks;   // the jumbotron keeps the live mood (the Board grades k)
         if (bored(s) && !boredSaid) { boredSaid = true; ctx.toast?.('THE CROWD IS BORED', 3); }
@@ -81,6 +85,16 @@ export default {
       },
       onEvent(e) {
         if (e.t !== 'crowd') return;
+        // Round 11: the boo (a customer walks out), the souvenirs delivered, the hand-off.
+        const who = id => (id === ctx.me?.id ? 'You' : ctx.nameOf?.(id) ?? 'A Rat');
+        if (e.kind === 'boo') {
+          if (!booSaid) { booSaid = true; ctx.toast?.('The crowd is booing. Customers are leaving.', 3); }
+          else if (e.mat != null) ctx.feed?.('Booed. A customer walked out.');
+          ctx.SFX?.boo?.();   // sfx.js boo(): the crowd's low "ooo" (throttled)
+          return;
+        }
+        if (e.kind === 'souv') { ctx.feed?.(`${who(e.by)}: ${e.n} souvenir${e.n === 1 ? '' : 's'} to the crowd${e.relay ? '. Relay, double!' : '!'}`); if (e.by === ctx.me?.id) ctx.SFX?.jackpot?.(); return; }
+        if (e.kind === 'relay') { if (e.to === ctx.me?.id || e.by === ctx.me?.id) ctx.feed?.(`Hand-off! ${e.to === ctx.me?.id ? 'Run it to the rail' : 'Your mate runs it'}: double.`); return; }
         if (e.kind === 'ping') ping = { text: e.name ?? 'CART', until: now + 3 };
         else if (e.kind === 'knock') knock = { text: (e.name ?? 'A RAT').toUpperCase(), n: e.n, until: now + 5 };
         else if (e.kind === 'lap') ctx.feed?.('A lap of the Track! The crowd approves.');
@@ -95,6 +109,12 @@ export default {
           v.crowdBob = bored(s) ? 0.05 : bobFor(s) * w;
         }
         draw();
+      },
+      // Round 11: carrying souvenirs, the HUD says where they go.
+      prompt() {
+        if (venue !== 3 || !hands) return null;
+        const n = Math.abs(hands);
+        return `Souvenir ×${n}: to the crowd rail (side nets)${hands < 0 ? ', relayed ×2' : ', pass to a mate ×2'}`;
       },
       amb: snap => (snap?.phase === 'shift' ? { crowd: ambFor(s) } : {}),
       reportLines: () => ctx.crew?.()?.venue !== 3 ? [] : [`Crowd now ${Math.round(s * 100)}% ♥, ${laps} laps, ${knocks} knockdowns`],

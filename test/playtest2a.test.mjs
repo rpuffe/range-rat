@@ -9,7 +9,7 @@ import { garyCountdown } from '../web/js/huddlerules.js';
 import { nudgeSatisfied, dealFor } from '../web/js/nudge.js';
 import { promoPanelHtml } from '../web/js/promopanel.js';
 import { printCard, rowsOf } from '../web/js/goals.js';
-import { LAST_CALL } from '../web/js/sim.js';
+import { LAST_CALL, CLEANUP } from '../web/js/sim.js';
 
 const val = (upkeep, extra = {}) => ({ bv: upkeep, rate: 1, curb: 1, pond: null, fries: null, ...extra });
 const twelve = (o = {}) => ({ sign: 0, stand: 0, ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => ['mat' + i, 0])), ...o });
@@ -48,8 +48,10 @@ test('a second rally line ~30 s into Last Call when still short, once', () => {
   const rallies = ev.filter(e => e.t === 'rally');
   assert.equal(rallies.length, 1);
   assert.equal(rallies[0].need, RALLY_LINES.mats);
-  const into = rallies[0].at - (120 - LAST_CALL.SECS);
-  assert.ok(into >= RALLY_RECHECK - 0.1 && into < RALLY_RECHECK + 1, `at ${into} s into Last Call`);
+  // Round 11: the second look is the cleanup deal, at the cleanup's start (a 120 s shift: glow at T-42.9, out at T-34.3).
+  const k = 120 / LAST_CALL.FULL, into = rallies[0].at - (120 - LAST_CALL.SECS * k);
+  assert.ok(into >= (LAST_CALL.SECS - CLEANUP) * k - 0.1 && into < (LAST_CALL.SECS - CLEANUP) * k + 1, `at ${into} s into Last Call`);
+  assert.ok(RALLY_RECHECK > 0);
 });
 
 test('no second line when the crew is on target by then', () => {

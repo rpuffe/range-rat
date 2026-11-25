@@ -245,11 +245,12 @@ test('crew.ballPrice() follows BV and Hustle, not the cart; the snapshot reports
   assert.equal(crew.snapshot().value.value, 5.63);
   assert.equal(crew.snapshot().value.cartGear, 1);
   crew.cart.mud = 1;
-  assert.equal(crew.ballPrice(), 5.63, 'cart mud only changes the cart Gear');
-  assert.equal(crew.snapshot().value.cartGear, 0.8);
+  const muddy = crew.ballPrice();
+  assert.ok(muddy < 5.63, 'round 11 (the one price): cart mud is half a fixture of dirt on the Clean %');
+  assert.equal(crew.snapshot().value.cartGear, 0.8, 'the cart Gear is still reported (the wash minigame reads it)');
   crew.mult = 2;
-  assert.equal(crew.ballPrice(), 11.26);
-  assert.equal(crew.snapshot().value.value, 11.26);
+  assert.ok(Math.abs(crew.ballPrice() - 2 * muddy) <= 0.01);
+  assert.equal(crew.snapshot().value.value, crew.ballPrice());
 
   const { crew: bare } = makeCrew({ up: { washer: 1 } });
   assert.equal(bare.cart, null);
@@ -281,7 +282,7 @@ test('a player depositing at the stand is paid at their own grime Gear (clean = 
   crew.cart.mud = 1;
   a.pocket = 10; a.pocketW = 10;   // deposit() zeroes pocketW; real pickups keep both in step
   act(crew, a, { t: 'deposit' });
-  assert.equal(crew.cash, 26.32, '+ 10 x 1.88: the muddy cart changes nothing for a Rat');
+  assert.ok(crew.cash < 26.32 && crew.cash > 7.52 + 10 * 1.8, 'round 11: the muddy cart lowers the Clean % (the Board price) for a Rat too, a little');
 });
 
 // ---- mud from driving ---------------------------------------------------------

@@ -83,7 +83,7 @@ test('§5.1: the foam cannon cleans every fixture in its cone at once', () => {
     crew.wash(a, 0.5, 'mat8');
     return { m8: crew.fixtures.mat8, m9: crew.fixtures.mat9, m0: crew.fixtures.mat0 };
   };
-  const plain = run({ wand: 2 }), foam = run({ wand: 3 });
+  const plain = run({ wand: 2, build: 2 }), foam = run({ wand: 3, build: 2 });   // round 11: solo, mats 8 and 9 exist only once built (bays.js)
   assert.ok(plain.m8 < 0.5 && plain.m9 === 0.5, 'a plain nozzle cleans only its target');
   assert.ok(foam.m8 < 0.5 && foam.m9 < 0.5, 'the foam cleans mat9 (in the cone, inside the reach) too');
   assert.equal(foam.m0, 0.5, 'a mat far down the row is out of reach');

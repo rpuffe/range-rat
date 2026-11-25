@@ -13,7 +13,9 @@ import { GUTTERS_ROW } from './tiered.js';
 import { DRONES_ROW } from './county.js';
 //
 import { TETHER_ROW } from './orbit.js';
-import { OWNER_ROW } from './owner.js';   // endless (round 7 #9): the Owner's projects
+import { OWNER_ROW } from './owner.js';
+import { clubOpen, clubDayLabel } from './clubdays.js';   // round 11 (builder "feel"): stagger the Club, one idea a day   // endless (round 7 #9): the Owner's projects
+import { BUILD_ROW, WING_X, builtMats, builtUpper } from './bays.js';   // round 11 (owner): Build more bays
 
 export const SIM = {
   G: 9.81,
@@ -111,13 +113,16 @@ export function stepCart(c, throttle, steer, dt, vmax, world) {
 
 // Ten mats along z = 0, everyone hitting toward -z.
 export const MATS = Array.from({ length: 10 }, (_, i) => ({ i, x: -18 + i * 4 }));
+// Round 11 (owner, bays.js): the whole line in build order: the old ten, then the new wing west of the left crew bay.
+// MATS stays the old ten (the seam goldens fly from it); anything drawn, washed or walked to uses LINE.
+export const LINE = [...MATS, ...WING_X.map((x, k) => ({ i: MATS.length + k, x }))];
 
-// How many mats have a customer: more crew, more customers. Balanced for 4.
-// Owner playtest 3 §4: "Open every bay" (up.bays) puts all ten in play at any crew size, at every venue.
-export const activeMats = (players, up = null) => (up?.bays ?? 0) >= 1 ? MATS.length : Math.min(MATS.length, 4 + 2 * Math.max(1, players));
-// Council round 10 §3: the Upper Deck's six middle bays (Tiered on). Solo 2, 2P 4, 3P+ 6; "Open every bay" opens all 6.
+// How many mats are BUILT (only built bays exist: no mat, no number, no customer). More crew, more bays; balanced for 4.
+// Round 11 (owner): 6 solo, 8 for two, 10 for three+, and +2 a tier of "Build more bays" (up.build) at every crew size.
+export const activeMats = (players, up = null) => builtMats(players, up);
+// Council round 10 §3: the Upper Deck's six middle bays (Tiered on). Solo 2, 2P 4, 3P+ 6; round 11: +2 a build tier.
 export const UPPER_BAYS = 6;
-export const activeUpper = (players, up = null) => (up?.bays ?? 0) >= 1 ? UPPER_BAYS : Math.min(UPPER_BAYS, 2 * Math.max(1, players));
+export const activeUpper = (players, up = null) => builtUpper(players, up);
 
 export function mulberry32(a) {
   return () => {
@@ -214,12 +219,9 @@ export const SHOP = [
     { name: 'Range buckets', cost: 75, desc: 'Everyone holds 25. You all look like you work here.' },
     { name: 'Push pickers', cost: 250, desc: 'Everyone walks over balls and scoops them up. Holds 60.' },
   ] },
-  // Owner playtest 3 §4 ("Open every bay"): a small crew opens all ten mats. Hidden at 4+ Rats (they're all open).
-  // Main-session call: it carries over to every venue (a solo or small crew keeps its bays after promotion).
-  { id: 'bays', title: 'Open every bay', minDay: 2, maxCrew: 3, tiers: [
-    { name: 'A bay or two each', desc: 'More of you, more bays open.' },
-    { name: 'Every bay open', cost: 40, desc: 'Every bay open, however many of you there are.' },
-  ] },
+  // Round 11 (owner): "Build more bays" (bays.js) replaces "Open every bay" (up.bays, migrated to up.build 2): +2 bays
+  // a tier at every crew size, built overnight. Bays are concrete: they carry over to every venue.
+  BUILD_ROW,
   { id: 'cart', title: 'Picker cart', minDay: 3, tiers: [
     { name: 'No cart', desc: 'Everything on foot.' },
     { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 150, unloads itself at the ball return, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
@@ -235,10 +237,12 @@ export const SHOP = [
     { name: 'Fry conveyor', cost: 2000, desc: 'A basket every 3 s. Corporate does not explain why a driving range needs this many fries.' },
   ] },
   // Council round 10 §C: field ball returns (perks.returns). Ⓧ at one sends your pocket home in 6 s.
-  { id: 'returns', title: 'Field ball returns', minDay: 3, tiers: [
+  // Round 11 (owner): the Far return sits across the creek at a late-Muni / Club price (it stops Rats coming back to
+  // the main area); its pneumatic tube runs above ground on posts all the way to the return (ballreturn.js).
+  { id: 'returns', title: 'Field ball returns', minDay: 4, tiers: [
     { name: 'One return', desc: 'Every ball walks home to the ball return.' },
-    { name: 'The Field return', cost: 150, minDay: 3, desc: 'A second return by the Yellow flag. Its pipe runs home. THUNK.' },
-    { name: 'The Back return', cost: 1500, minVenue: 1, desc: 'A third return out by the Blue flag. Same pipe, longer. THUNK.' },
+    { name: 'The Far return', cost: 3000, minDay: 4, desc: 'A second return across the creek. A shiny tube on stilts whooshes your balls home. THUNK.' },
+    { name: 'The Back return', cost: 12000, minVenue: 1, club: 'back', desc: 'A third return out by the Blue flag. Its tube joins the first one. THUNK.' },
   ] },
   { id: 'helpers', title: 'Hired help', tiers: [
     { name: 'Nobody', desc: 'It is just the crew.' },
@@ -261,10 +265,12 @@ export const SHOP = [
     { name: 'Turbo nozzle', cost: 150, minDay: 4, desc: 'Cleans twice as fast and reaches 9 m. Corporate approved this nozzle after a brief incident.' },
     { name: 'Foam cannon', cost: 20000, minVenue: 2, desc: 'Foams every fixture in a 2 m cone at once. Sweep a row of mats in one pass.' },
   ] },
-  // Owner playtest 3 §3.3: the bucket basket's machine (BUCKETS.MACHINE_SECS). Hidden at the Muni.
-  { id: 'bucket', title: 'Bucket machine', minVenue: 1, tiers: [
+  // Owner playtest 3 §3.3, round 11: the basket's automatic filler (machineSecs): a slow, cheap Muni filler from day 2,
+  // the fast machine at the Club. It was the row `bucket` (the machine only); crew.mjs migrates old saves.
+  { id: 'filler', title: 'Bucket filler', minDay: 2, tiers: [
     { name: 'Filled by hand', desc: 'Hold the button at the dispenser. 30 balls a bucket.' },
-    { name: 'Bucket machine', cost: 400, desc: 'Fills a bucket every 10 s. It hums. Nobody knows the tune.' },
+    { name: 'Old bucket filler', cost: 50, desc: 'Fills a bucket every 20 s by itself. It wheezes. You can watch it.' },
+    { name: 'Bucket machine', cost: 400, minVenue: 1, desc: 'Fills a bucket every 10 s. It hums. Nobody knows the tune.' },
   ] },
   // Owner playtest 3 §5.1: the turbo nozzle moved to the wand row; amenities keep one tier (saves migrate in crew.mjs).
   { id: 'amen', title: 'Club amenities', minVenue: 1, tiers: [
@@ -304,15 +310,18 @@ export const HELPER_NAMES = ['Kyle', 'Madison', 'Tanner', 'Brayden'];
 // gear, shoes, hard hats and the teenagers; the washer and ads on day 2; the cart on day 3;
 // the snack shed (the kitchen) at the Range Club. Hidden rows are not shown at all.
 // Owner playtest 3 §4: a row with `maxCrew` hides for bigger crews (Open every bay: at 4+ Rats every mat is open).
-export const shopShows = (item, venue = 0, day = Infinity, endless = false, crew = 1) =>   // round 7 #9: an `endless` row shows only in endless
+// Round 11 (clubdays.js): a row with `club` (a CLUB_DAY key) hides at the Club before that Club day (vday).
+export const shopShows = (item, venue = 0, day = Infinity, endless = false, crew = 1, vday = null) =>   // round 7 #9: an `endless` row shows only in endless
   (item.minVenue ?? 0) <= venue && (venue > 0 || (item.minDay ?? 0) <= day) && (!item.endless || !!endless) &&
-  (!item.maxCrew || Math.max(1, crew) <= item.maxCrew);
+  (!item.maxCrew || Math.max(1, crew) <= item.maxCrew) && (!item.club || endless || clubOpen(item.club, venue, vday));
 // Why the next tier can't be bought yet: 'Day 4' (a Muni tier's own day) or the venue's name. Null when it can.
-export function tierLock(item, lvl, venue = 0, day = Infinity) {
+// Round 11: a tier with `club` (a CLUB_DAY key) is locked at the Club before that Club day: 'Club day 3'.
+export function tierLock(item, lvl, venue = 0, day = Infinity, vday = null) {
   const t = item?.tiers[lvl + 1];
   if (!t) return null;
   if ((t.minVenue ?? 0) > venue) return VENUE_RULES[t.minVenue]?.name ?? 'later';
   if (venue === 0 && (t.minDay ?? 0) > day) return `Day ${t.minDay}`;
+  if (t.club && !clubOpen(t.club, venue, vday)) return clubDayLabel(t.club);
   return null;
 }
 // The day the shop is shopping for: overnight (the report) it is tomorrow.
@@ -321,12 +330,12 @@ export const shopDay = (phase, day) => (phase === 'report' ? day + 1 : day);
 // Crew upgrades scale with crew size (balanced for 4): ×1 solo, ×2.2 for four.
 // Personal gear (only the dive gear now, §5.2) doesn't: everyone buys their own at the catalog price.
 export const priceScale = crewSize => 1 + 0.4 * (Math.max(1, crewSize) - 1);
-export function nextPrice(id, up, crewSize, gearLevel = 0, venue = 0, day = Infinity, endless = false) {
+export function nextPrice(id, up, crewSize, gearLevel = 0, venue = 0, day = Infinity, endless = false, vday = null) {   // round 11: vday (clubdays.js)
   const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
-  if (!item || !shopShows(item, venue, day, endless, crewSize)) return null;
+  if (!item || !shopShows(item, venue, day, endless, crewSize, endless ? null : vday)) return null;
   const lvl = item.personal ? gearLevel : up?.[id] ?? 0;
   const t = item.tiers[lvl + 1];
-  if (!t || tierLock(item, lvl, venue, day)) return null;    // maxed out, or not at this venue (or Muni day) yet
+  if (!t || tierLock(item, lvl, venue, day, endless ? null : vday)) return null;    // maxed out, or not at this venue (or Muni day) yet
   return item.personal ? t.cost : Math.round(t.cost * priceScale(crewSize));
 }
 
@@ -356,7 +365,7 @@ export function perks(up = {}) {
     foam: (up.wand ?? 0) >= 3,                     // the foam cannon: every fixture in a 2 m cone at once
     truck: (up.wand ?? 0) >= 4,                    // the power-washing truck (a later build)
     covered: (up.amen ?? 0) >= 1,
-    bays: (up.bays ?? 0) >= 1,                     // §4: Open every bay
+    build: up.build ?? 0,                          // round 11: Build more bays (bays.js)
     swingGapMult: [1, 0.8, 0.645, 0.5][up.ads ?? 0],
     walk: SIM.WALK * (1 + 0.15 * (up.shoes ?? 0)),
     knockSecs: up.hardhat ? 1 : SIM.KNOCK_SECS,
@@ -379,7 +388,7 @@ export function perks(up = {}) {
 export const WASH = {
   STATION: { x: 36, z: 3 },   // the pressure washer, beside the cart's parking spot
   GRAB: 2.5,                  // m, how close to grab the wand
-  HOSE: 60,                   // m of hose (reaches the mats and the sign); wander further and you drop the wand
+  HOSE: 86,                   // m of hose (reaches the mats and the sign); wander further and you drop the wand. Round 11: 60 -> 86, so it reaches the new wing (bays.js, mat 16 at x -48)
   RANGE: 7,                   // m, how far the spray reaches
   RATE: 0.08,                 // mud cleaned per second of spraying on target (stacks per sprayer), × perks.washRate
   FOAM_R: 2,                  // m: the foam cannon's cone, every fixture this close to the spray line at once
@@ -403,12 +412,15 @@ export const KIND_W = { range: 1, glow: 2, lead: 3, square: 2, gold: 10, splitte
 // Which kind a customer's next ball is (lead and glow are chosen elsewhere).
 // Debuts by day: gold day 3, square day 5 (council round 3), splitter day 7,
 // bouncy at the Club (venue 1+). The foam ball was cut in round 3.
-export function pickKind(day, venue, rng) {
+// Round 11 (clubdays.js): at the Club the kinds stagger by Club day (vday): square day 1, gold day 2 (with the pond's
+// lead), bouncy day 3. One rng() draw either way, so the stream only moves where a kind is held back.
+export function pickKind(day, venue, rng, vday = null) {
   const r = rng();
-  if (day >= 3 && r < 0.005) return 'gold';
+  const club = (venue ?? 0) === 1 && vday != null;
+  if ((club ? clubOpen('gold', venue, vday) : day >= 3) && r < 0.005) return 'gold';
   if (day >= 7 && r < 0.045) return 'splitter';
-  if (venue >= 1 && r < 0.10) return 'bouncy';
-  if (day >= 5 && r < 0.15) return 'square';      // round 6 #8: fewer (was 0.28), worth ×2, and the reels can't take them
+  if (venue >= 1 && clubOpen('bouncy', venue, vday) && r < 0.10) return 'bouncy';
+  if ((club ? clubOpen('square', venue, vday) : day >= 5) && r < 0.15) return 'square';      // round 6 #8: fewer (was 0.28), worth ×2, and the reels can't take them
   return 'range';
 }
 export const KIND_NAMES = { range: 'range ball', glow: 'glow ball', lead: 'lead ball', square: 'square ball', gold: 'GOLD BALL', splitter: 'splitter', bouncy: 'super-bouncy ball', debris: 'orbital debris' };
@@ -444,7 +456,7 @@ export const upkeepCeiling = ({ pond = null, fries = null, kpi = null }) => 1 + 
 export const FIXTURES = [
   { id: 'sign', x: 14, z: 11, r: 1.8 },
   { id: 'stand', x: SIM.STAND.x, z: SIM.STAND.z, r: 1.6 },   // the ball return (customers see it from the mats)
-  ...MATS.map(m => ({ id: `mat${m.i}`, x: m.x, z: 0, r: 1.1 })),
+  ...LINE.map(m => ({ id: `mat${m.i}`, x: m.x, z: 0, r: 1.1 })),   // round 11: the wing too (only BUILT mats hold mud, bays.js)
 ];
 export const FIXTURE_BY_ID = Object.fromEntries(FIXTURES.map(f => [f.id, f]));
 
@@ -455,15 +467,19 @@ export function quotaQ(day, ceiling) {
   const q = [0.15, 0.2, 0.3, 0.35][day - 2] ?? 0.35 + 0.05 * (day - 5);
   return Math.min(Math.max(0.3, q), 0.8 * (ceiling - 1));
 }
-// Owner playtest 3 §2: Last Call at T−90 (glow, customers swing ×3 as often for 30 s), then the cleanup minute:
-// at T−CLEANUP every customer walks out, no customer ball after it, and the mats stop scuffing.
-export const LAST_CALL = { SECS: 90, FROM_DAY: 2, SWING: 3 };
-export const CLEANUP = 60;
+// The end of the day (round 11, owner firm call; replaces owner playtest 3 §2's "glow at 1:30, out at 1:00"):
+// from T−TAPER customers taper off (busy bays and the swing rate fall smoothly, dayend.js), Last Call's glow balls
+// from T−SECS, and at T−CLEANUP the last customer walks out: a two-minute cleanup, no customer ball, no scuffing.
+// Windows are for a full FULL-second shift and scale down with a shorter one (day 2's 360 s). SWING: no rush now (1).
+// DAY_RATE: the busier daytime crowd (round 11 final pass) that keeps a shift's customer balls within ~10% of the old day.
+export const LAST_CALL = { SECS: 150, FROM_DAY: 2, SWING: 1, TAPER: 180, FULL: 420, MIN_RATE: 0.5, DAY_RATE: 1.6 };
+export const CLEANUP = 120;
 // Owner playtest 3 §3.1: mats keep their mud overnight, capped here ("the night crew knocks the worst off").
 export const MAT_NIGHT_CAP = 0.6;
 // Owner playtest 3 §3.3: the bucket basket by the dispenser. Empty every morning; the crew fills it by hand at the
-// Muni (hold Ⓐ, two chutes), the Bucket machine (SHOP `bucket`, the Club) adds one every MACHINE_SECS.
-export const BUCKETS = { BASKET: 12, BALLS: 30, BALLS_CLUB: 40, FILL_SECS: 1.5, CHUTES: 2, MACHINE_SECS: 10, WAIT: 25 };
+// Muni (hold Ⓐ, two chutes); the SHOP `filler` row adds one every SLOW_SECS (the Muni's old filler) or MACHINE_SECS (the Club).
+export const BUCKETS = { BASKET: 12, BALLS: 30, BALLS_CLUB: 40, FILL_SECS: 1.5, CHUTES: 2, MACHINE_SECS: 10, SLOW_SECS: 20, WAIT: 25 };
+export const machineSecs = tier => [0, BUCKETS.SLOW_SECS, BUCKETS.MACHINE_SECS][Math.max(0, Math.min(2, tier | 0))];
 // Council round 6 #2: from Tiered on, the bell's review also needs the venue gauge at or above this.
 // The Muni and the Club have no gauge (kpi null), so their rule is unchanged.
 export const QUOTA_KPI = 0.5;
@@ -478,7 +494,7 @@ export const VENUE_RULES = [
     kpi: 'CROWD SENTIMENT', howto: 'New: the Ping Track. The crowd grades you now. The crowd has never played golf.' },
   { name: 'County Range', title: 'County Retrieval Director', fee: 3_000_000, writeOff: 712_000_000, memo: '712,000,000 balls have been reclassified as the county.', pa: 'county', eatEvery: 8,
     kpi: 'ZONING COMPLIANCE', howto: 'New: the Yards. Your customers now hit into the county. The county has noticed.' },
-  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 15_000_000, writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 8,
+  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 12_500_000,   /* round 11: 15M -> 12.5M, so the County's 2 good days are its 2 shifts */ writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 8,
     kpi: 'ORBITAL DEBRIS', howto: 'The Lift is open. Keep the sky clear.' },
 ];
 // Round 4: VENUE_RULES[v].kpi is the Board's fourth gauge label (only the current venue's KPI is graded),
@@ -554,7 +570,8 @@ export const GARY = {
   CLEAN: 0.34,              // a stop passes at this much mud or less
   HUDDLE_R: 8,              // every online Rat this close to the stand when he arrives: it counts twice
   STALL: 3, STALLS: 3,      // council round 8 #2: a crew ball on his cart while he drives: 3 s of notes, 3 times a visit
-  SOLO_WARN: 60, SOLO_MATS: 2,   // playthrough 4 A18: solo, a 60 s warning and only the two muddiest mats in play
+  SOLO_WARN: 90, SOLO_MATS: 2,   // playthrough 4 A18: solo, a longer warning (round 11: 60 -> 90 s) and only the two muddiest mats in play
+  SOLO_START: 0.34,         // round 11 (expert XS): on a solo Gary morning the sign and the cart start at his pass line
   // Owner playtest 3 §6.2–6.4: the schedule, the chat and the Seal.
   GAP: 2, GAP_LONG: 3, GAP_LONG_P: 1 / 3,   // the next visit is 2 days later, or 3 with a 1-in-3 chance (crew RNG)
   STALL_BUDGET: 12,         // s of stalling a visit, shared by chat and cart pings (each ping still GARY.STALL)

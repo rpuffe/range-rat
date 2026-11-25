@@ -3,12 +3,16 @@
 // Bucket's four steps (Ball No. 1 falls when they're done). Endless has no card.
 //   - the last goal is always "Save the $X fee": live (ticks when cash ≥ fee, un-ticks below it);
 //   - one is "Hit the daily target N×" (the Closing Bell's APPROVED at this venue: 2 at the Muni, 3 from the Club);
-//   - the other three are feature goals, each paying 50 × BV when it completes (✦).
+//   - the other three are feature goals, each paying REWARD_BV[venue] × BV × crewScale when it completes (✦);
+//     round 11 (expert #5.3): sized to ~5–10% of a shift's income at every venue (it was a flat 50 × BV: 2% late).
 // Counts scale with the crew printed on the venue's first morning (solo ×0.4 … 6P ×1.4, rounded up) and never move.
 // Pure: no THREE, no DOM. server/crew.mjs keeps the card; board.js, round2.js, morning.js and main.js read it.
 import { money } from './sim.js';
 
-export const REWARD_BV = 50;         // a feature goal pays 50 × BV when it completes
+// Round 11: a feature goal pays REWARD_BV[venue] × BV × crewScale(crew). Measured (4P bots, round 11): ~$255 against a
+// ~$3k Muni shift, $2.7–3.8k against $45–64k at the Club, ~$44k against $0.6–0.9M at Tiered, $0.19–0.26M against ~$3M
+// at the Stadium, ~$1.2M against ~$15.5M at the County: 6–9% of a shift everywhere (it was 50 × BV: 2% late).
+export const REWARD_BV = Object.freeze([40, 60, 120, 180, 150, 130]);
 export const RISE_REVIEWS = 3;       // the quota curve climbs with good days until this many (the old PROMO_STAMPS)
 export const SCALE = { 1: 0.4, 2: 0.6, 3: 0.8, 4: 1, 5: 1.2, 6: 1.4 };
 export const crewScale = n => SCALE[Math.max(1, Math.min(6, Math.floor(Number(n) || 1)))];
@@ -33,10 +37,13 @@ const G = {
   targets: { kind: 'count', n: 8, reward: true, text: n => `Land ${n} TARGETs`, more: n => `${n} more TARGET${n === 1 ? '' : 's'}`, short: n => `${n} TARGETs` },
   orders: { kind: 'count', n: 24, reward: true, text: n => `Fill ${n} deck orders`, more: n => `${n} more deck order${n === 1 ? '' : 's'}`, short: n => `${n} deck orders` },
   gutters: { kind: 'buy', row: 'gutters', tier: 1, reward: true, text: () => 'Buy the ball-return gutters', short: () => 'The gutters' },
-  laps: { kind: 'count', n: 20, reward: true, text: n => `Drive ${n} laps of the Ping Track`, more: n => `${n} more lap${n === 1 ? '' : 's'}`, short: n => `${n} laps` },
+  // Round 11: with the Stadium's reviews at 2×, 20 laps (one driver laps ~6–7 a shift) held the venue to 3–4 shifts: 12.
+  laps: { kind: 'count', n: 12, reward: true, text: n => `Drive ${n} laps of the Ping Track`, more: n => `${n} more lap${n === 1 ? '' : 's'}`, short: n => `${n} laps` },
   pings: { kind: 'count', n: 12, reward: true, text: n => `Ping the cart ${n} times`, more: n => `${n} more ping${n === 1 ? '' : 's'}`, short: n => `${n} pings` },
   cart2: { kind: 'buy', row: 'cart', tier: 3, reward: true, text: () => 'Buy the second cart', short: () => 'The second cart' },
-  strays: { kind: 'count', n: 150, reward: true, text: n => `Sweep ${n} strays from the Yards`, more: n => `${n} more stray${n === 1 ? '' : 's'}`, short: n => `${n} strays` },
+  // Round 11: the County's reviews at 2× too: 150 strays took the bot's Yards walker 3 shifts (with this round's County,
+  // 58 then 92 by the 2nd shift): 85.
+  strays: { kind: 'count', n: 85, reward: true, text: n => `Sweep ${n} strays from the Yards`, more: n => `${n} more stray${n === 1 ? '' : 's'}`, short: n => `${n} strays` },
   drones: { kind: 'buy', row: 'drones', tier: 1, reward: true, text: () => 'Buy the drones', short: () => 'The drones' },
   pass: { kind: 'once', gary: true, reward: true, text: () => "Pass Gary's inspection", short: () => "Gary's inspection" },
   lift: { kind: 'riders', reward: true, text: () => 'Every Rat rides the Lift', more: n => `${n} more Rat${n === 1 ? '' : 's'} on the Lift`, short: () => 'Everyone rode the Lift' },
@@ -48,13 +55,14 @@ const G = {
 };
 export const GOALS = G;
 
-// The cards, venue by venue (4P numbers). `reviews` carries its N.
+// The cards, venue by venue (4P numbers). `reviews` carries its N. Round 11 (expert #1): 2× at the Stadium and the
+// County, cutting the late plateau's formality day (nothing late fails, so the third good day was a timer).
 export const CARDS = [
   [{ id: 'bank' }, { id: 'washer' }, { id: 'huddle' }, { id: 'reviews', n: 2 }, { id: 'fee' }],        // the Muni
   [{ id: 'fed' }, { id: 'treasures' }, { id: 'seal' }, { id: 'reviews', n: 3 }, { id: 'fee' }],    // the Club
   [{ id: 'targets' }, { id: 'orders' }, { id: 'gutters' }, { id: 'reviews', n: 3 }, { id: 'fee' }],    // Tiered
-  [{ id: 'laps' }, { id: 'pings' }, { id: 'cart2' }, { id: 'reviews', n: 3 }, { id: 'fee' }],          // the Stadium
-  [{ id: 'strays' }, { id: 'drones' }, { id: 'pass' }, { id: 'reviews', n: 3 }, { id: 'fee' }],        // the County
+  [{ id: 'laps' }, { id: 'pings' }, { id: 'cart2' }, { id: 'reviews', n: 2 }, { id: 'fee' }],          // the Stadium
+  [{ id: 'strays' }, { id: 'drones' }, { id: 'pass' }, { id: 'reviews', n: 2 }, { id: 'fee' }],        // the County
   [{ id: 'lift' }, { id: 'debris' }, { id: 'tether' }, { id: 'sky' }],                                 // the Orbital: the Last Bucket
 ];
 export const LAST_CARD = 5;
@@ -174,8 +182,9 @@ export function goalLine(r) {
   if (r.kind === 'count' || r.kind === 'fixed' || r.kind === 'reviews' || r.kind === 'riders') return `${r.text} · ${commas(r.have)} / ${commas(r.need)}`;
   return r.text;
 }
-// What a feature goal pays when it completes: 50 × BV (cents).
-export const rewardFor = bv => Math.round((Number(bv) || 0) * REWARD_BV * 100) / 100;
+// What a feature goal pays when it completes (cents): REWARD_BV[venue] × BV × crewScale(crew).
+export const rewardFor = (bv, venue = 0, crew = 4) =>
+  Math.round((Number(bv) || 0) * (REWARD_BV[Math.max(0, Math.min(REWARD_BV.length - 1, venue | 0))]) * crewScale(crew) * 100) / 100;
 // The one toast (≤ 8 words): "Goal done! 30 hot dogs. +$1,450"
 export const doneToast = (id, need, reward) => `Goal done! ${G[id]?.short?.(need) ?? G[id]?.text(need) ?? id}.${reward > 0 ? ' +' + money(reward) : ''}`;
 
@@ -219,7 +228,7 @@ export function dealGoal(rows) {
 }
 
 // The card as HTML rows for the report and the pause menu's Goals panel: each row with a tick or a count and its
-// reward; today's newly done goals highlighted. rewardNow: 50 × BV now (for the ✦ rows).
+// reward; today's newly done goals highlighted. rewardNow: what a ✦ goal pays now (rewardFor).
 export function cardHtml(rows, { rewardNow = 0, esc = s => String(s) } = {}) {
   if (!rows?.length) return '';
   return '<ul class="goal-card">' + rows.map(r =>

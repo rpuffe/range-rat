@@ -106,20 +106,23 @@ test('GOLDEN: cartBlocked, fieldFor, clampToField and BV are unchanged at venues
 // customers' walk to the basket by the dispenser (was 10b46ff0), the Club run only with the bank point moving to the
 // ball return, where its two teenagers bank (was 71c4c5b). With both put back, the old fingerprints come out exactly.
 // Council round 10 #5: the Club run re-recorded for the creek snags (one cause: SNAG.ON = 0 gives a1dfbc50 again, below).
+// Round 11 (expert pacing review): all three re-recorded. The causes, each checked by its builder: the end-of-day taper,
+// the busier daytime crowd and the spotless/goal-reward cash (Muni and Club), and gear grime folded into the Clean %
+// (Club). The bays, Today, range and late work leave them unchanged. The venue-2+ module still changes nothing.
 test('GOLDEN: a whole seeded crew plays out identically at the Muni and the Club (no modules)', () => {
-  assert.equal(fnv(crewRun(null)), '47588632');
-  assert.equal(fnv(crewRun(CLUB_SAVE)), 'dc37044f');
+  assert.equal(fnv(crewRun(null)), 'dee0fab1');
+  assert.equal(fnv(crewRun(CLUB_SAVE)), 'ba21dc31');
 });
 
 test('GOLDEN: with the creek snags off, the Club run is the pre-round-10 fingerprint', (t) => {
   SNAG.ON = 0; t.after(() => { SNAG.ON = 1; });
-  assert.equal(fnv(crewRun(CLUB_SAVE)), 'a1dfbc50');
+  assert.equal(fnv(crewRun(CLUB_SAVE)), 'dee791b9');
 });
 
 test('GOLDEN: a module that lives at venue 2+ changes nothing at venues 0-1', () => {
   const noisy = { id: 'noisy', venue: 2, kpi: () => 0, launchMod: (c, st, shot) => ({ ...shot, vx: shot.vx + 9 }), tick: c => { c.cash += 1000; } };
-  assert.equal(fnv(crewRun(null, { modules: [noisy] })), '47588632');
-  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), 'dc37044f');
+  assert.equal(fnv(crewRun(null, { modules: [noisy] })), 'dee0fab1');
+  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), 'ba21dc31');
 });
 
 // ---- the fourth gauge ------------------------------------------------------------------------------------------------
@@ -155,7 +158,7 @@ test('the Crew: a venue KPI lifts the ceiling to 3.0 and the quota scales with i
   const later = crewAt(3, [dummyKpi(2, 0.5)]).crew;
   assert.equal(later.valueNow().kpi, undefined);
   assert.equal(later.ceiling(), 2.5);
-  assert.equal(crewAt(1, [dummyKpi(2, 0.5)]).crew.ceiling(), 2.5, 'nor before it');
+  assert.equal(crewAt(1, [dummyKpi(2, 0.5)], { venueDay: 2 }).crew.ceiling(), 2.5, 'nor before it');   // round 11: Club day 2, the pond filled
 });
 
 test('VENUE_RULES: a KPI label and a how-to card from Tiered on; the reveal shows the how-to second', () => {

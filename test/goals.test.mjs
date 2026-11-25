@@ -13,7 +13,8 @@ test('every card has 5 goals with the fee last; the Orbital has 4 and no fee', (
     assert.equal(CARDS[v].filter(g => g.id === 'reviews').length, 1);
   }
   assert.equal(CARDS[0].find(g => g.id === 'reviews').n, 2, 'the Muni: 2 good days');
-  for (let v = 1; v <= 4; v++) assert.equal(CARDS[v].find(g => g.id === 'reviews').n, 3, 'from the Club: 3');
+  for (let v = 1; v <= 2; v++) assert.equal(CARDS[v].find(g => g.id === 'reviews').n, 3, 'the Club and Tiered: 3');
+  for (let v = 3; v <= 4; v++) assert.equal(CARDS[v].find(g => g.id === 'reviews').n, 2, 'round 11 (expert #1): the Stadium and the County: 2');
   assert.equal(CARDS[5].length, 4);
   assert.ok(!CARDS[5].some(g => g.id === 'fee'));
 });
@@ -76,9 +77,12 @@ test('cardDone needs all five', () => {
   assert.equal(cardDone([]), false);
 });
 
-test('the reward is 50 × BV', () => {
-  assert.equal(rewardFor(29), 1450);
-  assert.equal(rewardFor(2.62), 131);
+test('the reward: REWARD_BV[venue] × BV × crewScale (round 11: ~7% of a shift, every venue)', () => {
+  assert.equal(rewardFor(29), 1160);                 // the Muni, 4P: 40 × 29
+  assert.equal(rewardFor(2.62, 0, 1), 41.92);         // solo: × 0.4
+  assert.equal(rewardFor(400, 2, 4), 48000);          // Tiered: 120 × BV
+  assert.equal(rewardFor(8400, 4, 2), 756000);        // the County, 2P: 150 × BV × 0.6
+  assert.equal(rewardFor(10, 99), 1300);              // past the Orbital: the Orbital's
   assert.equal(doneToast('fed', 180, 1450), 'Goal done! Fed for 3 minutes. +$1,450');
   for (const id of ['bank', 'washer', 'huddle', 'fed', 'treasures', 'seal', 'targets', 'orders', 'gutters', 'laps', 'pings', 'cart2', 'strays', 'drones', 'pass', 'lift', 'debris', 'tether'])
     assert.ok(words(doneToast(id, 2000, 1_234_567)) <= 8, id + ': ' + doneToast(id, 2000, 1_234_567));

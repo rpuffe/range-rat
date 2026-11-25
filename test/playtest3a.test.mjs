@@ -108,7 +108,7 @@ test('#3: just over the target is not "On target" at the rally (the margin), but
   assert.equal(shortfall({ value, quota, fixtures: twelve(), margin: UPKEEP_MARGIN }), RALLY_LINES.mats, 'with the margin: name the biggest term');
   assert.ok(shortfalls({ value, quota, fixtures: twelve(), margin: UPKEEP_MARGIN }).length > 0, 'and deal it');
   assert.equal(shortfall({ value: val(1.3 + UPKEEP_MARGIN + 0.01), quota, fixtures: twelve(), margin: UPKEEP_MARGIN }), RALLY_LINES.onTarget);
-  assert.ok(UPKEEP_MARGIN >= 0.05 && UPKEEP_MARGIN <= 0.07);
+  assert.ok(UPKEEP_MARGIN >= 0.01 && UPKEEP_MARGIN <= 0.03);   // round 11: the taper leaves ~30 s of thin scuffing
 });
 
 // Owner playtest 3 §2: the re-check is now the cleanup deal at T-60, after which nothing scuffs: it reads margin 0.

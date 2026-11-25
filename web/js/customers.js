@@ -24,8 +24,9 @@
 //
 // Time is one monotonic server clock in seconds (`now`); it never pauses.
 
-import { MATS, UPPER_BAYS } from './sim.js';
+import { LINE as MATS, UPPER_BAYS } from './sim.js';   // round 11 (bays.js): the whole line, the new wing too
 import { BASKET_POINT } from './layout.js';
+import { WING_WALK_X } from './bays.js';
 
 export const CUST = {
   WALK: 1.3,              // m/s
@@ -45,7 +46,7 @@ export const CUST = {
 };
 
 // ---- council round 10 #3: the Upper Deck's six middle bays (Tiered on) -----------------------------------------
-// Six more "mats" above lower mats 2-7 (x -10..10), indices 10..15 in crew.mats. Their customers hit from y 3.1 at the
+// Six more "mats" above lower mats 2-7 (x -10..10), indices 16..21 in crew.mats (round 11: after the whole line). Their customers hit from y 3.1 at the
 // deck's front, behind the low rail (z 2.6: the ball passes under the rail's bar). No mud, no basket (the bar sells
 // them a bucket at the top of the stairs), no lead. They come up the stairs from x -27.5 and leave the same way.
 // Activation goes from the middle out (solo: the two centre bays), so a small crew's drinkers stand over the return.
@@ -147,7 +148,7 @@ export function leaveRoute(mat, dx = CUST.PLAY_DX, basket = false) {
   if (isUpper(mat)) return upperLeaveRoute(mat, dx);
   const sx = matX(mat) - dx;
   const P = basket ? [[STAND_POINT.x, STAND_POINT.z], [18, 5.5], [-3, 5.5], [GATE.x, GATE.z], [EXIT_POINT.x, EXIT_POINT.z]]
-    : [[sx, PLAY_Z], [sx, APPROACH_Z], [-3, 5.5], [GATE.x, GATE.z], [EXIT_POINT.x, EXIT_POINT.z]];
+    : [[sx, PLAY_Z], [sx, APPROACH_Z], ...(sx < WING_WALK_X ? [[WING_WALK_X, APPROACH_Z]] : []), [-3, 5.5], [GATE.x, GATE.z], [EXIT_POINT.x, EXIT_POINT.z]];   // round 11: the wing walks the walkway past the Tiered stairs
   return { P, dur: polyLen(P) / CUST.WALK, sx };
 }
 export const leaveDur = (mat, dx) => leaveRoute(mat, dx).dur;
@@ -173,13 +174,15 @@ export function custPos(c, t, opt = {}) {
     const end = uu >= r.tA + r.tG + r.tB || (c.hold && uu >= r.tHold);
     return at(p.x, p.z, { yaw: end ? 0 : heading(p.hx, p.hz), speed: end ? 0 : CUST.WALK, act: end ? 'wait' : 'walk', carry: true });
   }
-  if (c.st === 'playing') return at(sx, PLAY_Z, { act: u < CUST.SETUP ? 'set' : 'play', carry: true });
+  // Round 11: the bucket is set down by the mat (ballreturn.js draws it there, emptying as they hit), so not in hand.
+  if (c.st === 'playing') return at(sx, PLAY_Z, { act: u < CUST.SETUP ? 'set' : 'play', carry: false });
   if (c.st === 'wait') return at(sx, APPROACH_Z, { act: 'wait', carry: true });
   if (c.st === 'sulk') return at(sx, APPROACH_Z, { act: 'sulk', carry: true });
   if (c.st === 'leave') {
     const r = leaveRoute(c.mat, dx, !!c.basket), d = Math.min(u * CUST.WALK, r.dur * CUST.WALK);
     const p = polyAt(r.P, d), done = u >= r.dur;
-    return at(p.x, p.z, { yaw: heading(p.hx, p.hz), speed: done ? 0 : CUST.WALK, act: 'walk', carry: !c.basket, done });
+    // Round 11: the emptied bucket stays at the bay (the held bucket model is always full), so they walk out empty-handed.
+    return at(p.x, p.z, { yaw: heading(p.hx, p.hz), speed: done ? 0 : CUST.WALK, act: 'walk', carry: false, done });
   }
   if (c.st === 'fell') return at(sx, APPROACH_Z, { done: true });
   return at(sx, APPROACH_Z);
@@ -204,7 +207,7 @@ function upperPos(c, t, opt = {}) {
   if (c.st === 'wait' || c.st === 'sulk') return at(sx, UPPER.FLOOR, UP_DECK_Z, { act: c.st, carry: true });
   if (c.st === 'leave') {
     const r = upperLeaveRoute(c.mat, dx), p = poly3At(r.P, Math.min(u, r.dur) * CUST.WALK), done = u >= r.dur;
-    return at(p.x, p.y, p.z, { yaw: heading(p.hx, p.hz), speed: done ? 0 : CUST.WALK, act: 'walk', carry: true, done });
+    return at(p.x, p.y, p.z, { yaw: heading(p.hx, p.hz), speed: done ? 0 : CUST.WALK, act: 'walk', carry: false, done });   // round 11: empty-handed
   }
   return at(sx, UPPER.FLOOR, UPPER.Z, { done: c.st === 'fell' });
 }

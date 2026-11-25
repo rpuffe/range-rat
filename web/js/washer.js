@@ -6,6 +6,8 @@
 import * as THREE from 'three';
 import { WASHER_YAW, SIGN_BY_ID, yawOf, tagSign } from './signs.js';
 import { WASHER, SILO } from './sim.js';
+import { washerBoard } from './hoppertext.js';   // round 11: the board in plain words
+import { siloLevelY } from './layout.js';        // round 11: clean balls drop to the silo's fill
 
 export const WASHER_POS = { x: WASHER.x, z: WASHER.z };
 // Where a Rat stands to crank: about 0.9 m out from each side of the box.
@@ -206,14 +208,17 @@ export function createWasher(scene, opts = {}) {
   const boardMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.155), new THREE.MeshBasicMaterial({ map: boardTex }));
   boardMesh.position.set(0, 0.85, 0.19); g.add(tagSign(boardMesh, 'washer.board'));
   let lastN = -1, lastCredit = -1;
+  // Round 11: two plain lines (hoppertext.js): "34 DIRTY BALLS" / "WAITING TO WASH · +$68".
   function drawBoard(n, credit) {
-    const amber = n > 100;
+    const b = washerBoard(n, credit);
     bctx.fillStyle = '#14181c'; bctx.fillRect(0, 0, 256, 64);
-    bctx.strokeStyle = amber ? '#f2a516' : '#3c7a52'; bctx.lineWidth = 4; bctx.strokeRect(2, 2, 252, 60);
-    bctx.fillStyle = amber ? '#ffb629' : '#d8f3e2';
+    bctx.strokeStyle = b.amber ? '#f2a516' : '#3c7a52'; bctx.lineWidth = 4; bctx.strokeRect(2, 2, 252, 60);
+    bctx.fillStyle = b.amber ? '#ffb629' : '#d8f3e2';
     bctx.textAlign = 'center'; bctx.textBaseline = 'middle';
-    bctx.font = 'bold 27px system-ui, sans-serif';
-    bctx.fillText(`UNWASHED ${n} · $${Math.round(credit)}`, 128, 34);
+    bctx.font = 'bold 26px system-ui, sans-serif';
+    bctx.fillText(b.top, 128, 24);
+    bctx.font = '600 14px system-ui, sans-serif';
+    bctx.fillText(b.sub, 128, 50);
     boardTex.needsUpdate = true;
   }
   drawBoard(0, 0);
@@ -233,7 +238,7 @@ export function createWasher(scene, opts = {}) {
   for (let i = 0; i < CHUTE_POOL; i++) {
     const m = new THREE.Mesh(cbGeo, cbMat);
     m.visible = false; scene.add(m);
-    chuteBalls.push({ mesh: m, t: 0, delay: 0, on: false });
+    chuteBalls.push({ mesh: m, t: 0, delay: 0, on: false, fall: 0 });
   }
   const _p = new THREE.Vector3();
 
@@ -262,11 +267,13 @@ export function createWasher(scene, opts = {}) {
 
   // ------------------------------------------------------------ state and animation
   const st = { n: 0, credit: 0, auto: false, L: false, R: false, rateL: 0, rateR: 0 };
-  let drumAng = 0;
+  let drumAng = 0, siloY = siloLevelY(400);
   const CHUTE_SECS = 1.1;
 
   return {
     crank,
+    // Round 11: the silo's banked supply (basket.js siloFill), so washed balls drop to its level.
+    silo(n) { siloY = siloLevelY(n); },
     update(state) {
       if (!state) return;
       st.n = state.n ?? 0; st.credit = state.credit ?? 0; st.auto = !!state.auto;
@@ -284,7 +291,7 @@ export function createWasher(scene, opts = {}) {
       for (const b of chuteBalls) {
         if (launched >= want) break;
         if (b.on) continue;
-        b.on = true; b.t = 0; b.delay = launched * 0.09; b.mesh.visible = false;
+        b.on = true; b.t = 0; b.fall = 0; b.delay = launched * 0.09; b.mesh.visible = false;
         launched++;
       }
       puff(Math.min(3, 1 + (k > 2 ? 1 : 0) + (k > 6 ? 1 : 0)));
@@ -302,14 +309,21 @@ export function createWasher(scene, opts = {}) {
         h.ang += sign * r * TAU * dt;
         h.arm.rotation.x = h.ang * out;       // same world spin whichever way the group faces
       }
-      // Chute balls ride the curve.
+      // Chute balls ride the curve, then (round 11) drop inside the clear silo down to its fill.
       for (const b of chuteBalls) {
         if (!b.on) continue;
-        if (b.delay > 0) { b.delay -= dt; if (b.delay > 0) continue; b.mesh.visible = true; }
-        b.t += dt / CHUTE_SECS;
-        if (b.t >= 1) { b.on = false; b.mesh.visible = false; continue; }
-        curve.getPoint(b.t * b.t * 0.4 + b.t * 0.6, _p);
-        b.mesh.position.copy(_p);
+        if (b.delay > 0) { b.delay -= dt; if (b.delay > 0) continue; }
+        b.mesh.visible = true;
+        if (b.t < 1) {
+          b.t = Math.min(1, b.t + dt / CHUTE_SECS);
+          curve.getPoint(b.t * b.t * 0.4 + b.t * 0.6, _p);
+          b.mesh.position.copy(_p);
+          continue;
+        }
+        b.fall += dt;
+        const k = Math.min(1, b.fall * 3) * 0.6, y = chuteEnd.y - 4.9 * b.fall * b.fall;
+        if (y <= siloY || b.fall > 0.8) { b.on = false; b.mesh.visible = false; continue; }
+        b.mesh.position.set(chuteEnd.x + (SILO.x - chuteEnd.x) * k, y, chuteEnd.z + (SILO.z - chuteEnd.z) * k);
       }
       // Suds.
       for (const s of suds) {

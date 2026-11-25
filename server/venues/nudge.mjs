@@ -29,7 +29,7 @@ function deal(crew, st) {
 export function morningView(crew) {
   const v = crew.venue ?? 0;
   return {
-    venue: v, basket: crew.basket?.n ?? 0, fixtures: crew.fixtures, nMats: activeMats(crew.onlineCount(), crew.up),
+    venue: v, basket: crew.basket?.n ?? 0, ...(Number.isFinite(crew.basket?.cap) ? { basketCap: crew.basket.cap } : {}), fixtures: crew.fixtures, nMats: activeMats(crew.onlineCount(), crew.up),
     shed: !!crew.perks?.shed, fries: crew.fries, pondOpen: !!crew.pondOpen?.(), clarity: crew.pondOpen?.() ? pondClarity(crew.sunkCount()) : null,
     deck: !!crew.mods?.state('deck'), poured: (crew.mods?.state('deck')?.deck?.drinks ?? 0) > 0 || (crew.stats?.deckOrders ?? 0) > 0,
     crowd: v === 3 ? crew.mods?.state('stadium')?.s ?? null : null,

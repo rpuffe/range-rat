@@ -34,9 +34,9 @@ function bankOne(c, a, run) {
 test('Q1: the countdown hitting 1 at the bell starts the Last Bucket next morning, and the sweep keeps Ball No. 1', () => {
   const { c, run, ps: [a] } = room({ day: 30, venue: 5, venueDay: 2, outstanding: 4, up: { cart: 1 } });
   c.readyUp(a); run(1);
-  c.carts[0].load = 10; c.carts[0].loadW = 10;
   c.shiftT = c.shiftSecs - 0.05; run(0.2);
   assert.equal(c.phase, 'report');
+  c.countDebris(1);   // round 11: the bell lands the last debris (orbit.mjs endShift): the countdown hits 1 at the report
   assert.equal(c.outstanding, 1);
   assert.equal(c.lastBucket, null, 'not begun under the report card');
   run(12);
@@ -64,7 +64,7 @@ test('Q1: the night crew\'s sweep never takes Ball No. 1', () => {
 test('Q1: a lost Ball No. 1 is sent again while the Last Bucket is active (the clock can\'t hold for ever)', () => {
   const { c, run, ps: [a] } = room({ day: 30, venue: 5, venueDay: 2, outstanding: 2 });
   c.readyUp(a); run(1);
-  a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a); run(12);
+  a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a); c.countDebris(1); run(12);
   const b = one(c); assert.ok(b);
   c.balls.delete(b.id);                         // any future lost-ball path
   run(1);
@@ -83,7 +83,7 @@ test('Q2: a Rat on the EVA when the Last Bucket begins is brought down, and the 
   const st = c.mods.state('orbit');
   assert.equal(st.riders.get(b.id)?.ph, 'out');
   st.riders.get(b.id).bag.push(7);              // a piece of debris in the bag: it lands with them
-  a.pocket = 5; a.pocketW = 5; toStand(a); c.deposit(a);   // the last balls: Ball No. 1 begins
+  a.pocket = 5; a.pocketW = 5; toStand(a); c.deposit(a); c.countDebris(1);   // the last balls: Ball No. 1 begins
   assert.ok(c.lastBucket);
   run(ORBIT.RIDE + 1);
   assert.equal(st.riders.has(b.id), false, 'B landed within the ride time');
@@ -96,7 +96,7 @@ test('Q2: a Rat on the EVA when the Last Bucket begins is brought down, and the 
 test('Q3: Ball No. 1\'s payout stays out of the crew record (the endless pace target)', () => {
   const { c, run, ps: [a] } = room({ day: 30, venue: 5, venueDay: 2, outstanding: 2, records: { cash: 1000, banked: 1, day: 3 } });
   c.readyUp(a); run(1);
-  a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a); run(15);
+  a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a); c.countDebris(1); run(15);
   const before = c.stats.cash;
   const bv = c.valueNow().bv;
   assert.ok(bankOne(c, a, run));
@@ -181,7 +181,7 @@ test('Q4: without a promotion, the 20 s Ready Up timer still starts the shift', 
 test('playtest: the Rat who carries Ball No. 1 is credited, and an idle Rat cannot stall the huddle', () => {
   const { c, run, ps: [a, b] } = room({ day: 30, venue: 5, venueDay: 2, outstanding: 2 }, ['A', 'B']);
   c.readyUp(a); c.readyUp(b); run(1);
-  a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a);
+  a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a); c.countDebris(1);   // round 11: only debris counts down here
   for (let i = 0; i < 60 && !(one(c) && one(c).rest); i++) run(1);
   b.x = -40; b.z = -100; b.movedAt = c.now();        // B is away and just moved: the huddle waits
   assert.equal(bankOne(c, a, run), false, 'B is not at the stand yet');
@@ -200,7 +200,7 @@ function huddleRoom(names = ['A', 'B']) {
   for (const p of ps) c.readyUp(p);
   run(1);
   const [a] = ps;
-  a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a);
+  a.pocket = 1; a.pocketW = 1; toStand(a); c.deposit(a); c.countDebris(1);   // round 11: only debris counts down here
   for (let i = 0; i < 60 && !(one(c) && one(c).rest); i++) run(1);
   carryHome(c, a);
   for (const p of ps) { toStand(p); p.movedAt = c.now(); }

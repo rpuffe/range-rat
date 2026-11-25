@@ -17,11 +17,11 @@ function crewWith(up, { venue = 0, day = 4 } = {}) {
   return { crew, p, run };
 }
 
-test('the row: the Field return from Muni day 3 ($150 base), the Back return at the Club ($1,500)', () => {
+test('the row (round 11): the Far return from Muni day 4 ($3,000 base), the Back return at the Club ($12,000)', () => {
   const row = SHOP.find(i => i.id === 'returns');
   assert.ok(row, 'a crew row');
-  assert.equal(row.tiers[1].cost, 150); assert.equal(row.tiers[1].minDay ?? row.minDay, 3);
-  assert.equal(row.tiers[2].cost, 1500); assert.equal(row.tiers[2].minVenue, 1);
+  assert.equal(row.tiers[1].cost, 3000); assert.equal(row.tiers[1].minDay ?? row.minDay, 4);
+  assert.equal(row.tiers[2].cost, 12000); assert.equal(row.tiers[2].minVenue, 1);
   assert.deepEqual([perks({}).returns, perks({ returns: 1 }).returns, perks({ returns: 2 }).returns], [0, 1, 2]);
   assert.equal(FIELD_RETURNS[0].label, 'RETURN 2');
 });

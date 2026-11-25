@@ -9,6 +9,7 @@ import { SIM, CART, WASH, FRIES, POND, VENUES, VENUE_RULES, ONE_YEAR, BALLS_OUTS
 
 // A crew on a fake clock. `run(secs)` steps 20 ticks a second.
 function makeCrew(save = null, shiftSecs = 600, seed = 11) {
+  if (save?.venue === 1 && save.venueDay == null) save = { ...save, venueDay: 3 };   // round 11 (clubdays.js): a Club crew past the stagger unless a test says otherwise
   const clock = { t: 1_000_000 };
   const crew = new Crew('RND2', save, { shiftSecs, seed, now: () => clock.t });
   const run = secs => { for (let i = 0; i < secs * 20; i++) { clock.t += 50; crew.tick(0.05); } };
@@ -421,12 +422,12 @@ test('the Club quota: q = (ceiling - 1) x venueQuotaF(venueDay)', () => {
   assert.ok(f[8] <= 0.8);
 
   const { crew } = makeCrew({ venue: 1, venueDay: 0, up: { shed: 1 }, day: 1 });
-  assert.equal(crew.ceiling(), 2.5, 'Curb + Pond + Fries');
+  assert.equal(crew.ceiling(), 2, 'Curb + Fries (round 11: the pond fills on Club day 2)');
   assert.equal(upkeepCeiling({ pond: 1, fries: 1 }), 2.5);
   crew.startShift();
-  near(crew.quota.q, 1.5 * venueQuotaF(1));             // day 1 at the venue
+  near(crew.quota.q, 1.0 * venueQuotaF(1));             // day 1 at the venue
   assert.equal(crew.venueDay, 1);
-  near(crew.quotaTarget(), 6.25 * (1 + 1.5 * venueQuotaF(1)), 0.011);
+  near(crew.quotaTarget(), 6.25 * (1 + 1.0 * venueQuotaF(1)), 0.011);
   const memo = events(crew).find(e => e.t === 'memo');
   assert.equal(memo.target, 35, "owner playtest 3 §1.1: the Club's venue day 1 reads 35%");
   assert.equal(memo.text, 'Today: 35% clean by the bell.');   // council round 10: "clean" everywhere
@@ -560,19 +561,20 @@ test('no washer: pay in full, no hopper', () => {
   assert.equal(crew.snapshot().washer, null);
 });
 
-test('the premium follows the carrier: grime and the cart gear decide the full price', () => {
+test('the one price (round 11): grime never cuts one carrier\'s price; caked boots lower everyone\'s Clean % instead', () => {
   const { crew, a } = washerCrew(1);
   a.grime = 0;
   crew.bank(4, a.id, null, 4);                         // 4 x 3.75 x 1 = 15, muddy 7.5
   assert.equal(crew.cash, 7.5);
   assert.equal(crew.hopper.credit, 7.5);
+  const v0 = crew.valueNow().bv;
   a.grime = 3;
-  crew.bank(4, a.id, null, 4);                         // caked: x0.8 = 12, muddy 6
-  assert.equal(crew.cash, 13.5);
-  assert.equal(crew.hopper.credit, 13.5);
-  crew.bank(4, 'h0', 'helper', 4);                     // helpers pay the full price (the one price): 15, muddy 7.5
-  assert.equal(crew.cash, 21);
-  assert.equal(crew.hopper.credit, 21);
+  const v3 = crew.valueNow().bv;
+  assert.ok(v3 < v0, 'caked boots: the Clean % (and so BV) falls for the whole crew');
+  crew.bank(4, a.id, null, 4);                         // caked: the Board's (lower) price, no extra cut
+  crew.bank(4, 'h0', 'helper', 4);                     // a teenager pays the very same price
+  const ev = crew.flush().ev.filter(e => e.t === 'cash');
+  assert.equal(ev.at(-1).cash, ev.at(-2).cash, 'the caked Rat and the helper are paid alike');
 });
 
 test('washBalls pays credit x washed / n and shrinks both', () => {
@@ -805,19 +807,19 @@ test('picking up balls never adds grime: only knockdowns do (council round 3)', 
   assert.equal(a.grime, 0);
 });
 
-test('pay reflects grime on a Rat\'s own deposits; helpers stay x1', () => {
+test('round 11: grime never cuts a Rat\'s own pay; it lowers the crew\'s Clean % (bootsMud); helpers stay x1', () => {
   const pay = grime => {
     const { crew } = makeCrew();
     openShift(crew);
     const a = addPlayer(crew, 'A', STAND.x, STAND.z);
     a.grime = grime; a.pocket = 1; a.pocketW = 1;
+    const bv = crew.valueNow().bv;
     act(crew, a, { t: 'deposit' });
-    return { cash: crew.cash, ev: events(crew).find(e => e.t === 'cash') };
+    return { cash: crew.cash, bv, ev: events(crew).find(e => e.t === 'cash') };
   };
-  assert.equal(pay(0).cash, 1.88, 'BV 1.88 (1.25 x 1.5) x 1');
-  assert.equal(pay(1).cash, 1.75);
-  assert.equal(pay(2).cash, 1.63);
-  assert.equal(pay(3).cash, 1.5);
+  for (const g of [0, 1, 2, 3]) assert.equal(pay(g).cash, pay(g).bv, 'one ball at the Board price, whatever the boots');
+  assert.equal(pay(0).cash, 1.88, 'BV 1.88 (1.25 x 1.5) with clean boots');
+  assert.ok(pay(3).bv < pay(1).bv && pay(1).bv < pay(0).bv, 'the dirtier the crew, the lower the Clean %');
   assert.equal(pay(0).ev.clean, true);
   assert.equal(pay(2).ev.clean, false);
   const { crew } = makeCrew();
@@ -1010,7 +1012,7 @@ test('PA: debut lines fire with the debut, once', () => {
 test('PA: the glow line plays at the first Last Call', () => {
   const { crew } = makeCrew({ day: 2, voiced: ['welcome'] }, 600);
   openShift(crew);
-  crew.shiftT = 530;   // owner playtest 3 §2: in Last Call (T-90), before the cleanup minute (T-60)
+  crew.shiftT = 460;   // round 11: in Last Call (T-2:30), before the cleanup (T-2:00)
   swing(crew);
   const ev = events(crew);
   assert.ok(ev.find(e => e.t === 'debut' && e.kind === 'glow'));
@@ -1190,7 +1192,7 @@ function lastBucketCrew(extra = {}) {
 }
 // Bring Ball No. 1 home: bank down to 1, wait for the fall and the rest.
 function landTheBall({ crew, run }) {
-  crew.bank(9, 'x');
+  crew.countDebris(1);   // round 11: at the Orbital only debris counts down (10 a piece)
   run(3.2);
   run(20);
   const b = crew.balls.get(crew.lastBucket.id);
@@ -1198,9 +1200,11 @@ function landTheBall({ crew, run }) {
   return b;
 }
 
-test('Last Bucket: banking at the Orbital Range stops at 1 and begins the moment', () => {
+test('Last Bucket: debris brought down at the Orbital Range stops at 1 and begins the moment', () => {
   const { crew, run } = lastBucketCrew({ outstanding: 5 });
   crew.bank(100, 'x');
+  assert.equal(crew.outstanding, 5, 'round 11: ground balls at the Orbital never left Earth: they do not count');
+  crew.countDebris(10);
   assert.equal(crew.outstanding, 1, 'clamped at one');
   assert.equal(crew.stats.deposited, 100, 'every ball still counted');
   assert.equal(crew.lastBucket.phase, 'falling');
@@ -1212,7 +1216,7 @@ test('Last Bucket: banking at the Orbital Range stops at 1 and begins the moment
   const t0 = crew.shiftT;
   run(2);
   assert.equal(crew.shiftT, t0, 'the sun is paused');
-  crew.bank(10, 'x');
+  crew.countDebris(1);
   assert.equal(crew.outstanding, 1, 'it only starts once');
   assert.equal(events(crew).filter(e => e.t === 'lastbucket').length, 0);
 });
@@ -1222,7 +1226,7 @@ test('Last Bucket: it starts the same way from 1,958 and from a reloaded save at
   orbit.promote();
   assert.equal(orbit.outstanding, 1958);
   orbit.phase = 'shift';
-  orbit.bank(1957, 'x');
+  orbit.countDebris(196);   // round 11: 196 pieces x 10 (4P)
   assert.equal(orbit.outstanding, 1);
   assert.equal(orbit.lastBucket.phase, 'falling');
 
@@ -1230,8 +1234,8 @@ test('Last Bucket: it starts the same way from 1,958 and from a reloaded save at
   openShift(back);
   // (council round 5, Q1) a restart mid-moment picks the moment up at the morning, not on the next ball
   assert.equal(back.lastBucket.phase, 'falling', 'a restart mid-moment picks the moment up at the morning');
-  back.bank(1, 'x');
-  assert.equal(back.lastBucket.phase, 'falling', 'and the next ball changes nothing');
+  back.countDebris(1);
+  assert.equal(back.lastBucket.phase, 'falling', 'and the next piece changes nothing');
 });
 
 test('Last Bucket: not before the Orbital Range', () => {
@@ -1246,7 +1250,7 @@ test('Last Bucket: not before the Orbital Range', () => {
 test('Last Bucket: mats stop, and after 3 s Ball No. 1 spawns high and falls', () => {
   const m = lastBucketCrew();
   const { crew, run } = m;
-  crew.bank(9, 'x');
+  crew.countDebris(1);
   crew.flush();
   crew.mats[0].next = 0;
   run(2.8);
@@ -1392,7 +1396,7 @@ test('Last Bucket: banking it ends the world: outstanding 0, endless, the last l
   const r = crew.report.ending;
   assert.ok(r, 'report.ending');
   assert.equal(r.days, 5);
-  assert.equal(r.banked, 10, 'nine balls and Ball No. 1');
+  assert.equal(r.banked, 1, 'Ball No. 1 (round 11: the debris that brought the count down was not banked here)');
   assert.equal(r.commendations, crew.commendations);
   assert.equal(typeof r.quotas, 'number');
   assert.equal(crew.report.quota, null, 'no performance review on the last day');

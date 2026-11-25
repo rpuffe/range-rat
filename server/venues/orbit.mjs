@@ -3,6 +3,8 @@
 // and bag; council round 8 #4: no platform crank, the tank is the tank), grabs debris and rides down with it at weight
 // 3 a ball. Any number of Rats ride at once.
 // Orbital Debris (this venue's gauge) = 1 - debris / 30. The tether winch (crew row) clears one every 8 s.
+// Round 11 (expert #10a): only debris brought down counts toward Balls Outstanding here (DEBRIS_BALLS a piece, crew.mjs
+// countDebris), so the Orbital lasts 2 full shifts and the EVA races the countdown.
 //
 // Actions (the `input` hook): {t:'lift'} {t:'grab'} {t:'ridedown'} ({t:'orbpump'} from an old client: swallowed).
 import { ORBIT, LIFT, debrisKpi, orbitShot, nearestDebris, clampDisc, atLift, evaStep, hasTether,
@@ -69,6 +71,7 @@ export default {
         if (id == null) continue;
         st.debris.delete(id); st.kpi = debrisKpi(st.debris.size);
         crew.bank(1, 'tether', null, ORBIT.BAG_W, 1);
+        crew.countDebris?.(1);   // round 11: a piece down counts DEBRIS_BALLS toward Balls Outstanding
         crew.stats.winched = (crew.stats.winched ?? 0) + 1;
         crew.events.push({ t: 'winch', deb: id });
       }
@@ -161,6 +164,7 @@ function land(crew, st, p, r, atBell = false) {
     if (!atBell) { p.pocket += n; p.pocketW = (p.pocketW ?? 0) + n * ORBIT.BAG_W; crew.dirty = true; }
     else crew.bank(n, p.id, null, n * ORBIT.BAG_W);
     crew.stats.debris = (crew.stats.debris ?? 0) + n;
+    crew.countDebris?.(n);   // round 11: what comes down from orbit is what counts (DEBRIS_BALLS a piece)
   }
   p.x = LIFT.x + 1.6; p.z = LIFT.z + 0.4; p.movedAt = crew.now();
   crew.events.push({ t: 'landed', id: p.id, n });

@@ -73,7 +73,7 @@ const goalOf = id => {
 const matsMax = v => { let m = 0; for (let i = 0; i < (v.nMats ?? 10); i++) m = Math.max(m, v.fixtures?.['mat' + i] ?? 0); return m; };
 export function morningShort(id, v) {
   switch (id) {
-    case 'basket': return (v.basket ?? 0) < BUCKETS.BASKET;
+    case 'basket': return (v.basket ?? 0) < (v.basketCap ?? BUCKETS.BASKET);   // round 11: Ball Shortage's 6
     case 'sign': case 'stand': return (v.fixtures?.[id] ?? 0) > MORNING.DIRTY;
     case 'mats': return matsMax(v) > MORNING.DIRTY;
     case 'fries': return !!v.shed && (v.fries ?? 0) < FRIES.MAX * MORNING.FRIES;

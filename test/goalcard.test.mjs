@@ -33,7 +33,7 @@ test('a fresh crew prints the Muni card on its first morning, for the crew onlin
   assert.equal(s.goals.strip.next, 'NEXT: 1,200 MORE BALLS');
 });
 
-test('banking ticks the bank goal; done once, paid 50 × BV once, one event', () => {
+test('banking ticks the bank goal; done once, paid its reward once, one event', () => {
   const { crew, ps: [a] } = makeCrew();
   crew.startShift(); quiet(crew); crew.flush();
   crew.goals.n.bank = 795;
@@ -43,8 +43,8 @@ test('banking ticks the bank goal; done once, paid 50 × BV once, one event', ()
   const ev = goalEvents(crew);
   assert.equal(ev.length, 1);
   assert.equal(ev[0].id, 'bank');
-  assert.equal(ev[0].reward, rewardFor(bv));
-  assert.ok(crew.cash >= cash0 + rewardFor(bv) - 1e-6);
+  assert.equal(ev[0].reward, rewardFor(bv, crew.venue, crew.onlineCount()));
+  assert.ok(crew.cash >= cash0 + rewardFor(bv, crew.venue, crew.onlineCount()) - 1e-6);
   const cash1 = crew.cash;
   crew.bank(10, a.id); crew.goalScan();
   assert.equal(goalEvents(crew).length, 0, 'no second reward');
@@ -98,7 +98,7 @@ test('Sign is refused until the card is 5/5', () => {
 });
 
 test('the forced treasure sinks every morning while the treasure goal is open', () => {
-  const { crew } = makeCrew({ venue: 1, venueDay: 0, day: 8, up: { shed: 1 } }, { seed: 3 });
+  const { crew } = makeCrew({ venue: 1, venueDay: 1, day: 8, up: { shed: 1 } }, { seed: 3 });   // round 11: from Club day 2 (the pond fills)
   for (let d = 0; d < 6; d++) {
     crew.phase = d ? 'report' : crew.phase; crew.treasure = null;
     crew.startShift();

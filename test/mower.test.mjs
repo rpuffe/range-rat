@@ -21,12 +21,14 @@ test('constants match the spec', () => {
   assert.equal(MOWER_DRIVE_SECS, 32);
 });
 
-test('mowerDue: Club day 2+, once, at 25% of the shift', () => {
-  const base = { venue: 1, venueDay: 2, shiftT: 105, shiftSecs: 420, mower: null };
+test('mowerDue: Club day 3+ (round 11: one idea a day), day 2+ later, once, at 25% of the shift', () => {
+  const base = { venue: 1, venueDay: 3, shiftT: 105, shiftSecs: 420, mower: null };
   assert.ok(mowerDue(base));
   assert.ok(!mowerDue({ ...base, shiftT: 104 }));
   assert.ok(!mowerDue({ ...base, venue: 0 }));
-  assert.ok(!mowerDue({ ...base, venueDay: 1 }));
+  assert.ok(!mowerDue({ ...base, venueDay: 2 }), 'Club day 2: MOW-E waits for day 3');
+  assert.ok(mowerDue({ ...base, venue: 2, venueDay: 2 }), 'Tiered day 2: as before');
+  assert.ok(!mowerDue({ ...base, venue: 2, venueDay: 1 }));
   assert.ok(!mowerDue({ ...base, mower: {} }));
 });
 

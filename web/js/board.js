@@ -14,6 +14,7 @@
 //     council round 10 adds: goals (goals.js strip(): { pips: [done], label, next }: the goal strip, left of BALLS
 //     OUTSTANDING), fed (the FED factor, the orange chip under Hustle) and fedLeft (0..1 of FED.EVERY to the next 5%
 //     loss: the chip's thin ring); the fry gauge reads FRIES 14/20
+//     round 11 (builder "today") adds: today (today.js todayChip, e.g. 'WINDY': the TODAY pill by EACH BALL PAYS)
 import * as THREE from 'three';
 import { BOARD_YAW } from './signs.js';
 import { BELL, crossing, gaugeRed, gaugePass, stampFor } from './closingbell.js';
@@ -133,6 +134,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
     // Council round 8 #3: the bar races yesterday (pace.vs); the all-time BEST moves to a small line under it.
     const vsYday = pace.vs === 'yesterday';
     g.fillText(vsYday ? 'YESTERDAY' : 'RECORD', W - 44, 316);
+    if (s?.stars != null) { g.textAlign = 'center'; g.fillStyle = '#ffcf5a'; g.fillText('★ ' + s.stars + ' STARS', W / 2, 316); g.textAlign = 'right'; g.fillStyle = '#7d8594'; }   // round 11: the endless contracts' lifetime stars
     g.fillStyle = '#e06a5a'; g.font = `700 34px ${MONO}`; g.fillText(dollars(pace.record), W - 44, vsYday ? 350 : 356);
     if (vsYday && pace.best > 0) { g.fillStyle = '#7d8594'; g.font = `600 17px ${SANS}`; g.fillText('BEST ' + dollars(pace.best), W - 44, 377); }
     const bx = 44, bw = W - 88, by = 396, bh = 28;
@@ -208,6 +210,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
     g.font = `700 34px ${SANS}`; g.fillStyle = '#cfc8b0'; g.fillText(' A BALL', 36 + numW, bvBase);
     g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`; g.textBaseline = 'middle';
     g.fillText('EACH BALL PAYS', 36, 108);
+    if (st.today) drawToday(String(st.today), 36 + g.measureText('EACH BALL PAYS').width + 18, 108);   // round 11: Corporate's Today
     g.textAlign = 'right';
     // The chips down the right of the price: Hustle (green), Gary's Seal (gold, §6.4), FED (orange, round 10 #2,
     // with a thin ring that empties toward the next 5% loss). Three at once sit tighter.
@@ -257,7 +260,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
     g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = '#9aa3b2'; g.font = `600 20px ${SANS}`;
     g.fillText(whyLine(st.venue), bx, 302);
     if (!st.kpiLabel) {                       // from Tiered on, the fourth gauge row matters more
-      const P = 20, GAP = 6, GG = 18, groups = [];
+      const wide = (st.nMats ?? 10) > 10, P = wide ? 15 : 20, GAP = wide ? 4 : 6, GG = 18, groups = [];   // round 11: up to 16 built bays fit
       for (const p of pipsOf(st.fixtures, st.nMats ?? 10)) {
         if (groups.at(-1)?.name !== p.group) groups.push({ name: p.group, pips: [] });
         groups.at(-1).pips.push(p);
@@ -329,6 +332,17 @@ export function createBoard(scene, { x, z, onCross = null }) {
       g.restore();
     }
     tex.needsUpdate = true;
+  }
+  // Round 11 (builder "today"): the TODAY chip, a pill right of EACH BALL PAYS ("TODAY · WINDY"). It sits clear of
+  // the multiplier chips (right-aligned at 572) and above the big price. Promotion Day never has a Today.
+  function drawToday(text, x, y) {
+    const label = 'TODAY · ' + text.toUpperCase();
+    const px = fit(label, p => `700 ${p}px ${SANS}`, 400 - x + 60, 18);
+    g.font = `700 ${px}px ${SANS}`;
+    const w = g.measureText(label).width + 20, h = px + 10;
+    g.fillStyle = '#2b6cb0'; g.beginPath(); g.roundRect?.(x, y - h / 2, w, h, h / 2); if (!g.roundRect) g.rect(x, y - h / 2, w, h); g.fill();
+    g.fillStyle = '#eaf4ff'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(label, x + 10, y + 1);
+    g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`;   // put the label style back
   }
   const hustleShown = st => st.hustle > 1;
   const sealShown = st => st.seal > 1;          // Gary's Seal (owner playtest 3 §6.4)
@@ -434,6 +448,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
       // council round 10: the goal strip, the FED chip and its ring (in 10% steps, so the ring redraws ~every 2 s)
       state.goals ? state.goals.pips.map(Number).join('') + state.goals.label + state.goals.next : '',
       state.fed > 1 + 1e-9 ? state.fed.toFixed(2) + ':' + Math.round(clamp01(state.fedLeft ?? 1) * 10) : '',
+      state.today ?? '', state.stars ?? '',   // round 11: the TODAY chip, the endless stars
     ].join('|');
     if (k === key) return;
     key = k;

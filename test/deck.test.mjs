@@ -232,12 +232,13 @@ test('orders only while the shift clock runs', () => {
 function orderRun(secs, hotdogAtAmber, late = 24, skipRounds = false) {
   const { crew, serve, run } = setup(2, {}, 900);
   const st = crew.mods.state('deck');
-  let seen = null, due = null;
+  // Round 11: orders queue (up to 3), so each order's own open time sets its due time; the head is the oldest.
+  const due = new Map();
   for (let t = 0; t < secs; t += 0.5) {
     run(0.5);
+    for (const q of [st.deck.order, ...(st.deck.queue ?? [])]) if (q && !due.has(q)) due.set(q, skipRounds && q.round ? null : t + late);
     const o = st.deck.order;
-    if (o && o !== seen) { seen = o; due = skipRounds && o.round ? null : t + late; }
-    if (o && due != null && t >= due) { due = null; serve('beer'); }
+    if (o && due.get(o) != null && t >= due.get(o)) { due.set(o, null); serve('beer'); }
     if (hotdogAtAmber && st.deck.drinks >= DECK.WARN) serve('hotdog');
   }
   return { incidents: crew.stats.incidents ?? 0, filled: crew.stats.deckOrders ?? 0, rounds: crew.stats.deckRounds ?? 0 };

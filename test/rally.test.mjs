@@ -89,10 +89,11 @@ test('round 7 #5: the Orbital has no review, so its line is the debris or nothin
   assert.equal(shortfall({ value: val(1), quota: null, kpi: 0.2, fixtures: clean, venue: 4 }), null, 'elsewhere no quota still means no line');
 });
 
-test('round 7 #7: the Stadium rallies at T-120 once (from its day 2); other venues at T-90 (owner playtest 3 §2)', async () => {
+// Round 11: Tiered and the Stadium rally at T-3:00 (a 200 s shift scales it to T-86); the rest at Last Call (T-71).
+test('round 7 #7: Tiered and the Stadium rally early (T-3:00, scaled) once; other venues at Last Call', async () => {
   const { RALLY_AT, rallyAt } = await import('../web/js/rally.js');
-  assert.deepEqual({ ...RALLY_AT }, { 3: 120 });
-  assert.equal(rallyAt(3), 120); assert.equal(rallyAt(2), 90); assert.equal(rallyAt(4), 90);
+  assert.deepEqual({ ...RALLY_AT }, { 2: 180, 3: 180 });
+  assert.equal(rallyAt(3), 180); assert.equal(rallyAt(2), 180); assert.equal(rallyAt(4), 150);
   const at = save => {
     const clock = { t: 1_000_000 };
     const crew = new Crew('RAL7', save, { shiftSecs: 200, seed: 9, now: () => clock.t });
@@ -101,9 +102,9 @@ test('round 7 #7: the Stadium rallies at T-120 once (from its day 2); other venu
     while (crew.phase === 'shift') { clock.t += 50; crew.tick(0.05); for (const e of crew.flush().ev) if (e.t === 'lastcall') out.push(Math.round(crew.shiftSecs - crew.shiftT)); }
     return out;
   };
-  assert.deepEqual(at({ day: 20, venue: 3, venueDay: 2 }), [120]);
-  assert.deepEqual(at({ day: 20, venue: 2, venueDay: 2 }), [90]);
-  assert.deepEqual(at({ day: 20, venue: 4, venueDay: 2 }), [90]);
+  assert.deepEqual(at({ day: 20, venue: 3, venueDay: 2 }), [86]);
+  assert.deepEqual(at({ day: 20, venue: 2, venueDay: 2 }), [86]);
+  assert.deepEqual(at({ day: 20, venue: 4, venueDay: 2 }), [71]);
 });
 
 // ---- Round 7 #4: dealt jobs ---------------------------------------------------------------------------------------
@@ -188,13 +189,13 @@ test('round 8: every Rat kept its line and a new job opens: it goes to a Rat, ne
 });
 
 test('round 8 #1: at Tiered the Last Call line is the Glow Rush at a gauge of 0.6, and its miss line', () => {
-  assert.equal(RALLY_LINES.gauge[2], 'Glow rush! Shoot before they leave!');   // owner playtest 3 §2
-  assert.equal(GAUGE_MISS[2], 'Missed: the bowls were full at 1:00.');
+  assert.equal(RALLY_LINES.gauge[2], 'Bowls judged at 2:30! Shoot them clear!');   // owner playtest 3 §2
+  assert.equal(GAUGE_MISS[2], 'Missed: the bowls were full at 2:30.');
   const clock = { t: 1 };
   const crew = new Crew('RLG', { venue: 2, day: 12, venueDay: 1, up: { shed: 1 } }, { shiftSecs: 120, seed: 3, now: () => clock.t });
   crew.join('A'); crew.startShift();
   crew.mods.kpi = () => 0.6;
-  assert.equal(crew.rallyNeed(), 'Glow rush! Shoot before they leave!');
+  assert.equal(crew.rallyNeed(), 'Bowls judged at 2:30! Shoot them clear!');
 });
 
 // ---- council round 10 #2/#5: the Club's dusk always deals jobs ------------------------------------------------------

@@ -54,7 +54,7 @@ export const DRONES = {
 export function droneTarget(d, balls, claimed = new Set(), zone = null) {
   let best = null, bd = Infinity, bs = -1;
   for (const b of balls) {
-    if (!b.rest || b.sunk || b.creek || b.kind === 'one' || claimed.has(b.id)) continue;   // council round 10 #5: snags are divers' only
+    if (!b.rest || b.sunk || b.creek || b.kind === 'one' || b.hands || claimed.has(b.id)) continue;   // council round 10 #5: snags are divers' only; round 11: hazards are Rats' only
     const score = zone && Math.hypot(b.x - zone.x, b.z - zone.z) <= zone.r ? 2 : isStray(b) ? 1 : 0, dist = Math.hypot(b.x - d.x, b.z - d.z);
     if (score > bs || (score === bs && dist < bd)) { best = b; bd = dist; bs = score; }
   }
@@ -77,4 +77,39 @@ export function droneStep(d, goal, dt) {
   const dy = want - d.y, vy = Math.min(Math.abs(dy), DRONES.VSPEED * dt);
   d.y += Math.sign(dy) * vy;
   return left < DRONES.GRAB_R && (!goal.grab || d.y <= DRONES.GRAB_Y + 0.05);
+}
+
+// ---- round 11 (expert #6, #9): Zoning bites, and the hazard balls ---------------------------------------------------
+// Hazard balls: a customer ball that comes to rest inside the hose's reach (ZONE_R of the pressure washer, short of
+// the kerb) turns hazard with hazChance(crew size). Drones, teenagers, carts and the autopilot refuse them (b.hands). One Rat sprays
+// it with the wand (SPRAY s on it) and it is wet for WET s; a Rat who picks up a wet hazard bags it on the spot: it
+// pays W ball-weights. A dry hazard can't be picked up. Sprayer and bagger can be the same Rat (solo), just slower.
+// Each hazard lying out costs Zoning 1/CAP, on top of the strays: unattended, a 4P crew's hazards cross the line in
+// ~90-120 s (the hazards come with the customers, so a solo crew's come ~2.5x slower). A hazard nobody bags is
+// written off after LIFE s of open range (it turns back into a range ball; not in the cleanup): left alone, a 4P crew's Zoning hovers round the line
+// (DENIED some days), a solo crew's stays well above it. W: Corporate bills the county for the disposal (~10% of a
+// 4P County shift's income when the crew does the job).
+export const HAZ = { CHANCE: 0.14, ZONE_R: 62, KERB_PAD: 3, SPRAY: 1.0, WET: 8, W: 40, CAP: 12, LIFE: 120 };
+// The chance scales with the crew (gentle solo, real at 4P): x0.4 solo, x1 at 4P.
+export const hazChance = n => HAZ.CHANCE * [0.4, 0.65, 0.85, 1][Math.max(1, Math.min(4, n | 0 || 1)) - 1];
+// The washer station is passed in (sim.js WASH.STATION): this file must not import sim.js.
+export const inHazZone = (x, z, st) => Math.hypot(x - st.x, z - st.z) <= HAZ.ZONE_R && x < MAP.KERB_X - HAZ.KERB_PAD && z < -4;
+export const isHazard = b => !!b && b.kind === 'hazard' && !b.sunk;
+export const hazardCount = balls => { let n = 0; for (const b of balls) if (isHazard(b)) n++; return n; };
+// Zoning with hazards: 1 - strays / STRAY_CAP - hazards / HAZ.CAP, clamped (no hazards: the old zoning()).
+export const zoningWith = (strays, hazards = 0) => Math.max(0, Math.min(1, 1 - strays / ZONING.STRAY_CAP - hazards / HAZ.CAP));
+
+// Below the line Zoning sends a van down the kerb: every EVERY s of working shift it tows TOW(n) resting balls (the
+// ones nearest the kerb first: strays, then the field's right side). Towed balls are gone, unpaid.
+export const VAN = { EVERY: 30, LINE: 0.5, SECS: 8 };
+export const vanTow = n => 4 + 2 * Math.max(1, Math.min(4, n | 0 || 1));
+// Which balls the van takes: resting, not Ball No. 1, not sunk/in the creek, not a hazard; nearest the kerb first.
+export function vanPick(balls, k) {
+  const out = [];
+  for (const b of balls) {
+    if (!b.rest || b.sunk || b.creek || b.drifting || b.kind === 'one' || b.hands) continue;   // the hazards are yours to bag
+    out.push(b);
+  }
+  out.sort((a, b) => b.x - a.x);
+  return out.slice(0, Math.max(0, k | 0));
 }

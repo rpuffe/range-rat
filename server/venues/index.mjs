@@ -24,6 +24,7 @@
 //     kpi(crew, st)                        -> 0..1 | null   this venue's Board gauge; read only at venue === crew.venue
 //     snapshot(crew, st)                   -> JSON         sent every tick as s.mods[id] (keep it small)
 //     toSave(crew, st)                     -> JSON | undefined   kept as save.mods[id]; undefined = nothing to keep
+//     take(crew, st, p, b)                 -> true     round 11: a Rat picks up a Rats-only ball (b.hands); true = taken
 //   }
 //
 // Every hook is optional. `st` is whatever init returned (an object; {} if there is no init). Hooks run in
@@ -60,7 +61,7 @@ export const MODULES = [
 ];
 
 export const HOOKS = ['init', 'startShift', 'tick', 'endShift', 'serve', 'ping', 'knockDown', 'input', 'launchMod', 'onRest',
-  'clamp', 'inspect', 'signal', 'awards', 'kpi', 'snapshot', 'toSave'];
+  'clamp', 'inspect', 'signal', 'awards', 'kpi', 'snapshot', 'toSave', 'take'];
 const ID_RE = /^[a-z][a-z0-9]{0,15}$/;
 const clamp01 = v => Math.max(0, Math.min(1, v));
 

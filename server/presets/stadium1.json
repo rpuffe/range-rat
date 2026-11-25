@@ -1,0 +1,182 @@
+{
+ "id": "stadium1",
+ "label": "The Stadium · day 1",
+ "made": "2026-11-25",
+ "bot": "4P seed 7, morning snap",
+ "players": 4,
+ "save": {
+  "v": 5,
+  "day": 15,
+  "cash": 649821.57,
+  "totals": {
+   "picked": 9372,
+   "deposited": 6666,
+   "cash": 1961227.32,
+   "knockdowns": 606,
+   "helped": 2413,
+   "carted": 1130,
+   "swings": 220,
+   "pings": 13,
+   "runOver": 388,
+   "washed": 411.7,
+   "scrubbed": 5699,
+   "unwashed": 390,
+   "lostPremium": 30774.57,
+   "reviews": 13,
+   "launched": 10692,
+   "filled": 338,
+   "spotless": 320.4,
+   "sealCash": 8522.8,
+   "served": 195,
+   "fries": 1650,
+   "dogs": 120,
+   "fedCash": 233236.36,
+   "dived": 701,
+   "snags": 287,
+   "targets": 198,
+   "beers": 35,
+   "deckOrders": 35
+  },
+  "up": {
+   "gear": 3,
+   "cart": 1,
+   "shed": 3,
+   "helpers": 3,
+   "washer": 3,
+   "wand": 3,
+   "ads": 2,
+   "shoes": 2,
+   "hardhat": 1,
+   "returns": 2,
+   "pond": 2,
+   "amen": 1,
+   "gutters": 1
+  },
+  "diveByName": {
+   "Rat 1": 3,
+   "Rat 2": 3,
+   "Rat 3": 3,
+   "Rat 4": 3
+  },
+  "lostFound": [
+   "keys",
+   "trophy",
+   "shades",
+   "duck",
+   "boot"
+  ],
+  "commendations": 10,
+  "reviews": 0,
+  "pondSunk": 0,
+  "fries": 20,
+  "venue": 3,
+  "venueDay": 0,
+  "outstanding": 713370318,
+  "pendingReveal": 3,
+  "endless": false,
+  "garyDay": 16,
+  "fixtures": {
+   "sign": 0.114,
+   "stand": 0.082,
+   "mat0": 0.003,
+   "mat1": 0.003,
+   "mat2": 0,
+   "mat3": 0,
+   "mat4": 0,
+   "mat5": 0.21,
+   "mat6": 0.132,
+   "mat7": 0.231,
+   "mat8": 0.204,
+   "mat9": 0.216
+  },
+  "records": {
+   "cash": 591748.25,
+   "banked": 585,
+   "day": 12,
+   "curve": [
+    13289.02,
+    42884.58,
+    131744.12,
+    203022.78,
+    261139.12,
+    296245.25,
+    359457.39,
+    410283.53,
+    455236.59,
+    490429.92,
+    516890.34,
+    553782.3,
+    573595.92,
+    591748.25
+   ]
+  },
+  "voiced": [
+   "welcome",
+   "glow",
+   "gold",
+   "garyIntro",
+   "gary",
+   "huddle",
+   "club",
+   "lead",
+   "treasure",
+   "bouncy",
+   "mower",
+   "tiered",
+   "jackpot"
+  ],
+  "debuts": [
+   "glow",
+   "gold",
+   "square",
+   "lead",
+   "bouncy",
+   "splitter"
+  ],
+  "mods": {
+   "deck": {
+    "last": 1
+   }
+  },
+  "night": {
+   "minutes": 70,
+   "fromDay": 5,
+   "day": 14,
+   "shifts": 10,
+   "venue": 3,
+   "title": "Stadium Retrieval Captain",
+   "balls": 4599,
+   "cash": 1950968.41,
+   "knockdowns": 533,
+   "falls": 0,
+   "treasures": 5,
+   "rats": [
+    {
+     "name": "Rat3",
+     "color": "#6fcf7c",
+     "award": "Most Knockdowns Dealt",
+     "line": "2 Rats flattened"
+    },
+    {
+     "name": "Rat2",
+     "color": "#f2c94c",
+     "award": "Most Sprayed",
+     "line": "90 things hosed clean"
+    },
+    {
+     "name": "Rat0",
+     "color": "#e8604c",
+     "award": "Sweep King",
+     "line": "24 balls picked"
+    },
+    {
+     "name": "Rat1",
+     "color": "#4c9be8",
+     "award": "Fry Lord",
+     "line": "100 served"
+    }
+   ]
+  },
+  "test": true
+ }
+}

@@ -76,12 +76,12 @@ test('the memo, the hint and the report rows', () => {
 });
 
 // ---- §1.3 the floats -----------------------------------------------------------------------------------------------
-test('popupLine: "8 x $2.62", "+ wash" with a washer, "muddy boots" with grime', () => {
+test('popupLine: "8 x $2.62", "+ wash" with a washer, no "muddy boots" chip (round 11: grime muddies the return)', () => {
   assert.equal(popupLine({ n: 8, per: 2.62, credit: 0, clean: true }).text, '8 × $2.62');
   const w = popupLine({ n: 8, per: 1.31, credit: 10.48, clean: true });
   assert.equal(w.text, '8 × $1.31 + wash'); assert.equal(w.wash, true); assert.equal(w.base, '8 × $1.31');
   const m = popupLine({ n: 8, per: 2.1, credit: 0, clean: false });
-  assert.equal(m.text, '8 × $2.10 · muddy boots'); assert.equal(m.boots, true);
+  assert.equal(m.text, '8 × $2.10'); assert.equal(m.boots, false);
   assert.equal(popupLine({ n: 3, cash: 6, kind: 'cart' }).text, '3 × $2', 'no per: cash / n; the cart has no boots');
 });
 

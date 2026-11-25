@@ -9,7 +9,7 @@
 //
 // The builders read their yaw (and, where practical, their position) from this table, and tag each mesh with
 // tagSign(mesh, id). `?signs` (signsdebug.js) then compares every tagged mesh's world normal with the table.
-import { SIM, MATS, WASHER, FRIES, FIXTURE_BY_ID, POND, BANK } from './sim.js';
+import { SIM, MATS, LINE, WASHER, FRIES, FIXTURE_BY_ID, POND, BANK } from './sim.js';
 import { MAP } from './map.js';
 
 export const yawOf = n => Math.atan2(n.x, n.z);
@@ -76,7 +76,8 @@ export const SIGNS = [
   { id: 'kitchen', file: 'venues.js', from: 1, pos: { x: FRIES.SHED.x, y: 2.65, z: SHED_Z - 1.75 }, normal: SOUTH,
     viewers: [at(FRIES.SHED.x, FRIES.SHED.z - 2), at(FRIES.SHED.x - 4, 0)] },
   // Mat numbers, flat on each mat's back edge: read from behind the mat, top of the digit toward the range.
-  ...MATS.map(m => ({ id: `mat.${m.i + 1}`, file: 'main.js', pos: { x: m.x, y: 0.045, z: 0.62 }, normal: { x: 0, y: 1, z: 0 },
+  // Round 11: the new wing's 11-16 too (bays.js LINE).
+  ...LINE.map(m => ({ id: `mat.${m.i + 1}`, file: 'main.js', pos: { x: m.x, y: 0.045, z: 0.62 }, normal: { x: 0, y: 1, z: 0 },
     up: SOUTH, viewers: [at(m.x, 2)] })),
   // Yardage boards on the left net, turned to the mat line.
   ...YARDAGE.map(([yd, z]) => {

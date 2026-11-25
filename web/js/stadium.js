@@ -51,7 +51,7 @@ export function pushSample(buf, s) {
 export const windowMean = buf => (buf?.a?.length ? buf.a.reduce((x, y) => x + y, 0) / buf.a.length : null);
 
 // Decay by dt, clamped 0..1.
-export const stepSentiment = (s, dt) => clamp01(s - CROWD.DECAY * dt);
+export const stepSentiment = (s, dt, rate = CROWD.DECAY) => clamp01(s - rate * dt);   // round 11: rate = crowdDecay(n)
 export const bump = (s, d) => clamp01(s + d);
 
 // What a paid ping is worth: more on the Track, plus the jackpot bonus.
@@ -62,3 +62,36 @@ export const bobFor = s => 0.1 + 0.5 * s;
 export const ambFor = s => 0.2 + 0.8 * s;
 export const waving = s => s > 0.9;
 export const bored = s => s < 0.25;
+
+// ---- round 11 (expert #6, #9): the crowd bites, and the souvenir balls -------------------------------------------
+// The live mood drains faster with more Rats (gentle solo, real at 4P): from full, the live mood crosses the line in
+// ~200 s solo and ~110 s at 4P (the graded 2-minute mean the Board shows lags it by up to a minute). One Rat lapping
+// the Track (+0.1 a lap, ~11 s a lap) still out-runs the 4P drain on their own: the gauge is one Rat's job.
+// CROWD.DECAY above stays the old flat rate (stepSentiment's default) for old readers.
+export const CROWD_LINE = 0.5;   // sim.js QUOTA_KPI (pinned equal by test/late.test.mjs): stadium.js must not import sim.js
+export const crowdDecay = n => 0.0025 + 0.00067 * (Math.max(1, Math.min(4, n | 0 || 1)) - 1);
+
+// Below the line the crowd BOOS: every EVERY s of working shift one seated customer sulks and walks out, and their
+// bay stays empty for EMPTY s. Not in the cleanup (they're all leaving anyway).
+export const BOO = { EVERY: 20, EMPTY: 30, GRACE: 60 };   // GRACE: no boos in the shift's first minute (the crowd opens at 0.5)
+
+// Souvenir balls: a customer ball is gold-ringed pink with CHANCE (Stadium only). Machines won't take them (b.hands):
+// a Rat picks one up (it rides in your hands, up to HANDS, outside the pocket) and walks it to the crowd rail (the
+// side nets in front of either stand). Each one delivered: +CROWD to the live mood and pays W ball-weights (fans pay
+// for them). Walk past a mate with empty hands and your souvenirs pass to them (HANDOFF_R): a relayed bundle feeds the
+// crowd ×RELAY and pays ×RELAY. Tuned so the job is ~10% of a 4P Stadium shift's income (design/round11-late.md).
+export const SOUV = { CHANCE: 0.06, HANDS: 3, CROWD: 0.07, RELAY: 2, W: 12, HANDOFF_R: 1.8, RAIL_X: 64, RAIL_Z0: -118, RAIL_Z1: -22, RAIL_R: 4 };
+export const atRail = (x, z) => z >= SOUV.RAIL_Z0 - SOUV.RAIL_R && z <= SOUV.RAIL_Z1 + SOUV.RAIL_R && Math.abs(x) >= SOUV.RAIL_X - SOUV.RAIL_R;
+// The rail point nearest a spot (the tip's arrow, the bot).
+export const railPoint = (x, z) => ({ x: (x < 0 ? -1 : 1) * (SOUV.RAIL_X - 1), z: Math.max(SOUV.RAIL_Z0, Math.min(SOUV.RAIL_Z1, z)) });
+// What delivering n souvenirs does to the live mood.
+export const souvCrowd = (n, relayed) => n * SOUV.CROWD * (relayed ? SOUV.RELAY : 1);
+
+// A seated customer walks out on a boo (the refusal's shape: sulk, leave, the bay stays empty). Mutates the mat like
+// customers.js fellOff. Returns the events (none if the mat had nobody playing).
+export function booOut(mat, now, empty = BOO.EMPTY) {
+  if (!mat || mat.st !== 'playing' || mat.balls <= 0) return [];
+  mat.st = 'sulk'; mat.t0 = now; mat.balls = 0; mat.fin = 0;
+  mat.noBefore = Math.max(mat.noBefore ?? 0, now + empty);
+  return [{ t: 'refuse', mat: mat.i, cust: mat.cust, why: 'boo' }];
+}

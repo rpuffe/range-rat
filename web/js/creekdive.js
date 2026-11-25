@@ -8,10 +8,11 @@
 //   the out-branch holds you at the Grate's net until you climb out.
 // - Air drains x CREEK_DIVE.AIR_MULT (the snorkel breaks the surface). Out of air, you pop up on the nearest bank.
 import { CREEK_DIVE } from './dive.js';
+import { clubOpenAt } from './clubdays.js';
 import { MAP, inCreekWater, inCreekChannel, creekCurrent, creekProject, inPondArea } from './map.js';
 
 const venueOf = world => world?.venue ?? 0;
-export const creekOpen = world => venueOf(world) >= CREEK_DIVE.FROM_VENUE;
+export const creekOpen = world => venueOf(world) >= CREEK_DIVE.FROM_VENUE && clubOpenAt('creekDive', world);   // round 11: Club day 3
 
 // One server step for one Rat. st: the Rat ({ x, z, creekT, creekDiving }); blocked: driving, aloft, down, the One.
 // Mutates st.creekT / st.creekDiving. Returns 'under' (just ducked), 'up' (just surfaced), 'pond' (carried into the
@@ -54,3 +55,15 @@ export function bankSpot(x, z) {
 }
 
 export const creekAir = dt => dt * CREEK_DIVE.AIR_MULT;   // the drain, in seconds of air, for dt in the creek
+
+// Round 11 (expert #7, "stations never make you wait"): catch your breath on the move. After a creek dive, the air
+// refills BREATH.WALK_MUL times as fast while you walk (or wade) to the next snag, so standing on the bank waiting is
+// never the fastest way back under. Standing still refills at the normal land rate. Pure: st is the Rat
+// ({ x, z, breathX, breathZ, lastCreek }); mutates the breath fields. Returns the refill multiplier for this step.
+export const BREATH = { WALK_MUL: 3, MOVING: 0.6 };   // m/s: faster than this counts as walking
+export function breathMul(st, dt) {
+  const px = st.breathX, pz = st.breathZ;
+  st.breathX = st.x; st.breathZ = st.z;
+  if (!st.lastCreek || px == null || !(dt > 0)) return 1;
+  return Math.hypot(st.x - px, st.z - pz) / dt > BREATH.MOVING ? BREATH.WALK_MUL : 1;
+}

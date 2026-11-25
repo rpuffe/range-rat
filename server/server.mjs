@@ -19,6 +19,8 @@ import { Crew, newCode, validCode } from './crew.mjs';
 import { newStore } from './store.mjs';
 import { SIM } from '../web/js/sim.js';
 import { migrateV4 } from '../web/js/goals.js';   // council round 10 #1: DEV_STAMPS 3+ hands a fresh crew a done card
+import { PRESETS, skipHostOk } from '../web/js/skip.js';                // round 11: skip ahead (test), dev + localhost only
+import { loadPreset, presetSave, testJoin, tipsFor } from './skip.mjs';
 
 const PORT = Number(process.env.PORT || 8080);
 const WEB = fileURLToPath(new URL('../web/', import.meta.url));
@@ -139,9 +141,36 @@ async function devApi(req, res, parts) {
   return send(res, 200, { code, p: p.id, k: p.token });
 }
 
+// Round 11, skip ahead (test): a NEW crew from a bot-made preset (server/skip.mjs), only when the request's Host is
+// localhost or a dev deployment ("-dev."): prod answers 404 as if the route didn't exist.
+//   GET  /api/skip                    -> {presets: [{id, label}]}
+//   POST /api/skip  {name, preset}    -> {code, p, k, test: true, tips: [hint ids already seen]}
+async function skipApi(req, res, parts) {
+  if (!skipHostOk(req.headers.host) || parts.length !== 2) return send(res, 404, { error: 'not found' });
+  if (req.method === 'GET') return send(res, 200, { presets: PRESETS.map(({ id, label }) => ({ id, label })) });
+  if (req.method !== 'POST') return send(res, 405, { error: 'method not allowed' });
+  const body = await readJson(req);
+  const preset = await loadPreset(String(body.preset ?? ''));
+  if (!preset) return send(res, 404, { error: 'No such starting point.' });
+  if (crews.size >= MAX_CREWS) return send(res, 503, { error: 'The range is full right now. Try again soon.' });
+  let code;
+  for (let i = 0; i < 20 && !code; i++) { const c = newCode(); if (!crews.has(c) && !(await store.load(c))) code = c; }
+  if (!code) return send(res, 503, { error: 'Could not find a free crew code.' });
+  const save = presetSave(preset, code);
+  await store.save(code, save);          // the normal save-load path: stored, then loaded like any rejoin
+  const c = await loadCrew(code);
+  if (!c) return send(res, 503, { error: 'The range is full right now. Try again soon.' });
+  const p = c.crew.join(body.name);
+  testJoin(c.crew, p);
+  saveCrew(c);
+  console.log(`skip: crew=${code} preset=${preset.id ?? body.preset} venue=${c.crew.venue} day=${c.crew.day}`);
+  return send(res, 200, { code, p: p.id, k: p.token, test: true, tips: tipsFor(save) });
+}
+
 async function api(req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean);   // ['api', 'crew', CODE?, verb?]
   if (parts[1] === 'dev') return devApi(req, res, parts);
+  if (parts[1] === 'skip') return skipApi(req, res, parts);
   if (parts[1] !== 'crew') return send(res, 404, { error: 'not found' });
 
   if (parts.length === 2 && req.method === 'POST') {          // new crew
@@ -171,6 +200,7 @@ async function api(req, res, url) {
     if (again) return send(res, 200, { code, p: again.id, k: again.token });
     const p = c.crew.join(body.name);
     if (!p) return send(res, 409, { error: `That crew is full (${SIM.MAX_PLAYERS} max).` });
+    testJoin(c.crew, p);   // round 11: a test crew's newcomer gets the crew's dive level (no-op on a real crew)
     return send(res, 200, { code, p: p.id, k: p.token });
   }
 

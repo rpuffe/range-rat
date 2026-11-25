@@ -85,6 +85,9 @@ export const HINTS = Object.freeze({
   creek: { kb: 'The creek is divable now. Float downstream.', pad: 'The creek is divable now. Float downstream.' },   // council round 10 #5
   green: { kb: 'Land a crew ball on a green: Hustle.', pad: 'Land a crew ball on a green: Hustle.' },   // council round 10 #6 (builder 2)
   drones: { kb: 'Drones! Hold F on foot: "Drones, here!"', pad: 'Drones! Hold Ⓨ on foot: "Drones, here!"' },   // playthrough 5 C4
+  souvenir: { kb: 'Pink souvenir balls: carry them to the crowd rail.', pad: 'Pink souvenir balls: carry them to the crowd rail.' },   // round 11 (expert #9)
+  hazard: { kb: 'Green hazard ball: spray it, then bag it.', pad: 'Green hazard ball: spray it, then bag it.' },             // round 11 (expert #9)
+  bays: { kb: 'New bays built. More golfers, more mud.', pad: 'New bays built. More golfers, more mud.' },                 // round 11 (owner): Build more bays
 });
 // Context-driven hints (council round 4, §4.2): fires when its condition holds, once ever.
 // ctx: { day, playSecs, venue, signMud, pocketFull, washerCash, onDock, beers, deckOrder }, plus tips.js tipCtx:
@@ -104,18 +107,21 @@ export const HINT_WHEN = Object.freeze({
   creek: c => (c.venue ?? 0) >= 1 && !!c.creekNear,   // council round 10 #5: near the Club's running creek
   green: c => (c.venue ?? 0) < 2 && !!c.atBay,          // council round 10 #6: at a crew bay at the Muni or the Club
   drones: c => (c.up?.drones ?? 0) >= 1,                // playthrough 5 C4: teach the dispatch once drones are bought
+  souvenir: c => (c.venue ?? 0) === 3 && !!c.souvOut,     // round 11: the first souvenir ball is out there
+  hazard: c => (c.venue ?? 0) === 4 && !!c.hazOut,        // round 11: the first hazard ball
+  bays: c => !!c.baysFresh,                               // round 11 (owner): a tier of Build more bays just went up (bayline.js)
   bv: c => (c.day ?? 1) >= 2 && (c.playSecs ?? 0) >= 8,   // the BV line appears on day 2: say what it is once
 });
 // Play-seconds before each hint is due; CCTV also needs the crew at venue 1+.
 export const HINT_AFTER = Object.freeze({ shop: 10, sprint: 30, cctv: 6 });
-export const HINT_ORDER = ['bv', 'wand', 'mud', 'bank', 'crank', 'shed', 'cart', 'dive', 'tube', 'gutters', 'lift', 'deck', 'creek', 'green', 'drones'];   // context hints, first due wins
+export const HINT_ORDER = ['bv', 'wand', 'mud', 'bank', 'crank', 'shed', 'cart', 'dive', 'tube', 'gutters', 'lift', 'deck', 'creek', 'green', 'drones', 'souvenir', 'hazard', 'bays'];   // context hints, first due wins
 export const HINT_GAP = 12;   // seconds between hints
 export const SHOP_HINT_CASH = 20;
 // Playthrough 4 A16: the onboarding tips belong to the Muni's first two days (a Club crew already knows them).
 export const EARLY_HINTS = ['shop', 'sprint', 'bv'];
 export const earlyDay = ({ venue = 0, day = 1 } = {}) => venue === 0 && (day ?? 1) <= 2;
 // Playthrough 4 A16: a just-bought item's tip jumps the queue (and the gap): shop item id -> its tip.
-export const BOUGHT_HINT = Object.freeze({ washer: 'crank', shed: 'shed', cart: 'cart', pond: 'tube', gutters: 'gutters', dive: 'dive', drones: 'drones' });
+export const BOUGHT_HINT = Object.freeze({ washer: 'crank', shed: 'shed', cart: 'cart', pond: 'tube', gutters: 'gutters', dive: 'dive', drones: 'drones', build: 'bays' });
 export const BOUGHT_SECS = 15;   // how long a purchase waits for its tip's condition before it joins the queue as usual   // the shop hint waits for cash >= this (ctx.cash): before that the crew can't buy anything
 
 export function loadSeen(storage = store()) {
@@ -166,6 +172,8 @@ export function createHinter({ storage } = {}) {
     },
     // A purchase (shop item id): its tip, if it has one, comes next (playthrough 4 A16).
     bought(itemId) { const id = BOUGHT_HINT[itemId]; if (id && !seen.includes(id)) bought = { id, left: BOUGHT_SECS }; },
+    // Round 11, skip ahead (test): the tips a crew at the starting point would already have seen (web/js/skip.js tipsFor).
+    markSeen(ids) { const add = (ids ?? []).filter(id => id in HINTS && !seen.includes(id)); if (add.length) { seen = [...seen, ...add]; saveSeen(seen, storage); } },
     get seen() { return seen; },
   };
 }

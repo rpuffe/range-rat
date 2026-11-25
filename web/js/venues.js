@@ -84,8 +84,26 @@ export function createVenues(scene) {
       const posts = []; for (let i = 0; i < 6; i++) posts.push([-22 + i * 8.8, 1.5, 1.45, 0.18, 3, 0.18]);
       g.add(boxes(posts, lambert(0xe8e2d0), true));
       // white dividers between the mats (mats at x -18..18 step 4; dividers at +-2 offsets)
+      // Round 11 (bays.js): in build order, so the drawn count follows the bays built: the old ten's eleven, then the new
+      // wing's (x -28..-48: -26, -30 .. -50). live.setBays(n) shows n + 1 (n + 2 once the wing starts: the crew bay's gap).
       const dv = []; for (let i = 0; i <= 10; i++) dv.push([-20 + i * 4, 0.55, 1.0, 0.08, 1.1, 1.8]);
-      g.add(boxes(dv, white));
+      for (let i = 0; i <= 6; i++) dv.push([-26 - i * 4, 0.55, 1.0, 0.08, 1.1, 1.8]);
+      const dvm = boxes(dv, white); g.add(dvm);
+      // the wing's own awning (the old one stops at x -23.5): one roof and valance, stretched over the wing bays built
+      const wing = new THREE.Group(); g.add(wing);
+      const wRoof = box(1, 0.25, 3.2, green, 0, 3.1, 0), wVal = box(1, 0.5, 0.12, white, 0, 2.85, -1.55);
+      const wPost = box(0.18, 3, 0.18, lambert(0xe8e2d0), 0, 1.5, 1.45);
+      wing.add(wRoof, wVal, wPost);
+      live.setBays = n => {
+        n = Math.max(0, n | 0);
+        dvm.count = n <= 10 ? Math.min(11, n + 1) : Math.min(dv.length, n + 2);
+        const w = Math.max(0, n - 10);
+        wing.visible = w > 0;
+        if (!w) return;
+        const x0 = -23.5, x1 = -26 - 4 * w - 0.5, len = x0 - x1, cx = (x0 + x1) / 2;
+        wRoof.scale.x = wVal.scale.x = len; wRoof.position.x = wVal.position.x = cx; wPost.position.x = x1 + 0.4;
+      };
+      live.setBays(live.bayN ?? 10);
       // KITCHEN board under the shed's front eave (signs.js 'kitchen'; it used to sit inside the roof, placed for an
       // old shed position). Faces the counter side (-z).
       const K = SIGN_BY_ID.kitchen, k = textPlane('KITCHEN', 2.0, 0.5, '#fff8ec', '#8a3b2e', 38, false);

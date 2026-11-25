@@ -12,8 +12,9 @@
 // it can't find is skipped. Station props attach to the station's own group, in its local
 // frame, so a later rotation of a group carries them along.
 import * as THREE from 'three';
-import { SIM, WASH, FRIES, MATS, BAYS, BANK } from './sim.js';
+import { SIM, WASH, FRIES, LINE, BAYS, BANK } from './sim.js';   // round 11: LINE, the whole line (bays.js)
 import { BASKET } from './layout.js';
+import { siloFill } from './basket.js';   // round 11: the dispenser window reads the silo supply
 import { MAP } from './map.js';
 import { WASHER_POS } from './washer.js';
 import { detailFor, emit, wetStep, sagPoints, rollAngle, gaugeAngle, ease, throttle, rng, lightBalance } from './detail.js';
@@ -225,7 +226,6 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     marks.blob = im; marks.of.washer.blob.push(1); marks.of.shed.blob.push(3);
 
     const dirt = [];
-    for (const m of MATS) dirt.push([m.x, 1.25, 1.5, 1.0, R(0, 3)]);
     for (let x = -20; x <= 20; x += 2.6) dirt.push([x + R(-0.6, 0.6), 2.4 + R(-0.4, 0.4), R(2.2, 3.2), R(0.9, 1.4), R(-0.3, 0.3)]);   // the walkway behind the mats
     dirt.push([SIM.STAND.x, SIM.STAND.z - 1.0, 3.4, 1.8, 0], [SIM.STAND.x - 2.6, SIM.STAND.z - 0.6, 2.4, 1.3, 0.4], [BASKET.x, BASKET.z - 0.7, 1.8, 1.2, 0]);   // the return's apron; the customers' spot at the basket
     marks.of.washer.dirt.push(dirt.length, dirt.length + 1);
@@ -233,6 +233,10 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     marks.of.shed.dirt.push(dirt.length + 3);
     dirt.push([31, 10, 3.4, 4.6, 0.2], [33.5, 6.8, 2.6, 3.4, 0.6], [36.8, 4.4, 2.2, 1.8, 0], [FRIES.SHED.x, FRIES.SHED.z - 0.1, 3.2, 1.6, 0]);   // the yard: cart park, wash pad, the counter
     for (const b of BAYS) dirt.push([b.x, b.z + 1.3, 1.6, 1.0, 0]);
+    // Round 11 (bays.js): the scuffs in front of each mat go LAST, in build order, so the drawn count follows the bays
+    // built (tickMats: an unbuilt bay leaves no worn patch).
+    marks.matDirtFrom = dirt.length;
+    for (const m of LINE) dirt.push([m.x, 1.25, 1.5, 1.0, R(0, 3)]);
     const dm = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ map: dirtTex, color: 0x7a5a36, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), dirt.length);
     dirt.forEach(([x, z, sx, sz, ry], i) => { dm.setMatrixAt(i, mtx(x, 0.012, z, 0, ry, 0, sx, 1, sz)); dm.setColorAt(i, new THREE.Color().setHSL(0.08 + R(-0.01, 0.01), R(0.3, 0.42), R(0.3, 0.42))); });
@@ -653,7 +657,9 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
       bake(g, [disp.win]);
     }
   }
-  function drawWindow(level) {
+  // Round 11 (owner: the hopper counts "don't make sense"): the window shows the silo's supply (basket.js siloFill), the
+  // balls the dispenser draws on; the number is that supply.
+  function drawWindow(level, n = Math.round(level * 2000)) {
     const x = disp.ctx; if (!x) return;
     const w = 128, h = 96;
     x.fillStyle = '#1a1d22'; x.fillRect(0, 0, w, h);
@@ -664,7 +670,7 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     }
     x.fillStyle = '#0d0f12'; x.fillRect(0, 0, w, 16);
     x.fillStyle = '#ff5a3a'; x.font = 'bold 13px ui-monospace, Consolas, monospace'; x.textAlign = 'center';
-    x.fillText(`IN HOPPER ${String(Math.round(level * 500)).padStart(4, '0')}`, w / 2, 12);
+    x.fillText(`SILO ${String(n).padStart(4, '0')} BALLS`, w / 2, 12);
     disp.tex.needsUpdate = true;
   }
 
@@ -762,7 +768,7 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     for (let i = 0; i < n * n; i++) { data[i * 4] = F.density[i] * 255; data[i * 4 + 1] = F.noise[i] * 255; data[i * 4 + 3] = 255; }
     mats.tex = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
     mats.tex.wrapS = mats.tex.wrapT = THREE.RepeatWrapping; mats.tex.magFilter = mats.tex.minFilter = THREE.LinearFilter; mats.tex.needsUpdate = true;
-    const byX = new Map(MATS.map(m => [m.x.toFixed(2), m]));
+    const byX = new Map(LINE.map(m => [m.x.toFixed(2), m]));
     const f3 = v => v.toFixed(3);
     for (const o of scene.children) {
       const p = o.isMesh && o.geometry?.type === 'BoxGeometry' ? o.geometry.parameters : null;
@@ -1149,7 +1155,11 @@ varying vec2 vMudUv; varying vec2 vMemUv; varying float vMudV; uniform sampler2D
   // The mats' mud, wet sheen and the sparkle when one comes clean (every frame: it's what you're spraying).
   function tickMats(dt, t) {
     const fx = crew()?.fixtures ?? {};
+    // Round 11 (bays.js): only the built bays: their worn patches (the dirt's tail) and their mud.
+    const nB = Math.min(LINE.length, crew()?.nMats ?? 10);
+    if (marks.dirt && marks.matDirtFrom != null && marks.dirt.count !== marks.matDirtFrom + nB) marks.dirt.count = marks.matDirtFrom + nB;
     for (const M of mats.list) {
+      if (M.i >= nB) { M.mud = -1; continue; }   // not there: no glint when it goes (its mud is zeroed)
       const mud = Math.max(0, Math.min(1, fx['mat' + M.i] ?? 0));
       if (M.mud >= 0 && cameClean(M.mud, mud)) {   // clean! a glint over the mat
         for (let i = 0; i < sparkle.cap; i++) sparkle.spawn(M.x + R(-0.7, 0.7), R(0.08, 0.3), M.z + R(-0.7, 0.7), R(-0.2, 0.2), R(0.4, 1.1), R(-0.2, 0.2), R(0.35, 0.7), R(0.08, 0.14), 0.01, 0, 1);
@@ -1293,8 +1303,8 @@ varying vec2 vMudUv; varying vec2 vMemUv; varying float vMudV; uniform sampler2D
         const d = th.dt;
         tickWasher(d, t); tickShed(d, t); tickMower(d);
         mist.update(d); drips.update(d); steam.update(d); bubbles.update(d); clips.update(d); tickSpots(d);
-        const lv = Math.round(Math.max(0, Math.min(1, 1 - (ballCount() || 0) / 300)) * 10) / 10;
-        if (lv !== disp.level) { disp.level = lv; drawWindow(lv); }
+        const cs = crew(), sup = Math.min(2000, siloFill(cs?.silo, cs?.filled)), lv = Math.round(sup / 2000 * 20) / 20;   // round 11: the silo supply
+        if (sup !== disp.n) { disp.n = sup; disp.level = lv; drawWindow(lv, sup); }
       }
       tickClouds(dt, t);
     },

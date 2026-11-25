@@ -221,6 +221,7 @@ test('water clarity: teal at 1, brown-green at 0, fog 6 + 8 x clarity, halved in
 
 // ---- the crew-level rules (server/crew.mjs) ------------------------------------------------
 function makeCrew(save = { venue: 1, day: 3 }, seed = 11) {
+  if (save?.venue === 1 && save.venueDay == null) save = { ...save, venueDay: 3 };   // round 11 (clubdays.js): a Club crew past the stagger unless a test says otherwise
   const clock = { t: 1_000_000 };
   const crew = new Crew('DIVE', save, { shiftSecs: 600, seed, now: () => clock.t });
   const step = (dt = 0.05) => { clock.t += dt * 1000; crew.tick(dt); };

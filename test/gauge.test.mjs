@@ -43,7 +43,7 @@ test('the report and the quota event carry gauge and gaugeOk, and the miss line 
   const q = low.report.quota;
   assert.equal(q.gauge, 0.43);
   assert.equal(q.gaugeOk, false);
-  assert.equal(q.why, 'Missed: the bowls were full at 1:00.');
+  assert.equal(q.why, 'Missed: the bowls were full at 2:30.');
   const ev = low.flush().ev.find(e => e.t === 'quota');
   assert.equal(ev.gauge, 0.43);
   assert.equal(ev.gaugeOk, false);

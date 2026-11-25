@@ -7,7 +7,7 @@ import { upkeepMet } from './bvtext.js';   // owner playtest 3 §1.4
 // Every line is one centre toast: 8 words or fewer.
 export const RALLY_LINES = {
   gauge: {                                   // by venue: the fourth gauge is under QUOTA_KPI
-    2: 'Glow rush! Shoot before they leave!',   // round 8 #1: the Glow Rush (glow balls cup x2); owner playtest 3 §2: bowls judged at 1:00
+    2: 'Bowls judged at 2:30! Shoot them clear!',   // round 11: the bowls are read at Last Call (T-2:30): a buzzer-beater
     3: 'The crowd is bored. Lap the Track!',
     4: 'Strays in the Yards. Go get them!',
     5: 'Debris overhead. Everyone up the Lift!',   // round 8 #4: the crank is gone, so every Rat rides
@@ -26,7 +26,7 @@ export const RALLY_LINES = {
 
 // The report's miss line when the gauge, not Upkeep, cost the stamp (by venue).
 export const GAUGE_MISS = {
-  2: 'Missed: the bowls were full at 1:00.',   // owner playtest 3 §2: the last customer out reads the bowls
+  2: 'Missed: the bowls were full at 2:30.',   // round 11: the bowls are read at Last Call (T-2:30)
   3: 'Missed: the crowd was bored.',
   4: 'Missed: strays in the Yards.',
   5: 'Missed: too much debris overhead.',
@@ -45,7 +45,8 @@ export const upkeepOk = (value, quota, margin = 0) => !quota || upkeepMet(value,
 // Playthrough 3 #3: Last Call scuffs ×1.5, so "On target" at the bell was DENIED 25 of 31 times (4P). The rally
 // forecasts Upkeep at the bell: it says "On target" only with this much Upkeep to spare. The Last Call rally and the
 // 30 s re-check both use it, so they agree.
-export const UPKEEP_MARGIN = 0.06;
+// Round 11: the taper replaced the x3 rush, so Last Call (T-2:30) leaves ~30 s of thin scuffing: 0.06 -> 0.02.
+export const UPKEEP_MARGIN = 0.02;
 
 // The single biggest shortfall, as one line, or null (endless, or no review today).
 //   value: the crew's valueNow() (bv, rate, curb, pond, fries); quota: { q }; kpi: the venue gauge or null;
@@ -78,12 +79,14 @@ export const RALLY_MARGIN = Object.freeze({ 2: 0.5, 3: 0.1, 4: 0.1, 5: 0.1 });
 // Playtest round 2 #1: a second look this many seconds into Last Call. If the crew is still short, the server posts
 // one more line (the 'rally' event), at most once a shift.
 export const RALLY_RECHECK = 30;
-// Owner playtest 3 §2: the re-check is the cleanup deal at T-60; over this many balls out there it deals 'pick'.
+// The re-check is the cleanup deal at the cleanup's start (round 11: T-2:00); over this many balls out there it deals 'pick'.
 export const RALLY_PICK = 30;
 
-// Round 7 #7: when the rally fires, in seconds before the bell, by venue (default: Last Call's, T-90 since owner
-// playtest 3). The Stadium's Two-Minute Warning rallies at T-120; its Last Call rules still start at T-90.
-export const RALLY_AT = Object.freeze({ 3: 120 });
+// Round 7 #7: when the rally fires, in seconds before the bell, by venue (default: Last Call's, T-2:30 since round 11).
+// Round 11: Tiered and the Stadium rally at T-3:00, as the crowd starts to thin: Tiered's bowls are read at Last Call
+// (T-2:30), so its rally gives the shooters 30 s; the Stadium's Three-Minute Warning reads the live crowd. An entry at or
+// under Last Call's (scaled) never fires on its own (crew.warnDue).
+export const RALLY_AT = Object.freeze({ 2: 180, 3: 180 });
 export const rallyAt = venue => RALLY_AT[venue] ?? LAST_CALL.SECS;
 
 // ---- Round 7 #4: dealt jobs. The ranked shortfalls, dealt round the crew by distance: no roles, only nudges. ----------

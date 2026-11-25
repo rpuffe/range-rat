@@ -14,6 +14,7 @@ with one line of why. Same metrics every round so the trend is the signal, not t
 | **Look & feel** | Graphics, physicality, juice, sound |
 | **Polish** | Bugs, glitches, things that feel broken (10 = none seen) |
 | **One more shift** | Do you want to keep playing? |
+| **Decision density** | In the last minute, did I choose something? (10 = a real choice every minute; round 11, expert review §7.7) |
 | **Overall** | The vibe |
 
 Playtesters: **A** = a new crew's first night to the Range Club; **B** = the Club and Tiered;

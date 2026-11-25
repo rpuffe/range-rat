@@ -34,7 +34,7 @@ export function createViews(ctx, views = []) {
     capturing: () => first('capturing') === true,
     camera: (cam, dt) => first('camera', cam, dt) === true,
     // The Board's slogan: the newest venue's view speaks first (round 7: the Orbital's CLEAR THE SKY and the
-    // Stadium's TWO-MINUTE WARNING outrank the Upper Deck's standing sign).
+    // Stadium's THREE-MINUTE WARNING outrank the Upper Deck's standing sign).
     banner(s) { for (const e of live().reverse()) { const r = e.inst.banner?.(s); if (r != null && r !== false) return r; } return null; },
     amb(s) { const out = {}; for (const e of live()) Object.assign(out, e.inst.amb?.(s) ?? {}); return out; },
     reportLines(r) { const out = []; for (const e of live()) out.push(...(e.inst.reportLines?.(r) ?? [])); return out; },

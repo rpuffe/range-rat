@@ -11,6 +11,8 @@ import { streakLine } from './owner.js';                                        
 import { showPromo, promoPanelHtml, cardHeadline, nextGate } from './promopanel.js';   // council round 10 #1: the goal card (round 7 #10.1: the headline)
 import { cardHtml, doneToast } from './goals.js';
 import { createWasher, createCrank } from './washer.js';
+import { washerPrompt } from './hoppertext.js';   // round 11: the hopper counts in plain words
+import { siloFill } from './basket.js';   // round 11: the silo's fill (the washer's chute drops to it)
 import { createVenues, paintSign } from './venues.js';
 import { createEnding } from './ending.js';
 import { createCCTV } from './cctv.js';
@@ -75,8 +77,8 @@ export function setupRound2(ctx) {
         else if (e.cash > 0) board.floatText(WASHER.x, 2.6, WASHER.z, '+' + money(e.cash), '#9fe8ff');
         break;
       case 'grime':
-        // Playthrough 3 #10: plain words, no "(×1.00)" (the Gear multiplier lives on the HUD).
-        if (e.id === me.id && e.v > 0) toast(['', 'Your gear is grubby.', 'Your gear is filthy. Hose your boots.', 'Your gear is caked. Hose your boots.'][e.v], 2.4);
+        // Playthrough 3 #10: plain words. Round 11: grime no longer cuts your pay; it lowers the crew's Clean % (bvtext bootsMud).
+        if (e.id === me.id && e.v > 0) toast(['', 'Your boots are muddy. Hose them.', 'Filthy boots: the range looks dirtier. Hose them.', 'Caked boots drag Clean % down. Hose them.'][e.v], 2.4);
         break;
       case 'hosed':
         SFX.scoop();
@@ -109,6 +111,9 @@ export function setupRound2(ctx) {
           ending.huddle(null); finaleUp = true; ending.finale({}, () => { finaleUp = false; if (lastWaits) { lastWaits = false; pa.say('last'); } }); ctx.floods?.forEach((l, i) => setTimeout(() => { l.intensity = 0; }, 400 * i));
         }
         break;
+      case 'promoday':   // round 11: Promotion Day passed: two confetti cannons at the return (the PA says it; the report shows it)
+        if (e.pass) for (const dx of [-2.5, 2.5]) confetti.burst(SIM.STAND.x + dx, 1.2, SIM.STAND.z, { n: confettiCount(160, low(), 80), secs: 2.5, speed: 5, up: 11 });
+        break;
       case 'verdict': {   // Gary saw the huddle: a small puff over his cart (main.js lifts his hat)
         const g = crew()?.gary;
         if (e.huddle && g) confetti.burst(g.x, 2.6, g.z, { n: confettiCount(60, low(), 30), secs: 1.6, speed: 3, up: 5 });
@@ -134,6 +139,7 @@ export function setupRound2(ctx) {
     }
     for (const m of ctx.pondMeshes ?? []) m.visible = !!s.pond?.unlocked;
     washer.update(s.washer ?? { n: 0, credit: 0, auto: 0, L: null, R: null, rateL: 0, rateR: 0 });
+    washer.silo(siloFill(s.silo, s.filled));   // round 11
     // Muddy fixtures show on CCTV.
     if (cctv.isOn) cctv.markers(FIXTURES.filter(f => (s.fixtures?.[f.id] ?? 0) > 0.5).map(f => ({ x: f.x, y: 1, z: f.z, label: f.id.startsWith('mat') ? 'mat' : f.id })));
     renderReport();
@@ -368,8 +374,8 @@ export function setupRound2(ctx) {
     if (pumpOn) return 'Pumping: circle ' + (ctx.pad() ? 'either stick' : 'the mouse') + ' to send air down (1 turn = 1.5 s)' + (latched ? ' · ' + btn + ' lets go' : '');
     if (haulOn) return 'Hauling up the bag… ' + Math.min(100, Math.round(haulSecs / 1.5 * 100)) + '%';
     const owed = c.washer?.credit ?? 0, n = c.washer?.n ?? 0;
-    if (c.up?.washer && c.phase === 'shift') for (const side of ['L', 'R']) if (atHandle(me, side)) return cranking ? 'Cranking… circle ' + (ctx.pad() ? 'either stick' : 'the mouse') + ' · ' + money(owed) + ' left in the washer' + (latched ? ' · ' + btn + ' lets go' : '')
-      : n ? (ctx.pad() ? 'Tap ' : 'Hold ') + btn + ' to crank ' + money(owed) + ' out of the washer (' + n + ' balls)' : 'The ball washer is empty. Bank some balls.';
+    // Round 11 (owner: the hopper count "doesn't make a whole lot of sense"): say what the hopper holds, in balls.
+    if (c.up?.washer && c.phase === 'shift') for (const side of ['L', 'R']) if (atHandle(me, side)) return washerPrompt({ cranking: !!cranking, n, owed, btn, pad: ctx.pad(), latched });
     return null;
   }
 

@@ -7,7 +7,7 @@ import tiered from '../server/venues/tiered.mjs';
 import { readFileSync } from 'node:fs';
 import { MAP } from '../web/js/map.js';
 import { inBowl, cupSpot, bayUtil, CUP_FULL, cupFull, GUTTERS_ROW, GUTTERS, TARGET, drainsAll, guttersDrain } from '../web/js/tiered.js';
-import { SHOP, CART, nextPrice } from '../web/js/sim.js';
+import { SHOP, CART, nextPrice, CLEANUP, LAST_CALL } from '../web/js/sim.js';
 
 const [A, B, C] = MAP.BOWLS;
 function setup(extra = {}, venue = 2) {
@@ -322,27 +322,27 @@ function rushShift(seed, shotAt) {
   return crew.mods.kpi();                              // what the review reads (owner playtest 3 §2: the T-60 gauge)
 }
 
-// Owner playtest 3 §2: the bowls are judged at T-60 ("the last customer out reads the bowls"). Council 9 N5: a TARGET
-// at 1:05 passes 6/6, at 1:15 3/6; none fails; one at T-50 is too late to change the stamp.
-test('owner playtest 3 §2: seeded 4P shifts: a TARGET at T-65 passes seeds 1-6, none fails, one at T-50 changes nothing', () => {
-  for (const s of [1, 2, 3, 4, 5, 6]) assert.ok(rushShift(s, 65) >= 0.5, 'seed ' + s + ' T-65');
+// Round 11: the bowls are read at Last Call (T-2:30), a buzzer-beater after the T-3:00 rally (it was the last customer
+// out at T-60). Measured: a TARGET at T-2:32 passes 6/6; none fails; one at T-2:20 is too late to change the stamp.
+test('round 11: seeded 4P shifts: a TARGET at T-152 passes seeds 1-6, none fails, one at T-140 changes nothing', () => {
+  for (const s of [1, 2, 3, 4, 5, 6]) assert.ok(rushShift(s, 152) >= 0.5, 'seed ' + s + ' T-152');
   for (const s of [1, 2, 3]) assert.ok(rushShift(s, null) < 0.5, 'seed ' + s + ' with no TARGET fails');
-  for (const s of [1, 2, 3]) assert.equal(rushShift(s, 50), rushShift(s, null), 'seed ' + s + ': a TARGET after 1:00 is not read');
+  for (const s of [1, 2, 3]) assert.equal(rushShift(s, 140), rushShift(s, null), 'seed ' + s + ': a TARGET after 2:30 is not read');
   // Council round 10 #3: this crew never picks, so with the upper bays its field sits at MAX_BALLS through the rush and
   // the cups refill slowly: T-75 now passes here. The rush's teeth are measured with a crew that picks (council10
   // upper.mjs, PICK=2: no TARGET 2/6, T-75 5/6, T-65 6/6 at CUP_FULL 42). Here: an earlier TARGET leaves fuller cups.
-  const early = [1, 2, 3].filter(s => rushShift(s, 75) >= 0.5).length;
-  assert.ok(early >= 1, 'a TARGET at T-75 can still pass: ' + early + ' of 3');
+  const early = [1, 2, 3].filter(s => rushShift(s, 180) >= 0.5).length;
+  assert.ok(early >= 1, 'a TARGET at T-180 can still pass: ' + early + ' of 3');
 });
 
-test('owner playtest 3 §2: the review reads the gauge stored at T-60 (kpiAtClose), and the snapshot says judged', () => {
+test('round 11: the review reads the gauge stored at Last Call (kpiAtClose), and the snapshot says judged', () => {
   const { crew, drop, run, st } = setup({ gutters: 1 });
   for (const m of crew.mats) m.next = 1e9;
-  crew.shiftSecs = 200;                                // long enough for the cleanup minute
-  run(crew.shiftSecs - 61 - crew.shiftT);
+  crew.shiftSecs = 200;                                // round 11: the windows scale (Last Call from T-71)
+  run(crew.shiftSecs - LAST_CALL.SECS * 200 / LAST_CALL.FULL - 1 - crew.shiftT);
   assert.equal(st().kpiAtClose, null);
   run(1.2);
-  assert.ok(crew.closing());
+  assert.ok(crew.lastCall() && CLEANUP > 0);
   const atClose = st().kpiAtClose;
   assert.equal(typeof atClose, 'number');
   for (let i = 0; i < 21; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);   // cups fill after 1:00
@@ -362,17 +362,17 @@ test('round 8 #6: a Last Call TARGET that lifts the gauge from 0.3 over the tick
     run(0.5);
     assert.ok(Math.abs(st().kpi - 0.3) < 0.04, 'gauge ' + st().kpi);
     for (const m of crew.mats) m.next = 1e9;                                             // no customers: a still bowl
-    run(crew.shiftSecs - 12 - crew.shiftT);
-    assert.ok(crew.lastCall());
+    run(crew.shiftSecs - 47 - crew.shiftT);              // round 11: a 120 s shift tapers from T-51 and is read at T-43
+    assert.ok(!crew.lastCall() && crew.custK() < 1);
     if (late) { drop(A.x + 2, A.z, p.id); run(0.3); }
     run(crew.shiftSecs);
     assert.equal(crew.phase, 'report');
     const saved = crew.snapshot().mods.tiered.saved;
     if (!late) { assert.equal(saved, undefined, 'no late TARGET, no save'); continue; }
-    assert.equal(saved.left, 12);
+    assert.equal(saved.left, 47);
     assert.equal(saved.by, p.id);
     assert.equal(crew.report.quota?.gaugeOk, true);
-    assert.equal(savedLine(saved, { venue: 2, quota: { hit: true } }), `Saved by ${p.name}'s TARGET at 0:12.`);
+    assert.equal(savedLine(saved, { venue: 2, quota: { hit: true } }), `Saved by ${p.name}'s TARGET at 0:47.`);
   }
   assert.equal(clockText(12), '0:12'); assert.equal(clockText(75), '1:15');
   const s = { by: 'x', name: 'Cy', left: 12 };
@@ -391,9 +391,9 @@ test('round 8 #6: a dip back under the tick clears the save; a TARGET outside La
   drop(A.x + 2, A.z, p.id); run(0.3);                                   // T-119: a lift, but not Last Call
   assert.equal(st().saved, null);
   for (let i = 0; i < 21; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);
-  run(crew.shiftSecs - 30 - crew.shiftT);
-  drop(A.x + 2, A.z, p.id); run(0.3);                                   // T-30: the save
-  assert.equal(st().saved?.left, 30);
+  run(crew.shiftSecs - 47 - crew.shiftT);
+  drop(A.x + 2, A.z, p.id); run(0.3);                                   // T-47 (round 11: the taper, before Last Call): the save
+  assert.equal(st().saved?.left, 47);
   for (let i = 0; i < 21; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);
   run(0.5);
   assert.equal(st().saved, null, 'the cups filled again: no longer a save');
@@ -434,5 +434,5 @@ test('round 10 #3: upper customers hit from y 3.1 behind the rail; never a lead 
   const o2 = club.crew.addBall.bind(club.crew); club.crew.addBall = s => { const b = o2(s); if (b) cs.push(s); return b; };
   club.run(100);
   assert.equal(cs.filter(s => s.y > 3).length, 0, 'the Club has no upper bays');
-  assert.equal(club.crew.snapshot().mats.length, 10, 'and its wire is unchanged');
+  assert.equal(club.crew.snapshot().mats.length, 16, 'and its wire is only the line (round 11: the whole line, the new wing too)');
 });

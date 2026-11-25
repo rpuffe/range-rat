@@ -187,23 +187,24 @@ test("no endless-only row (the Owner's projects) leaks into venues 0–5", async
 });
 
 // ---- owner playtest 3 §4, §5 ---------------------------------------------------
-test('§4 Open every bay: Muni from day 2 for 1–3 Rats, hidden at 4+, and it carries over to every venue', async () => {
+test('round 11 Build more bays (was §4 Open every bay): Muni from day 2 at EVERY crew size, three tiers, every venue', async () => {
   const { shopShows, SHOP_BY_ID, activeMats } = await import('../web/js/sim.js');
-  const bays = SHOP_BY_ID.bays;
-  assert.equal(shopShows(bays, 0, 1, false, 1), false, 'not on day 1');
-  for (const n of [1, 2, 3]) assert.equal(shopShows(bays, 0, 2, false, n), true, `${n} Rats, day 2`);
-  assert.equal(shopShows(bays, 0, 2, false, 4), false, 'every mat is already open at 4');
-  assert.equal(nextPrice('bays', {}, 1, 0, 0, 2), 40);
-  assert.equal(nextPrice('bays', {}, 2, 0, 0, 2), 56);
-  assert.equal(nextPrice('bays', {}, 4, 0, 0, 2), null);
-  assert.equal(nextPrice('bays', { bays: 1 }, 1, 0, 0, 5), null, 'one tier');
+  const row = SHOP_BY_ID.build;
+  assert.ok(!SHOP_BY_ID.bays, 'the old one-tier row is gone (saves migrate, bays.test.mjs)');
+  assert.equal(shopShows(row, 0, 1, false, 1), false, 'not on day 1');
+  for (const n of [1, 2, 3, 4]) assert.equal(shopShows(row, 0, 2, false, n), true, `${n} Rats, day 2`);
+  assert.equal(nextPrice('build', {}, 1, 0, 0, 2), 50);
+  assert.equal(nextPrice('build', {}, 4, 0, 0, 2), 110, 'a crew of four can build too (x2.2)');
+  assert.equal(nextPrice('build', { build: 1 }, 1, 0, 0, 2), null, 'tier 2 from day 3');
+  assert.equal(nextPrice('build', { build: 1 }, 1, 0, 0, 3), 250);
+  assert.equal(nextPrice('build', { build: 2 }, 1, 0, 0, 9), null, 'the wing waits for the Club');
+  assert.equal(nextPrice('build', { build: 2 }, 1, 0, 1, 1), 4000);
+  assert.equal(nextPrice('build', { build: 3 }, 1, 0, 1, 1), null, 'three tiers');
   assert.equal(activeMats(1), 6);
-  assert.equal(activeMats(1, { bays: 1 }), 10);
-  assert.equal(activeMats(2, { bays: 1 }), 10);
-  // Main-session call (overrides the spec's Muni-only rule): the bays stay open after promotion.
-  assert.equal(activeMats(1, { bays: 1 }, 1), 10);
-  assert.equal(shopShows(bays, 1, 1, false, 1), true, 'still in the Club shop (owned, or a late buy)');
-  assert.equal(perks({ bays: 1 }).bays, true);
+  assert.equal(activeMats(1, { build: 2 }), 10);
+  assert.equal(activeMats(4, { build: 3 }), 16);
+  assert.equal(shopShows(row, 1, 1, false, 1), true, 'still in the Club shop (owned, or a late buy)');
+  assert.equal(perks({ build: 2 }).build, 2);
 });
 
 test('§5.1 the pressure washer row: fan (day 2), turbo (day 4), foam cannon (Tiered)', async () => {

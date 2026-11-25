@@ -32,7 +32,7 @@ function afloat(opts) {
 const at = (p, lx, lz) => { p.x = LIFT.x + lx; p.z = LIFT.z + lz; };
 
 test('the constants are the doc\'s, the module is valid and registered, and debris weighs 3', () => {
-  assert.deepEqual({ ...ORBIT, TOP: 0 }, { SHOT: 0.05, VY: 70, LEAVE_Y: 150, CAP: 60, RIDE: 5, R: 11, GRAB: 2.2, GRAB_SLACK: 0.3, TETHER_EVERY: 8,
+  assert.deepEqual({ ...ORBIT, TOP: 0 }, { SHOT: 0.10, VY: 70, LEAVE_Y: 150, CAP: 60, RIDE: 5, R: 11, GRAB: 2.2, GRAB_SLACK: 0.3, TETHER_EVERY: 8,
     KPI_AT: 30, SWIM_MUL: 1.2, EYE0: 1.7, TOP: 0, BAG_W: 3, PUMP_REACH: 3.4, SKY_CLEAR: 15 });
   assert.equal(ORBIT.TOP, 120);
   assert.equal(KIND_W.debris, ORBIT.BAG_W);
@@ -54,14 +54,14 @@ test('debrisSpot is deterministic, stays inside the disc, and uses the golden an
   assert.ok(Math.abs(Math.atan2(s.z, s.x) - 2.39996) < 1e-9);
 });
 
-test('5% of customer shots go straight up (lead balls never), and the gauge is 1 - debris / 30', () => {
+test('10% of customer shots go straight up (round 11) (lead balls never), and the gauge is 1 - debris / 30', () => {
   const { crew } = room();
   let up = 0; const N = 6000;
   for (let i = 0; i < N; i++) {
     const out = crew.mods.pipe('launchMod', { x: 0, y: 1, z: 0, vx: 3, vy: 9, vz: -20, kind: 'range' }, { mat: {}, kind: 'range', lead: false });
     if (out.orbit) { up++; assert.equal(out.vy, 70); assert.equal(out.vx, 0); assert.equal(out.vz, 0); }
   }
-  assert.ok(up / N > 0.04 && up / N < 0.06, `got ${up / N}`);
+  assert.ok(up / N > 0.085 && up / N < 0.115, `got ${up / N}`);
   for (let i = 0; i < 200; i++) assert.ok(!crew.mods.pipe('launchMod', { vx: 1, vy: 1, vz: 1, kind: 'lead' }, { mat: {}, kind: 'lead', lead: true }).orbit);
   assert.equal(debrisKpi(0), 1); assert.equal(debrisKpi(15), 0.5); assert.equal(debrisKpi(30), 0); assert.equal(debrisKpi(60), 0);
 });
@@ -213,9 +213,11 @@ test('round 8 #4: four Rats can ride at once', () => {
 
 test('the tether winch clears 1 debris every 8 s and banks it', () => {
   const none = room({ up: { shed: 1 } });
+  for (const m of none.crew.mats) m.next = 1e9;   // round 11: 10% of shots go up; no customers here
   none.st.debris = new Set([1, 2, 3]); none.run(17);
   assert.equal(none.st.debris.size, 3, 'no winch, no clearing');
   const { crew, run, st } = room({ up: { shed: 1, tether: 1 } });
+  for (const m of crew.mats) m.next = 1e9;
   st.debris = new Set([1, 2, 3, 4, 5]);
   const cash = crew.cash;
   run(7.5); assert.equal(st.debris.size, 5);

@@ -170,7 +170,7 @@ test('A18: solo Gary warns for 60 s and inspects only the two muddiest mats in p
   toWarn(m);
   const g = m.crew.gary;
   assert.ok(Math.abs(g.t - GARY.SOLO_WARN) < 0.2, `warning ${g.t}`);
-  assert.equal(GARY.SOLO_WARN, 60);
+  assert.equal(GARY.SOLO_WARN, 90);   // round 11 (expert XS)
   assert.deepEqual(g.mats, ['mat0', 'mat1']);
   assert.equal(m.crew.inspectBase('mats'), false, 'his two mats are filthy');
   m.crew.fixtures.mat0 = 0; m.crew.fixtures.mat1 = 0.2;

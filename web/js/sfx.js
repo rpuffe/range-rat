@@ -210,6 +210,30 @@ export function scoop() {
   burst(c, { dur: 0.025, vol: 0.04, f: 3000 + Math.random() * 2000, q: 3 });
 }
 
+// Round 11 (expert #4, the sweep): the pickup blip that climbs with the sweep. Quiet and short (audio fatigue): off
+// below SWEEP_SOUND.FROM, a semitone a step up a pentatonic-ish ladder, capped at TOP steps, 45 ms, -30 dB-ish.
+export const SWEEP_SOUND = { FROM: 5, BASE: 660, STEP: 1, TOP: 20, VOL: 0.03, DUR: 0.045 };
+// Pure: the blip's frequency at sweep ×n (null: silent).
+export function sweepFreq(n) {
+  const S = SWEEP_SOUND, k = Math.floor(Number(n) || 0) - S.FROM;
+  if (k < 0) return null;
+  return S.BASE * Math.pow(2, Math.min(S.TOP, k * S.STEP) / 12);
+}
+export function sweepTick(n) {
+  const f = sweepFreq(n), c = f && live();
+  if (!c) return;
+  tone(c, { freq: f, type: 'triangle', dur: SWEEP_SOUND.DUR, vol: SWEEP_SOUND.VOL });
+}
+// Round 11: a big pocket rattles at the bank: a scatter of ball clicks, more and louder with n (20 balls up).
+export const RATTLE = { FROM: 20, MAX_CLICKS: 14, VOL0: 0.04, VOL1: 0.11 };
+export function rattle(n = 0) {
+  const c = live();
+  if (!c || n < RATTLE.FROM) return;
+  const k = Math.min(1, (n - RATTLE.FROM) / 130), clicks = Math.round(5 + k * (RATTLE.MAX_CLICKS - 5)), vol = RATTLE.VOL0 + k * (RATTLE.VOL1 - RATTLE.VOL0);
+  for (let i = 0; i < clicks; i++) burst(c, { t: 0.02 + i * (0.035 + Math.random() * 0.03), dur: 0.03, vol: vol * (0.6 + Math.random() * 0.4), f: 2200 + Math.random() * 2600, q: 5 });
+  tone(c, { freq: 180, endFreq: 120, t: 0.02, dur: 0.18, vol: vol * 0.8, type: 'triangle' });   // the bin's thud
+}
+
 // The cart's engine (owner playtest 3 §7.4): a little petrol motor, not a reed. Two square waves an octave
 // apart (detuned ±4 cents; squares have no even harmonics) at 70 → 160 Hz, a lowpass at 400 → 900 Hz that
 // never opens the top end, a gentle tanh saturation (warmth, not fuzz), a "putt" tremolo at 12 → 28 Hz,
@@ -378,6 +402,21 @@ export function trombone() {
     tone(c, { freq: f * 2, endFreq: to !== f ? to * 2 : undefined, type: 'triangle', t, dur, vol: 0.04, attack: 0.06, dest: lp });
   }
   setTimeout(() => lp.disconnect(), 1800);
+}
+
+// Round 11: the Stadium crowd's boo (views/stadium.js, when a booed customer walks out). A handful of detuned low
+// "ooo" voices sagging in pitch through a vowel-ish low-pass, over a murmur of noise. At most one every BOO.GAP s.
+export const BOO = Object.freeze({ VOICES: [[131, 0], [147, 0.04], [123, 0.09], [165, 0.13], [139, 0.06]], DUR: 1.1, SAG: 0.82, VOL: 0.05, GAP: 1.5 });
+let booAt = -Infinity;
+export function boo() {
+  const c = live();
+  if (!c || c.currentTime - booAt < BOO.GAP) return;
+  booAt = c.currentTime;
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 650; lp.Q.value = 3;
+  lp.connect(master);
+  for (const [f, t] of BOO.VOICES) tone(c, { freq: f, endFreq: f * BOO.SAG, type: 'sawtooth', t, dur: BOO.DUR, vol: BOO.VOL, attack: 0.15, dest: lp });
+  burst(c, { dur: BOO.DUR, vol: 0.05, type: 'bandpass', f: 500, q: 0.8, attack: 0.2 });
+  setTimeout(() => lp.disconnect(), (BOO.DUR + 0.5) * 1000);
 }
 
 // Drone buzz: call every frame with how many drones are flying. Never more than MAX_DRONE_VOICES

@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MAP, onTrack, cartSpeedAt } from '../web/js/map.js';
-import { CROWD, gateAt, newLap, stepLap, stepSentiment, bump, pingDelta } from '../web/js/stadium.js';
+import { CROWD, gateAt, newLap, stepLap, stepSentiment, bump, pingDelta, crowdDecay } from '../web/js/stadium.js';
 import { Crew } from '../server/crew.mjs';
 import { MODULES } from '../server/venues/index.mjs';
 import stadium from '../server/venues/stadium.mjs';
@@ -73,7 +73,7 @@ test('the server module: starts at 0.5, decays, pings pay more on the Track, kno
   const { crew, p, run, st } = stadiumCrew();
   assert.equal(crew.mods.kpi(), 0.5);
   run(10);
-  assert.ok(Math.abs(st.s - (0.5 - 0.012)) < 0.01, 'decayed about 0.0012/s');
+  assert.ok(Math.abs(st.s - (0.5 - 10 * crowdDecay(1))) < 0.01, 'decayed about 0.003/s solo (round 11: crowdDecay)');
   const s0 = st.s;
   crew.cart.x = 0; crew.cart.z = 0;
   const b = { by: p.id };
@@ -110,7 +110,7 @@ test('the module is idle off-shift and below venue 3', () => {
   assert.equal(crew.snapshot().mods.stadium, undefined);
 });
 
-// ---- round 7 #7: the crowd remembers, and the Two-Minute Warning ------------------------------------------------------
+// ---- round 7 #7: the crowd remembers, and the Three-Minute Warning ----------------------------------------------------
 test('windowMean over a partial and a full (wrapped) buffer', async () => {
   const { newWindow, pushSample, windowMean } = await import('../web/js/stadium.js');
   assert.equal(CROWD.WINDOW, 120);
@@ -145,47 +145,51 @@ function lapShift(windows, seed = 1) {
   return { crew, ev, kpi: crew.mods.kpi() };
 }
 
-test('a seeded shift: no laps fails; 60 s of laps at Last Call fails; 60 s right after the warning passes', () => {
+// Round 11 (expert #6): the 4P drain (crowdDecay(4)) means a late burst of laps can't lift a crowd from empty any more:
+// one Rat lapping all shift holds it.
+test('a seeded shift: no laps fails; 60 s of laps at Last Call fails; one Rat lapping all shift passes', () => {
   const S = 420;
   assert.ok(lapShift([]).kpi < 0.3);
   assert.ok(lapShift([[S - 60, S]]).kpi < 0.5);
-  const { crew, kpi } = lapShift([[S - 120, S - 60]]);
+  const { crew, kpi } = lapShift([[0, S]]);
   assert.ok(kpi >= 0.5, `graded ${kpi}`);
   const snap = crew.snapshot().mods.stadium;
   assert.ok(snap.s != null && snap.k != null && snap.s !== snap.k, 'the snapshot carries the live s and the graded k');
   assert.equal(snap.k, Math.round(kpi * 1000) / 1000);
 });
 
-test('the Two-Minute Warning: one lastcall at T-120 (warning, read off the live crowd), none at T-60, the Board banner flag', () => {
+// Round 11 (owner): Last Call is T-2:30, so the Stadium's warning moved to T-3:00 (the Three-Minute Warning, as the
+// crowd starts to thin), read off the live crowd; Last Call then rings with no second line.
+test('the Three-Minute Warning: one lastcall at T-180 (warning, read off the live crowd), none at Last Call', () => {
   const { crew, ev } = lapShift([]);
   const lc = ev.filter(e => e.t === 'lastcall');
   assert.equal(lc.length, 1);
   assert.ok(lc[0].warning);
-  assert.ok(Math.abs(lc[0].at - (crew.shiftSecs - 120)) < 0.2, `at ${lc[0].at}`);
+  assert.ok(Math.abs(lc[0].at - (crew.shiftSecs - 180)) < 0.2, `at ${lc[0].at}`);
 });
 
 test('the snapshot raises w between the warning and Last Call only', () => {
   const { crew, run } = stadiumCrew();
-  crew.venueDay = 2; crew.shiftSecs = 300;
-  crew.shiftT = 300 - 121; run(0.5);
+  crew.venueDay = 2; crew.shiftSecs = 300;          // round 11: a 300 s shift warns at T-129, Last Call at T-107
+  crew.shiftT = 300 - 131; run(0.5);
   assert.equal(crew.snapshot().mods.stadium.w, undefined);
-  crew.shiftT = 300 - 119.5; run(0.5);
+  crew.shiftT = 300 - 127.5; run(0.5);
   assert.equal(crew.snapshot().mods.stadium.w, 1);
-  crew.shiftT = 300 - 59; run(0.2);
+  crew.shiftT = 300 - 100; run(0.2);
   assert.equal(crew.snapshot().mods.stadium.w, undefined, 'Last Call takes the Board');
 });
 
-test('playthrough 3 #1: the Stadium\'s first day gets the Two-Minute Warning too, once the reveal is over', () => {
+test('playthrough 3 #1: the Stadium\'s first day gets the Three-Minute Warning too, once the reveal is over', () => {
   const { crew, run } = stadiumCrew();
   crew.venueDay = 1;                                 // (startShift counted the morning: this is its first day)
-  crew.shiftSecs = 300; crew.shiftT = 300 - 121; run(0.5);
-  assert.equal(crew.events.filter(e => e.t === 'lastcall').length, 0, 'not before T-120');
-  crew.revealT = 2; crew.shiftT = 300 - 119;
+  crew.shiftSecs = 300; crew.shiftT = 300 - 131; run(0.5);
+  assert.equal(crew.events.filter(e => e.t === 'lastcall').length, 0, 'not before the warning (T-129 on 300 s)');
+  crew.revealT = 2; crew.shiftT = 300 - 127;
   assert.equal(crew.warnDue(), false, 'not during the reveal');
   crew.revealT = 0; run(0.2);
   const lc = crew.events.filter(e => e.t === 'lastcall');
   assert.equal(lc.length, 1); assert.ok(lc[0].warning);
-  crew.shiftT = 300 - 59; run(0.2);
+  crew.shiftT = 300 - 100; run(0.2);
   assert.equal(crew.events.filter(e => e.t === 'lastcall').length, 1, 'Last Call rings with no second line');
 });
 

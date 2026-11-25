@@ -3,7 +3,7 @@
 // server/venues/county.mjs; the numbers are web/js/county.js.
 import * as THREE from 'three';
 import { MAP } from '../map.js';
-import { DRONES } from '../county.js';
+import { DRONES, VAN } from '../county.js';
 
 const Y = MAP.YARDS;
 const mat = (color, o = {}) => new THREE.MeshLambertMaterial({ color, ...o });
@@ -58,6 +58,19 @@ function drone() {
   return { g, rotors, basket };
 }
 
+// Round 11: Zoning's van, a white box van with an orange light bar that drives down the kerb while it tows.
+function zoningVan() {
+  const g = new THREE.Group();
+  g.add(box(2.2, 2.2, 4.6, mat(0xf4f4f0), 0, 1.4, 0.4));
+  g.add(box(2.1, 1.4, 1.5, mat(0xe9e9e4), 0, 1.0, -2.6));
+  g.add(box(1.9, 0.6, 0.05, mat(0x1d2430), 0, 1.4, -3.36));
+  g.add(box(1.6, 0.18, 0.4, new THREE.MeshBasicMaterial({ color: 0xff8a1a }), 0, 2.6, -0.2));
+  g.add(box(2.25, 0.5, 2.6, mat(0x2d7a3a), 0, 1.7, 0.8));              // "COUNTY ZONING" green band
+  for (const [x, z] of [[-1, -2.4], [1, -2.4], [-1, 1.8], [1, 1.8]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.3, 12), mat(0x1a1a1a)); w.rotation.z = Math.PI / 2; w.position.set(x, 0.42, z); g.add(w); }
+  g.visible = false;
+  return g;
+}
+
 export default {
   id: 'county',
   venue: 4,
@@ -92,6 +105,10 @@ export default {
     // Drones, one mesh per snapshot entry.
     const drones = new Map();
     let spin = 0;
+    // Round 11: hazards (the wet ones repaint as 'hazwet' client-side), the van, the first-time lines.
+    const van = zoningVan(); root.add(van);
+    let vanAt = null, wet = new Set(), hz = false, vanSaid = false;
+    const setKind = (id, k) => { const b = ctx.balls?.()?.get(id); if (b && b.kind !== k) b.kind = k; };
 
     const stand = ctx.venues?.stands?.right ?? null;
     const net = ctx.rightNet ?? null;
@@ -114,9 +131,27 @@ export default {
           e.to = { x: d.x, y: d.y, z: d.z }; e.yaw = d.yaw; e.n = d.n || 0; seen.add(d.id);
         }
         for (const [id, e] of drones) if (!seen.has(id)) { root.remove(e.g); drones.delete(id); }
+        // Round 11: the wet list, the van's progress down the kerb.
+        hz = !!mine?.hz; vanAt = mine?.van ?? null;
+        if (s?.phase !== 'shift') vanSaid = false;
+        const now = new Set(mine?.wet ?? []);
+        for (const id of wet) if (!now.has(id)) setKind(id, 'hazard');
+        for (const id of now) setKind(id, 'hazwet');
+        wet = now;
       },
       onEvent(e) {
         if (e.t === 'buy' && e.id === 'drones') { ctx.SFX.jackpot?.(); ctx.toast?.('Drones deployed. The crowd goes mild.', 3); }
+        else if (e.t === 'hazard') setKind(e.id, 'hazard');
+        else if (e.t === 'hazwet') setKind(e.id, 'hazwet');
+        else if (e.t === 'hazgone') setKind(e.id, 'range');
+        else if (e.t === 'hazbag') {
+          const who = e.by === ctx.me?.id ? 'You' : ctx.nameOf?.(e.by) ?? 'A Rat';
+          ctx.feed?.(`${who} bagged a hazard${e.team ? ' (team job)' : ''}. Zoning approves.`);
+          if (e.by === ctx.me?.id) ctx.SFX?.glint?.();
+        } else if (e.t === 'van') {
+          if (!vanSaid) { vanSaid = true; ctx.toast?.(`Zoning's van towed ${e.n} balls.`, 3); }
+          else ctx.feed?.(`Zoning towed ${e.n} more balls. Bag the hazards!`);
+        }
       },
       tick(dt, t) {
         spin += dt;
@@ -132,8 +167,22 @@ export default {
           e.basket.scale.y = 1 + Math.min(1, (e.n || 0) / DRONES.POCKET);   // the basket fills
           for (const r of e.rotors) r.rotation.y = spin * (e.n ? 60 : 45);
         }
+        van.visible = root.visible && vanAt != null;                 // down the kerb, top to bottom, over VAN.SECS
+        if (van.visible) { const u = Math.min(1, vanAt / VAN.SECS); van.position.set(MAP.KERB_X - 3, 0, 5 + (Y.zMin - 5) * u); van.rotation.y = 0; }
       },
-      prompt() { return null; },
+      // Round 11: next to a hazard ball, say what it needs.
+      prompt(btn) {
+        if (!hz || !root.visible || !ctx.me) return null;
+        let near = null, nd = 3;
+        for (const b of ctx.balls?.()?.values?.() ?? []) {
+          if (b.kind !== 'hazard' && b.kind !== 'hazwet') continue;
+          const d = Math.hypot(b.x - ctx.me.x, b.z - ctx.me.z);
+          if (d < nd) { nd = d; near = b; }
+        }
+        if (!near) return null;
+        if (near.kind === 'hazwet') return `${btn}  Bag the hazard (it's wet)`;
+        return ctx.me.wand ? 'Hazard ball: spray it, then bag it' : 'Hazard ball: spray it first (the washer wand)';
+      },
     };
   },
 };

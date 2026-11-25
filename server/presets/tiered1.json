@@ -1,0 +1,176 @@
+{
+ "id": "tiered1",
+ "label": "Tiered · day 1",
+ "made": "2026-11-25",
+ "bot": "4P seed 7, morning snap",
+ "players": 4,
+ "save": {
+  "v": 5,
+  "day": 12,
+  "cash": 79200.75,
+  "totals": {
+   "picked": 7388,
+   "deposited": 5006,
+   "cash": 267015.13,
+   "knockdowns": 406,
+   "helped": 1817,
+   "carted": 956,
+   "swings": 0,
+   "pings": 0,
+   "runOver": 248,
+   "washed": 343.2,
+   "scrubbed": 4067,
+   "unwashed": 375,
+   "lostPremium": 10769.74,
+   "reviews": 10,
+   "launched": 7249,
+   "filled": 266,
+   "spotless": 320.4,
+   "sealCash": 8522.8,
+   "served": 105,
+   "fries": 1080,
+   "dogs": 79,
+   "fedCash": 23622.07,
+   "dived": 441,
+   "snags": 139
+  },
+  "up": {
+   "gear": 3,
+   "cart": 1,
+   "shed": 3,
+   "helpers": 3,
+   "washer": 3,
+   "wand": 2,
+   "ads": 2,
+   "shoes": 2,
+   "hardhat": 1,
+   "returns": 2,
+   "pond": 2,
+   "amen": 1
+  },
+  "diveByName": {
+   "Rat 1": 2,
+   "Rat 2": 2,
+   "Rat 3": 2,
+   "Rat 4": 2
+  },
+  "lostFound": [
+   "keys",
+   "trophy",
+   "shades",
+   "duck",
+   "boot"
+  ],
+  "commendations": 10,
+  "reviews": 0,
+  "pondSunk": 0,
+  "fries": 20,
+  "venue": 2,
+  "venueDay": 0,
+  "outstanding": 1513371978,
+  "pendingReveal": 2,
+  "endless": false,
+  "garyDay": 13,
+  "fixtures": {
+   "sign": 0.042,
+   "stand": 0.226,
+   "mat0": 0.219,
+   "mat1": 0.225,
+   "mat2": 0.174,
+   "mat3": 0.162,
+   "mat4": 0.177,
+   "mat5": 0.15,
+   "mat6": 0.156,
+   "mat7": 0.12,
+   "mat8": 0.126,
+   "mat9": 0.021
+  },
+  "records": {
+   "cash": 61624.31,
+   "banked": 573,
+   "day": 11,
+   "curve": [
+    892.65,
+    1945.21,
+    4694.35,
+    6039,
+    7741.12,
+    11061.34,
+    16340.76,
+    21544.91,
+    24066.19,
+    24755.87,
+    33846.01,
+    41999.33,
+    47052.73,
+    61624.31
+   ]
+  },
+  "voiced": [
+   "welcome",
+   "glow",
+   "gold",
+   "garyIntro",
+   "gary",
+   "huddle",
+   "club",
+   "lead",
+   "treasure",
+   "bouncy",
+   "mower"
+  ],
+  "debuts": [
+   "glow",
+   "gold",
+   "square",
+   "lead",
+   "bouncy",
+   "splitter"
+  ],
+  "mods": {
+   "deck": {
+    "last": 1
+   }
+  },
+  "night": {
+   "minutes": 49,
+   "fromDay": 5,
+   "day": 11,
+   "shifts": 7,
+   "venue": 2,
+   "title": "Experiential Retrieval Lead",
+   "balls": 2939,
+   "cash": 256756.22,
+   "knockdowns": 333,
+   "falls": 0,
+   "treasures": 5,
+   "rats": [
+    {
+     "name": "Rat3",
+     "color": "#6fcf7c",
+     "award": "Deepest Diver",
+     "line": "441 balls off the bottom"
+    },
+    {
+     "name": "Rat2",
+     "color": "#f2c94c",
+     "award": "Most Sprayed",
+     "line": "80 things hosed clean"
+    },
+    {
+     "name": "Rat0",
+     "color": "#e8604c",
+     "award": "Bucket Brigade",
+     "line": "42 buckets filled"
+    },
+    {
+     "name": "Rat1",
+     "color": "#4c9be8",
+     "award": "Fry Lord",
+     "line": "32 served"
+    }
+   ]
+  },
+  "test": true
+ }
+}
