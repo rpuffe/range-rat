@@ -482,6 +482,7 @@ export const GARY = {
   CLEAN: 0.34,              // a stop passes at this much mud or less
   HUDDLE_R: 8,              // every online Rat this close to the stand when he arrives: it counts twice
   STALL: 3, STALLS: 3,      // council round 8 #2: a crew ball on his cart while he drives: 3 s of notes, 3 times a visit
+  SOLO_WARN: 60, SOLO_MATS: 2,   // playthrough 4 A18: solo, a 60 s warning and only the two muddiest mats in play
   START: { x: 60, z: 14 },
   STOPS: [
     { id: 'sign', x: 14, z: 13 },

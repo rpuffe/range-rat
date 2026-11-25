@@ -103,6 +103,8 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
     // The report closed (the next morning, the lobby): everything flows.
     open() { lock = 'open'; },
     clear() { dropped += queue.length; queue = []; if (visible) hide(now()); },
+    // Playthrough 4 C6: a keyed line that stopped being true leaves (queued or showing).
+    forget(key) { drop(i => i.key === key); if (visible && visible.key === key) hide(now()); },
   };
 }
 
@@ -148,7 +150,7 @@ export function createSay({ $ = id => document.getElementById(id), dev = false, 
   const wrap = f => (...a) => { const r = f(...a); later(); return r; };
   return {
     say: wrap(model.say),
-    bell: wrap(model.bell), report: wrap(model.report), open: wrap(model.open), clear: wrap(model.clear),
+    bell: wrap(model.bell), report: wrap(model.report), open: wrap(model.open), clear: wrap(model.clear), forget: wrap(model.forget),
     busy: model.busy,
     get dropped() { return model.dropped; },
     get visible() { return model.visible; },

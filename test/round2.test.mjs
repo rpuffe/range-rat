@@ -1448,6 +1448,7 @@ test('Endless mode: a reveal, no quota, no Gary, and the first customer ball set
   let ev = events(crew);
   const reveal = ev.find(e => e.t === 'reveal');
   assert.ok(reveal && reveal.title === 'Owner');
+  assert.ok(ev.find(e => e.t === 'pa' && e.id === 'endless'), 'playthrough 4 C4: the PA card plays with the reveal (no memo card on top)');
   const memo = ev.find(e => e.t === 'memo');
   assert.equal(memo.target, null);
   assert.equal(crew.quota, null);
@@ -1460,7 +1461,7 @@ test('Endless mode: a reveal, no quota, no Gary, and the first customer ball set
   swing(crew);
   ev = events(crew);
   assert.equal(crew.outstanding, 1);
-  assert.ok(ev.find(e => e.t === 'pa' && e.id === 'endless'));
+  assert.ok(!ev.find(e => e.t === 'pa' && e.id === 'endless'), 'it already played at the reveal');
   swing(crew);
   assert.equal(crew.outstanding, 2, 'a live count from here');
   assert.equal(paIds(crew).includes('endless'), false, 'once');

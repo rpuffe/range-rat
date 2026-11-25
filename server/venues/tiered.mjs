@@ -83,8 +83,10 @@ export default {
       recount(crew, st);
       // Round 8 #6 (B2): in Last Call at Tiered, a TARGET that lifts Bay Utilization from under the tick to over it saved
       // the stamp ("Saved by Cy's TARGET at 0:12." on a stamped bell). A later save replaces it; a dip clears it.
-      if (crew.venue === 2 && crew.lastCall() && before + 1e-9 < QUOTA_KPI && st.kpi + 1e-9 >= QUOTA_KPI)
+      if (crew.venue === 2 && crew.lastCall() && before + 1e-9 < QUOTA_KPI && st.kpi + 1e-9 >= QUOTA_KPI) {
         st.saved = { by: shooter.id, name: shooter.name, left: Math.max(0, Math.round(crew.shiftSecs - crew.shiftT)) };
+        crew.events.push({ t: 'tieredsave', by: shooter.id });   // playthrough 4 B11: the live 'SAVED!' toast (views/tiered.js)
+      }
       return;
     }
     const s = cupSpot(b.id, bowl);

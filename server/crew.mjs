@@ -806,7 +806,8 @@ export class Crew {
       this.events.push({ t: 'reveal', venue: v, memo: VENUE_RULES[v].memo, title: this.title() });
       this.pa(VENUE_RULES[v].pa);
     }
-    if (this.endlessFresh) { this.endlessFresh = false; this.events.push({ t: 'reveal', venue: 6, memo: 'Under New Management.', title: 'Owner' }); }
+    // Playthrough 4 C4: the PA card is the first endless morning's one text (the client's reveal shows no memo card for it).
+    if (this.endlessFresh) { this.endlessFresh = false; this.events.push({ t: 'reveal', venue: 6, memo: 'Under New Management.', title: 'Owner' }); this.pa('endless'); }
     // The Last Bucket that came due at the bell (or a reload saved at 1) begins this morning. A sky that wasn't
     // cleared by the bell (round 7 #5) reopens its gate: the debris was saved.
     if (this.lastBucket?.phase === 'sky') this.lastBucket = null;
@@ -1119,7 +1120,10 @@ export class Crew {
     const g = this.gary;
     if (!g) {
       if (this.shiftT >= this.shiftSecs * GARY.AT) {
-        this.gary = { phase: 'warn', t: GARY.WARN_SECS, x: GARY.START.x, z: GARY.START.z, yaw: Math.PI / 2, stop: 0, pause: 0, fails: 0, checks: [], stalls: 0 };
+        // Playthrough 4 A18: solo, he inspects only the two muddiest mats in play (named now) and warns for longer.
+        const solo = this.onlineCount() === 1;
+        this.gary = { phase: 'warn', t: solo ? GARY.SOLO_WARN : GARY.WARN_SECS, x: GARY.START.x, z: GARY.START.z, yaw: Math.PI / 2, stop: 0, pause: 0, fails: 0, checks: [], stalls: 0,
+          ...(solo ? { mats: this.muddiestMats(GARY.SOLO_MATS) } : {}) };
         this.events.push({ t: 'gary', phase: 'warn' });
         this.pa('gary', { once: true });
       }
@@ -1212,11 +1216,18 @@ export class Crew {
     if (id === 'cart') return !this.cart || this.muddiestCart().mud <= clean;
     if (id === 'kitchen') return !!this.gary?.fed || this.fries >= FRIES.MAX * 0.5;   // Gary had a hot dog
     if (id === 'mats') {
+      if (this.gary?.mats) return this.gary.mats.every(k => (f[k] ?? 0) <= clean);   // solo (playthrough 4 A18): his two mats
       const nAct = activeMats(this.onlineCount());   // only the mats in play: solo never washes mats nobody uses
       const mats = Object.entries(f).filter(([k]) => k.startsWith('mat') && +k.slice(3) < nAct);
       return mats.filter(([, v]) => v <= clean).length >= mats.length * 0.8;
     }
     return true;
+  }
+
+  // The n muddiest mats in play (fixture ids), muddiest first.
+  muddiestMats(n) {
+    const nAct = activeMats(this.onlineCount());
+    return Object.entries(this.fixtures).filter(([k]) => k.startsWith('mat') && +k.slice(3) < nAct).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k]) => k);
   }
 
   lastCall() {
@@ -1398,7 +1409,7 @@ export class Crew {
           }
           if (b && this.endless) {     // Under New Management: Balls Outstanding is a live count
             this.outstanding++;
-            if (this.endlessArmed) { this.endlessArmed = false; this.outstanding = 1; this.pa('endless', { once: true }); }
+            if (this.endlessArmed) { this.endlessArmed = false; this.outstanding = 1; }   // the PA played at the reveal (playthrough 4 C4)
           }
           m.next = swingGap(this.rng) * this.perks.swingGapMult / (lastCall ? LAST_CALL.SWING : 1);
           if (this.perks.shed && --this.swingsToEat <= 0) { this.swingsToEat = eatEvery; this.fries = Math.max(0, this.fries - 1); }
@@ -1436,7 +1447,8 @@ export class Crew {
       const hit = b.kind !== 'one' && !b.pinged ? this.carts.find(c => ballHitsCart(x0, y0, z0, b, c)) : null;
       if (hit) { this.ping(b, hit); continue; }
       // Gary's cart rings too, but it isn't a PING. Gary has noted your enthusiasm.
-      if (this.gary?.phase === 'drive' && b.kind !== 'one' && !b.pinged && ballHitsCart(x0, y0, z0, b, this.gary)) {
+      // Playthrough 4 A12: parked through the warning counts too (the 'Stall Gary' line is dealt then); the stalls bank up.
+      if ((this.gary?.phase === 'drive' || this.gary?.phase === 'warn') && b.kind !== 'one' && !b.pinged && ballHitsCart(x0, y0, z0, b, this.gary)) {
         b.pinged = true;
         // Council round 8 #2: a crew ball stalls him ("taking notes"): GARY.STALL s, GARY.STALLS times a visit.
         const g = this.gary, stall = b.by && (g.stalls ?? 0) < GARY.STALLS ? (g.stalls = (g.stalls ?? 0) + 1) : 0;
@@ -1577,7 +1589,9 @@ export class Crew {
     for (const k of Object.keys(this.stats)) this.totals[k] = (this.totals[k] ?? 0) + this.stats[k];
     this.report = { day: this.day, ...this.stats, left: this.balls.size, bank: this.cash, quota, record, ...(race ? { race: race.result } : {}),
       ledger: this.ledger(), promo: this.promoInfo(), venue: this.venue, title: this.title(),
-      tomorrow: tomorrowText(this.day + 1, this.venue, this.endless, !!this.promoInfo()?.ready) };
+      // Playthrough 4 C2: a held bell where the sky stayed up says what's left, not "more balls".
+      tomorrow: this.lastBucket?.phase === 'sky' && !this.endless ? 'Tomorrow: clear the sky. Ball No. 1 waits.'
+        : tomorrowText(this.day + 1, this.venue, this.endless, !!this.promoInfo()?.ready) };
     if (ending) this.report.ending = { days: this.day, banked: this.totals.deposited, commendations: this.commendations, quotas: this.totals.stamps + this.stamps };
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'report', day: this.day, report: this.report });

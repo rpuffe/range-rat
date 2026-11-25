@@ -112,7 +112,8 @@ export function createEnding({ scene, root, camera }) {
 
   // ---- finale ----
   let flashEl = null, glowEl = null, glowT = 0, finaleTimers = [];
-  function finale(stats = {}) {
+  // afterFlash: called once the digits fade (playthrough 4 C3: the last PA card queues there, never on top of them).
+  function finale(stats = {}, afterFlash = null) {
     ensureStyle(); huddle(null);
     finaleTimers.forEach(clearTimeout); finaleTimers = [];
     const after = (ms, fn) => finaleTimers.push(setTimeout(fn, ms));
@@ -136,6 +137,7 @@ export function createEnding({ scene, root, camera }) {
     return new Promise(resolve => {
       after(1600, () => {
         flashEl.style.opacity = '0';
+        afterFlash?.();
         const memo = document.getElementById('memo'), txt = document.getElementById('memo-text'), tgt = document.getElementById('memo-target');
         // One text at a time (playtest 2): the PA card speaks the final line; no memo on top of it.
         void txt; void tgt;

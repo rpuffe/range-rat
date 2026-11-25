@@ -130,3 +130,29 @@ moved (+0.3): dealt jobs split the crew at Last Call and Gary's warning. Pacing 
 6.0): Stadium day 1 was a guaranteed DENIED (fixed since) and the late game's sky gate slid to a morning
 (fixed). What holds Fun at ~6.3: Tiered can't fail once anyone shoots (B), Gary lines that vanish before
 the job is done (A), and endless's record freezing (C).
+
+
+## Round 4 — FINAL (2026-11-24, build ff770cf: council round 8, the owner's notes, the end-of-day walk-off)
+
+| Metric | A | B | C | **Avg** | R3 | R2 | R1 | Δ vs R1 |
+|---|---|---|---|---|---|---|---|---|
+| Fun | 6.5 | 7 | 7 | **6.8** | 6.3 | 6.3 | 6.0 | +0.8 |
+| Clarity | 6.5 | 7 | 7 | **6.8** | 6.7 | 6.0 | 5.7 | +1.1 |
+| Text load | 6.5 | 7 | 7 | **6.8** | 7.0 | 5.0 | 4.0 | **+2.8** |
+| Pacing | 6.5 | 7 | 7.5 | **7.0** | 6.0 | 6.5 | 5.0 | **+2.0** |
+| Co-op | 7 | 6.5 | 7 | **6.8** | 6.3 | 6.0 | 6.0 | +0.8 |
+| Meaningful features | 6.5 | 7 | 6 | **6.5** | 6.0 | 5.8 | 4.7 | **+1.8** |
+| Look & feel | 7.5 | 7.5 | 7.5 | **7.5** | 7.2 | 7.2 | 7.0 | +0.5 |
+| Polish | 6.5 | 6.5 | 6.5 | **6.5** | 6.2 | 5.8 | 4.7 | **+1.8** |
+| One more shift | 6.5 | 7 | 6 | **6.5** | 6.2 | 6.2 | 6.0 | +0.5 |
+| **Overall** | **6.5** | **7** | **7** | **6.8** | 6.5 | 6.2 | 5.5 | **+1.3** |
+
+**Verdicts:** all three slices are "essentially done" / "close to done" for a casual crew of 4.
+Fun finally moved (6.3 → 6.8): Tiered's Glow Rush buzzer-beater, the all-hands sky clear, and Gary's
+stall. Text load slipped a little (7.0 → 6.8) from a morning tip stream and two tips over 8 words.
+
+**The one change each tester would make next:**
+- A (first night): make every Gary line true for the whole visit (stall works while he's parked; stop
+  lines stay until their stop is inspected).
+- B (Club/Tiered): a Club Last Call rush with its own job, the same buzzer-beater shape as Tiered.
+- C (late game): give each endless shift and each late Gary visit a stake the crew can clearly win.

@@ -47,22 +47,24 @@ function shoot(m, by) {
   return m.crew.events.find(e => e.t === 'enthusiasm');
 }
 
-test('a crew ball on his cart while he drives: 3 s of notes, 3 times a visit; customers and the warning do nothing', () => {
+test('a crew ball on his cart, parked or driving: 3 s of notes, 3 times a visit; customers do nothing', () => {
   const m = driving();
   const g = m.crew.gary;
-  g.x = 40; g.z = 13; g.t = 1;                 // a hit during the warning: nothing at all
-  assert.equal(shoot(m, m.p.id), undefined, "'warn': he isn't driving");
-  assert.equal(g.stalls, 0);
-  m.crew.balls.clear();                        // that ball is still in the air; don't let it count once he drives
+  g.t = 5;                                     // playthrough 4 A12: parked through the warning, a ping counts too
+  const w = shoot(m, m.p.id);
+  assert.equal(w?.stall, 1, "'warn': the 'Stall Gary' line is true while he's parked");
+  assert.equal(g.stalls, 1);
+  assert.ok(Math.abs(g.pause - GARY.STALL) < 1e-9, 'the notes bank up for when he sets off');
+  m.crew.balls.clear();
   goDrive(m);
   const p0 = g.pause;
-  const e1 = shoot(m, m.p.id);
-  assert.equal(e1.stall, 1, 'the event carries the stall count');
-  assert.ok(Math.abs(g.pause - (p0 + GARY.STALL)) < 0.06, `pause +3 (${g.pause})`);
   const cust = shoot(m, null);
   assert.ok(cust && cust.stall === undefined, 'a customer ball notes nothing');
+  assert.ok(g.pause <= p0 + 1e-9, 'and adds no pause');
   assert.equal(g.stalls, 1);
-  assert.equal(shoot(m, m.p.id).stall, 2);
+  const e2 = shoot(m, m.p.id);
+  assert.equal(e2.stall, 2, 'the event carries the stall count (one visit: the warning stall counts)');
+  assert.ok(Math.abs(g.pause - (p0 + GARY.STALL)) < 0.06, `pause +3 (${g.pause})`);
   assert.equal(shoot(m, m.p.id).stall, 3);
   const before = g.pause;
   const e4 = shoot(m, m.p.id);

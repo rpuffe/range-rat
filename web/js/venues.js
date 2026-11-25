@@ -192,7 +192,7 @@ export function createVenues(scene) {
       const g = grp('orbital');
       const L = MAP.LIFT, tz = L.z + 1.9;
       const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 400, 10), lambert(0xc8ccd6));
-      cyl.position.set(L.x, 200, tz); g.add(cyl);
+      cyl.position.set(L.x, 200, tz); g.add(cyl); live.tower = cyl;   // playthrough 4 C5: the Orbital view hides it under the dusk camera
       g.add(new THREE.Mesh(new THREE.CylinderGeometry(L.r, L.r + 0.2, 0.3, 16), lambert(0x555a66)).translateX(L.x).translateY(0.15).translateZ(L.z));
       const car = new THREE.Group();
       car.add(box(2, 2.4, 2, lambert(0xf4f1e8), 0, 0, 0)); car.add(box(2.1, 0.5, 2.1, lambert(0x1d6b3a), 0, 1.4, 0));

@@ -17,6 +17,10 @@ export const MUD = {
   EDGE: 0.05,        // the soft edge either side of the threshold
   CLEAN: 0.05,       // the server's "done" line: at or under it the mat is spotless (and the memory resets)
   SIZE: 1.6,         // m, a mat's side
+  // Playthrough 4 B10: a filthy mat reads filthy. Above FILL_FROM the mud spreads between the splotches (up to FILL
+  // of the bare gap at 1), so 0.8+ covers most of the mat; it still washes in patches (the same thresholds).
+  FILL: 0.8,
+  FILL_FROM: 0.55,
 };
 
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -27,8 +31,10 @@ export const cleanThreshold = (noise, mem = 0) => Math.min(0.98, MUD.BASE + MUD.
 // How much mud shows at a texel (0..1) for the mat's mud value. The shader in props.js mirrors this line.
 export const mudAlpha = (density, noise, mem, mud) => {
   const c = cleanThreshold(noise, mem);
-  return density * smoothstep(c - MUD.EDGE, c + MUD.EDGE, mud);
+  return mudSpread(density, mud) * smoothstep(c - MUD.EDGE, c + MUD.EDGE, mud);
 };
+// The density a filthy mat shows (playthrough 4 B10): the bare gaps fill as the mud climbs past FILL_FROM.
+export const mudSpread = (density, mud) => density + (1 - density) * MUD.FILL * smoothstep(MUD.FILL_FROM, 1, mud);
 
 // Smooth value noise on a size x size torus: `oct` octaves, 0..1.
 function valueNoise(size, r, oct = 3) {

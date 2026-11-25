@@ -47,9 +47,11 @@ export function setupRound2(ctx) {
   let reveal = null;                // { t, venue, from: {pos, quat}, memo, title }
   let mouse = { dx: 0, dy: 0, wheel: 0, down: false, click: false };
   let oneId = null, endingCard = null, ledgerKey = '';
+  let finaleUp = false, lastWaits = false;   // playthrough 4 C3: the $∞ flash, and the last PA held behind it
 
   // ---- the road sign, per venue ---------------------------------------------------
   function repaintSign(v) {
+    ctx.arch?.(v === 6 ? 'Range Rats LLC' : VENUE_RULES[v]?.name);   // playthrough 4 B9: the entrance arch follows the venue
     const s = ctx.sign;
     if (!s) return;
     paintSign(s.ctx, s.canvas.width, s.canvas.height, v);
@@ -60,7 +62,7 @@ export function setupRound2(ctx) {
   function onEvent(e) {
     const c = crew();
     switch (e.t) {
-      case 'pa': pa.say(e.id); break;
+      case 'pa': if (e.id === 'last' && finaleUp) lastWaits = true; else pa.say(e.id); break;   // playthrough 4 C3: the last line waits for the $∞ digits
       case 'kit':
         if (e.id === me.id) toast(e.level >= 2 ? 'New Hire Kit: a bucket. Not your name.' : 'New Hire Kit: a sticky hand-me-down tube.', 3.5);
         break;
@@ -98,7 +100,7 @@ export function setupRound2(ctx) {
           // Two confetti cannons at the stand and the crowd's roar, then the $∞ finale (round 6 #5).
           for (const dx of [-2.5, 2.5]) confetti.burst(SIM.STAND.x + dx, 1.2, SIM.STAND.z, { n: confettiCount(160, low(), 80), secs: 2.5, speed: 5, up: 11 });
           roar(SFX.audioHandle?.());
-          ending.huddle(null); ending.finale({}); ctx.floods?.forEach((l, i) => setTimeout(() => { l.intensity = 0; }, 400 * i));
+          ending.huddle(null); finaleUp = true; ending.finale({}, () => { finaleUp = false; if (lastWaits) { lastWaits = false; pa.say('last'); } }); ctx.floods?.forEach((l, i) => setTimeout(() => { l.intensity = 0; }, 400 * i));
         }
         break;
       case 'verdict': {   // Gary saw the huddle: a small puff over his cart (main.js lifts his hat)
@@ -205,7 +207,7 @@ export function setupRound2(ctx) {
     if (!r.flipped && r.t > 1) { r.flipped = true; const c = crew(); venues.setVenue(r.venue === 6 ? 5 : r.venue, r.venue === 6 || !!c.endless); repaintSign(r.venue); SFX.cash(10); }
     if (r.t > 3 && !r.memoShown) {
       r.memoShown = true;
-      revealCards(r.venue, r.memo).forEach((text, i) => ctx.showMemo(text, null, i ? 10 : 9));   // round 4: a second card says what's new (memos queue)
+      if (r.venue !== 6) revealCards(r.venue, r.memo).forEach((text, i) => ctx.showMemo(text, null, i ? 10 : 9));   // round 4: a second card says what is new; venue 6: the PA card says it (playthrough 4 C4)
     }
     if (r.t >= 6) {
       reveal = null;
@@ -275,6 +277,7 @@ export function setupRound2(ctx) {
     if (html === lbKey) return;
     lbKey = html;
     ending.huddle(html || null);
+    if (crew()?.lastBucket?.phase === 'huddle') ctx.unsay?.('one');   // playthrough 4 C6: the huddle banner is up; 'Walk it home' goes
   }
   // The huddle ring: the Last Bucket's (slots fill, the gold sweep runs) or Gary's (slots only, no hold).
   function huddleRing() {

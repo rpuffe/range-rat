@@ -64,8 +64,9 @@ export function set(patch, storage) {
 
 // ---- first-time hints: each shown once ever per browser -------------------------
 export const HINTS = Object.freeze({
-  shop: { kb: 'Tab opens the shop. The range keeps going while you shop.', pad: 'D-pad up opens the shop. The range keeps going while you shop.' },
-  sprint: { kb: 'Hold Shift to sprint. It costs stamina.', pad: 'Click the right stick to sprint. It costs stamina.' },
+  // Playthrough 4 A16: shop, sprint and bv are 8 words or fewer, and only on the Muni's days 1-2 (EARLY_HINTS).
+  shop: { kb: 'Tab opens the shop. The range keeps going.', pad: 'D-pad up: the shop. The range keeps going.' },
+  sprint: { kb: 'Hold Shift to sprint. It costs stamina.', pad: 'Click the right stick to sprint. Costs stamina.' },
   cctv: { kb: 'Press C for Corporate CCTV.', pad: 'D-pad down for Corporate CCTV.' },
   wand: { kb: 'The sign is filthy. Grab the pressure washer by the cart bay: E.', pad: 'The sign is filthy. Grab the pressure washer by the cart bay: Ⓧ.' },
   bank: { kb: 'Full. The bucket stand pays per ball: E there.', pad: 'Full. The bucket stand pays per ball: Ⓧ there.' },
@@ -78,7 +79,7 @@ export const HINTS = Object.freeze({
   tube: { kb: 'Red box on the dock: E feeds balls.', pad: 'Red box on the dock: Ⓧ feeds balls.' },
   gutters: { kb: 'Gutters linked: one TARGET drains all three cups.', pad: 'Gutters linked: one TARGET drains all three cups.' },
   lift: { kb: 'The Lift: E on the platform rides up.', pad: 'The Lift: Ⓧ on the platform rides up.' },
-  bv: { kb: 'Ball Value: what Corporate pays per ball. Clean pays more.', pad: 'Ball Value: what Corporate pays per ball. Clean pays more.' },
+  bv: { kb: 'Ball Value: pay per ball. Clean pays more.', pad: 'Ball Value: pay per ball. Clean pays more.' },
   deck: { kb: 'Fill their orders. Rounds count double.', pad: 'Fill their orders. Rounds count double.' },   // council round 7 #8
 });
 // Context-driven hints (council round 4, §4.2): fires when its condition holds, once ever.
@@ -102,7 +103,13 @@ export const HINT_WHEN = Object.freeze({
 export const HINT_AFTER = Object.freeze({ shop: 10, sprint: 30, cctv: 6 });
 export const HINT_ORDER = ['bv', 'wand', 'mud', 'bank', 'crank', 'shed', 'cart', 'dive', 'tube', 'gutters', 'lift', 'deck'];   // context hints, first due wins
 export const HINT_GAP = 12;   // seconds between hints
-export const SHOP_HINT_CASH = 20;   // the shop hint waits for cash >= this (ctx.cash): before that the crew can't buy anything
+export const SHOP_HINT_CASH = 20;
+// Playthrough 4 A16: the onboarding tips belong to the Muni's first two days (a Club crew already knows them).
+export const EARLY_HINTS = ['shop', 'sprint', 'bv'];
+export const earlyDay = ({ venue = 0, day = 1 } = {}) => venue === 0 && (day ?? 1) <= 2;
+// Playthrough 4 A16: a just-bought item's tip jumps the queue (and the gap): shop item id -> its tip.
+export const BOUGHT_HINT = Object.freeze({ washer: 'crank', shed: 'shed', cart: 'cart', pond: 'tube', gutters: 'gutters', dive: 'dive' });
+export const BOUGHT_SECS = 15;   // how long a purchase waits for its tip's condition before it joins the queue as usual   // the shop hint waits for cash >= this (ctx.cash): before that the crew can't buy anything
 
 export function loadSeen(storage = store()) {
   try {
@@ -114,15 +121,21 @@ export function saveSeen(seen, storage = store()) {
   try { storage.setItem(HINTS_KEY, JSON.stringify([...new Set(seen)])); return true; } catch { return false; }
 }
 // Which hint (if any) is due now. playSecs: seconds actually playing this page load.
+// ctx.bought: the tip of something just bought (BOUGHT_HINT), shown first, whatever the gap.
 export function nextHint({ seen, playSecs, venue = 0, sinceLast = Infinity, ...ctx }) {
+  const b = ctx.bought;
+  if (b && !seen.includes(b) && HINT_WHEN[b]?.({ ...ctx, playSecs, venue })) return b;
   if (sinceLast < HINT_GAP) return null;
+  const early = earlyDay({ venue, day: ctx.day });
   for (const id of ['shop', 'sprint', 'cctv']) {
     if (seen.includes(id) || playSecs < HINT_AFTER[id]) continue;
+    if (EARLY_HINTS.includes(id) && !early) continue;
     if (id === 'cctv' && !(venue >= 1)) continue;
     if (id === 'shop' && !((ctx.cash ?? 0) >= SHOP_HINT_CASH)) continue;   // nothing to buy yet, nothing to say
     return id;
   }
   for (const id of HINT_ORDER) {
+    if (EARLY_HINTS.includes(id) && !early) continue;
     if (!seen.includes(id) && HINT_WHEN[id]({ ...ctx, playSecs, venue })) return id;
   }
   return null;
@@ -131,17 +144,21 @@ export function hintText(id, pad) { return HINTS[id]?.[pad ? 'pad' : 'kb'] ?? ''
 
 // One ticker for main.js: call tick(dt, { playing, venue, pad, show }) every frame.
 export function createHinter({ storage } = {}) {
-  let seen = loadSeen(storage), playSecs = 0, sinceLast = Infinity;
+  let seen = loadSeen(storage), playSecs = 0, sinceLast = Infinity, bought = null;   // bought: { id, left }
   return {
     tick(dt, { playing, venue = 0, pad = false, show, ...ctx }) {
+      if (bought && (bought.left -= dt) <= 0) bought = null;
       if (!playing) return null;
       playSecs += dt; sinceLast += dt;
-      const id = nextHint({ ...ctx, seen, playSecs, venue, sinceLast });
+      const id = nextHint({ ...ctx, seen, playSecs, venue, sinceLast, bought: bought?.id ?? null });
       if (!id) return null;
+      if (id === bought?.id) bought = null;
       seen = [...seen, id]; sinceLast = 0; saveSeen(seen, storage);
       show?.(hintText(id, pad), id);
       return id;
     },
+    // A purchase (shop item id): its tip, if it has one, comes next (playthrough 4 A16).
+    bought(itemId) { const id = BOUGHT_HINT[itemId]; if (id && !seen.includes(id)) bought = { id, left: BOUGHT_SECS }; },
     get seen() { return seen; },
   };
 }

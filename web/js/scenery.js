@@ -251,6 +251,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     inst(hillGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true, vertexColors: true, emissive: 0x120a08 }), items);
   }
 
+  let setArch = () => {};   // playthrough 4 B9: section 4 fills it in (the arch sign)
   // ---------- 4. Parking lot and entrance ----------
   {
     mesh(new THREE.PlaneGeometry(36, 22).rotateX(-Math.PI / 2), lambert(0x3a3d42, decalOpts(2)), -10, 0.01, 31);
@@ -311,13 +312,24 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     const archMat = lambert(0x2f5d3a);
     inst(new THREE.BoxGeometry(0.6, 5.2, 0.6), archMat, [{ p: [gx - 4.4, 2.6, gz] }, { p: [gx + 4.4, 2.6, gz] }], { shadow: true });
     mesh(new THREE.BoxGeometry(9.8, 1.5, 0.3), archMat, gx, 5.45, gz, true);
-    const signTex = canvasTex(2048, 256, (g, w, h) => {
+    // Playthrough 4 B9: the arch reads the current venue (setArch redraws it on a promotion); long names shrink to fit.
+    const archPaint = (g, w, h, name) => {
       g.fillStyle = '#23472c'; g.fillRect(0, 0, w, h);
       g.strokeStyle = '#e8dfc2'; g.lineWidth = 8; g.strokeRect(14, 14, w - 28, h - 28);
-      g.fillStyle = '#f3ecd2'; g.font = 'bold 118px Georgia, "Times New Roman", serif';
-      g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.fillText('FAIRWAY HOLDINGS · MUNI RANGE', w / 2, h / 2 + 6);
-    });
+      const text = 'FAIRWAY HOLDINGS · ' + String(name).toUpperCase(), font = px => `bold ${px}px Georgia, "Times New Roman", serif`;
+      g.font = font(118);
+      const room = w - 90, tw = g.measureText(text).width;
+      if (tw > room) g.font = font(Math.floor(118 * room / tw));
+      g.fillStyle = '#f3ecd2'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText(text, w / 2, h / 2 + 6);
+    };
+    let archName = 'Muni Range';
+    const signTex = canvasTex(2048, 256, (g, w, h) => archPaint(g, w, h, archName));
+    setArch = name => {
+      if (!name || name === archName) return;
+      archName = name;
+      const c = signTex.image; archPaint(c.getContext('2d'), c.width, c.height, name); signTex.needsUpdate = true;
+    };
     const signMat = new THREE.MeshBasicMaterial({ map: signTex });
     const signGeo = new THREE.PlaneGeometry(9.4, 1.18);
     tagSign(mesh(signGeo, signMat, gx, 5.45, gz + 0.16), 'arch.out');
@@ -571,6 +583,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
   const flagPos = clubFlag.geo.attributes.position;
   const hazeCol = new THREE.Color(), hazeA = new THREE.Color(0xf3dcb8), hazeB = new THREE.Color(0xff9e6a);
   return {
+    setArch: name => setArch(name),   // playthrough 4 B9: the entrance arch names the current venue
     rightPoles,   // the right side net's poles (the County moves them with the net)
     // dt seconds, t running seconds, timeOfDay01 optional (0 morning .. 1 sunset)
     tick(dt, t, timeOfDay01 = 0) {

@@ -85,6 +85,8 @@ export const GARY_TEXT = {
 };
 // The two lines that aren't a stop (nothing to hose, nothing to clear at Spotless).
 export const GARY_EXTRA = ['stall', 'meet'];
+// Playthrough 4 A14: a Rat's stall/meet line switches only after the other has been wanted this long (s), so it never flips.
+export const GARY_LINE_HOLD = 3;
 // The shooter's toast when their ball stalls him (the enthusiasm event carries stall: 1..GARY.STALLS).
 export const GARY_STALLED = "Gary stalled! He's taking notes.";
 export const DAY3 = { DAY: 3, VENUE: 0, AT: 0.5, MUD: 0.3, TEXT: 'Keep the mats clean.' };

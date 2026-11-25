@@ -38,12 +38,13 @@ import { createPerf } from './perf.js';
 import { createPace } from './pace.js'; const pace = createPace({ search: location.search, storage: (() => { try { return sessionStorage; } catch { return null; } })(), clipboard: navigator.clipboard }); pace.bind(document.getElementById('pace-copy'));   // ?pace: the pace log
 import { setHeavyRate } from './venues.js';
 import { createProps } from './props.js';
-import { tipCtx, createTipPointer } from './tips.js'; const tipPointer = createTipPointer();   // owner notes: a tip per new thing, and the arrow
+import { tipCtx, createTipPointer, tipsAllowed } from './tips.js'; const tipPointer = createTipPointer();   // owner notes: a tip per new thing, and the arrow
 import { PAYFLOAT, payRoute, createRoller } from './payfloat.js';   // council round 6 #7: only your own cash floats over you
 import { nudgeLine, nudgeTarget, GARY_STALLED } from './nudge.js';    // council round 6 #10 / round 7 #4: day 2, Gary's dealt stops, day 3
 import { createSay } from './say.js';                     // council round 7 #3: the one centre-text queue
 import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';   // sign facings (test/signs.test.mjs; ?signs checks the meshes)
 import { createDusk } from './duskview.js';                // end of the day: the overhead walk-off between the stamp and the report
+import { actPick } from './actpick.js';                    // playthrough 4 C1: Ball No. 1 before a full pocket
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
@@ -605,8 +606,9 @@ function onEvent(e) {
     }
     case 'board': break;
     case 'gary':
-      if (e.phase === 'warn') { SFX.horn('gary'); say('ALERT', 'Gary in 45 s: clean up, then huddle', { key: 'gary' }); }
-      else say('ALERT', 'Gary is inspecting. Stay out of his way.', { key: 'gary' });
+      // Playthrough 4 A17: no seconds in the warning (solo's is longer), and no "stay out of his way" while stall lines are up.
+      if (e.phase === 'warn') { SFX.horn('gary'); say('ALERT', "Gary's coming: clean up, then huddle.", { key: 'gary' }); }
+      else say('ALERT', Object.values(crew.mods?.nudge ?? {}).includes('gary:stall') ? "Gary's driving. Ping him or huddle." : 'Gary is inspecting. Stay out of his way.', { key: 'gary' });
       break;
     case 'check': {
       const names = { sign: 'Sign', mats: 'Mats', cart: 'Cart', stand: 'Stand', kitchen: 'Kitchen' };
@@ -661,7 +663,9 @@ function onEvent(e) {
       break;
     case 'buy': {
       const item = SHOP.find(i => i.id === e.id);
-      (e.by === me.id ? toast : feed)(`${e.by === me.id ? 'You' : nameOf(e.by)} bought: ${item?.tiers[e.level]?.name ?? e.id}`, 2.2);
+      // Playthrough 4 A16/A19: one short toast, then the item's tip jumps the queue (about 3 s after the buy).
+      (e.by === me.id ? toast : feed)(`${e.by === me.id ? 'You' : nameOf(e.by)} bought: ${item?.tiers[e.level]?.name ?? e.id}`, 1.4);
+      hinter.bought(e.id);
       break;
     }
     case 'knock': {
@@ -876,9 +880,10 @@ function act() {
     if (b) grab(b);
     return;
   }
-  if (carrying() >= gp.pocket) { toast('Full: take them to the bucket stand'); return; }
-  const b = !gp.scoop ? nearestBall() : null;
-  if (b) grab(b);
+  // Playthrough 4 C1: Ball No. 1 rides outside the pocket, so a full one never blocks it (actpick.js).
+  const pick = actPick({ near: nearestBall(), carrying: carrying(), pocket: gp.pocket, scoop: !!gp.scoop, holdingOne: me.one });
+  if (pick?.full) { toast('Full: take them to the bucket stand'); return; }
+  if (pick?.grab) grab(pick.grab);
 }
 
 // ---- swinging at a crew bay ------------------------------------------------
@@ -1072,10 +1077,10 @@ function showPhase() {
       ${report.swings ? `<p>Hit the Cart <b>${report.pings ?? 0} pings from ${report.swings} swings</b></p>` : ''}
       ${report.knockdowns ? `<p>Knockdowns <b>${report.knockdowns}</b></p>` : ''}
       ${report.runOver ? `<p>Run over <b>${report.runOver}</b></p>` : ''}
-      ${report.unwashed > 0 ? `<p>Unwashed at the bell <b>${report.unwashed} balls · −${money(report.lostPremium ?? 0)}</b></p>` : ''}
+      ${report.unwashed > 0 ? `<p>Unwashed at the bell: ${report.unwashed} <b>(missed washer bonus ${money(report.lostPremium ?? 0)})</b></p>` : ''}
       <p>In the bank <b>${money(report.bank)}</b></p>
-      ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b>BV ${money(report.quota.bv >= 100 ? Math.round(report.quota.bv) : report.quota.bv)} / ${money(report.quota.target >= 100 ? Math.round(report.quota.target) : report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
-      ${report.quota?.gauge != null ? `<p>${crew.venue === 3 ? 'Crowd (last 2 min)' : 'Venue gauge at the bell'} <b>${Math.round(report.quota.gauge * 100)}% · ${report.quota.gaugeOk ? 'held' : report.quota.why ?? 'under 50%'}</b></p>` : ''}
+      ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b${!report.quota.hit && report.quota.bv >= report.quota.target ? ' class="pass"' : ''}>BV ${money(report.quota.bv >= 100 ? Math.round(report.quota.bv) : report.quota.bv)} / ${money(report.quota.target >= 100 ? Math.round(report.quota.target) : report.quota.target)}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
+      ${report.quota?.gauge != null ? `<p${report.quota.gaugeOk ? '' : ' class="stamp miss"'}>${crew.venue === 3 ? 'Crowd (last 2 min)' : 'Venue gauge at the bell'} <b>${Math.round(report.quota.gauge * 100)}% · ${report.quota.gaugeOk ? 'held' : report.quota.why ?? 'under 50%'}</b></p>` : ''}
       ${report.quota ? `<p>Review stamps <b>${report.quota.stamps} · ${report.quota.title}</b></p>` : ''}
       ${report.tomorrow ? `<p class="dim">${report.tomorrow}</p>` : ''}`;
   }
@@ -1303,7 +1308,7 @@ function renderTodo(dt) {
     if (dir) { let rel = Math.atan2(-(tg.x - me.x), -(tg.z - me.z)) - me.yaw; rel = Math.atan2(Math.sin(rel), Math.cos(rel)); dir.style.transform = `rotate(${-rel}rad)`; }
     todoArrow.ring.position.set(tg.x, 0.05, tg.z); todoArrow.ring.scale.setScalar(tg.s * (1 + 0.15 * Math.sin(todoT * 4)));
   }
-  if (doneNow && show) toast(TODO_DONE[doneNow], 1.4);
+  if (doneNow && show && doneNow !== 'buy') toast(TODO_DONE[doneNow], 1.4);   // playthrough 4 A19: a purchase's one toast is "You bought: X"
   const k = { btn: pad ? GLYPH.A : 'Click', ibtn: pad ? GLYPH.X : 'E', shop: pad ? 'D-pad ↑' : 'Tab' };
   const key = show ? JSON.stringify([nudge, cur?.id, cur?.n, pad, me.wand, crew.cash >= cheapest(), cur?.id === 'buy' ? crew.cash : 0, todoDoneT > 0, !!tg]) : '';
   if (key === todoKey) return;
@@ -1555,7 +1560,7 @@ function frame(now) {
   views?.camera(camera, dt);
   r2?.tick(dt, now);       // after the camera: CCTV and the venue reveal drive it when active
   dusk.tick(dt);           // the end-of-day walk-off: last word on the camera while it runs
-  hinter.tick(dt, { playing: !!playing() && crew.phase === 'shift' && !menuOpen() && !crew.todo && !crew.mods?.nudge?.[me.id] && !crew.mods?.orbit?.r?.[me.id],   // no ball-washer tips at 120 m
+  hinter.tick(dt, { playing: !!playing() && !menuOpen() && tipsAllowed(crew, me.id),   // tips.js (playthrough 4 A15: a carried-over day's finished checklist no longer blocks them)
     // (owner notes: venue/pad/show used to sit inside the comment above, so every hint was marked seen and never shown)
     venue: crew.venue ?? 0, pad: document.body.classList.contains('pad'), show: (msg, id) => { showHint(msg); tipPointer.point(id); },
     day: crew.day, cash: crew.cash, signMud: crew.fixtures?.sign ?? 0, pocketFull: gp.pocket > 0 && carrying() >= gp.pocket, washerCash: crew.washer?.credit ?? 0, onDock: dockOpen(me), beers: beersPoured, deckOrder: !!crew.mods?.deck?.order,
@@ -1598,7 +1603,7 @@ function frame(now) {
 }
 // Round-2 features (round2.js) get the things main.js owns.
 r2 = setupRound2({
-  scene, camera, $, toast, say, board, SFX, nameOf, me, keys, floods, showMemo, pondMeshes, terrain,
+  scene, camera, $, toast, say, unsay: sayer.forget, arch: scenery.setArch, board, SFX, nameOf, me, keys, floods, showMemo, pondMeshes, terrain,
   get sign() { return signRef; },
   link: () => link, crew: () => crew, report: () => report, driving, pad: () => pad, balls: () => balls,
   views: () => views,
@@ -1611,6 +1616,7 @@ views = createViews({
   venues: r2.venueParts,     // venues.js parts: the deck, both stands and crowds (crowdBob), the jumbotron, the Lift car (carY)
   crew: () => crew, balls: () => balls, pad: () => pad, act: msg => link?.act(msg),
   playing: () => !!playing(), driving: () => !!driving(),
+  dusking: () => !!dusk.state?.cam,   // playthrough 4 C5: the end-of-day overhead camera is up (the Orbital view hides the Lift tower)
 });
 perf.attach({ sun: sky.sun, crowd, scuba, ballMesh, venueRate: setHeavyRate, toast: m => toast(m, 3) });
 // Station details and the cheap graphics pass (props.js), scaled by the perf profile.

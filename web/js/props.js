@@ -782,7 +782,8 @@ varying vec2 vMudUv; uniform sampler2D uMudTex; uniform sampler2D uMem; uniform 
           .replace('#include <map_fragment>', `#include <map_fragment>
 { vec4 mt = texture2D(uMudTex, vMudUv); float mem = texture2D(uMem, vMudUv).r;
   float c = min(0.98, ${f3(MUD.BASE)} + ${f3(MUD.NOISE)} * mt.g + ${f3(MUD.MEMK)} * mem);   // mud.js cleanThreshold
-  float a = mt.r * smoothstep(c - ${f3(MUD.EDGE)}, c + ${f3(MUD.EDGE)}, uMud);              // mud.js mudAlpha
+  float d = mt.r + (1.0 - mt.r) * ${f3(MUD.FILL)} * smoothstep(${f3(MUD.FILL_FROM)}, 1.0, uMud);   // mud.js mudSpread
+  float a = d * smoothstep(c - ${f3(MUD.EDGE)}, c + ${f3(MUD.EDGE)}, uMud);              // mud.js mudAlpha
   vec3 mudCol = mix(vec3(0.115, 0.056, 0.016), vec3(0.05, 0.026, 0.009), mt.g);
   diffuseColor.rgb = mix(diffuseColor.rgb, mudCol, a * 0.95);
   diffuseColor.rgb *= 1.0 - 0.32 * uWet; }`)
@@ -935,7 +936,8 @@ varying vec2 vMudUv; uniform sampler2D uMudTex; uniform sampler2D uMem; uniform 
       // mist along the jet and a burst where it lands
       const em = emit(mist.cap * 1.6, dt, mistCarry); mistCarry = em.carry;
       for (let i = 0; i < em.n; i++) {
-        if (hitPt && i % 2 === 0) mist.spawn(hitPt.x + R(-0.2, 0.2), hitPt.y + R(0.05, 0.3), hitPt.z + R(-0.2, 0.2), R(-0.6, 0.6), R(0.3, 1.0), R(-0.6, 0.6), R(0.5, 0.9), 0.15, 0.7, -0.2, 1.5);
+        // Playthrough 4 B10: a thin ring of spray round the impact, blown outward, so the patch washing off under it shows.
+        if (hitPt && i % 4 === 0) { const ang = R(0, 6.283), rr = R(0.25, 0.45), cx = Math.cos(ang), cz = Math.sin(ang); mist.spawn(hitPt.x + cx * rr, hitPt.y + R(0.05, 0.2), hitPt.z + cz * rr, cx * R(0.6, 1.2), R(0.2, 0.7), cz * R(0.6, 1.2), R(0.3, 0.55), 0.1, 0.45, -0.2, 1.5); }
         else { const a = R(0.05, 0.6) * Math.min(1, jetLen / 4); mist.spawn(wand.tip.x + jetDir.x * a * 4, wand.tip.y + jetDir.y * a * 4, wand.tip.z + jetDir.z * a * 4, jetDir.x * 2 + R(-0.4, 0.4), jetDir.y * 2 + R(-0.2, 0.4), jetDir.z * 2 + R(-0.4, 0.4), R(0.3, 0.6), 0.05, 0.35, 0, 2); }
       }
       if (hitPt && (sprayT += dt) > 0.12) { sprayT = 0; wetSpot(hitPt.x + R(-0.15, 0.15), hits.length ? hitPt.y + 0.003 : 0.016, hitPt.z + R(-0.15, 0.15), R(0.5, 0.9)); }

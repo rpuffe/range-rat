@@ -29,7 +29,7 @@ export const PA_LINES = {
   eva: { line: 'A Range Rat has left the atmosphere. Corporate will hold their locker.', caption: 'A Range Rat has left the atmosphere.' },
   one: { line: 'Balls Outstanding: one. Ball Number One is coming home.', caption: 'Ball Number One is coming home.' },
   last: { line: 'There are no more balls. Corporate has no further use for a range. Every ball mattered.', caption: 'No more balls. Every ball mattered.' },
-  endless: { line: 'Balls Outstanding: one. This announcement was not approved by anyone.', caption: 'Balls Outstanding: one. Approved by nobody.' },
+  endless: { line: 'Under New Management. The balls keep coming. This announcement was not approved by anyone.', caption: 'Under New Management. Approved by nobody.' },   // playthrough 4 C4: the first endless morning's one text
   statue: { line: 'Corporate has commissioned a statue. Of you. Reluctantly.', caption: 'A statue. Of you. Reluctantly.' },   // round 7 #9: the Owner's third project
 };
 

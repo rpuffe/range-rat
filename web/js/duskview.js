@@ -30,6 +30,8 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
   mtx.lookAt(eye.set(DUSK.END.x, DUSK.END.y, DUSK.END.z), look.set(DUSK.LOOK.x, DUSK.LOOK.y, DUSK.LOOK.z), new THREE.Vector3(0, 1, 0));
   endQ.setFromRotationMatrix(mtx);
 
+  // A report or end card is open (playthrough 4 C7): the 'left out there' label must not draw over it.
+  const cardUp = () => { const r = document.getElementById('report'); return (!!r && !r.classList.contains('hidden')) || !!document.getElementById('endcard'); };
   function el(css) { const d = document.createElement('div'); d.style.cssText = css; d.setAttribute('aria-live', 'polite'); document.body.appendChild(d); return d; }
 
   function buildGlow(budget) {
@@ -151,7 +153,7 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
     glow.material.opacity = 0.9 * s.glow;
     glow.material.size = b.size * pulse * (plan.cam ? 1 : 0.3);
     if (!run.finished) {
-      if (label) label.style.opacity = s.label ? '1' : '0';
+      if (label) label.style.opacity = s.label && !cardUp() ? '1' : '0';   // playthrough 4 B/C7: never over the report card
       if (veil) veil.style.opacity = String(s.dim);
       if (s.done) finish();
       else if (plan.cam || run.pads) {

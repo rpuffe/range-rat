@@ -209,6 +209,8 @@ export default {
         }
         carY += (want - carY) * (want > carY ? Math.min(1, dt * 14) : Math.min(1, dt * 14));
         if (ctx.venues) ctx.venues.carY = carY;
+        // Playthrough 4 C5: the tower and its lights would cut across the end-of-day overhead; they step aside under it.
+        if (ctx.venues?.tower) { const show = !ctx.dusking?.(); ctx.venues.tower.visible = show; if (ctx.venues.blinkers) ctx.venues.blinkers.visible = show; }
 
         // ---- the sky: stars, the Earth limb, the fog (after main.js set the daytime sky this frame)
         const space = k;

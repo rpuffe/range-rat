@@ -16,6 +16,11 @@ export const TIP = {
 
 const MAT_FX = FIXTURES.filter(f => f.id.startsWith('mat'));
 
+// Playthrough 4 A15: tips may play in a shift unless a checklist step is still open (a carried-over day keeps a
+// finished checklist: that must not silence them), my nudge slot holds a line, or I'm up the Lift.
+export const tipsAllowed = (crew, meId) => crew?.phase === 'shift' && !crew.todo?.some(t => !t.done)
+  && !crew.mods?.nudge?.[meId] && !crew.mods?.orbit?.r?.[meId];   // no ball-washer tips at 120 m
+
 // The extra hint context from a snapshot and me (spread into hinter.tick's ctx in main.js).
 export function tipCtx(crew, me) {
   const fx = crew?.fixtures ?? {};
