@@ -100,15 +100,18 @@ test('GOLDEN: cartBlocked, fieldFor, clampToField and BV are unchanged at venues
 });
 
 // Club golden re-recorded for council round 6 #8 (squares: x2, 0.15 share, and the reels refuse them); the Muni run is day 1.
+// Both re-recorded for the owner layout (2026-11-24), checked one cause at a time: the Muni run moved only with the
+// customers' walk to the basket by the dispenser (was 10b46ff0), the Club run only with the bank point moving to the
+// ball return, where its two teenagers bank (was 71c4c5b). With both put back, the old fingerprints come out exactly.
 test('GOLDEN: a whole seeded crew plays out identically at the Muni and the Club (no modules)', () => {
-  assert.equal(fnv(crewRun(null)), '10b46ff0');
-  assert.equal(fnv(crewRun(CLUB_SAVE)), '71c4c5b');
+  assert.equal(fnv(crewRun(null)), '4e1c4b49');
+  assert.equal(fnv(crewRun(CLUB_SAVE)), 'd9a67881');
 });
 
 test('GOLDEN: a module that lives at venue 2+ changes nothing at venues 0-1', () => {
   const noisy = { id: 'noisy', venue: 2, kpi: () => 0, launchMod: (c, st, shot) => ({ ...shot, vx: shot.vx + 9 }), tick: c => { c.cash += 1000; } };
-  assert.equal(fnv(crewRun(null, { modules: [noisy] })), '10b46ff0');
-  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), '71c4c5b');
+  assert.equal(fnv(crewRun(null, { modules: [noisy] })), '4e1c4b49');
+  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), 'd9a67881');
 });
 
 // ---- the fourth gauge ------------------------------------------------------------------------------------------------

@@ -22,7 +22,7 @@ test('the module is registered, well-formed, and wired into the views', () => {
   checkModule(county);
   assert.ok(MODULES.includes(county), 'one line in server/venues/index.mjs');
   // views/index.js imports three (not loadable in node): check the registry's source text instead.
-  const idx = readFileSync(new URL('../web/js/views/index.js', import.meta.url), 'utf8');
+  const idx = readFileSync(new URL('../web/js/views/index.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');   // a CRLF checkout too
   assert.ok(idx.includes("\nimport county from './county.js';\n") && idx.includes('\n  county,\n'));
   assert.ok(SHOP.some(i => i.id === 'drones'), 'DRONES_ROW is in the shop');
 });

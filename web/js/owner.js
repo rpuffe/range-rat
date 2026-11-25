@@ -19,7 +19,7 @@ export const OWNER_ROW = {
     // keeps the index (no save migration) and makes the shop's next tier the Owner's Hustle.
     { name: 'Crew colours', cost: 0, desc: "Site 12 is yours. It's in your colours now." },
     { name: "The Owner's Hustle", cost: 120_000_000, desc: 'Hit the Cart caps at ×3, not ×2. Pings and TARGETs beat the record.' },
-    { name: 'The statue', cost: 300_000_000, desc: 'A bronze Range Rat holding Ball No. 1, by the stand. Your names on the plinth.' },
+    { name: 'The statue', cost: 300_000_000, desc: 'A bronze Range Rat holding Ball No. 1, by the bank. Your names on the plinth.' },
   ],
 };
 

@@ -13,7 +13,7 @@ export const RALLY_LINES = {
   },
   mats: 'Hose the mats before the bell!',
   sign: 'The sign is filthy. Hose it!',
-  stand: 'The stand is filthy. Hose it!',
+  stand: 'The return is filthy. Hose it!',
   fries: 'Fries are low. Cook!',
   pond: 'The pond is murky. Dive!',
   onTarget: 'On target. Hold it till the bell.',

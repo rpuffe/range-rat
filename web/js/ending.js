@@ -107,7 +107,7 @@ export function createEnding({ scene, root, camera }) {
     ensureStyle();
     if (!huddleEl) { huddleEl = document.createElement('div'); huddleEl.id = 'ending-huddle'; huddleEl.setAttribute('role', 'status'); document.body.appendChild(huddleEl); }
     huddleEl.classList.remove('hidden');
-    huddleEl.innerHTML = typeof n === 'string' ? n : `ALL TO THE STAND · <b>${n} / ${of}</b>`;
+    huddleEl.innerHTML = typeof n === 'string' ? n : `ALL TO THE RETURN · <b>${n} / ${of}</b>`;
   }
 
   // ---- finale ----

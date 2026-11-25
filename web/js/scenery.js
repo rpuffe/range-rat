@@ -10,7 +10,7 @@ import { MAP, creekProject } from './map.js';
 export const ENTRANCE = {
   lot: { x: -10, z: 31 },
   gate: { x: -3, z: 9.5 },
-  path: [[-12, 35.5], [-12, 31], [-3, 31], [-3, 20], [-3, 9.5], [-3, 5.5], [8, 5.5], [18, 5.5], [23.5, 5.2]],
+  path: [[-12, 35.5], [-12, 31], [-3, 31], [-3, 20], [-3, 9.5], [-3, 5.5], [8, 5.5], [18, 5.5], [23.5, 6.8]],   // ends at the basket (layout.js BASKET_POINT)
 };
 
 function mulberry32(a) {

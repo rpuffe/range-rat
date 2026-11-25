@@ -1,15 +1,19 @@
 // The ball washer station (council round 2, section 4.4): the classic range pedestal washer
 // at WASHER, with a crank handle on each side, a hopper of dirty balls, a brush drum, and a
-// clear chute down to the stand's bucket. Client visuals plus a pure-logic crank input helper.
+// clear chute on to the bank's silo (owner layout: the pipe from the return feeds its hopper). Client visuals
+// plus a pure-logic crank input helper.
 // No top-level side effects: everything happens inside createWasher().
 import * as THREE from 'three';
 import { WASHER_YAW, SIGN_BY_ID, yawOf, tagSign } from './signs.js';
+import { WASHER, SILO } from './sim.js';
 
-export const WASHER_POS = { x: 21.5, z: 6 };
+export const WASHER_POS = { x: WASHER.x, z: WASHER.z };
 // Where a Rat stands to crank: about 0.9 m out from each side of the box.
 export const HANDLES = { L: { x: WASHER_POS.x - 1.4, z: WASHER_POS.z }, R: { x: WASHER_POS.x + 1.4, z: WASHER_POS.z } };
 
-const STAND_BUCKET = { x: 26, y: 1.22, z: 6 };
+// Washed balls leave by the back (world +z, the bank side) and run into the silo's side, low down.
+const SILO_IN = (() => { const dx = SILO.x - WASHER.x, dz = SILO.z - (WASHER.z + 0.45), d = Math.hypot(dx, dz);
+  return { x: SILO.x - dx / d * (SILO.R + 0.02), y: 0.85, z: SILO.z - dz / d * (SILO.R + 0.02) }; })();
 const HEAP_MAX = 80;
 const CHUTE_POOL = 10;
 const SUDS_POOL = 8;
@@ -214,9 +218,10 @@ export function createWasher(scene, opts = {}) {
   }
   drawBoard(0, 0);
 
-  // The clear chute: a tube along a sagging curve from the box to the stand's bucket.
-  const chuteStart = new THREE.Vector3(WASHER_POS.x + 0.45, 1.05, WASHER_POS.z);
-  const chuteEnd = new THREE.Vector3(STAND_BUCKET.x, STAND_BUCKET.y + 0.25, STAND_BUCKET.z);
+  // The clear chute: a tube along a sagging curve from the back of the box to the silo (stations.js finds it by
+  // its first point).
+  const chuteStart = new THREE.Vector3(WASHER_POS.x, 1.05, WASHER_POS.z + 0.45);
+  const chuteEnd = new THREE.Vector3(SILO_IN.x, SILO_IN.y, SILO_IN.z);
   const mid = new THREE.Vector3().lerpVectors(chuteStart, chuteEnd, 0.5); mid.y -= 0.12;
   const curve = new THREE.CatmullRomCurve3([chuteStart, new THREE.Vector3().lerpVectors(chuteStart, chuteEnd, 0.2).add(new THREE.Vector3(0, -0.12, 0)), mid,
     new THREE.Vector3().lerpVectors(chuteStart, chuteEnd, 0.8).add(new THREE.Vector3(0, -0.02, 0)), chuteEnd]);

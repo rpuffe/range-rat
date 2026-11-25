@@ -21,7 +21,11 @@ export const SIM = {
   ROLL_DECEL: 3.2,     // m/s² of rolling resistance on fairway
   POCKET: 3,           // balls a player can carry by hand
   REACH: 1.6,          // m, how close a ball must be to pick it up
-  STAND: { x: 26, z: 6 },
+  // The ball return (owner layout, 2026-11-24): the drop-off bin by the mat line, where Rats, teenagers, drones
+  // and the cart bank. Its pipe carries the balls (through the washer, once bought) to the bank: the Board and
+  // its silo at BANK. The code keeps the old name: STAND, atStand and the 'stand' fixture are the return now.
+  STAND: { x: 27, z: 1.8 },
+  SPAWN: { x: 23, z: 2 },   // where Rats clock in (the old stand's -3, -4: the layout moved the bank, not the crew)
   STAND_REACH: 3.5,   // 3 m read as "go to the stand" while touching it (playtest)
   BALL_PRICE: 1,       // $ per ball dropped in the bucket stand
   WALK: 4.2,           // m/s
@@ -206,7 +210,7 @@ export const SHOP = [
   ] },
   { id: 'cart', title: 'Picker cart', minDay: 3, tiers: [
     { name: 'No cart', desc: 'Everything on foot.' },
-    { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 300, unloads itself at the stand, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
+    { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 300, unloads itself at the ball return, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
     { name: 'Wide gang reels', cost: 1500, desc: 'Scoops a lane almost twice as wide, holds 600, a bit faster.' },
     { name: 'A second cart', cost: 300000, minVenue: 3, desc: 'Another caged cart with wide reels, parked beside the first. One laps for the crowd, one harvests. Each pings on its own.' },
   ] },
@@ -225,7 +229,7 @@ export const SHOP = [
   ] },
   { id: 'washer', title: 'Ball washer', minDay: 2, tiers: [
     { name: 'Muddy balls', desc: 'A ball banks for $1.' },
-    { name: 'Hand-crank washer', cost: 40, desc: 'Clean balls: $2 each, once someone cranks them through the ball washer by the stand.' },
+    { name: 'Hand-crank washer', cost: 40, desc: 'Clean balls: $2 each, once someone cranks them through the ball washer on the return pipe.' },
     { name: 'Electric washer', cost: 160, desc: 'Sparkling balls: $3 each, and it washes 1 ball a second on its own.' },
     { name: 'Industrial ball wash', cost: 6000, minVenue: 1, desc: 'Washes 5 balls a second on its own. A ball car wash. It has a name. The name is Brent.' },
   ] },
@@ -388,7 +392,7 @@ export const upkeepCeiling = ({ pond = null, fries = null, kpi = null }) => 1 + 
 // Curb Appeal: the things customers see. Each gets muddy; the wand cleans them.
 export const FIXTURES = [
   { id: 'sign', x: 14, z: 11, r: 1.8 },
-  { id: 'stand', x: 26, z: 6, r: 1.6 },
+  { id: 'stand', x: SIM.STAND.x, z: SIM.STAND.z, r: 1.6 },   // the ball return (customers see it from the mats)
   ...MATS.map(m => ({ id: `mat${m.i}`, x: m.x, z: 0, r: 1.1 })),
 ];
 export const FIXTURE_BY_ID = Object.fromEntries(FIXTURES.map(f => [f.id, f]));
@@ -428,8 +432,14 @@ export const ONE_YEAR = 1958;
 export const venueQuotaF = vd => Math.min(0.7, [0.35, 0.4, 0.45, 0.5][vd - 1] ?? 0.5 + 0.025 * (vd - 4));
 
 // ---- the ball washer station (council round 2, §4.4) ------------------------
-export const WASHER = { x: 21.5, z: 6, REACH: 1.8, CRANK_MAX: 2.5 };
-export const WASHER_HANDLES = { L: { x: 20.1, z: 6 }, R: { x: 22.9, z: 6 } };
+// Owner layout (2026-11-24): on the pipe from the return (SIM.STAND) to the bank (BANK), so balls go
+// return -> washer -> bank. A handle either side of the pipe (L on the world's -x side).
+export const WASHER = { x: 27.5, z: 3.8, REACH: 1.8, CRANK_MAX: 2.5 };
+export const WASHER_HANDLES = { L: { x: WASHER.x - 1.4, z: WASHER.z }, R: { x: WASHER.x + 1.4, z: WASHER.z } };
+// The bank: the Board and its ball silo, on the old stand's spot (the Board's root is at z + 1.2). The silo
+// stands 2.5 m along the Board (turned 35 degrees, signs.js BOARD_YAW): board.js puts it there, ballreturn.js aims the pipe at it.
+export const BANK = { x: 26, z: 6 };
+export const SILO = { x: BANK.x + 2.5 * Math.cos(35 * Math.PI / 180), z: BANK.z + 1.2 - 2.5 * Math.sin(35 * Math.PI / 180), R: 0.5 };
 export const atHandle = (p, side) => Math.hypot(p.x - WASHER_HANDLES[side].x, p.z - WASHER_HANDLES[side].z) < WASHER.REACH;
 
 // ---- gear grime (council round 2, §4.7) ------------------------------------
@@ -488,7 +498,7 @@ export const GARY = {
     { id: 'sign', x: 14, z: 13 },
     { id: 'mats', x: 0, z: 3.5 },
     { id: 'cart', x: null, z: null },       // wherever the (muddier) cart is (skipped if the crew has none)
-    { id: 'stand', x: 26, z: 10 },
+    { id: 'stand', x: 26, z: 10 },          // owner layout: behind the Board (the bank); he inspects the return and its huddle from there
   ],
 };
 // $6,000, $1.23, and whole dollars from $100 up (playtest 3: "+$150,645.01" everywhere).

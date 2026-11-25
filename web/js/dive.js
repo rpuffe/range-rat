@@ -167,7 +167,7 @@ export function nightCrew(line) {
 export const POND_ROW = {
   id: 'pond', title: 'Pond works', minVenue: 1, tiers: [
     { name: 'A bucket and hope', desc: 'The pond is cleared by hand. Corporate calls this "ownership".' },
-    { name: 'Pneumatic ball tube', cost: 4000, desc: 'A red FHI box on the dock. Carry balls to it and they bank at the stand 6 s later with a THUNK. "Installed 1987. Works, mostly."' },
+    { name: 'Pneumatic ball tube', cost: 4000, desc: 'A red FHI box on the dock. Carry balls to it and they bank at the ball return 6 s later with a THUNK. "Installed 1987. Works, mostly."' },
     { name: 'Pond pump', cost: 15000, desc: 'Clears one sunk ball every 8 s through the tube, all shift. Diving becomes the Deep End and the treasure.' },
   ],
 };

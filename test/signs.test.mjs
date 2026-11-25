@@ -47,9 +47,9 @@ test('readable() catches the faults it exists for', () => {
   // The old washer: the whole station faced +z, so BALL WASHER read mirrored (from behind) from the drop-in spot.
   const oldWasher = { ...SIGN_BY_ID['washer.sign'], normal: facing(0) };
   assert.equal(readable(oldWasher, 'spawn').why, 'back');
-  // A ±z sign is edge-on to someone walking the path along x.
+  // A ±z sign is edge-on to someone looking along x (owner layout: the washer by the return, seen from the tee line).
   const square = { ...SIGN_BY_ID['washer.sign'], normal: facing(Math.PI) };
-  assert.equal(readable(square, 'path').why, 'oblique');
+  assert.equal(readable(square, 'teeCentre').why, 'oblique');
   // The old yardage boards faced straight across the field (+x): 200 YD was edge-on from the mats.
   const oldYd = { ...SIGN_BY_ID['yardage.200'], normal: { x: 1, y: 0, z: 0 } };
   assert.equal(readable(oldYd, 'teeCentre').why, 'oblique');

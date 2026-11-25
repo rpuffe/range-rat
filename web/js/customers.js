@@ -14,12 +14,13 @@
 //   'sulk'    refused a muddy mat: sulks CUST.SULK s, then leaves
 //   'leave'   walking out with the empty bucket (the mat is free from here on)
 // Incoming customer (mat.inc = {cust, look, t0}) is in the 'arrive' state: they walk
-// gate -> bucket stand (grab a bucket) -> mat. It is a second slot so the next
+// gate -> the basket by the BUCKETS dispenser (grab a bucket; owner layout, layout.js) -> mat. It is a second slot so the next
 // customer is already walking in while the last bucket empties (no idle mat, no queue).
 //
 // Time is one monotonic server clock in seconds (`now`); it never pauses.
 
 import { MATS } from './sim.js';
+import { BASKET_POINT } from './layout.js';
 
 export const CUST = {
   WALK: 1.3,              // m/s
@@ -30,7 +31,7 @@ export const CUST = {
   WAIT_MAX: 25,           // s a customer waits at a muddy mat before refusing and leaving
   SULK: 2,                // s of sulking before they leave
   EMPTY_AFTER_REFUSE: 30, // s the mat stays empty (nobody arrives) after a refusal
-  GRAB: 2,                // s at the stand picking up a bucket
+  GRAB: 2,                // s at the basket picking up a bucket
   SETUP: 1.5,             // s after 'playing' starts before the first ball (set the bucket down)
   FINISH: 1.8,            // s after the last ball is hit before they pick up and leave
   LEAVE_HOLD: 8,          // s the mat reports 'leave' (the walker keeps walking client-side)
@@ -42,8 +43,8 @@ export const bucketFor = venue => (venue ?? 0) >= 1 ? CUST.BUCKET_CLUB : CUST.BU
 
 // ---- the route (mirrors ENTRANCE in scenery.js; a test keeps them equal) -------------
 export const GATE = { x: -3, z: 9.5 };
-export const ENTRANCE_PATH = [[-12, 35.5], [-12, 31], [-3, 31], [-3, 20], [-3, 9.5], [-3, 5.5], [8, 5.5], [18, 5.5], [23.5, 5.2]];
-export const STAND_POINT = { x: 23.5, z: 5.2 };       // end of the path, in front of the bucket stand (26, 6)
+export const ENTRANCE_PATH = [[-12, 35.5], [-12, 31], [-3, 31], [-3, 20], [-3, 9.5], [-3, 5.5], [8, 5.5], [18, 5.5], [BASKET_POINT.x, BASKET_POINT.z]];
+export const STAND_POINT = BASKET_POINT;              // end of the path: at the basket by the dispenser, facing the machine
 export const APPROACH_Z = 2.2;                         // the walkway behind the golfers
 export const PLAY_Z = -0.4;                            // a golfer's feet z at the mat (the ball sits here)
 export const EXIT_POINT = { x: -3, z: 20 };           // walkers despawn here, out through the gate
@@ -64,7 +65,7 @@ function polyAt(pts, d) {
 const heading = (hx, hz) => Math.atan2(-hx, -hz);
 const matX = mat => MATS[typeof mat === 'object' ? mat.i ?? mat.mat : mat].x;
 
-// Gate -> stand, then stand -> mat. Returns the two legs and their timings.
+// Gate -> the basket, then basket -> mat. Returns the two legs and their timings.
 export function arriveRoute(mat, dx = CUST.PLAY_DX) {
   const sx = matX(mat) - dx;
   const A = [[GATE.x, GATE.z], ...ENTRANCE_PATH.slice(5)];
@@ -96,7 +97,7 @@ export function custPos(c, t, opt = {}) {
     const r = arriveRoute(c.mat, dx);
     const uu = c.hold ? Math.min(u, r.tHold) : Math.min(u, r.tA + r.tG + r.tB);
     if (uu < r.tA) { const p = polyAt(r.A, uu * CUST.WALK); return at(p.x, p.z, { yaw: heading(p.hx, p.hz), speed: CUST.WALK, act: 'walk' }); }
-    if (uu < r.tA + r.tG) return at(STAND_POINT.x, STAND_POINT.z, { yaw: heading(1, 0), act: 'grab', carry: uu - r.tA > r.tG * 0.5 });
+    if (uu < r.tA + r.tG) return at(STAND_POINT.x, STAND_POINT.z, { yaw: heading(0, 1), act: 'grab', carry: uu - r.tA > r.tG * 0.5 });   // facing the machine (+z)
     const p = polyAt(r.B, (uu - r.tA - r.tG) * CUST.WALK);
     const end = uu >= r.tA + r.tG + r.tB || (c.hold && uu >= r.tHold);
     return at(p.x, p.z, { yaw: end ? 0 : heading(p.hx, p.hz), speed: end ? 0 : CUST.WALK, act: end ? 'wait' : 'walk', carry: true });

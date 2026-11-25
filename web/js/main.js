@@ -10,7 +10,10 @@ import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
 import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, shopShows, shopDay, priceScale, perks,
   CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB,
-  VENUE_RULES, GARY } from './sim.js';
+  VENUE_RULES, GARY, BANK } from './sim.js';
+import { createBallReturn } from './ballreturn.js';   // owner layout: the pipe from the return to the bank, the basket
+import { detailFor } from './detail.js';
+import { stationsShown } from './stations.js';
 import * as NET from './net.js';
 import * as SFX from './sfx.js';
 import { createBoard } from './board.js';
@@ -102,7 +105,7 @@ function customerSwing(x, z) {
   if (m) crowd.onMatShot(m.i);
 }
 
-// The bucket stand: where picked balls turn into cash.
+// The ball return (owner layout; it was the bucket stand): the bin by the mats where picked balls turn into cash.
 const stand = new THREE.Group();
 const box = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1.2), lambert(0x8a5a32));
 box.position.y = 0.5; box.castShadow = true; stand.add(box);
@@ -120,9 +123,11 @@ const rightPoles = scenery.rightPoles ?? null;   // and its poles (scenery.js sp
 let rightNet = null;
 scene.getObjectByName('scenery')?.traverse(o => { if (!rightNet && o.isMesh && !o.isInstancedMesh && o.position.x === MAP.NETS.side && o.position.y === 8) rightNet = o; });
 
-// The Board (Ball Value, KPIs, quota, Balls Outstanding) and the ball silo, on the stand.
+// The Board (Ball Value, KPIs, quota, Balls Outstanding) and the ball silo: the bank, on the old stand's spot.
 const confetti = sharedConfetti(scene);
-const board = createBoard(scene, { x: SIM.STAND.x, z: SIM.STAND.z + 1.2, onCross: d => { if (d === 'up') SFX.cash(1); } });   // round 6 #3: the target ding
+const board = createBoard(scene, { x: BANK.x, z: BANK.z + 1.2, onCross: d => { if (d === 'up') SFX.cash(1); } });   // round 6 #3: the target ding
+// The pipe from the return to the silo (through the washer once it's bought), and the customers' basket.
+const ballReturn = createBallReturn(scene, { pool: detailFor(perf.profile).pipeBalls });
 
 // Mud on the fixtures customers see (Curb Appeal): the road sign, the stand, the mats.
 // Each fixture's material browns as its mud rises; the wand cleans it.
@@ -497,7 +502,7 @@ function setMateGear(o, level) {
 function removeMate(id) { const o = others.get(id); if (o) { scene.remove(o.g); others.delete(id); } }
 
 // ---------------------------------------------------------------- me
-const me = { id: null, x: SIM.STAND.x - 3, z: SIM.STAND.z - 4, yaw: Math.PI / 2, pitch: -0.2, pocket: 0, down: 0, placed: false };
+const me = { id: null, x: SIM.SPAWN.x, z: SIM.SPAWN.z, yaw: Math.PI / 2, pitch: -0.2, pocket: 0, down: 0, placed: false };
 let crew = { phase: 'lobby', day: 1, shiftT: 0, shiftSecs: SIM.SHIFT_SECS, cash: 0, players: [] };
 let link = null, seat = null, report = null, paused = false;
 const nameOf = id => crew.players.find(p => p.id === id)?.name ?? 'Someone';
@@ -545,10 +550,10 @@ function onEvent(e) {
       if (who) scuba.sendBag(who.x, who.z);   // round 6 #9: the net bag climbs the line to the dock
       break;
     }
-    case 'hauled': e.id === me.id ? toast(`Hauled up: ${e.n}. Bank them at the stand.`, 2) : feed(`${nameOf(e.id)} hauled up ${e.n}`); SFX.scoop(); break;
+    case 'hauled': e.id === me.id ? toast(`Hauled up: ${e.n}. Bank them at the return.`, 2) : feed(`${nameOf(e.id)} hauled up ${e.n}`); SFX.scoop(); break;
     case 'thunk': SFX.bonk(); break;
     case 'treasure':
-      if (e.phase === 'carried') (e.by === me.id ? toast : feed)(`${e.by === me.id ? 'You have' : nameOf(e.by) + ' has'} ${TREASURE_BY_ID[e.id]?.name ?? 'something'}. Take it to the stand.`, 3);
+      if (e.phase === 'carried') (e.by === me.id ? toast : feed)(`${e.by === me.id ? 'You have' : nameOf(e.by) + ' has'} ${TREASURE_BY_ID[e.id]?.name ?? 'something'}. Take it to the return.`, 3);
       if (e.phase === 'sunk') feed(`Something glints in the Deep End: ${TREASURE_BY_ID[e.id]?.name ?? 'an item'}`);
       if (e.phase === 'banked') {
         SFX.jackpot(); scuba.reveal(e.id);   // round 6 #9: its slot in the case spins under a sparkle
@@ -584,6 +589,7 @@ function onEvent(e) {
       break;
     case 'cash':
       floatPay(e);
+      if (e.n > 0) ballReturn.banked(e.n);   // owner layout: they roll down the pipe to the bank
       if (e.by === me.id && !e.target) { toast(e.kind === 'cart' ? `Cart unloaded: +${money(e.cash)}` : `+${money(e.cash)}`, undefined, 'cash'); SFX.cash(e.n); }
       break;
     case 'enthusiasm':
@@ -882,7 +888,7 @@ function act() {
   }
   // Playthrough 4 C1: Ball No. 1 rides outside the pocket, so a full one never blocks it (actpick.js).
   const pick = actPick({ near: nearestBall(), carrying: carrying(), pocket: gp.pocket, scoop: !!gp.scoop, holdingOne: me.one });
-  if (pick?.full) { toast('Full: take them to the bucket stand'); return; }
+  if (pick?.full) { toast('Full: take them to the ball return'); return; }
   if (pick?.grab) grab(pick.grab);
 }
 
@@ -1250,7 +1256,7 @@ function feed(msg, color) {
 // the crew, with a bobbing arrow over the thing to go to (owner playtest: show, don't tell).
 const TODO_TEXT = {
   pick: (t, k) => `Pick up a ball · ${k.btn}`,
-  bank: (t, k) => `Bank them at the stand · ${k.ibtn}  ${t.n}/${t.of}`,
+  bank: (t, k) => `Bank them at the return · ${k.ibtn}  ${t.n}/${t.of}`,
   sign: (t, k) => me.wand ? `Spray the sign · hold ${k.btn}` : `Grab the pressure washer · ${k.ibtn}`,
   buy: (t, k) => { const p = cheapest(); return crew.cash >= p ? `Buy something · ${k.shop}` : `Bank ${money(p)}, then shop · ${money(crew.cash)}`; },
 };
@@ -1361,7 +1367,7 @@ function hud(dt = 0) {
     : dockOpen(me) ? 'Walk into the pond to dive for sunk balls'
     : atShed(me) && crew.fries?.open ? `${btn}: kitchen · fries ${crew.fries.stock}/${crew.fries.max}`
     : atShed(me) && (crew.up?.shed ?? 0) >= 1 ? 'The snack shed is boarded up'   // owner notes: no shed in the world until it opens (stations.js)
-    : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the bucket stand' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
+    : driving() ? (load >= my.cartCap ? 'Hopper full: drive to the ball return' : `${pad ? 'RT/LT drive · stick steer' : 'W/S drive · A/D steer'} · ${cbtn} get out`)
     : atStand(me) && n ? `${ibtn}  Drop ${n} in the bucket`
     : me.wand ? performance.now() - wandAt < 3000 ? `Hold ${btn} to spray · look down to rinse your boots · ${ibtn} put it back` : `${btn} spray`
     : nearStation() ? `${ibtn}  Grab the pressure washer${crewCarts().some(c => (c.mud ?? 0) > 0.05) ? crewCarts().length > 1 ? ' (a cart is muddy)' : ' (the cart is muddy)' : ''}`
@@ -1369,7 +1375,7 @@ function hud(dt = 0) {
     : nearCart() ? `${cbtn}  Drive the cart`
     : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `${pad ? 'Pull back, push through' : 'Flick'} to swing · ${(crew.venue ?? 0) >= 2 ? 'land it in a green' : 'hit the cart'} (${me.pocket})` : 'Bring balls to hit them')
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up`
-    : n >= cap ? 'Full: head to the bucket stand' : '';
+    : n >= cap ? 'Full: head to the ball return' : '';
   $('air').classList.toggle('hidden', !me.diving);
   $('air').firstElementChild.style.width = `${((me.air ?? POND.AIR) / diveTiers(me.dive).air) * 100}%`;
   const maxStam = sprintSecs(crew.up?.shoes);
@@ -1596,6 +1602,7 @@ function frame(now) {
     }
   }
   if (link) hud(dt);
+  ballReturn.update(stationsShown(crew).washer); ballReturn.tick(dt);   // the pipe runs through the washer once it's in the world
   props.tick(dt, sceneT, crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);   // station details (props.js)
   perf.tick(now);
   renderer.render(scene, camera);
@@ -1627,6 +1634,6 @@ SET.set({});   // re-apply saved settings now the PA exists
 requestAnimationFrame(frame);
 
 // Dev hook: /?debug exposes live state for poking at from the console.
-if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats, todoArrow, say: sayer };
+if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats, todoArrow, say: sayer, ballReturn };
 // ?signs: draw each sign's facing and log any mesh whose world normal disagrees with signs.js (loaded only then).
 if (new URLSearchParams(location.search).has('signs')) import('./signsdebug.js').then(m => m.installSignDebug({ scene, venue: () => crew ? (crew.endless ? 6 : crew.venue ?? 0) : 0 }));

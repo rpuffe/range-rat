@@ -9,7 +9,7 @@ test('the ring and the rules agree with the server and sim.js', () => {
   assert.equal(GARY.SPEED, 5);
   const stand = GARY.STOPS.find(s => s.id === 'stand');
   assert.deepEqual({ x: stand.x, z: stand.z }, { x: 26, z: 10 }, 'garyCountdown\'s default stop');
-  assert.deepEqual(SIM.STAND, { x: 26, z: 6 });
+  assert.deepEqual(SIM.STAND, { x: 27, z: 1.8 }, 'the ball return by the mats (owner layout): the ring is round it');
 });
 
 test('slots: one per Rat, in the server\'s order, filled when in the ring, bright when held', () => {
@@ -26,9 +26,9 @@ test('slots: one per Rat, in the server\'s order, filled when in the ring, brigh
 
 test('Gary\'s ring: online Rats only, a slot fills inside 8 m of the stand, never held', () => {
   const s = garyRingSlots([
-    { id: 'a', color: '#f00', online: true, x: 26, z: 13.9 },
-    { id: 'b', color: '#0f0', online: true, x: 26, z: 14.1 },
-    { id: 'c', color: '#00f', online: false, x: 26, z: 6 },
+    { id: 'a', color: '#f00', online: true, x: SIM.STAND.x, z: SIM.STAND.z + 7.9 },
+    { id: 'b', color: '#0f0', online: true, x: SIM.STAND.x, z: SIM.STAND.z + 8.1 },
+    { id: 'c', color: '#00f', online: false, x: SIM.STAND.x, z: SIM.STAND.z },
   ], SIM.STAND);
   assert.deepEqual(s.map(x => [x.id, x.in, x.held]), [['a', true, false], ['b', false, false]]);
 });
@@ -58,7 +58,7 @@ test('the sweep: 0 → 48 gold ticks over 3 s, and it only runs on locally while
 
 test('the banner: one line, "HOLD Ⓐ TOGETHER · 3 / 4" once the carrier is at the stand (≤ 8 words)', () => {
   const players = [
-    { id: 'a', name: 'Ann', online: true, one: true, x: 26, z: 6 },
+    { id: 'a', name: 'Ann', online: true, one: true, x: SIM.STAND.x, z: SIM.STAND.z },
     { id: 'b', name: '<Bo>', online: true, x: 60, z: 6 },
   ];
   const c = { phase: 'shift', players, lastBucket: { phase: 'huddle', slots: ['a', 'b', 'c', 'd'], held: ['a', 'b', 'c'], in: [] } };
@@ -68,7 +68,7 @@ test('the banner: one line, "HOLD Ⓐ TOGETHER · 3 / 4" once the carrier is at 
   assert.equal(lastBucketLine(c, 'a', 'SPACE'), 'HOLD SPACE TOGETHER · <b>3 / 4</b>');
   // Before the stand: the old line, with names escaped (the banner is innerHTML).
   const walking = lastBucketLine({ ...c, lastBucket: { phase: 'carried' } }, 'a');
-  assert.match(walking, /^BALL NO\. 1 → THE STAND · <b>1 \/ 2<\/b> · waiting: &#60;Bo&#62;$/);
+  assert.match(walking, /^BALL NO\. 1 → THE RETURN · <b>1 \/ 2<\/b> · waiting: &#60;Bo&#62;$/);
   assert.equal(lastBucketLine({ ...c, players: [], lastBucket: { phase: 'down' } }, 'a'), 'BALL NO. 1 IS DOWN · follow the beam');
   assert.equal(lastBucketLine({ ...c, lastBucket: { phase: 'done' } }, 'a'), '');
   assert.equal(lastBucketLine({ ...c, phase: 'report' }, 'a'), '');

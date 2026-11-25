@@ -1374,7 +1374,7 @@ test('Last Bucket: banking it needs every online Rat within 8 m of the stand', (
   act(crew, a, { t: 'pickup', ball: ball.id });
   crew.join('Ghost');                                   // offline Rats never block
   a.x = STAND.x; a.z = STAND.z;
-  b.x = 80; b.z = 6; b.movedAt = crew.now();          // (moving: an idle Rat counts as present after 20 s, round 7 #10.2)
+  b.x = 80; b.z = STAND.z; b.movedAt = crew.now();    // (moving: an idle Rat counts as present after 20 s, round 7 #10.2)
   crew.flush();
   const cash = crew.cash;
   act(crew, a, { t: 'deposit' });
