@@ -69,6 +69,7 @@ import { actPick } from './actpick.js';                    // playthrough 4 C1: 
 import { createRecap } from './recap.js';                  // round 11 (builder "today"): the night card, contracts, the locker
 import { skyK, floodsOn, lookHex } from './today.js';       // round 11 (builder "today"): Night Range, the cosmetics
 import { initSkip } from './skip.js';                      // round 11: skip ahead (test), dev + localhost only
+import * as TEX from './textures.js';                      // the shared textures, preloaded behind the title card's bar
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
@@ -89,15 +90,39 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(70, 1, 0.05, 3000);
 const sky = createSky(scene);
 
+// Textures (textures.js): generated a slice at a time behind the title card's bar, uploaded as each lands. Materials
+// take them now; until a texture's pixels arrive it shows its plain average, so the scene never goes black.
+TEX.setAnisotropy(perf.low ? 2 : 4);
+TEX.preload({ renderer, onProgress: p => {
+  const bar = $('loadbar'); if (!bar) return;
+  bar.setAttribute('aria-valuenow', String(Math.round(p * 100)));
+  bar.firstElementChild.style.transform = `scaleX(${p.toFixed(3)})`;
+  if (p >= 1) bar.classList.add('done');
+} });
+
 const lambert = color => new THREE.MeshLambertMaterial({ color });
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), lambert(0x5f8f3a));
-ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), TEX.mat('grass', 0x5f8f3a, { world: 1.6, mode: 'top' }));
+ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; ground.name = 'ground';
 scene.add(ground);
 
-// Mowing stripes so distance reads (the flags are Dimple Creek's, in terrain.js).
-for (let i = 0; i < 16; i++) {
-  const s = new THREE.Mesh(new THREE.PlaneGeometry(128, 12), lambert(i % 2 ? 0x679a40 : 0x5a8836));
-  s.rotation.x = -Math.PI / 2; s.position.set(0, 0.005, -8 - i * 12); s.receiveShadow = true;
+// Mowing stripes so distance reads (the flags are Dimple Creek's, in terrain.js). One merged mesh (it was 16), the
+// lane colours as vertex colours, the mow texture's blades lying along the lanes.
+{
+  const pos = [], col = [], nor = [], idx = [], c = new THREE.Color();
+  for (let i = 0; i < 16; i++) {
+    const z0 = -8 - i * 12 - 6, z1 = z0 + 12, k = pos.length / 3;
+    c.set(i % 2 ? 0x679a40 : 0x5a8836);
+    for (const [x, z] of [[-64, z1], [64, z1], [-64, z0], [64, z0]]) { pos.push(x, 0, z); nor.push(0, 1, 0); col.push(c.r, c.g, c.b); }
+    idx.push(k, k + 1, k + 2, k + 2, k + 1, k + 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3 * 2), 2));   // world uv replaces it
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  const s = new THREE.Mesh(g, TEX.mat('mow', 0xffffff, { world: 1.6, mode: 'top', vertexColors: true }));
+  s.position.y = 0.005; s.receiveShadow = true; s.name = 'mow-stripes';
   scene.add(s);
 }
 // Dimple Creek: the creek, its crossings, the flags, Dimples Rock, the Old Tractor (map.js rules).
@@ -111,7 +136,7 @@ const shopVday = () => worldVday(crew?.venue, shopDay(crew?.phase, crew?.venueDa
 // Round 11 (owner, bays.js): the whole line (the new wing too); only the built bays show (bayline.js, per snapshot).
 const bayMeshes = [];
 for (const m of LINE) {
-  const mat = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 1.6), lambert(0x2f6b2a));
+  const mat = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.04, 1.6), TEX.textured(lambert(0x2f6b2a), 'turf'));   // own material: props.js gives each its mud
   mat.position.set(m.x, 0.02, 0); mat.receiveShadow = true; scene.add(mat);
   // The mat's number (1-10) on its back edge, so "Mat 4" is a callout (a waiting customer names it).
   const cv = document.createElement('canvas'); cv.width = cv.height = 64;
@@ -135,7 +160,7 @@ function customerSwing(x, y, z) {
 
 // The ball return (owner layout; it was the bucket stand): the bin by the mats where picked balls turn into cash.
 const stand = new THREE.Group();
-const box = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1.2), lambert(0x8a5a32));
+const box = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1.2), TEX.textured(lambert(0x8a5a32), 'metal', { world: 1.5 }));   // painted steel (its own material: the mud tints it)
 box.position.y = 0.5; box.castShadow = true; stand.add(box);
 const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.25, 0.45, 16, 1, true),
   new THREE.MeshLambertMaterial({ color: 0x2f6fbf, side: THREE.DoubleSide }));
@@ -184,13 +209,14 @@ const MUD = new THREE.Color(0x5a3d1e);
   x.font = 'bold 54px system-ui, sans-serif'; x.fillText('MUNI RANGE', 256, 110);
   x.font = '600 26px system-ui, sans-serif'; x.fillText('a Fairway Holdings property', 256, 160);
   x.font = 'italic 24px system-ui, sans-serif'; x.fillText('Every Ball Matters.™', 256, 205);
+  TEX.signFinish(x, 512, 256);
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const signMat = new THREE.MeshLambertMaterial({ map: tex });
   const panel = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), signMat);
   panel.position.y = 2.0; sign.add(tagSign(panel, 'road.field'));
   // A second face for the road (and the promotion reveal camera): one DoubleSide plane read mirrored from there.
   const roadFace = tagSign(panel.clone(), 'road.road'); roadFace.rotation.y = Math.PI; sign.add(roadFace);
-  for (const px of [-1.4, 1.4]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2), lambert(0x6b5a45)); post.position.set(px, 1.1, -0.02); sign.add(post); }
+  for (const px of [-1.4, 1.4]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.2), TEX.mat('wood', 0x6b5a45, { repeat: [1, 3] })); post.position.set(px, 1.1, -0.02); sign.add(post); }
   const fx = FIXTURE_BY_ID.sign;
   sign.position.set(fx.x, 0, fx.z); sign.rotation.y = yawOf(SIGN_BY_ID['road.field'].normal);   // faces the field
   scene.add(sign);
@@ -217,13 +243,13 @@ function paintFixtures(fx) {
 const pondWater = new THREE.Mesh(new THREE.CircleGeometry(POND.r, 48),
   new THREE.MeshLambertMaterial({ color: 0x2f6f73, transparent: true, opacity: 0.78, side: THREE.DoubleSide }));
 pondWater.rotation.x = -Math.PI / 2; pondWater.position.set(POND.x, 0.03, POND.z); scene.add(pondWater);
-const pondBed = new THREE.Mesh(new THREE.CircleGeometry(POND.r, 48), lambert(0x3b3322));
+const pondBed = new THREE.Mesh(new THREE.CircleGeometry(POND.r, 48), TEX.mat('dirt', 0x3b3322, { world: 1.5, mode: 'top' }));
 pondBed.rotation.x = -Math.PI / 2; pondBed.position.set(POND.x, POND.BOTTOM - 0.06, POND.z); scene.add(pondBed);
 const pondWall = new THREE.Mesh(new THREE.CylinderGeometry(POND.r, POND.r, -POND.BOTTOM + 0.1, 48, 1, true),
-  new THREE.MeshLambertMaterial({ color: 0x4a3f2a, side: THREE.BackSide }));
+  TEX.mat('dirt', 0x4a3f2a, { side: THREE.BackSide, repeat: [12, 1] }));
 pondWall.position.set(POND.x, POND.BOTTOM / 2, POND.z); scene.add(pondWall);
 {
-  const dock = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.15, 3.6), lambert(0x8b6b45));
+  const dock = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.15, 3.6), TEX.mat('wood', 0x8b6b45, { world: 1.2 }));
   dock.position.set(POND.DOCK.x, 0.25, POND.DOCK.z - 0.6); dock.castShadow = true; scene.add(dock);
   const pump = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 0.9, 10), lambert(0xd9382b));
   pump.position.set(POND.DOCK.x + 0.7, 0.75, POND.DOCK.z + 0.6); scene.add(pump);
@@ -243,16 +269,16 @@ const shedSign = (() => {
   const g = new THREE.Group();
   const hut = new THREE.Mesh(new THREE.BoxGeometry(3, 2.4, 2.4), lambert(0xc9b48a)); hut.position.y = 1.2; hut.castShadow = true; g.add(hut);
   const roof = new THREE.Mesh(new THREE.ConeGeometry(2.4, 1, 4), lambert(0x8a3b2e)); roof.position.y = 2.9; roof.rotation.y = Math.PI / 4; g.add(roof);
-  const counter = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 0.6), lambert(0x8b6b45)); counter.position.set(0, 1.0, -1.45); g.add(counter);
+  const counter = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 0.6), TEX.mat('wood', 0x8b6b45, { world: 1.2 })); counter.position.set(0, 1.0, -1.45); g.add(counter);
   const sack = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 8), lambert(0x9c7b4b)); sack.scale.y = 0.8; sack.position.set(-1.6, 0.35, -1.4); g.add(sack);
   const fries = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.4, 0.4), lambert(0xf2c94c)); fries.position.set(0.7, 1.28, -1.45); g.add(fries);
   const c = document.createElement('canvas'); c.width = 256; c.height = 64;
   const x = c.getContext('2d'); x.fillStyle = '#8a3b2e'; x.fillRect(0, 0, 256, 64); x.fillStyle = '#fff8ec';
-  x.font = 'bold 34px system-ui, sans-serif'; x.textAlign = 'center'; x.fillText('SNACK SHED', 128, 44);
+  x.font = 'bold 34px system-ui, sans-serif'; x.textAlign = 'center'; x.fillText('SNACK SHED', 128, 44); TEX.signFinish(x, 256, 64, { screws: false });
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.5), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
   sign.position.set(0, 2.15, -1.22); sign.rotation.y = yawOf(SIGN_BY_ID['shed.sign'].normal); g.add(tagSign(sign, 'shed.sign'));
-  const boards = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 0.05), lambert(0x6b5a45)); boards.position.set(0, 1.45, -1.23); g.add(boards);
+  const boards = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.8, 0.05), TEX.mat('wood', 0x6b5a45, { world: 1.2 })); boards.position.set(0, 1.45, -1.23); g.add(boards);
   g.position.set(FRIES.SHED.x, 0, FRIES.SHED.z + 2.25);   // the counter faces the range; you stand in front of it
   scene.add(g);
   return { fries, boards };
@@ -271,7 +297,7 @@ const floods = [-14, 0, 14].map(x => {
 
 // Crew bays: orange mats with a little flag, for hitting balls at the cart.
 for (const b of BAYS) {
-  const mat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.05, 1.8), lambert(0xd9822b));
+  const mat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.05, 1.8), TEX.mat('turf', 0xd9822b));
   mat.position.set(b.x, 0.025, b.z); mat.receiveShadow = true; scene.add(mat);
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.6), lambert(0xeeeeee));
   pole.position.set(b.x - 0.9, 0.8, b.z + 0.9); scene.add(pole);
@@ -470,7 +496,7 @@ function clearBalls() { for (const id of [...balls.keys()]) removeBall(id); }
 // ---------------------------------------------------------------- carrying gear
 // Built for a body: hand-held things at hand height on the right, the push
 // picker rolling on the grass in front. Origin is the person's feet, facing -z.
-const steel = lambert(0x9aa3ad), wire = new THREE.MeshBasicMaterial({ color: 0xc9d1d9, wireframe: true });
+const steel = TEX.mat('metal', 0x9aa3ad), wire = new THREE.MeshBasicMaterial({ color: 0xc9d1d9, wireframe: true });
 function gearModel(level) {
   const g = new THREE.Group();
   if (level === 1) {           // ball retriever tube
@@ -1188,6 +1214,8 @@ const startShift = () => link?.act({ t: 'start' });
 
 // ---------------------------------------------------------------- joining
 async function enter(how, preset) {
+  // Nothing pops in mid-shift: a Start pressed before the textures land waits for them (textures.js, a second or so).
+  if (!TEX.isReady()) { $('join-error').textContent = 'One moment: still mowing the range…'; await TEX.ready; }
   const name = $('name').value.trim();
   const code = $('join-code').value.trim().toUpperCase();
   $('join-error').textContent = '';

@@ -17,6 +17,7 @@ import { SILO, MATS, BUCKETS } from './sim.js';
 import { UPPER, PLAY_Z, bucketFor } from './customers.js';
 // (the tube's posts come from layout.js TUBE_POSTS: round 11)
 import { whoosh } from './tubesfx.js';
+import * as TEX from './textures.js';   // the galvanised metal band in the field returns' atlas
 
 const v3 = p => new THREE.Vector3(p[0], p[1], p[2]);
 const DIRTY = new THREE.Color(0x8a6a45), MUDDY = new THREE.Color(0xc9b088), CLEAN = new THREE.Color(0xffffff);
@@ -284,12 +285,14 @@ export function createBallReturn(scene, { pool = 24 } = {}) {
 // Draw calls: the boxes + posts + couplings (one merged mesh, one canvas for the plates), the clear tube (one mesh),
 // the batches (one InstancedMesh). Rebuilt only when the tier changes. thunk(id) gives the box a little kick.
 export function createFieldReturns(scene) {
+  const PLATES_H = FIELD_RETURNS.length * 64, ATLAS_H = 256;   // power of two: the plates on top, the metal band below
   const c = typeof document !== 'undefined' ? document.createElement('canvas') : null;
   let tex = null;
   if (c) {
-    c.width = 256; c.height = 160;
+    c.width = 256; c.height = ATLAS_H;
     const g = c.getContext('2d');
-    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 256, 160);
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 256, ATLAS_H);
+    TEX.paintPixels(g, 'metal', 0, PLATES_H, 256, ATLAS_H - PLATES_H);   // rows below the plates: galvanised metal
     FIELD_RETURNS.forEach((r, i) => {
       const y0 = i * 64;
       g.fillStyle = '#fbf6e8'; g.fillRect(0, y0, 256, 64);
@@ -298,6 +301,7 @@ export function createFieldReturns(scene) {
       g.font = 'bold 34px "Courier New", monospace'; g.fillText(r.label, 128, y0 + 27);
       g.fillStyle = '#2a2418'; g.font = '600 13px system-ui, sans-serif'; g.fillText('FHI · BALLS IN · WHOOSH', 128, y0 + 51);
     });
+    TEX.signFinish(g, 256, PLATES_H, { screws: false });
     tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   }
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: tex });
@@ -311,7 +315,7 @@ export function createFieldReturns(scene) {
   const curves = Object.fromEntries(FIELD_RETURNS.map(r => [r.id, new THREE.CatmullRomCurve3(tubeRoute(r.id).map(v3), false, 'centripetal')]));
   const trunk = new THREE.CatmullRomCurve3(TUBE_TRUNK.map(v3), false, 'centripetal');
   const branch = new THREE.CatmullRomCurve3(TUBE_BRANCH.map(v3), false, 'centripetal');
-  const WHITE_V = 0.06;    // the canvas's plain white strip (rows 128-160: v 0..0.2)
+  const BAND_V = 1 - PLATES_H / ATLAS_H;   // the metal band: v 0..BAND_V (canvas rows PLATES_H..ATLAS_H)
   const { W, D, H } = FIELD_RETURN, TR = RETURN_TUBE.R;
 
   function build(tier) {
@@ -321,8 +325,9 @@ export function createFieldReturns(scene) {
       const cc = new THREE.Color(color), p = gg.attributes.position, n = gg.attributes.normal, u = gg.attributes.uv;
       for (let i = 0; i < p.count; i++) {
         pos.push(p.getX(i), p.getY(i), p.getZ(i)); nor.push(n.getX(i), n.getY(i), n.getZ(i)); col.push(cc.r, cc.g, cc.b);
-        if (plate >= 0 && u) uv.push(u.getX(i), 1 - (plate * 64 + 64) / 160 + u.getY(i) * 64 / 160);   // plate i's band
-        else uv.push(0.5, WHITE_V);
+        if (plate >= 0 && u) uv.push(u.getX(i), 1 - (plate * 64 + 64) / ATLAS_H + u.getY(i) * 64 / ATLAS_H);   // plate i's band
+        else if (u) uv.push(u.getX(i), 0.01 + u.getY(i) * (BAND_V - 0.02));   // everything else: the metal band
+        else uv.push(0.5, BAND_V / 2);
       }
     };
     const owned = fieldReturns(tier);

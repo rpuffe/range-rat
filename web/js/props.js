@@ -1,5 +1,6 @@
 // Range Rat props: small physical details and in-use animations on the stations, plus a cheap
-// graphics pass (ground texture, worn paths, contact shadows, soft clouds, light balance).
+// graphics pass (yard mowing, worn paths, contact shadows, soft clouds, light balance). The surface
+// textures themselves (grass, turf, dirt, wood, metal) are textures.js's.
 // It decorates groups other modules already built; it never rebuilds them. Everything it
 // adds scales with the perf.js profile through detailFor() (detail.js, unit-tested).
 //
@@ -8,7 +9,7 @@
 //   props.tick(dt, t)   // once a frame, after sky.setTime and the cart loop, before render
 //
 // Finds what it decorates by position or shape (the stand, wash station, snack shed, ball
-// washer, dispenser, ground, stripes, clouds, MOW-E), so the builders stay untouched. Anything
+// washer, dispenser, clouds, MOW-E), so the builders stay untouched. Anything
 // it can't find is skipped. Station props attach to the station's own group, in its local
 // frame, so a later rotation of a group carries them along.
 import * as THREE from 'three';
@@ -21,6 +22,7 @@ import { detailFor, emit, wetStep, sagPoints, rollAngle, gaugeAngle, ease, throt
 import { createStations, findStations, REVEAL } from './stations.js';   // owner notes: the washer and shed appear when they matter
 import { sharedConfetti, confettiCount } from './confetti.js';
 import { MUD, SURF, mudField, mudSurface, paintClean, matAt, matUV, cameClean } from './mud.js';
+import * as TEX from './textures.js';   // the shared textures (preloaded behind the title card)
 
 const TAU = Math.PI * 2;
 
@@ -65,6 +67,9 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
   const brass = M(0xc9a24a, 0.35, 0.7), yellow = M(0xf2c94c, 0.55, 0.05), red = M(0xd9382b, 0.5, 0.05);
   const blue = M(0x2f6fbf, 0.45, 0.15), engineGrey = M(0x55595f, 0.6, 0.35), hoseGreen = M(0x2f5d3a, 0.7, 0);
   const wood = M(0x8b6b45, 0.9, 0), boltMat = M(0xb8bec6, 0.3, 0.8);
+  // Real surfaces on the shared prop materials (textures.js): no new materials, no new draw calls.
+  for (const m of [steel, darkSteel, brass, engineGrey, boltMat]) TEX.textured(m, 'metal', { world: 0.8 });
+  TEX.textured(wood, 'wood', { world: 1.2 });
 
   // ---------------------------------------------------------------- canvas textures (made once, all small)
   function canvasTex(w, h, draw, { srgb = true, repeat = null } = {}) {
@@ -257,27 +262,9 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
     }
   }
 
-  // ---------------------------------------------------------------- ground: grass texture, yard mowing, variation, green rings
+  // ---------------------------------------------------------------- ground: yard mowing, variation, green rings
+  // (The grass and the mow lanes are textures.js's now, put on by main.js.)
   {
-    const grass = canvasTex(128, 128, (g, w) => {
-      const r = rng(3);
-      g.fillStyle = 'rgb(240,244,236)'; g.fillRect(0, 0, w, w);
-      for (let i = 0; i < 2200; i++) {
-        const v = 212 + (r() * 43) | 0, x = r() * w, y = r() * w, d = r() < 0.3 ? 2 : 1;
-        g.fillStyle = `rgb(${v - 6},${v},${v - 12})`; g.fillRect(x, y, d, d);
-      }
-      for (let i = 0; i < 160; i++) { g.fillStyle = 'rgba(255,255,230,0.5)'; g.fillRect(r() * w, r() * w, 1, 2); }
-    }, { srgb: true });
-    grass.wrapS = grass.wrapT = THREE.RepeatWrapping;
-    let ground = null; const stripes = [];
-    for (const o of scene.children) {
-      const p = o.isMesh && o.geometry?.type === 'PlaneGeometry' ? o.geometry.parameters : null;
-      if (!p) continue;
-      if (p.width === 700 && p.height === 700) ground = o;
-      else if (p.width === 128 && p.height === 12) stripes.push(o);
-    }
-    if (ground) { const t = grass.clone(); t.repeat.set(220, 220); t.needsUpdate = true; ground.material.map = t; ground.material.color.multiplyScalar(1.07); ground.material.needsUpdate = true; }
-    if (stripes.length) { const t = grass.clone(); t.repeat.set(40, 4); t.needsUpdate = true; for (const s of stripes) { s.material.map = t; s.material.color.multiplyScalar(1.07); s.material.needsUpdate = true; } }
 
     // Yard mowing (the area the crew walks: behind and between the mats) + broad tonal variation.
     const yard = canvasTex(256, 64, (g, w, h) => {
@@ -779,7 +766,7 @@ export function createProps({ scene, camera, renderer, perf, sky, me, cartViews 
       memTex.magFilter = memTex.minFilter = THREE.LinearFilter; memTex.needsUpdate = true;
       const U = { uMudTex: { value: mats.tex }, uMem: { value: memTex }, uMud: { value: 0 }, uWet: { value: 0 }, uTime: { value: 0 } };
       const mat = o.material;
-      mat.color.set(0x2f6b2a); mat.userData.mudOverlay = true;
+      mat.color.set(0x2f6b2a).multiplyScalar(TEX.lift(mat.userData.rrTex)); mat.userData.mudOverlay = true;   // lifted for its turf texture
       mat.onBeforeCompile = sh => {
         Object.assign(sh.uniforms, U);
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vMudUv;')

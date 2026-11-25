@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';
 import { MAP, creekProject } from './map.js';
+import * as TEX from './textures.js';   // the shared textures (preloaded behind the title card)
 
 // Key coordinates for the customer-arrival feature (metres, world space).
 // path runs from a parked car, across the lot, through the gate, to the stand.
@@ -64,7 +65,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
   const decalOpts = (f) => ({ polygonOffset: true, polygonOffsetFactor: -f, polygonOffsetUnits: -f });
 
   // Shared materials
-  const woodDark = lambert(0x6b5a45);
+  const woodDark = TEX.mat('wood', 0x6b5a45, { world: 1 });
   const white = lambert(0xffffff);
 
   function canvasTex(w, h, draw) {
@@ -88,13 +89,13 @@ export function createScenery(scene, { lowDetail = false } = {}) {
 
   // ---------- 7. Ground variation ----------
   {
-    const rough = lambert(0x6d9440, decalOpts(2));
+    const rough = TEX.mat('grass', 0x6d9440, { world: 1.6, mode: 'top', ...decalOpts(2) });
     inst(flatPlane(), rough, [
       { p: [-207.5, 0.01, 0], s: [285, 1, 700] },
       { p: [207.5, 0.01, 0], s: [285, 1, 700] },
     ]);
     // gravel strip under the fence (broken at the entrance gap and cart gap)
-    inst(flatPlane(), lambert(0xb7a98a, decalOpts(3)), [
+    inst(flatPlane(), TEX.mat('dirt', 0xb7a98a, { world: 1, mode: 'top', ...decalOpts(3) }), [
       { p: [-36.5, 0.012, 9.5], s: [57, 1, 1.5] },
       { p: [15, 0.012, 9.5], s: [26, 1, 1.5] },
       { p: [49.75, 0.012, 9.5], s: [30.5, 1, 1.5] },
@@ -108,7 +109,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       greens.push({ p: [x, 0.02, z], s: [r * 0.45, 1, r * 0.45], c: 0x7db85c });
       flagSpots.push({ x, z, ph: R(0, 6) });
     }
-    inst(flatCircle(28), lambert(0xffffff, decalOpts(4)), greens);
+    inst(flatCircle(28), TEX.mat('mow', 0xffffff, { world: 1.2, mode: 'top', ...decalOpts(4) }), greens);
     flags.items = []; flags.mesh = null;   // the flags themselves are terrain.js's (Dimple Creek)
     const tufts = [];
     for (let i = 0; i < (lowDetail ? 14 : 28); i++) {
@@ -116,7 +117,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       if (Math.hypot(x + 12, z + 78) < 12 || creekProject(x, z).d < MAP.CREEK.HW + 1.5) continue;   // not in the pond or the creek
       tufts.push({ p: [x, 0.017, z], s: [R(0.5, 1.2), 1, R(0.4, 0.9)], ry: R(0, 3) });
     }
-    inst(flatCircle(10), lambert(0x4e7c2e, decalOpts(4)), tufts);
+    inst(flatCircle(10), TEX.mat('grass', 0x4e7c2e, { world: 1.2, mode: 'top', ...decalOpts(4) }), tufts);
   }
 
   // ---------- 1. Range boundaries ----------
@@ -143,7 +144,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     for (const sx of [-MAP.NETS.side, MAP.NETS.side]) mesh(sideGeo, netMat, sx, 8, -97.5);
     mesh(netGeo(130, 12), netMat, 0, 8, MAP.NETS.back);
 
-    const poles = [], right = [], poleGeo = new THREE.CylinderGeometry(0.12, 0.16, 16, 6), poleMat = lambert(0x6e747a);
+    const poles = [], right = [], poleGeo = new THREE.CylinderGeometry(0.12, 0.16, 16, 6), poleMat = TEX.mat('metal', 0x6e747a, { repeat: [1, 10] });
     for (const sx of [-MAP.NETS.side, MAP.NETS.side]) for (let z = -5; z >= MAP.NETS.back - 0.1; z -= 14.7) (sx > 0 ? right : poles).push({ p: [sx, 8, z] });
     for (let x = -MAP.NETS.side; x <= MAP.NETS.side + 0.1; x += 12.9) poles.push({ p: [x, 8, MAP.NETS.back] });
     inst(poleGeo, poleMat, poles);
@@ -305,7 +306,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
       segs.push({ p: [(ax + bx) / 2, 0.016, (az + bz) / 2], ry: Math.atan2(-dz, dx), s: [len + W, 1, W] });
     }
-    inst(flatPlane(), lambert(0xb9b2a0, decalOpts(4)), segs);
+    inst(flatPlane(), TEX.mat('dirt', 0xb9b2a0, { world: 1.5, mode: 'top', ...decalOpts(4) }), segs);
 
     // entrance arch (gap x -8..2, centre -3, fence line z 9.5)
     const gx = ENTRANCE.gate.x, gz = ENTRANCE.gate.z;
@@ -322,6 +323,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       if (tw > room) g.font = font(Math.floor(118 * room / tw));
       g.fillStyle = '#f3ecd2'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillText(text, w / 2, h / 2 + 6);
+      TEX.signFinish(g, w, h, { screws: false });
     };
     let archName = 'Muni Range';
     const signTex = canvasTex(2048, 256, (g, w, h) => archPaint(g, w, h, archName));
@@ -352,7 +354,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     const roof = mesh(roofGeo, lambert(0x8a3b2e), cx, 4.5 + 0.5 * (2.4 / 1.5), cz, true);
     roof.scale.set(14.8, 2.4 / 1.5, 9.4 / 1.732);
     // porch
-    mesh(new THREE.BoxGeometry(14, 0.3, 2.4), lambert(0x9a7b52), cx, 0.15, cz - 5.2);
+    mesh(new THREE.BoxGeometry(14, 0.3, 2.4), TEX.mat('wood', 0x9a7b52, { world: 1.5 }), cx, 0.15, cz - 5.2);
     mesh(new THREE.BoxGeometry(14.4, 0.15, 2.9), lambert(0x7a3326), cx, 3.15, cz - 5.2, true);
     inst(new THREE.CylinderGeometry(0.1, 0.1, 3, 6), lambert(0xeee6d0),
       [-6.8, -2.2, 2.2, 6.8].map(dx => ({ p: [cx + dx, 1.65, cz - 6.2] })));
@@ -382,17 +384,17 @@ export function createScenery(scene, { lowDetail = false } = {}) {
   {
     // benches facing the field (-z)
     const benches = [[18, 8.7], [-14, 8.7], [48, 6.5]];
-    const bm = lambert(0x8b6b45);
+    const bm = TEX.mat('wood', 0x8b6b45, { world: 1 });
     inst(new THREE.BoxGeometry(1.8, 0.08, 0.5), bm, benches.map(([x, z]) => ({ p: [x, 0.5, z] })));
     inst(new THREE.BoxGeometry(1.8, 0.45, 0.06), bm, benches.map(([x, z]) => ({ p: [x, 0.78, z + 0.22], rx: -0.12 })));
     const legs = [];
     for (const [x, z] of benches) for (const dx of [-0.8, 0.8]) legs.push({ p: [x + dx, 0.25, z] });
-    inst(new THREE.BoxGeometry(0.08, 0.5, 0.45), lambert(0x3d3d40), legs);
+    inst(new THREE.BoxGeometry(0.08, 0.5, 0.45), TEX.mat('metal', 0x3d3d40, { world: 0.8 }), legs);
 
     // trash cans
     const cans = [[20.5, 8.8], [-9, 8.7], [45.5, 6.5], [-16.5, 8.7]];
     inst(new THREE.CylinderGeometry(0.3, 0.25, 0.8, 8), lambert(0x3b5a3a), cans.map(([x, z]) => ({ p: [x, 0.4, z] })));
-    inst(new THREE.CylinderGeometry(0.33, 0.33, 0.06, 8), lambert(0x6e747a), cans.map(([x, z]) => ({ p: [x, 0.83, z] })));
+    inst(new THREE.CylinderGeometry(0.33, 0.33, 0.06, 8), TEX.mat('metal', 0x6e747a, { world: 0.8 }), cans.map(([x, z]) => ({ p: [x, 0.83, z] })));
 
     // ball dispenser machine
     mesh(new THREE.BoxGeometry(0.9, 1.5, 0.7), lambert(0xd9382b), 23.5, 0.75, 8.5);
@@ -425,6 +427,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
         g.strokeStyle = '#f3ecd2'; g.lineWidth = 6; g.strokeRect(6, 6, w - 12, h - 12);
         g.fillStyle = '#f3ecd2'; g.font = 'bold 64px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
         g.fillText(yd + ' YD', w / 2, h / 2 + 4);
+        TEX.signFinish(g, w, h);
       });
       const m = mesh(sgeo, new THREE.MeshBasicMaterial({ map: tex }), -63.5, 2.3, z);
       m.rotation.y = yawOf(SIGN_BY_ID['yardage.' + yd].normal);   // turned to the mat line (straight across, +x, was edge-on)
@@ -463,7 +466,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     inst(new THREE.BoxGeometry(0.5, 0.05, 0.15), lambert(0xffffff), bricks);
 
     const spots = [[-10.2, 33.5], [-8, 29.2], [-5.2, 17], [-0.8, 17], [-0.8, 25], [2.5, 7], [9, 7]];
-    inst(new THREE.CylinderGeometry(0.05, 0.07, 3.2, 6).translate(0, 1.6, 0), lambert(0x2e3034), spots.map(([x, z]) => ({ p: [x, 0, z] })));
+    inst(new THREE.CylinderGeometry(0.05, 0.07, 3.2, 6).translate(0, 1.6, 0), TEX.mat('metal', 0x2e3034, { repeat: [1, 4] }), spots.map(([x, z]) => ({ p: [x, 0, z] })));
     inst(new THREE.SphereGeometry(0.18, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffdc8f }), spots.map(([x, z]) => ({ p: [x, 3.3, z] })));
     lamps.halo = new THREE.MeshBasicMaterial({ color: 0xffb860, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false });
     inst(new THREE.SphereGeometry(0.55, 8, 6), lamps.halo, spots.map(([x, z]) => ({ p: [x, 3.3, z] })));

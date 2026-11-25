@@ -12,7 +12,7 @@ export function createBayLine({ meshes }) {
   const paint = () => {
     meshes.forEach(({ mat, num }, i) => {
       const f = !!fresh && i >= fresh.from && i < fresh.to;
-      mat.material.color.setHex(f ? FRESH_TURF : TURF);
+      mat.material.color.setHex(f ? FRESH_TURF : TURF).multiplyScalar(mat.material.userData?.rrLift ?? 1);   // textures.js lifts a textured colour
       num.material.color.setHex(f ? GOLD : WHITE);
     });
   };

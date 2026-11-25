@@ -13,6 +13,7 @@ import * as THREE_NS from 'three';
 import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';
 import { MAP, creekPoint, creekLength, inPondArea } from './map.js';
 import { CREEK_DIVE } from './dive.js';
+import * as TEX from './textures.js';   // the shared textures (preloaded behind the title card)
 
 const TAU = Math.PI * 2;
 const seeded = seed => () => {
@@ -106,13 +107,13 @@ export function createTerrain({ scene, THREE = THREE_NS } = {}) {
   const tint = (hex, k) => new THREE.Color(hex).multiplyScalar(k);
 
   // banks: a dirt verge, wetter and darker once the water is on
-  const bankMat = lambert(0x9c8e6c, { vertexColors: true, ...decal(2) });
+  const bankMat = TEX.mat('dirt', 0x9c8e6c, { world: 1.2, mode: 'top', vertexColors: true, ...decal(2) });
   const bank = new THREE.Mesh(ribbon(HW + 1.1, 0.02, (s, k) => tint(0xffffff, 0.92 + 0.08 * ((k * 7) % 3) / 2)), bankMat);
   bank.name = 'creek-bank'; bank.frustumCulled = false;
   root.add(bank);
 
   // the dry bed: gravel, mottled along its length
-  const gravel = new THREE.Mesh(ribbon(HW, 0.03, (s, k) => tint(0xaea288, 0.86 + 0.14 * (((k * 5) % 4) / 3))), lambert(0xffffff, { vertexColors: true, ...decal(3) }));
+  const gravel = new THREE.Mesh(ribbon(HW, 0.03, (s, k) => tint(0xaea288, 0.86 + 0.14 * (((k * 5) % 4) / 3))), TEX.mat('dirt', 0xffffff, { world: 0.7, mode: 'top', vertexColors: true, ...decal(3) }));
   gravel.name = 'creek-gravel'; gravel.frustumCulled = false;
   dry.add(gravel);
   // pebbles and a few bigger cobbles, merged
@@ -225,13 +226,14 @@ export function createTerrain({ scene, THREE = THREE_NS } = {}) {
       g.font = '900 96px system-ui, sans-serif'; g.fillText(l1, 256, 98);
       g.font = '800 42px system-ui, sans-serif'; g.fillText(l2, 256, 172);
       g.font = '600 18px system-ui, sans-serif'; g.fillStyle = '#777'; g.fillText('FHI GROUNDS  ·  THANK YOU FOR YOUR SYNERGY', 256, 216);
+      TEX.signFinish(g, 512, 256);
       tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
     }
     const sign = new THREE.Group(); sign.name = 'pond-sign';
     sign.add(new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.8), new THREE.MeshLambertMaterial({ map: tex, color: tex ? 0xffffff : 0xf4efe2, side: THREE.DoubleSide })));
     sign.children[0].position.y = 2.1;
     tagSign(sign.children[0], 'pond'); sign.rotation.y = yawOf(SIGN_BY_ID.pond.normal);   // faces the mats (+z)
-    const postGeo = new THREE.CylinderGeometry(0.07, 0.07, 2.6, 6), postMat = lambert(0x6b5a45);
+    const postGeo = new THREE.CylinderGeometry(0.07, 0.07, 2.6, 6), postMat = TEX.mat('wood', 0x6b5a45, { repeat: [1, 3] });
     for (const px of [-1.5, 1.5]) { const p = new THREE.Mesh(postGeo, postMat); p.position.set(px, 1.3, -0.04); sign.add(p); }
     sign.position.set(MAP.SIGN.x, 0, MAP.SIGN.z);
     dry.add(sign);
@@ -356,7 +358,7 @@ export function createTerrain({ scene, THREE = THREE_NS } = {}) {
     venue = v | 0;
     const isWet = venue >= 1;
     dry.visible = !isWet; wet.visible = isWet;
-    bankMat.color.set(isWet ? 0x6e5f40 : 0x9c8e6c);
+    bankMat.color.set(isWet ? 0x6e5f40 : 0x9c8e6c).multiplyScalar(TEX.lift(bankMat.userData.rrTex));   // lifted for its dirt texture
   }
   function tick(dt, t = 0) {
     if (flowTex && wet.visible) flowTex.offset.y -= dt * MAP.CREEK.DRIFT / 4;   // 4 m per texture repeat, at the real current

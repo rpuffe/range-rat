@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { MAP } from './map.js';
 import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';
+import * as TEX from './textures.js';   // the shared textures (preloaded behind the title card)
 
 export const SIGN_TEXT = [
   { title: 'MUNI RANGE', sub: 'a Fairway Holdings property', tag: 'Every Ball Matters.™' },
@@ -33,6 +34,7 @@ export function paintSign(x, w, h, venue) {
   x.font = '600 26px system-ui, sans-serif'; x.fillText(t.sub, 256, 160);
   x.font = 'italic 24px system-ui, sans-serif'; x.fillText(t.tag, 256, 205);
   x.restore();
+  TEX.signFinish(x, w, h);   // paint grain, edge grime, screws (textures.js)
 }
 
 const lambert = (color, extra) => new THREE.MeshLambertMaterial({ color, ...extra });
@@ -43,6 +45,7 @@ function textPlane(text, w, h, bg, fg, px, flip) {
   const x = c.getContext('2d'); x.fillStyle = bg; x.fillRect(0, 0, c.width, c.height);
   x.fillStyle = fg; x.textAlign = 'center'; x.textBaseline = 'middle';
   x.font = `bold ${px}px system-ui, sans-serif`; x.fillText(text, c.width / 2, c.height / 2 + 2);
+  TEX.signFinish(x, c.width, c.height, { screws: false });
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }));
   if (flip) m.rotation.y = Math.PI;
@@ -128,7 +131,7 @@ export function createVenues(scene) {
       // The stairs climb from x -25 to the deck's left end at -20. The deck loungers stand at its rail (z 2.4).
       const g = grp('tiered');
       const conc = lambert(0x8d8f96), dark = lambert(0x23252d);
-      g.add(box(40, 0.3, 4, conc, 0, 2.85, 4));                    // floor slab x -20..20, z 2..6, top y 3
+      g.add(box(40, 0.3, 4, TEX.mat('wood', 0xa98157, { world: 1.6 }), 0, 2.85, 4));   // floor slab x -20..20, z 2..6, top y 3: decking
       g.add(box(40, 3.2, 0.3, dark, 0, 4.6, 6.1));                 // back wall
       const legs = []; for (let i = 0; i <= 10; i++) legs.push([-19.6 + i * 3.92, 1.35, 3.9, 0.35, 2.7, 0.35]);
       g.add(boxes(legs, conc, true));
