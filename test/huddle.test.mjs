@@ -66,6 +66,8 @@ test('the banner: one line, "HOLD Ⓐ TOGETHER · 3 / 4" once the carrier is at 
   assert.equal(line, 'HOLD Ⓐ TOGETHER · <b>3 / 4</b>');
   assert.ok(line.replace(/<[^>]+>/g, '').split(/\s+/).filter(w => w !== '·').length <= 8);
   assert.equal(lastBucketLine(c, 'a', 'SPACE'), 'HOLD SPACE TOGETHER · <b>3 / 4</b>');
+  // Playthrough 5 C10: solo, no "TOGETHER · 0 / 1".
+  assert.equal(lastBucketLine({ ...c, lastBucket: { phase: 'huddle', slots: ['a'], held: [], in: [] } }, 'a', 'SPACE'), 'HOLD SPACE');
   // Before the stand: the old line, with names escaped (the banner is innerHTML).
   const walking = lastBucketLine({ ...c, lastBucket: { phase: 'carried' } }, 'a');
   assert.match(walking, /^BALL NO\. 1 → THE RETURN · <b>1 \/ 2<\/b> · waiting: &#60;Bo&#62;$/);

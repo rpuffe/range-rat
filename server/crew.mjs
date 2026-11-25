@@ -16,6 +16,7 @@ import { SIM, MATS, activeMats, activeUpper, mulberry32, swingGap, launch, spill
   VENUE_RULES, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor, cartGearOf, BANK } from '../web/js/sim.js';
 import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor, cartSpeedAt, MAP, creekProject, creekPoint } from '../web/js/map.js';
 import { VenueHooks, MODULES } from './venues/index.mjs';
+import { halfLapPose } from '../web/js/autopilot.js';   // playthrough 5 C6
 import { debrisLeft } from './venues/orbit.mjs';
 import { ORBIT } from '../web/js/orbit.js';
 import { isStray } from '../web/js/county.js';
@@ -51,6 +52,7 @@ const REVEAL_SECS = 6;            // a venue reveal holds the clock this long
 const PA_CAP = 3, PA_GAP_MS = 20_000;
 // Round 7 #10.2: an idle Rat counts as present (and holding) in the huddle and Gary's ring after 20 s, not GRACE_MS.
 export const SKY_HOLD_SECS = 90;   // playthrough 3: the longest the bell waits on the sky gate
+const GARY_CART_LEG = 30;   // playthrough 5 C1: s, the longest Gary chases a cart a Rat is driving about
 const HUDDLE_R = 8, HUDDLE_IDLE_MS = 20_000, HUDDLE_HOLD = 3.0;   // the huddle beat: everyone holds Use this long (round 6 #5)
 
 // What a ping on the cage pays out, and how often.
@@ -256,6 +258,13 @@ export class Crew {
   // The legacy alias (one release): "the cart" is the first one. Venue modules and old code read it.
   get cart() { return this.carts[0] ?? null; }
   set cart(c) { if (c) { c.i ??= 0; this.carts[0] = c; } else this.carts = []; }
+  // Playthrough 5 C1: Gary is on his cart leg heading for (or parked inspecting) cart c: an autopilot cart waits.
+  garyHolds(c) {
+    const g = this.gary;
+    if (!g || g.phase !== 'drive' || !c) return false;
+    const leg = this.garyStops()[g.stop]?.id === 'cart' && g.cart === c, parked = g.pause > 0 && g.checks?.at(-1)?.stop === 'cart' && g.cart === c;
+    return leg || parked;
+  }
   muddiestCart() { return this.carts.reduce((m, c) => (!m || c.mud > m.mud ? c : m), null); }
   working() { return this.phase === 'shift' && !this.paused(); }   // the shift clock is running
   pondOpen() { return this.venue >= POND.FROM_VENUE; }
@@ -399,6 +408,8 @@ export class Crew {
       else if (a?.t === 'wash') this.wash(p, a.secs, a.target);
       else if (a?.t === 'crank') this.crank(p, a.side, a.turns);
       else if (a?.t === 'sign') this.sign(p, !!a.on);
+      else if (a?.t === 'clockout') this.clockOutInput(p, a.on !== false);   // playthrough 5: "Card done · clock out" (held)
+      else if (a?.t === 'notyet') this.notYetInput(p);                        // playthrough 5 A1: decline the promotion today
       else if (a?.t === 'cctv') { if (this.venue >= 1) this.pa('cctv', { once: true }); }
       else if (a?.t === 'mark') this.mark(p, a);
       else if (a && typeof a.t === 'string') this.mods.first('input', p, a);   // a venue module's own action
@@ -494,7 +505,14 @@ export class Crew {
   goalRows() {
     if (!this.goals || this.endless) return [];
     const sky = this.venue === LAST_CARD && this.outstanding <= 1 && this.skyDebris() <= ORBIT.SKY_CLEAR;
-    return rowsOf(this.goals, { up: this.up, cash: this.cash, fee: this.promoFee() ?? 0, sky }, this.goalsToday);
+    // Playthrough 5 C3: once the sky stops refilling (the Last Bucket is on: no orbit shots), the debris goal asks for no
+    // more than was brought down plus what's still up there (or in a rider's bag), so it can always be finished.
+    let cap;
+    if (this.venue === LAST_CARD && this.lastBucket && this.lastBucket.phase !== 'done' && onCard(LAST_CARD, 'debris')) {
+      let bags = 0; for (const r of this.mods.state('orbit')?.riders?.values() ?? []) bags += r.bag?.length ?? 0;
+      cap = { debris: (this.goals.n.debris ?? 0) + this.skyDebris() + bags };
+    }
+    return rowsOf(this.goals, { up: this.up, cash: this.cash, fee: this.promoFee() ?? 0, sky, ...(cap ? { cap } : {}) }, this.goalsToday);
   }
   goalOpen(id) { return !!this.goals && onCard(this.goals.venue, id) && !this.goalRows().find(r => r.id === id)?.done; }
   // One call at each counting site: n more of goal `id` (only if it's on this venue's card and still open).
@@ -509,8 +527,7 @@ export class Crew {
     const g = this.goals;
     if (!g || g.venue !== this.venue || !this.mods) return;
     const force = new Set();
-    // The Orbital: the sky has nothing left to bring down (a 'sky' hold stops orbit shots): the debris goal is met.
-    if (g.venue === LAST_CARD && this.lastBucket?.phase === 'sky' && this.skyDebris() === 0) force.add('debris');
+    // Playthrough 5 C3: the debris goal is never force-ticked (goalRows sizes it to what's in the sky instead).
     // Every Rat rides the Lift: the Rats printed on the card, or every Rat still here (a crew that shrank).
     if (onCard(g.venue, 'lift')) { const on = this.online(); if (on.length && on.every(p => g.who.includes(p.name))) force.add('lift'); }
     for (const r of this.goalRows()) {
@@ -530,13 +547,13 @@ export class Crew {
       if (this.goalSeen.has(e)) continue;
       this.goalSeen.add(e);
       switch (e.t) {
-        case 'served': if (e.item === 'hotdog' && e.quality !== 'burnt') this.goalTick('hotdogs'); break;   // Gary's dog counts
         case 'treasure': if (e.phase === 'banked') this.goalTick('treasures'); break;
         case 'target': this.goalTick('targets'); break;
         case 'deckTab': if (e.order || e.round) this.goalTick('orders'); break;
-        case 'crowd': if (e.kind === 'lap') this.goalTick('laps'); break;
+        case 'crowd': if (e.kind === 'lap' && !e.auto) this.goalTick('laps'); break;   // playthrough 5 C2: driven laps only
         case 'ping': if (e.prize) this.goalTick('pings'); break;
         case 'landed': this.goalTick('debris', e.n ?? 1); break;
+        case 'winch': this.goalTick('debris'); break;   // playthrough 5 C3: the tether winch's pieces count too
         case 'lift': if (e.dir === 'up') { const p = this.players.get(e.id); if (p && !g.who.includes(p.name) && g.who.length < 6) { g.who.push(p.name); this.dirty = true; } } break;
         case 'gone': if (strays && e.by && this.strayIds?.has(e.id)) this.goalTick('strays'); break;   // a County stray swept (a Rat, the cart, a drone)
       }
@@ -599,14 +616,16 @@ export class Crew {
   // ---- Ready Up (council round 2, §5.1) -----------------------------------------
   // From the lobby the range opens at once; at the report the next shift starts
   // when every online Rat is ready, or 20 s after the first one is.
+  // Playthrough 5 A1: Ready never starts the next shift while the card is done and the promotion unsigned (solo and pad
+  // crews lost a day at the same venue): it waits for the signatures, or for a Rat's explicit "Not yet" (notYetInput).
   readyUp(p) {
     if (this.phase === 'lobby') return this.startShift();
     if (this.phase !== 'report') return;
     this.ready.add(p.id);
     if (!this.readyAt) this.readyAt = this.now();
     const online = this.online();
-    this.events.push({ t: 'ready', n: this.ready.size, of: online.length, t0: READY_SECS });
-    if (online.every(o => this.ready.has(o.id))) this.startShift();
+    this.events.push({ t: 'ready', n: this.ready.size, of: online.length, t0: READY_SECS, ...(this.promoHolds() ? { held: true } : {}) });
+    if (online.every(o => this.ready.has(o.id)) && !this.promoHolds()) this.startShift();
   }
 
   // A promotion is ready to sign and not every online Rat has signed: { n, of }, else null.
@@ -615,6 +634,48 @@ export class Crew {
     const online = this.online();
     const n = online.filter(o => this.signed.has(o.id)).length;
     return n < online.length ? { n, of: online.length } : null;
+  }
+  // The signatures hold Ready (and its 20 s timer) until they're in, or the crew said "Not yet".
+  promoHolds() { return !this.notYet && !!this.awaitingSignatures(); }
+  // Playthrough 5 A1: "Not yet" at the report: the crew stays at this venue another day (any one Rat's call; the card
+  // stays done, so tomorrow's report asks again). Ready then works as usual.
+  notYetInput(p) {
+    if (this.phase !== 'report' || !this.promoInfo()?.ready || this.notYet) return false;
+    this.notYet = true; this.signed.clear(); this.dirty = true;
+    this.events.push({ t: 'notyet', by: p.id });
+    const online = this.online();
+    if (online.length && online.every(o => this.ready.has(o.id))) this.startShift();
+    return true;
+  }
+
+  // ---- Clock out early (playthrough 5, all three testers' top ask) ------------------------------------------------
+  // Once the venue's card is done (promoInfo().ready), the crew can ring the bell now: every online Rat holds "Clock
+  // out" (solo: at once) and the normal bell runs (the review, the stamp, the report). Releasing takes your vote back.
+  canClockOut() { return this.phase === 'shift' && !this.paused() && !this.endless && this.shiftT > 0 && !!this.promoInfo()?.ready; }
+  clockOutInput(p, on) {
+    this.clockOut ??= new Set();
+    if (on && !this.canClockOut()) return false;
+    if (on) this.clockOut.add(p.id); else if (!this.clockOut.delete(p.id)) return false;
+    const online = this.online();
+    for (const id of [...this.clockOut]) if (!online.some(o => o.id === id)) this.clockOut.delete(id);
+    this.dirty = true;
+    this.events.push({ t: 'clockout', by: p.id, on, n: this.clockOut.size, of: online.length });
+    this.checkClockOut();
+    return true;
+  }
+  // Everyone in: the bell rings now. The card went undone (a purchase took the fee): the votes clear.
+  checkClockOut() {
+    if (!this.clockOut?.size) return false;
+    if (!this.canClockOut()) { this.clockOut.clear(); this.dirty = true; return false; }
+    const online = this.online();
+    if (!online.length || !online.every(o => this.clockOut.has(o.id))) return false;
+    const early = Math.max(0, Math.round(this.shiftSecs - this.shiftT));
+    this.clockOut.clear();
+    this.shiftT = this.shiftSecs;
+    this.events.push({ t: 'clockedout', early });
+    this.earlyBell = early;
+    this.endShift();
+    return true;
   }
 
   // ---- the cart --------------------------------------------------------------
@@ -931,7 +992,7 @@ export class Crew {
     this.seal = 1; this.garyIntro = null;
     this.fedSt = newFed();   // council round 10 #2: FED resets each morning
     this.garyDay = garyMorning(this.garyDay, this.day, !!this.pendingReveal);
-    this.ready.clear(); this.readyAt = 0; this.signed.clear();
+    this.ready.clear(); this.readyAt = 0; this.signed.clear(); this.notYet = false; this.clockOut?.clear(); this.earlyBell = 0; this.fedAcc = 0;
     this.hopper = { n: 0, credit: 0, frac: 0 };
     this.basket = newBasket();       // owner playtest 3 §3.3: "the night crew doesn't do buckets"
     // The locker room, then clock in at the yard: everyone starts each shift together.
@@ -958,7 +1019,9 @@ export class Crew {
     this.mods.call('startShift');      // venue modules' mornings: after the reset, before the quota is set
     // Corporate's memo and today's quota. Judged on Upkeep, so a mid-shift purchase can't buy it.
     if (this.endless || this.venue === 5) this.quota = null;   // round 7 #5: no review at the Orbital, only Ball No. 1
-    else if (this.venue === 0) { const q = quotaQ(this.day, this.ceiling()); this.quota = q == null ? null : { q }; }
+    // Playthrough 5 A10: at the Muni the target holds (day 4's) while the card's review goal is open, so a slow crew
+    // isn't chasing a target that climbs with the calendar.
+    else if (this.venue === 0) { const q = quotaQ(this.goalOpen('reviews') ? Math.min(this.day, 4) : this.day, this.ceiling()); this.quota = q == null ? null : { q }; }
     // The target climbs with the good days earned, not just the days served (playtest: a crew that kept missing
     // got targets it could never reach). After three it climbs with the days again (round 10: reviews, not stamps).
     else this.quota = { q: (this.ceiling() - 1) * venueQuotaF(this.reviews < RISE_REVIEWS ? Math.min(this.venueDay, this.reviews + 1) : this.venueDay) };
@@ -966,6 +1029,8 @@ export class Crew {
     this.events.push({ t: 'memo', day: this.day, target: this.quota ? this.quotaPct() : null, text: this.venue === 5 && !this.endless ? orbitMemo(this.outstanding) : memoText(this.day, this.quota && this.quotaPct(), this.endless, this.rng, this.venue, this.garyToday()),
       flavor: memoFlavor(this.day, this.venue, this.endless, this.rng), quiet: this.day === 1 && !!this.todo });
     for (const c of this.carts) { c.boostT = 0; if (!c.driver) Object.assign(c, c.i ? CART.PARK2 : CART.PARK, { v: 0 }); }
+    // Playthrough 5 C6: with autopilot, the second cart starts on the Ping Track half a lap from the first (no lockstep).
+    if (this.perks.autopilot && this.venue >= MAP.TRACK.FROM && this.carts[1] && !this.carts[1].driver) Object.assign(this.carts[1], halfLapPose(CART.PARK));
     for (const m of this.mats) m.next = m.upper ? 1 + 0.8 * (m.i - UPPER.FROM) : 1 + this.rng() * 5;   // the upper bays draw nothing
     for (const e of openMats(this.mats, { now: this.custT, rng: this.rng, venue: this.venue, nOpen: activeMats(this.onlineCount(), this.up), nextCust: () => ++this.nextCust, mud: i => this.fixtures['mat' + i] ?? 0 })) {
       if (e.t === 'wait') this.events.push({ t: 'custwait', mat: e.mat });
@@ -1074,7 +1139,7 @@ export class Crew {
   // The kitchen minigame: fries, hot dogs and beer. The client plays it, the server rate-limits it.
   serve(p, a) {
     const now = this.now();
-    if (!this.perks.shed || !atShed(p) || p.down > 0 || this.driving(p)) return false;
+    if (this.phase !== 'shift' || !this.perks.shed || !atShed(p) || p.down > 0 || this.driving(p)) return false;   // playthrough 5 B8: no beer pays in the lobby
     if (now - (p.servedAt ?? 0) < FRIES.SERVE_MIN_SECS * 1000) return false;
     p.servedAt = now;
     const item = menuFor(this.venue).includes(a.item) ? a.item : 'fries';   // a locked item can't be served
@@ -1389,10 +1454,14 @@ export class Crew {
     let stop = stops[g.stop];
     if (stop?.id === 'cart' && !this.cart) { g.stop++; stop = stops[g.stop]; }
     if (!stop) return;
-    if (stop.id === 'cart' && !g.cart) g.cart = this.muddiestCart();      // Gary checks the muddier cart (the fleet)
+    // Gary checks the muddier cart (the fleet), picked once at the leg's start. Playthrough 5 C1: an autopilot cart he's
+    // heading for waits for him (garyHolds, stadium.mjs), and a leg that runs past GARY_CART_LEG (a Rat driving it about)
+    // ends where he is: he inspects that cart anyway, so every visit reaches a verdict.
+    if (stop.id === 'cart' && !g.cart) { g.cart = this.muddiestCart(); g.legT = 0; }
+    if (stop.id === 'cart') g.legT = (g.legT ?? 0) + dt;
     const tx = stop.id === 'cart' ? g.cart.x + 3 : stop.x, tz = stop.id === 'cart' ? g.cart.z + 3 : stop.z;
     const dx = tx - g.x, dz = tz - g.z, d = Math.hypot(dx, dz), step = GARY.SPEED * dt;
-    if (d > 0.3) {
+    if (d > 0.3 && !(stop.id === 'cart' && g.legT > GARY_CART_LEG)) {
       const k = Math.min(1, step / d);
       g.x += dx * k; g.z += dz * k; g.yaw = Math.atan2(-dx, -dz);
       for (const o of [...this.players.values(), ...this.helpers]) {     // he drives like he owns the place
@@ -1424,7 +1493,7 @@ export class Crew {
       this.garyDay = garyNext(this.day, this.treasureSeed);
       // Council round 10 #1: the card's Gary goals (the Muni's huddle, the Club's Seal, the County's pass). While one is
       // still open after his visit, he comes back tomorrow ("Gary will be back tomorrow.").
-      if (huddle) this.goalTick('huddle');
+      if (huddle && fails <= 1) this.goalTick('huddle');   // playthrough 5 A2: "Pass Gary with a huddle"
       if (seal) this.goalTick('seal');
       if (fails <= 1) this.goalTick('pass');
       if (['huddle', 'seal', 'pass'].some(id => this.goalOpen(id))) { this.garyDay = this.day + 1; this.garyBack = true; }
@@ -1475,7 +1544,7 @@ export class Crew {
     const f = this.fixtures;
     if (id === 'sign') return f.sign <= clean;
     if (id === 'stand') return f.stand <= clean;
-    if (id === 'cart') return !this.cart || this.muddiestCart().mud <= clean;
+    if (id === 'cart') return !this.cart || (this.gary?.cart ?? this.muddiestCart()).mud <= clean;   // playthrough 5 C1: the cart he picked
     if (id === 'kitchen') return !!this.gary?.fed || this.fries >= FRIES.MAX * 0.5;   // Gary had a hot dog
     if (id === 'mats') {
       if (this.gary?.mats) return this.gary.mats.every(k => (f[k] ?? 0) <= clean);   // solo (playthrough 4 A18): his two mats
@@ -1751,7 +1820,11 @@ export class Crew {
     this.stepPond(dt);
     this.stepBouncy();
     this.mods.call('tick', dt);
-    if (this.phase === 'shift' && !paused) fedTick(this.fedSt, dt);   // council round 10 #2: FED wears off on working time (the cleanup minute counts)
+    if (this.phase === 'shift' && !paused) {
+      // Playthrough 5 B5: the Club's "Keep the crew fed for 3 minutes" counts working seconds with FED up.
+      if (this.fedSt.fed > 1 && this.goals) { this.fedAcc = (this.fedAcc ?? 0) + dt; const k = Math.floor(this.fedAcc); if (k > 0) { this.fedAcc -= k; this.goalTick('fed', k); } }
+      fedTick(this.fedSt, dt);   // council round 10 #2: FED wears off on working time (the cleanup minute counts)
+    }
     if (this.phase === 'shift' && !paused && this.perks.autoFry && (this.autoFryT += dt) >= this.perks.autoFry) { this.autoFryT = 0; this.addFries(this.perks.autoFry <= 3 ? 2 : 1, 'machine'); }   // the conveyor drops 2 (playtest: 4P out-ate it)
     // The electric / industrial ball washer works through the hopper on its own.
     if (this.phase === 'shift' && this.perks.washAuto && this.hopper.n > 0) {
@@ -1815,6 +1888,7 @@ export class Crew {
       if (c.tipT > 0) { if ((c.tipT -= dt) <= 1e-9) this.unloadCart(c); }
       else if (c.load > 0 && Math.hypot(c.x - SIM.STAND.x, c.z - SIM.STAND.z) < SIM.STAND_REACH + 2.5) {
         c.tipT = CART.UNLOAD_SECS; this.dirty = true;
+        if (c.auto) c.mud = 0;   // playthrough 5 C5: an autopilot cart rinses itself at the return each tip
         this.events.push({ t: 'tip', cart: c.i, secs: CART.UNLOAD_SECS });
       }
     }
@@ -1827,10 +1901,13 @@ export class Crew {
 
     this.goalScan();   // council round 10 #1: this tick's counted events, before the bell reads the card
     // Ready Up: 20 s after the first Rat is ready, the next shift starts anyway.
-    // It holds while a promotion is ready and the signatures aren't all in (the promotion must not slip),
-    // up to READY_HOLD_SECS, so one Rat gone idle at the keyboard can't stall the crew for ever.
-    if (this.phase === 'report' && this.readyAt && now - this.readyAt >= READY_SECS * 1000
-      && (!this.awaitingSignatures() || now - this.readyAt >= READY_HOLD_SECS * 1000)) this.startShift();
+    // It holds while a promotion is ready and the signatures aren't all in (the promotion must not slip).
+    // Playthrough 5 A1: it never starts the day over an unsigned promotion. After READY_HOLD_SECS, once at least one
+    // Rat has signed, the ones who signed carry it (one Rat gone idle at the keyboard can't stall the crew for ever);
+    // with nobody signed it waits for a signature or a "Not yet".
+    if (this.phase === 'report' && this.readyAt && now - this.readyAt >= READY_HOLD_SECS * 1000 && this.promoHolds() && this.signed.size > 0) this.promote();
+    if (this.phase === 'report' && this.readyAt && now - this.readyAt >= READY_SECS * 1000 && !this.promoHolds()) this.startShift();
+    if (this.phase === 'shift' && this.clockOut?.size) this.checkClockOut();   // playthrough 5: a Rat left, or the card went undone
     if (this.phase === 'shift' && this.shiftT >= this.shiftSecs) {
       // Playthrough 3 #3: the sky gate at the bell holds the clock (the Lift and the tether keep working) so the finale
       // stays one beat, up to SKY_HOLD_SECS: a crew where nobody rides still gets its bell. Once the sky clears inside
@@ -1923,12 +2000,12 @@ export class Crew {
       this.records = { ...this.records, cash: dayCash, banked: this.stats.deposited - (onePay ? 1 : 0), day: this.day, curve: finishCurve(this.curveDay === this.day ? this.curve : [], dayCash) };
       // Round 7 #3: the record PA plays only in endless, where the record is the game (no stamp to land on). On review
       // days the report card's "Record shift!" line says it (playtest round 2 #4: a record PA over DENIED).
-      if (this.endless) this.pa('record', { big: true });
+      if (this.endless && !ending) this.pa('record', { big: true });   // playthrough 5 C10: never over the ending card
     }
     if (race) { this.records.yesterday = race.yesterday; this.records.streak = race.streak; }
     for (const k of Object.keys(this.stats)) this.totals[k] = (this.totals[k] ?? 0) + this.stats[k];
     this.report = { day: this.day, ...this.stats, left: this.balls.size, bank: this.cash, quota, record, ...(race ? { race: race.result } : {}),
-      ledger: this.ledger(), promo: this.promoInfo(), venue: this.venue, title: this.title(),
+      ledger: this.ledger(), promo: this.promoInfo(), venue: this.venue, title: this.title(), ...(this.earlyBell ? { early: this.earlyBell } : {}),   // playthrough 5: clocked out early (s)
       // Playthrough 4 C2: a held bell where the sky stayed up says what's left, not "more balls".
       tomorrow: this.lastBucket?.phase === 'sky' && !this.endless ? 'Tomorrow: clear the sky. Ball No. 1 waits.'
         : tomorrowText(this.day + 1, this.venue, this.endless, !!this.promoInfo()?.ready, !this.endless && this.venue !== 5 && garyMorning(this.garyDay, this.day + 1) === this.day + 1,
@@ -1987,7 +2064,7 @@ export class Crew {
         pocket: p.pocket, down: +p.down.toFixed(2), online: p.online > 0, gear: p.gear, wand: p.wand,
         spray: !!p.wand && now - p.washAt < 400,   // owner notes: mates see your spray (wash acts land every 250 ms)
         diving: p.diving, ...(p.creekDiving ? { creek: true } : {}), air: +p.air.toFixed(1), bag: p.bag, pumping: p.pumping, dive: p.dive, treasure: p.treasure, grime: p.grime, one: p.one,
-        ready: this.ready.has(p.id), signed: this.signed.has(p.id),
+        ready: this.ready.has(p.id), signed: this.signed.has(p.id), ...(this.clockOut?.has(p.id) ? { clockOut: true } : {}),
       })),
       value: this.valueNow(),
       quota: this.quota && { q: +this.quota.q.toFixed(4), target: this.quotaTarget() },
@@ -2006,8 +2083,12 @@ export class Crew {
       promo: this.promoInfo(), revealT: +this.revealT.toFixed(1),
       promotedTo: this.phase === 'report' && this.pendingReveal ? VENUE_RULES[this.pendingReveal]?.name ?? null : null,   // the report says so (playtest)
       // While the signatures hold the Ready Up timer: no countdown, and `sigWait` {n, of} ("Waiting for signatures").
-      readyIn: this.phase === 'report' && this.readyAt && !this.awaitingSignatures() ? Math.max(0, Math.ceil(READY_SECS - (now - this.readyAt) / 1000)) : null,
-      sigWait: this.phase === 'report' && this.readyAt ? this.awaitingSignatures() : null,
+      readyIn: this.phase === 'report' && this.readyAt && !this.promoHolds() ? Math.max(0, Math.ceil(READY_SECS - (now - this.readyAt) / 1000)) : null,
+      sigWait: this.phase === 'report' && this.readyAt && this.promoHolds() ? this.awaitingSignatures() : null,
+      // Playthrough 5 A1: the crew said "Not yet" to the promotion at this report (Ready then starts the day).
+      ...(this.phase === 'report' && this.notYet ? { notYet: true } : {}),
+      // Playthrough 5: "Card done · clock out" — null unless the card is done mid-shift; n of `of` Rats are holding it.
+      clockOut: this.canClockOut() ? { n: this.clockOut?.size ?? 0, of: this.onlineCount() } : null,
       lastBucket: this.lastBucket && { phase: this.lastBucket.phase, by: this.lastBucket.by ?? null,
         ...(this.lastBucket.phase === 'sky' ? { debris: this.skyDebris() } : {}),
         ...(this.lastBucket.phase === 'huddle' ? { sweep: +this.lastBucket.sweep.toFixed(2), slots: this.lastBucket.slots ?? [], in: this.lastBucket.in ?? [], held: this.lastBucket.held ?? [] } : {}) },

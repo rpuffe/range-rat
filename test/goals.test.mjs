@@ -27,7 +27,8 @@ test('scale: solo 0.4, 2P 0.6, 3P 0.8, 4P 1, 5P 1.2, 6P 1.4, rounded up', () => 
   assert.equal(scaled(12, 1.4), 17, '16.8 rounds up');
   assert.equal(scaled(24, 0.8), 20, '19.2 rounds up');
   const solo = printCard(1, 1), six = printCard(1, 6);
-  assert.equal(solo.need.hotdogs, 12); assert.equal(six.need.hotdogs, 42);
+  assert.equal(solo.need.fed, 180); assert.equal(six.need.fed, 180, 'playthrough 5 B5: FED uptime does not scale');
+  assert.equal(printCard(0, 1).need.bank, 800);
   assert.equal(solo.need.treasures, 2, 'treasures do not scale (one a morning)');
   assert.equal(solo.need.reviews, 3, 'nor the good days');
   assert.equal(printCard(5, 3).need.lift, 3, 'every Rat printed on the card');
@@ -49,13 +50,14 @@ test('rows: counts, purchases from the shop, the live fee', () => {
 
 test('nextGoal: the first open in card order; the fee only when it is the last one left', () => {
   const card = printCard(1, 4);
-  card.n.hotdogs = 12;
+  card.n.fed = 75;
   let rows = rowsOf(card, { cash: 0, fee: 9000 });
-  assert.equal(nextGoal(rows).id, 'hotdogs');
-  assert.equal(moreText(nextGoal(rows)), '18 more hot dogs');
-  assert.equal(strip(rows, 1).next, 'NEXT: 18 MORE HOT DOGS');
+  assert.equal(nextGoal(rows).id, 'fed');
+  assert.equal(moreText(nextGoal(rows)), '2 more minutes fed');
+  assert.equal(goalLine(nextGoal(rows)), 'Keep the crew fed for 3 minutes · 1:15 / 3:00');
+  assert.equal(strip(rows, 1).next, 'NEXT: 2 MORE MINUTES FED');
   assert.equal(strip(rows, 1).label, '0 OF 5 GOALS');
-  card.n.hotdogs = 30; card.n.treasures = 2; card.done.push('seal'); card.n.reviews = 3;
+  card.n.fed = 180; card.n.treasures = 2; card.done.push('seal'); card.n.reviews = 3;
   rows = rowsOf(card, { cash: 0, fee: 9000 });
   assert.equal(nextGoal(rows).id, 'fee');
   assert.equal(strip(rows, 1).label, '4 OF 5 GOALS');
@@ -77,8 +79,8 @@ test('cardDone needs all five', () => {
 test('the reward is 50 × BV', () => {
   assert.equal(rewardFor(29), 1450);
   assert.equal(rewardFor(2.62), 131);
-  assert.equal(doneToast('hotdogs', 30, 1450), 'Goal done! 30 hot dogs. +$1,450');
-  for (const id of ['bank', 'washer', 'huddle', 'hotdogs', 'treasures', 'seal', 'targets', 'orders', 'gutters', 'laps', 'pings', 'cart2', 'strays', 'drones', 'pass', 'lift', 'debris', 'tether'])
+  assert.equal(doneToast('fed', 180, 1450), 'Goal done! Fed for 3 minutes. +$1,450');
+  for (const id of ['bank', 'washer', 'huddle', 'fed', 'treasures', 'seal', 'targets', 'orders', 'gutters', 'laps', 'pings', 'cart2', 'strays', 'drones', 'pass', 'lift', 'debris', 'tether'])
     assert.ok(words(doneToast(id, 2000, 1_234_567)) <= 8, id + ': ' + doneToast(id, 2000, 1_234_567));
 });
 
@@ -102,16 +104,19 @@ test('a v4 save with 3 stamps is grandfathered; with 1 the review count is 1 and
 });
 
 test('cleanCard drops junk and another venue’s card', () => {
-  const c = printCard(1, 3); c.n.hotdogs = 7; c.done.push('seal', 'fee', 'nope');
+  const c = printCard(1, 3); c.n.fed = 7; c.done.push('seal', 'fee', 'nope');
   const back = cleanCard(JSON.parse(JSON.stringify(c)), 1);
-  assert.deepEqual(back.n, { hotdogs: 7 }); assert.deepEqual(back.done, ['seal']); assert.equal(back.scale, 0.8);
+  assert.deepEqual(back.n, { fed: 7 }); assert.deepEqual(back.done, ['seal']); assert.equal(back.scale, 0.8);
+  // Playthrough 5 B5: an old card's done hot dog goal stays done as the FED goal; its dog count is dropped.
+  const old = cleanCard({ venue: 1, scale: 1, crew: 4, n: { hotdogs: 30 }, done: ['hotdogs'] }, 1);
+  assert.deepEqual(old.done, ['fed']); assert.deepEqual(old.n, {});
   assert.equal(cleanCard(c, 2), null);
   assert.equal(cleanCard('junk', 1), null);
-  assert.equal(cleanCard({ venue: 1, scale: 7, n: { hotdogs: -3 } }, 1).scale, null);
+  assert.equal(cleanCard({ venue: 1, scale: 7, n: { fed: -3 } }, 1).scale, null);
 });
 
 test('words: the headline, tomorrow and deal lines', () => {
-  const card = printCard(1, 4); card.n.hotdogs = 30; card.n.reviews = 3; card.done.push('seal');
+  const card = printCard(1, 4); card.n.fed = 180; card.n.reviews = 3; card.done.push('seal');
   const rows = rowsOf(card, { cash: 0, fee: 50000 });
   assert.equal(headline(rows, 1), '3 of 5 done · 2 to go');
   assert.equal(tomorrowLine(rows, 1), 'Tomorrow: two goals left for Tiered.');
@@ -120,10 +125,10 @@ test('words: the headline, tomorrow and deal lines', () => {
   assert.equal(headline(all, 1), 'Card done! Sign for Tiered.');
   assert.equal(tomorrowLine(all, 1), 'Tomorrow: sign at the bell for Tiered.');
   assert.equal(tomorrowLine(rowsOf(printCard(0, 4), { cash: 0, fee: 1 }), 0), 'Tomorrow: five goals left for the Club.');
-  const dogs = printCard(1, 4); dogs.n.hotdogs = 18;
+  const dogs = printCard(1, 4); dogs.n.fed = 120;
   const pick = dealGoal(rowsOf(dogs, { cash: 0, fee: 1 }));
-  assert.equal(pick.id, 'hotdogs', 'the open goal nearest done');
-  assert.equal(dealLine(pick), 'Goal: 12 more hot dogs.');
+  assert.equal(pick.id, 'fed', 'the open goal nearest done');
+  assert.equal(dealLine(pick), 'Goal: 1 more minute fed.');
   for (let v = 0; v <= 5; v++) {
     const rs = rowsOf(printCard(v, 4), { cash: 0, fee: 1 });
     for (const r of rs) assert.ok(words(dealLine(r)) <= 8, dealLine(r));
@@ -134,10 +139,10 @@ test('words: the headline, tomorrow and deal lines', () => {
 });
 
 test('cardHtml: rows, rewards, today highlighted', () => {
-  const card = printCard(1, 4); card.n.hotdogs = 30;
-  const h = cardHtml(rowsOf(card, { cash: 0, fee: 9 }, ['hotdogs']), { rewardNow: 1450 });
+  const card = printCard(1, 4); card.n.fed = 180;
+  const h = cardHtml(rowsOf(card, { cash: 0, fee: 9 }, ['fed']), { rewardNow: 1450 });
   assert.match(h, /class="done fresh"/);
-  assert.match(h, /Serve 30 hot dogs/);
+  assert.match(h, /Keep the crew fed for 3 minutes/);
   assert.match(h, /✦ \+\$1,450/);
   assert.equal((h.match(/<li/g) ?? []).length, 5);
 });

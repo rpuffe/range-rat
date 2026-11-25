@@ -13,14 +13,26 @@ export const DECKCAM = {
   AT: { y: 2.2, z: 1.8 },               // ...looking at (x, 2.2, 1.8)
   BARS: 0.08,         // the letterbox: 8% top and bottom
   SLOW: 0.4,          // the drop's speed while the cut runs (views/deck.js)
+  // Playthrough 5 B4: the short cut (a repeat, or the cook's) showed the lean and the deck's underside, and the bay's
+  // customer filled a third of it. It plays the lean ×3 and the drop at SLOW_LATER (lean 0.12 s + drop 1.6 s: the
+  // BONK lands inside 1.8 s), from higher and further back, over the customers' heads, down at the drop's middle.
+  LEAN_LATER: 3,
+  SLOW_LATER: 0.65,
+  FROM_LATER: { dx: 2, y: 3.4, z: -4.5 },
+  AT_LATER: { y: 1.6, z: 1.6 },
 };
 export const CUT_LABEL = { pad: 'DECK CAM · Ⓑ skip', kb: 'DECK CAM · any key skips' };
 
-// The shot for a fall at x.
-export const shotFor = x => ({
-  from: { x: x + DECKCAM.FROM.dx, y: DECKCAM.FROM.y, z: DECKCAM.FROM.z },
-  at: { x, y: DECKCAM.AT.y, z: DECKCAM.AT.z },
-});
+// The shot for a fall at x (later: the short cut's shot).
+export const shotFor = (x, later = false) => {
+  const F = later ? DECKCAM.FROM_LATER : DECKCAM.FROM, A = later ? DECKCAM.AT_LATER : DECKCAM.AT;
+  return { from: { x: x + F.dx, y: F.y, z: F.z }, at: { x, y: A.y, z: A.z } };
+};
+// The fall's clock rate while a cut runs (views/deck.js): u < 0.25 is the lean. secs: the cut's length.
+export const fallRate = (u, secs) => {
+  const later = secs < DECKCAM.SECS;
+  return u < 0.25 ? (later ? DECKCAM.LEAN_LATER : 1) : later ? DECKCAM.SLOW_LATER : DECKCAM.SLOW;
+};
 
 // e: the deckFall event ({ x, k: the fall's number today }). me: { driving, diving, lift (riding the Lift or in the
 // EVA), kitchen (the overlay is open), menu (any card is up), down (knocked down, s), replays (the setting, default on) }.
@@ -31,8 +43,8 @@ export function cutPlan(e, me = {}, k = e?.k ?? 1) {
   if (me.replays === false) return null;
   if (me.driving || me.diving || me.lift || me.menu || (me.down ?? 0) > 0) return null;
   const secs = (k ?? 1) > 1 ? DECKCAM.SECS_LATER : DECKCAM.SECS;
-  if (me.kitchen) return { wait: true, secs: DECKCAM.SECS_LATER, until: DECKCAM.KITCHEN_WAIT, ...shotFor(e.x) };
-  return { secs, ...shotFor(e.x) };
+  if (me.kitchen) return { wait: true, secs: DECKCAM.SECS_LATER, until: DECKCAM.KITCHEN_WAIT, ...shotFor(e.x, true) };
+  return { secs, ...shotFor(e.x, secs < DECKCAM.SECS) };
 }
 
 // Does this input skip the cut? { buttons: [bool | { pressed }], sticks: [x, y, ...], key: bool }.

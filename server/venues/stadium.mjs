@@ -19,7 +19,9 @@ function autopilot(crew, st, c, i, dt) {
   const a = st.auto[i] ??= newAuto();
   const people = [...crew.players.values()].filter(o => o.online > 0 && !crew.driving(o) && o.down <= 0).concat(crew.helpers ?? []);
   const r = stepAutopilot(c, a, { dt, t: st.t, world: crew.world(), speed: crew.perks.cartSpeed, mul: (x, z) => cartSpeedAt(x, z, crew.world()),
-    cap: crew.perks.cartCap, balls: crew.balls.values(), people, stand: SIM.STAND, reach: SIM.STAND_REACH + 2, underReels: (cc, b) => underReels(cc, b, crew.perks.cartReel) });
+    cap: crew.perks.cartCap, balls: crew.balls.values(), people, stand: SIM.STAND, reach: SIM.STAND_REACH + 2,
+    avoid: { x: SIM.STAND.x, z: SIM.STAND.z, r: SIM.STAND_REACH + AUTO.STOP_R },   // playthrough 5 C6: lap routes swing round the return
+    underReels: (cc, b) => underReels(cc, b, crew.perks.cartReel) });
   for (const b of r.scooped) {
     if (!crew.balls.has(b.id) || c.load >= crew.perks.cartCap) continue;
     crew.balls.delete(b.id);
@@ -37,7 +39,8 @@ export default {
   id: 'stadium',
   venue: 3,
   init: () => fresh(),
-  startShift(crew, st) { Object.assign(st, fresh()); },
+  // Playthrough 5 C9: each cart's autopilot mode (harvest) carries over the night.
+  startShift(crew, st) { const modes = (st.auto ?? []).map(a => a?.mode); Object.assign(st, fresh()); modes.forEach((m, i) => { if (m) st.auto[i] = newAuto(m); }); },
   tick(crew, st, dt) {
     if (!crew.working()) return;
     st.t += dt;
@@ -49,6 +52,7 @@ export default {
     carts.forEach((c, i) => {                                         // every driven cart's pose
       const lap = st.lapBy[i] ??= newLap();
       c.auto = self && !c.driver ? (st.auto[i] ??= newAuto()).mode : null;
+      if (c.auto && crew.garyHolds?.(c)) { c.v = 0; return; }         // playthrough 5 C1: Gary is coming to inspect it: it waits
       if (c.auto) {                                                   // council round 10 §D: on autopilot
         const a = autopilot(crew, st, c, i, dt);
         if (a.mode === 'lap' && stepLap(lap, gateAt(c.x, c.z), st.t)) {   // half credit: +0.03, and it counts as half a lap

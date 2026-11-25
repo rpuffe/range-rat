@@ -337,6 +337,9 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
     S.joke = pick(JOKES[S.item][q]);
     S.secs = Math.round(S.t * 10) / 10;
     S.stage = 'result'; S.st = 0; S.stampT = 0; S.lock = 0;
+    // Playthrough 5 B12: the SERVED card says what the serve paid. The server's 'served' float replaces this guess
+    // (payoff()); beer's is the live tab from the menu card.
+    S.payoff = q === 'burnt' ? null : S.item === 'beer' ? payoffFor('beer') : null;
     if (q === 'perfect') snd('ding');
     const fries = S.item === 'fries';
     try { onServe && onServe({ item: S.item, quality: q, onePeel: fries ? S.onePeel : false, chops: fries ? S.chops : 0, secs: S.secs }); } catch { /* host callback must not wedge the shed */ }
@@ -1132,6 +1135,7 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
     c.lineWidth = 3; rrect(c, -218, -54, 436, 108, 10); c.stroke();
     text(c, LABEL[S.item][S.quality], 0, -4, 74, col, 'center', 400);
     c.restore(); c.globalAlpha = 1;
+    if (S.payoff) text(c, S.payoff.toUpperCase(), 320, 84, 28, PAYOFF, 'center', 560);   // playthrough 5 B12
     const beer = S.item === 'beer';
     text(c, S.joke, 320, beer ? 276 : 292, 22, INK, 'center', 580);
     const bits = [];
@@ -1220,8 +1224,11 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
     kv.l = kv.r = kv.u = kv.d = false;
   }
 
+  // The server's float for my serve ("+$1.41 a ball"): onto the SERVED card while it shows.
+  function payoff(textOf) { if (S.stage === 'result' && textOf) S.payoff = String(textOf); }
+
   return {
-    open, close,
+    open, close, payoff,
     get isOpen() { return opened; },
     handlePointer, handleKey, stepPad, tick,
   };

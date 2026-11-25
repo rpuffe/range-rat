@@ -564,7 +564,7 @@ export const GARY = {
   COMMEND_HUDDLE: 3, COMMEND_PASS: 1, COMMEND_CAP: 10,   // commendations for a pass with / without the full huddle
   START: { x: 60, z: 14 },
   STOPS: [
-    { id: 'sign', x: 14, z: 13 },
+    { id: 'sign', x: 16.8, z: 10.6 },       // playthrough 5 A7: beside the sign's right post, 1.6 m from the fence (z 9): in chat reach (it was z 13)
     { id: 'mats', x: 0, z: 3.5 },
     { id: 'cart', x: null, z: null },       // wherever the (muddier) cart is (skipped if the crew has none)
     { id: 'stand', x: 26, z: 10 },          // owner layout: behind the Board (the bank); he inspects the return and its huddle from there

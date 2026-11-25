@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import { buildPerson, animatePerson } from '../people.js';
 import { DECK, fallPose, bannerFor, money, mugTone, ordinal } from '../deck.js';
 import { UPPER } from '../customers.js';
-import { DECKCAM } from '../deckcam.js';
+import { DECKCAM, fallRate } from '../deckcam.js';
 
 // The beer line (council round 10 §2): shed roof -> the deck's right end, then along the rail to the seat.
 export const LINE = { FROM: { x: 42, y: 3.6, z: 6 }, TO: { x: 20, y: 4.6, z: 3.4 }, ZIP_SECS: 1.5, SLIDE: 20, RAIL_Y: 4.6, RAIL_Z: 2.3, DROP_SECS: 0.2 };
@@ -262,8 +262,8 @@ export default {
           if (f.state === 'gone' || !f.person) { f.stars.visible = false; continue; }
           const p = f.person, x = DECK.SEATS[f.seat];
           if (f.state === 'fall') {
-            const lean = f.t / DECK.FALL_SECS < 0.25;            // the lean plays at x1, the drop slowed
-            f.t += dt * (ctx.deckCam?.on && !lean ? DECKCAM.SLOW : 1);
+            // the lean plays at x1 (x3 in the short cut, playthrough 5 B4), the drop slowed (deckcam.js fallRate)
+            f.t += dt * (ctx.deckCam?.on ? fallRate(f.t / DECK.FALL_SECS, ctx.deckCam.secs ?? DECKCAM.SECS) : 1);
             const u = f.t / DECK.FALL_SECS, k = fallPose(f.seat, u);
             animatePerson(p, dt, { mode: 'cheer' });              // arms up: the classic
             p.root.rotation.z = 0; place(f, k.x, k.y, k.z, 0, k.spin);

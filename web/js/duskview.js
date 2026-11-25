@@ -24,7 +24,7 @@ function glowTexture() {
   return new THREE.CanvasTexture(c);
 }
 
-export function createDusk({ scene, camera, me, others, balls, crew, buildPerson, animatePerson, perf, settings, fpGear, myGear }) {
+export function createDusk({ scene, camera, me, others, balls, crew, buildPerson, animatePerson, perf, settings, fpGear, myGear, quiet = () => false }) {
   let run = null, glow = null, label = null, veil = null;
   const figs = new Map();                      // id -> people.js figure (kept between days)
   const root = new THREE.Group(); root.name = 'dusk'; root.visible = false; scene.add(root);
@@ -33,7 +33,8 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
   endQ.setFromRotationMatrix(mtx);
 
   // A report or end card is open (playthrough 4 C7): the 'left out there' label must not draw over it.
-  const cardUp = () => { const r = document.getElementById('report'); return (!!r && !r.classList.contains('hidden')) || !!document.getElementById('endcard'); };
+  // Playthrough 5 B3: nor while quiet() (main.js: the bell's stamp, a memo, the cleanup minute's rally line is up).
+  const cardUp = () => { const r = document.getElementById('report'); return (!!r && !r.classList.contains('hidden')) || !!document.getElementById('endcard') || !!quiet(); };
   function el(css) { const d = document.createElement('div'); d.style.cssText = css; d.setAttribute('aria-live', 'polite'); document.body.appendChild(d); return d; }
 
   function buildGlow(budget) {
@@ -97,7 +98,7 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
   let liveT = 0, liveOn = false;
   function live(dt) {
     const c = crew(), on = c?.phase === 'shift' && !!c.closing && !cardUp();
-    if (!on) { if (liveOn) { liveOn = false; if (label) label.style.opacity = '0'; } return; }
+    if (!on) { if (liveOn) { liveOn = false; if (label) label.style.opacity = '0'; } liveT = 0; return; }
     if (!liveOn || (liveT -= dt) <= 0) { liveT = 0.5; makeLabel().textContent = leftLine(leftOut(balls)); }
     if (!liveOn) { liveOn = true; label.style.opacity = '1'; }
   }

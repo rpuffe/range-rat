@@ -53,7 +53,7 @@ test('banking ticks the bank goal; done once, paid 50 × BV once, one event', ()
 });
 
 test('a hot dog, a TARGET, a lap, a ping and a treasure each tick their goal once', () => {
-  for (const [venue, id, e] of [[1, 'hotdogs', { t: 'served', item: 'hotdog', quality: 'good' }], [2, 'targets', { t: 'target' }], [2, 'orders', { t: 'deckTab', order: true }],
+  for (const [venue, id, e] of [[2, 'targets', { t: 'target' }], [2, 'orders', { t: 'deckTab', order: true }],
     [3, 'laps', { t: 'crowd', kind: 'lap' }], [3, 'pings', { t: 'ping', prize: 'mult' }], [1, 'treasures', { t: 'treasure', phase: 'banked' }]]) {
     const { crew } = makeCrew({ venue, venueDay: 0, day: 10, up: { shed: 1 } });
     crew.startShift(); quiet(crew); crew.flush();
@@ -63,9 +63,18 @@ test('a hot dog, a TARGET, a lap, a ping and a treasure each tick their goal onc
   }
   const { crew } = makeCrew({ venue: 1, venueDay: 0, day: 10, up: { shed: 1 } });
   crew.startShift(); crew.flush();
-  crew.events.push({ t: 'served', item: 'hotdog', quality: 'burnt' }, { t: 'served', item: 'fries', quality: 'perfect' });
+  // Playthrough 5 B5: the Club's FED goal counts working seconds with FED up, not dogs served.
+  crew.events.push({ t: 'served', item: 'hotdog', quality: 'good' });
   crew.goalScan();
-  assert.equal(crew.goals.n.hotdogs ?? 0, 0, 'burnt dogs and fries do not count');
+  assert.equal(crew.goals.n.fed ?? 0, 0, 'a dog served is not a count');
+  crew.fedSt.fed = 1.5;
+  for (let i = 0; i < 51; i++) crew.tick(0.1);
+  assert.equal(crew.goals.n.fed, 5, 'five working seconds fed');
+  // C2: an autopilot lap is not a driven lap
+  const s = makeCrew({ venue: 3, venueDay: 0, day: 10 }).crew;
+  s.startShift(); s.flush();
+  s.events.push({ t: 'crowd', kind: 'lap', auto: true }); s.goalScan();
+  assert.equal(s.goals.n.laps ?? 0, 0, 'autopilot laps do not count');
 });
 
 test('Sign is refused until the card is 5/5', () => {

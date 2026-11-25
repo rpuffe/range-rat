@@ -54,7 +54,8 @@ export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = SIM.STAND) {   //
   if (!lb || lb.phase === 'done' || c.phase !== 'shift') return '';
   const on = (c.players ?? []).filter(p => p.online);
   if (lb.phase === 'sky') return skyBanner(lb.debris);            // round 7 #5: the sky gate (debris overhead)
-  if (lb.phase === 'huddle') return `HOLD ${glyph} TOGETHER · <b>${(lb.held ?? []).length} / ${(lb.slots ?? []).length}</b>`;
+  // Playthrough 5 C10: solo it is just HOLD SPACE ("TOGETHER · 0/1" read oddly with nobody to hold with).
+  if (lb.phase === 'huddle') return (lb.slots ?? []).length <= 1 ? `HOLD ${glyph}` : `HOLD ${glyph} TOGETHER · <b>${(lb.held ?? []).length} / ${(lb.slots ?? []).length}</b>`;
   const carrier = on.find(p => p.one);
   if (carrier) {
     const missing = on.filter(p => dist(p, stand) >= HUDDLE.R).map(p => p.id === meId ? 'you' : esc(p.name));

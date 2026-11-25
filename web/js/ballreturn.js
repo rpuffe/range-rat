@@ -66,6 +66,11 @@ export function createBallReturn(scene, { pool = 24 } = {}) {
   buckets.instanceMatrix.needsUpdate = true;
   let shownN = 0, chutes = 0, chuteT = 0;
   const CHUTE = { x: DISPENSER.x + 0.5, y: 1.05, z: FILL_POINT.z };   // the dispenser's east-side chute mouth
+  // Playthrough 5 A5: the empty-basket lamp, an orange beacon on the dispenser's head (main.js lights it when the basket
+  // runs dry mid-day). +1 draw call, only while lit.
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), new THREE.MeshBasicMaterial({ color: 0xff8a1a, transparent: true }));
+  lamp.position.set(DISPENSER.x, 2.0, DISPENSER.z); lamp.visible = false; lamp.name = 'basket.lamp'; scene.add(lamp);
+  let lampT = 0;
 
   return {
     pipes, curves,
@@ -88,7 +93,9 @@ export function createBallReturn(scene, { pool = 24 } = {}) {
       if (k !== shownN) { shownN = k; buckets.count = k; buckets.visible = k > 0; }
       chutes = Math.max(0, Math.min(2, filling | 0));
     },
+    alarm(on) { lamp.visible = !!on; },
     tick(dt) {
+      if (lamp.visible) { lampT += dt; const k = 0.5 + 0.5 * Math.sin(lampT * 9); lamp.material.opacity = 0.35 + 0.65 * k; lamp.scale.setScalar(0.85 + 0.35 * k); }
       let c = 0;
       if (chutes) {                      // a ball every 0.05 s: 30 in 1.5 s, falling out of the chute
         chuteT = (chuteT + dt) % 0.3;

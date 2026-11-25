@@ -1061,3 +1061,43 @@ Owner note: "the ball return closer to the range, then the balls are returned to
 **Builder 2, #4: the Deck Cam's server and view halves.** On a fall, deck.mjs sets `crew.lookUntil` = now + 3 s (Rats on foot can't be knocked down by a ball) and pushes every customer's next swing back 3 s. `views/deck.js` plays the lean at ×1 and the drop at `DECKCAM.SLOW` (×0.4) while `ctx.deckCam.on`, and calls `ctx.deckCam.bonk()` on the BONK; the faller wears the bay customer's look.
 
 **Builder 2, #6: one flag per green, and "on the green".** The Tiered pin stands at the green's centre (where the cup and the landmark flag are) and the Tiered view hides terrain.js's landmark pole and pennant (`setFlags`) while it is up. At the Muni and the Club a crew ball that comes to rest inside a green's `r` is "ON THE GREEN!" (world text over the flag, the pennant waves): Hustle +0.1 under the shared cap, five a shift (`web/js/greens.js`, `server/venues/greens.mjs`); at Tiered the same ball is a TARGET. The landing marker moved to `views/greens.js` and shows at the crew bays at every venue (the green's colour inside a green before Tiered, the TARGET lip from Tiered). First-time tip at a crew bay: "Land a crew ball on a green: Hustle."
+
+## Playthrough 5 fixes
+
+The fix pass for design/playtest-round5.md, in two halves built at once (server and rules; client and screens). Server and rules (`test/playtest5.test.mjs`):
+
+**Clock out early (all three testers).** Once the venue's card is done (`promoInfo().ready`), any Rat can call the bell: the input `{t:'clockout', on}` (held: `on: false` takes the vote back). When every online Rat holds it (solo: at once) the bell rings now through the normal path (review, stamp, report); the event `clockedout {early}` and `report.early` carry the seconds saved. The snapshot's `clockOut` is `{n, of}` while it is allowed (null otherwise) and each player row carries `clockOut: true` while holding. A card that goes undone (a purchase drops the fee) clears the votes.
+
+**A1: no more promotion skip.** Ready never starts the next day while the card is done and the promotion unsigned: it waits for the signatures, or for the crew's explicit `{t:'notyet'}` (any one Rat; snapshot `notYet` at that report; the card stays done, so tomorrow asks again). The old 120 s hold no longer starts the day over an unsigned card: after it, once at least one Rat has signed, the signers carry the promotion (an idle Rat can't stall it); with no signature it keeps waiting.
+
+**C1: Gary and the autopilot cart.** His cart stop picks the cart once at the leg's start and inspects that cart; an autopilot cart he is heading for (or parked at) waits (`garyHolds`), and a cart a Rat keeps driving about is inspected wherever Gary is after 30 s. Every visit reaches a verdict.
+
+**Honest goals.** Autopilot laps don't count toward "Drive N laps" (C2). The Orbital debris goal counts winched pieces too and is never force-ticked; once the sky stops refilling (the Last Bucket is on) its need is capped at what was brought down plus what is still up (and in riders' bags) (C3). The Muni's Gary goal is "Pass Gary with a huddle" (a pass, fails ≤ 1, with the full huddle; solo passes) (A2). The Club's dog-count goal is now "Keep the crew fed for 3 minutes": working seconds with FED up, not scaled (B5; goal id `fed`, kind `secs`, shown as m:ss; an old card's done `hotdogs` carries over as done).
+
+**B1: pour lines.** While a deck order is open and the card's order goal is open, the Rat nearest the kitchen is dealt "Deck order! Pour a beer!" (nudge id `order`). At 2P the morning deal always gives one Rat the card goal ("Goal: 2 more minutes fed.").
+
+**Autopilot.** An autopilot cart rinses at the return (mud → 0 each tip); a lapping one at mud 0.5 drives in to rinse (C5). With autopilot, the second cart starts on the Track half a lap from the first, and a lapping cart's route to the Track swings round the return's stop radius (C6). Each cart's mode (harvest) carries over the night (C9).
+
+**C4: "Drones, here!".** The zone already outranks strays everywhere (pinned by test, by the mats and in a bowl); it is now taught: a one-time tip when drones are bought ("Drones! Hold Ⓨ on foot: "Drones, here!"").
+
+**Small items.** Serving needs a shift (B8); no record PA on the ending shift (C10); at the Muni the daily target holds at day 4's while the review goal is open (A10).
+
+### Playthrough 5 fixes: the client and screens
+
+**Clock out early (the client half).** While the snapshot offers `clockOut`, a small right-edge HUD button reads "Card done · clock out (Ⓨ hold / hold F)". Holding Ⓨ / F away from a cart for 0.6 s sends `{t:'clockout', on:true}` (a stray tap never rings the bell); letting go sends `on:false`. While held it reads "Clocking out · 2 / 4 holding"; other Rats' votes go to the feed. It outranks "Drones, here!" on Ⓨ while offered. A free mouse can hold the button itself.
+
+**A1: Sign first.** On a done, unsigned card the report's primary (and focus) is "Sign the franchise agreement"; Next is disabled and reads "Sign to move up", with a quiet "Not yet: one more day here" (`{t:'notyet'}`) beside Sign that frees it (promopanel.js `nextGate`).
+
+**Text (B3, A9).** A memo and the PA card never share the screen (the say adapter takes the other down whatever its own show/hide did). The Deck Cam sends a PA card or memo already up back to the front of the queue; it shows after the cut. The "left out there" pill steps aside for the bell's stamp, a memo and the cleanup minute's rally line. The prompt is empty outside a shift (no stale "Full" in the walk-off). With the report open a toast sits in the card's top gutter, not over Next. A goal's line is an ALERT queued just after the tick, so it waits behind Gary's verdict.
+
+**The repeat Deck Cam (B4).** The short cut (a repeat, or the cook's) plays the lean ×3 and the drop at 0.65 (the BONK lands at ~1.7 s, inside 1.8 s), from higher and further back (x + 2, 3.4, −4.5) down at (x, 1.6, 1.6): over the bay customers' heads, the drop in the middle of the frame. The first cut is unchanged.
+
+**Labels.** "−$3,800" (B7); DAILY TARGET HIT / MISSED (A4); "Goals for Tiered" (B10); the SERVED card prints the serve's payoff from the server's float, beer its tab (B12); a promotion's report shows the bank after the fee (A6); solo, the huddle banner is just "HOLD SPACE" (C10).
+
+**A5: the empty basket.** When the basket runs dry after holding buckets that shift, an orange beacon blinks on the dispenser and the nearest able Rat is re-dealt "Fill the bucket basket!" (over a morning or goal line, never over Gary's lines).
+
+**Gary (A7).** His sign stop moved to (16.8, 10.6), beside the sign's right post and 1.6 m from the fence, inside the 2.5 m chat reach (at z 13 no Rat could reach him). In chat his bubble drops toward eye level (at most ~29° above level, down to 2.3 m) so it isn't clipped at the top of the screen, and his nameplate hides while it shows.
+
+**Look.** The Last Call floodlights no longer decay with distance: 0.7 each (it was 420 with decay, ~6× the sun on the near grass: the neon lime from 1:30) (A8). The Club's two flags stand 4.6 m out along the Board's width, behind its face, flying outward (B6). The HUD cash is set from every snapshot, so a rejoin shows it at once (B9). A stale code on the title says "That crew has closed. Start a new one?", clears the code and focuses Start a crew.
+
+**The shop.** Maxed rows sort last (endless's Owner rows still first); a row an open buy goal names wears "✦ GOAL".

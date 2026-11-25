@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { WASHER_HANDLES, WASHER, atHandle, WASH, VENUE_RULES, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
 import { createPA } from './pa.js';
 import { streakLine } from './owner.js';                                         // council round 8 #3: racing yesterday
-import { showPromo, promoPanelHtml, cardHeadline } from './promopanel.js';   // council round 10 #1: the goal card (round 7 #10.1: the headline)
+import { showPromo, promoPanelHtml, cardHeadline, nextGate } from './promopanel.js';   // council round 10 #1: the goal card (round 7 #10.1: the headline)
 import { cardHtml, doneToast } from './goals.js';
 import { createWasher, createCrank } from './washer.js';
 import { createVenues, paintSign } from './venues.js';
@@ -92,7 +92,9 @@ export function setupRound2(ctx) {
       case 'ready': renderReport(); break;
       // Council round 10 #1: a goal completed: one toast ("Goal done! 30 hot dogs. +$1,450"), a ping; the Board's pip
       // fills from the snapshot. Two in one tick queue in say() (the second waits its turn).
-      case 'goal': toast(doneToast(e.id, e.need, e.reward), 3); SFX.cash(e.reward > 0 ? 6 : 2); renderReport(true); break;
+      // Playthrough 5 B3: the goal line waits for Gary's verdict (the same tick's 'gary' ALERT queues first; an ALERT
+      // may wait 15 s, a toast only 3, so it isn't dropped behind his 4 s line).
+      case 'goal': { const line = doneToast(e.id, e.need, e.reward); setTimeout(() => ctx.say('ALERT', line, { secs: 3, key: 'goal:' + e.id }), 150); SFX.cash(e.reward > 0 ? 6 : 2); renderReport(true); break; }
       case 'reveal': startReveal(e); break;
       case 'mark': cctv.showFlag({ x: e.x, z: e.z, by: nameOf(e.by), color: e.color }); break;
       case 'huddle': break;   // the Last Bucket banner (tick) shows who is still missing
@@ -242,8 +244,13 @@ export function setupRound2(ctx) {
     // destroyed a focused Sign button every second, and the next Ⓐ fell through to the first Buy).
     const readyN = online.filter(p => p.ready).length;
     const btn = $('next');
-    if (btn) btn.textContent = online.length > 1 ? (mine?.ready ? 'Ready ✓ (' + readyN + ' / ' + online.length + ')' : 'Ready (' + readyN + ' / ' + online.length + ')') + (c.sigWait ? ' · waiting for signatures (' + c.sigWait.n + ' of ' + c.sigWait.of + ')' : c.readyIn != null ? ' · starts in ' + c.readyIn + 's' : '') : 'Next shift';
-    const key = JSON.stringify([promo, c.goals?.rows, c.cash, online.map(p => [p.id, p.ready, p.signed]), r.day, c.venue, c.promotedTo]);
+    // Playthrough 5 A1: a done, unsigned card holds Next ("Sign to move up") and Sign is the primary; "Not yet" frees it.
+    const declined = !!(c.notYet ?? c.declined);
+    const gate = nextGate(promo, { signed: !!mine?.signed, declined, promotedTo: c.promotedTo });
+    if (btn) { btn.disabled = !!gate; btn.toggleAttribute('data-primary', !gate); }
+    if (btn && gate) btn.textContent = gate.text;
+    else if (btn) btn.textContent = online.length > 1 ? (mine?.ready ? 'Ready ✓ (' + readyN + ' / ' + online.length + ')' : 'Ready (' + readyN + ' / ' + online.length + ')') + (c.sigWait ? ' · waiting for signatures (' + c.sigWait.n + ' of ' + c.sigWait.of + ')' : c.readyIn != null ? ' · starts in ' + c.readyIn + 's' : '') : 'Next shift';
+    const key = JSON.stringify([promo, c.goals?.rows, c.cash, online.map(p => [p.id, p.ready, p.signed]), r.day, c.venue, c.promotedTo, declined]);
     if (key === ledgerKey && !force) return;
     ledgerKey = key;
     const hadFocus = el.contains(document.activeElement) ? document.activeElement.id : '';   // refocus it after the rebuild
@@ -262,14 +269,17 @@ export function setupRound2(ctx) {
     if (c.promotedTo) {
       html += '<div class="sheet promo"><h3>Promoted!</h3><p>The ' + esc(c.promotedTo) + ' opens tomorrow.</p></div>';
       const tm = document.querySelector('#report-body .dim'); if (tm) tm.textContent = 'Tomorrow: the ' + c.promotedTo + '.';
+      const bank = $('report-bank'); if (bank) bank.textContent = money(c.cash);   // playthrough 5 A6: the balance after the fee
     } else if (showPromo(promo)) {   // council round 10 #1: the goal card, Sign only when all five are done
-      html += promoPanelHtml(promo, { goals: c.goals, cash: c.cash, signed: !!mine?.signed, signedN: promo.signed.length, onlineN: online.length, esc });
+      html += promoPanelHtml(promo, { goals: c.goals, cash: c.cash, signed: !!mine?.signed, signedN: promo.signed.length, onlineN: online.length, declined, esc });
     } else if (c.goals?.rows?.length) {   // the Orbital: the Last Bucket's four steps
       html += '<div class="sheet promo"><h3>The Last Bucket</h3>' + cardHtml(c.goals.rows, { rewardNow: c.goals.reward, esc }) + '</div>';
     }
     el.innerHTML = html;
     $('sign-btn')?.addEventListener('click', () => link()?.act({ t: 'sign', on: !mine?.signed }));
-    if (hadFocus) ($(hadFocus) ?? btn)?.focus();   // gone (the panel closed): the primary, Next / Ready
+    $('notyet-btn')?.addEventListener('click', () => link()?.act({ t: 'notyet' }));   // the server's decline (Builder S)
+    if (hadFocus) ($(hadFocus) ?? (gate ? $('sign-btn') : btn))?.focus();   // gone (the panel closed): the primary
+    else if (gate && !$('report').classList.contains('hidden') && (!$('report').contains(document.activeElement) || document.activeElement === btn)) $('sign-btn')?.focus();
   }
 
   function showEndCard(report) {

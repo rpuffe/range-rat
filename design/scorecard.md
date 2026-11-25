@@ -156,3 +156,25 @@ stall. Text load slipped a little (7.0 → 6.8) from a morning tip stream and tw
   lines stay until their stop is inspected).
 - B (Club/Tiered): a Club Last Call rush with its own job, the same buzzer-beater shape as Tiered.
 - C (late game): give each endless shift and each late Gary visit a stake the crew can clearly win.
+
+
+## Round 5 (2026-11-25, build ffdb7ad: the owner's console playtest + council round 10)
+
+| Metric | A | B | C | **Avg** | R4 | R1 | Δ vs R4 |
+|---|---|---|---|---|---|---|---|
+| Fun | 6.5 | 7 | 6.5 | **6.7** | 6.8 | 6.0 | −0.1 |
+| Clarity | 7.5 | 7.5 | 7 | **7.3** | 6.8 | 5.7 | +0.5 |
+| Text load | 7 | 6.5 | 7 | **6.8** | 6.8 | 4.0 | 0 |
+| Pacing | 7 | 7 | 6 | **6.7** | 7.0 | 5.0 | −0.3 |
+| Co-op | 7 | 7 | 6.5 | **6.8** | 6.8 | 6.0 | 0 |
+| Meaningful features | 7 | 7 | 6 | **6.7** | 6.5 | 4.7 | +0.2 |
+| Look & feel | 7.5 | 7.5 | 7.5 | **7.5** | 7.5 | 7.0 | 0 |
+| Polish | 6.5 | 6.5 | 5.5 | **6.2** | 6.5 | 4.7 | −0.3 |
+| One more shift | 7 | 7 | 6 | **6.7** | 6.5 | 6.0 | +0.2 |
+| **Overall** | **7** | **7** | **6.5** | **6.8** | 6.8 | 5.5 | 0 |
+
+**Read:** Clarity rose most (+0.5): the goal card answers "how do I get promoted?" (the owner's top
+complaint) and Ball Value reads in one look. The mid-game is "no longer boring" (B). Polish dipped: two big
+rounds of new systems brought new bugs (the promotion skip, Gary chasing the autopilot cart, goals ticking for
+things the crew didn't do). **Shared complaint from all three testers:** the last day at every venue is dead
+time once the card is done; the fix is "Clock out early" plus one goal that only lands with some risk.

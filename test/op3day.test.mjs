@@ -186,6 +186,7 @@ test('§3.4 the morning deal: 4 different lines to 4 Rats at the Muni day 3 with
 
 test('§3.4 a job done clears its line; the rest go after 45 s of working time; day 1 has none', () => {
   const { crew, rats, run } = makeCrew({ day: 3 }, 2);
+  crew.goals?.done.push('bank', 'washer', 'huddle');   // playthrough 5 B1: at 2P one Rat takes the card's goal; this test is about the jobs
   crew.startShift();
   for (const m of crew.mats) m.next = 1e9;
   const n0 = nudges(crew);

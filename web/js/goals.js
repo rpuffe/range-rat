@@ -14,16 +14,20 @@ export const SCALE = { 1: 0.4, 2: 0.6, 3: 0.8, 4: 1, 5: 1.2, 6: 1.4 };
 export const crewScale = n => SCALE[Math.max(1, Math.min(6, Math.floor(Number(n) || 1)))];
 export const scaled = (n, scale) => Math.max(1, Math.ceil(n * (scale ?? 1) - 1e-9));
 
+const mins = s => { const m = Math.max(1, Math.ceil((s || 0) / 60 - 1e-9)); return m + (m === 1 ? ' minute' : ' minutes'); };
+const mmss = s => { const t = Math.max(0, Math.floor(s || 0)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const commas = n => Math.max(0, Math.round(n || 0)).toLocaleString('en-US');
 // kind: 'count' (scaled by the crew) · 'fixed' (a count that doesn't scale) · 'buy' (owning row ≥ tier) ·
-// 'once' (one event ticks it) · 'reviews' (APPROVED days at this venue) · 'fee' (live) · 'riders' (every Rat
+// 'secs' (seconds of uptime, not scaled: playthrough 5 B5) · 'once' (one event ticks it) · 'reviews' (APPROVED days at this venue) · 'fee' (live) · 'riders' (every Rat
 // printed on the card) · 'sky' (live: the Orbital's sky gate is clear).
 // text(need) is the card's row; more(left) the strip's and the deal's "18 more hot dogs"; short the toast's name.
 const G = {
   bank: { kind: 'count', n: 2000, reward: true, text: n => `Bank ${commas(n)} balls`, more: n => `${commas(n)} more balls`, short: n => `${commas(n)} balls` },
   washer: { kind: 'buy', row: 'washer', tier: 1, reward: true, text: () => 'Buy the ball washer', short: () => 'The ball washer' },
-  huddle: { kind: 'once', gary: true, reward: true, text: () => 'Huddle for Gary', short: () => 'Huddled for Gary' },
-  hotdogs: { kind: 'count', n: 30, reward: true, text: n => `Serve ${n} hot dogs`, more: n => `${n} more hot dog${n === 1 ? '' : 's'}`, short: n => `${n} hot dogs` },
+  // Playthrough 5 A2: the Muni's Gary goal counts only on a pass with the full huddle (it ticked under a failed verdict).
+  huddle: { kind: 'once', gary: true, reward: true, text: () => 'Pass Gary with a huddle', short: () => 'Passed Gary with a huddle' },
+  // Playthrough 5 B5: FED as uptime (a count of dogs taught spamming them): working seconds with FED up.
+  fed: { kind: 'secs', n: 180, reward: true, text: n => `Keep the crew fed for ${mins(n)}`, more: n => mins(n).replace(' ', ' more ') + ' fed', short: n => `Fed for ${mins(n)}` },
   treasures: { kind: 'fixed', n: 2, reward: true, treasure: true, text: n => `Bring up ${n} treasures`, more: n => `${n} more treasure${n === 1 ? '' : 's'}`, short: n => `${n} treasures` },
   seal: { kind: 'once', gary: true, reward: true, text: () => "Earn Gary's Seal", short: () => "Gary's Seal" },
   targets: { kind: 'count', n: 8, reward: true, text: n => `Land ${n} TARGETs`, more: n => `${n} more TARGET${n === 1 ? '' : 's'}`, short: n => `${n} TARGETs` },
@@ -47,7 +51,7 @@ export const GOALS = G;
 // The cards, venue by venue (4P numbers). `reviews` carries its N.
 export const CARDS = [
   [{ id: 'bank' }, { id: 'washer' }, { id: 'huddle' }, { id: 'reviews', n: 2 }, { id: 'fee' }],        // the Muni
-  [{ id: 'hotdogs' }, { id: 'treasures' }, { id: 'seal' }, { id: 'reviews', n: 3 }, { id: 'fee' }],    // the Club
+  [{ id: 'fed' }, { id: 'treasures' }, { id: 'seal' }, { id: 'reviews', n: 3 }, { id: 'fee' }],    // the Club
   [{ id: 'targets' }, { id: 'orders' }, { id: 'gutters' }, { id: 'reviews', n: 3 }, { id: 'fee' }],    // Tiered
   [{ id: 'laps' }, { id: 'pings' }, { id: 'cart2' }, { id: 'reviews', n: 3 }, { id: 'fee' }],          // the Stadium
   [{ id: 'strays' }, { id: 'drones' }, { id: 'pass' }, { id: 'reviews', n: 3 }, { id: 'fee' }],        // the County
@@ -66,6 +70,7 @@ export function needOf(g, scale, crew, opts = {}) {
   switch (d.kind) {
     case 'count': return scaled(d.n, scale);
     case 'fixed': return Math.min(d.n, opts.treasuresLeft ?? d.n);
+    case 'secs': return d.n;
     case 'reviews': return g.n;
     case 'riders': return Math.max(1, Math.min(6, crew | 0));
     default: return 1;
@@ -89,13 +94,15 @@ export function printOver(card, crew, opts = {}) {
 }
 
 // A save's card, cleaned. Junk or another venue's card: null (the morning prints a fresh one).
+const RENAMED = { hotdogs: 'fed' };   // playthrough 5 B5 (its count was dogs, not seconds: only "done" carries over)
 export function cleanCard(c, venue) {
   if (!c || typeof c !== 'object' || c.venue !== venue || !hasCard(venue)) return null;
   const ids = new Set(CARDS[venue].map(g => g.id));
   const n = {}, need = {};
   for (const [k, v] of Object.entries(c.n ?? {})) if (ids.has(k) && Number.isFinite(v)) n[k] = Math.max(0, Math.min(1e7, Math.floor(v)));
   for (const [k, v] of Object.entries(c.need ?? {})) if (ids.has(k) && Number.isFinite(v)) need[k] = Math.max(0, Math.min(1e7, Math.floor(v)));
-  const done = [...new Set(Array.isArray(c.done) ? c.done.filter(k => ids.has(k) && G[k].kind !== 'fee' && G[k].kind !== 'sky') : [])];
+  const doneIn = Array.isArray(c.done) ? c.done.map(k => RENAMED[k] ?? k) : null;   // playthrough 5: a done hot dog goal stays done
+  const done = [...new Set(doneIn ? doneIn.filter(k => ids.has(k) && G[k].kind !== 'fee' && G[k].kind !== 'sky') : [])];
   const who = Array.isArray(c.who) ? [...new Set(c.who.filter(w => typeof w === 'string' && w.length <= 16))].slice(0, 6) : [];
   const scale = Object.values(SCALE).includes(c.scale) ? c.scale : null;
   const crew = Number.isInteger(c.crew) && c.crew >= 1 && c.crew <= 6 ? c.crew : null;
@@ -119,7 +126,9 @@ export function migrateV4(save) {
   return card;
 }
 
-// live: { up, cash, fee, sky } — what the card reads that isn't a count (the shop, the wallet, the Orbital's sky).
+// live: { up, cash, fee, sky, cap } — what the card reads that isn't a count (the shop, the wallet, the Orbital's sky).
+// cap: { goalId: n } a live ceiling on a count's need (playthrough 5 C3: once the sky stops refilling, the debris goal
+// asks for no more than the crew has brought down plus what's still up there).
 // Rows: [{ id, text, have, need, done, reward, fresh }] in card order (fresh: done since this morning, from `today`).
 export function rowsOf(card, live = {}, today = []) {
   if (!card) return [];
@@ -132,7 +141,9 @@ export function rowsOf(card, live = {}, today = []) {
       case 'buy': done = done || (live.up?.[d.row] ?? 0) >= d.tier; have = done ? 1 : 0; break;
       case 'once': done = done || (card.n[g.id] ?? 0) >= 1; have = done ? 1 : 0; break;
       case 'riders': need = card.need[g.id] ?? card.crew ?? 1; have = Math.min(need, card.who?.length ?? 0); done = done || have >= need; break;
-      default: need = card.need[g.id] ?? needOf(g, card.scale ?? 1, card.crew ?? 4); have = Math.min(need, card.n[g.id] ?? 0); done = done || have >= need;
+      default: need = card.need[g.id] ?? needOf(g, card.scale ?? 1, card.crew ?? 4);
+        if (Number.isFinite(live.cap?.[g.id])) need = Math.max(0, Math.min(need, Math.floor(live.cap[g.id])));
+        have = Math.min(need, card.n[g.id] ?? 0); done = done || have >= need;
     }
     return { id: g.id, kind: d.kind, text: d.text(need, live.fee), have, need, done, reward: !!d.reward, fresh: done && today.includes(g.id) };
   });
@@ -159,6 +170,7 @@ export function moreText(r) {
 export function goalLine(r) {
   if (r.done) return `${r.text} · ✓`;
   if (r.kind === 'fee') return `${r.text} · ${money(Math.floor(r.have))} / ${money(r.need)}`;
+  if (r.kind === 'secs') return `${r.text} · ${mmss(r.have)} / ${mmss(r.need)}`;
   if (r.kind === 'count' || r.kind === 'fixed' || r.kind === 'reviews' || r.kind === 'riders') return `${r.text} · ${commas(r.have)} / ${commas(r.need)}`;
   return r.text;
 }

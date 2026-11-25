@@ -84,6 +84,7 @@ export const HINTS = Object.freeze({
   deck: { kb: 'Fill their orders. Rounds count double.', pad: 'Fill their orders. Rounds count double.' },   // council round 7 #8
   creek: { kb: 'The creek is divable now. Float downstream.', pad: 'The creek is divable now. Float downstream.' },   // council round 10 #5
   green: { kb: 'Land a crew ball on a green: Hustle.', pad: 'Land a crew ball on a green: Hustle.' },   // council round 10 #6 (builder 2)
+  drones: { kb: 'Drones! Hold F on foot: "Drones, here!"', pad: 'Drones! Hold Ⓨ on foot: "Drones, here!"' },   // playthrough 5 C4
 });
 // Context-driven hints (council round 4, §4.2): fires when its condition holds, once ever.
 // ctx: { day, playSecs, venue, signMud, pocketFull, washerCash, onDock, beers, deckOrder }, plus tips.js tipCtx:
@@ -102,18 +103,19 @@ export const HINT_WHEN = Object.freeze({
   deck: c => (c.venue ?? 0) >= 2 && ((c.beers ?? 0) > 0 || !!c.deckOrder),   // the first order (or the first beer)
   creek: c => (c.venue ?? 0) >= 1 && !!c.creekNear,   // council round 10 #5: near the Club's running creek
   green: c => (c.venue ?? 0) < 2 && !!c.atBay,          // council round 10 #6: at a crew bay at the Muni or the Club
+  drones: c => (c.up?.drones ?? 0) >= 1,                // playthrough 5 C4: teach the dispatch once drones are bought
   bv: c => (c.day ?? 1) >= 2 && (c.playSecs ?? 0) >= 8,   // the BV line appears on day 2: say what it is once
 });
 // Play-seconds before each hint is due; CCTV also needs the crew at venue 1+.
 export const HINT_AFTER = Object.freeze({ shop: 10, sprint: 30, cctv: 6 });
-export const HINT_ORDER = ['bv', 'wand', 'mud', 'bank', 'crank', 'shed', 'cart', 'dive', 'tube', 'gutters', 'lift', 'deck', 'creek', 'green'];   // context hints, first due wins
+export const HINT_ORDER = ['bv', 'wand', 'mud', 'bank', 'crank', 'shed', 'cart', 'dive', 'tube', 'gutters', 'lift', 'deck', 'creek', 'green', 'drones'];   // context hints, first due wins
 export const HINT_GAP = 12;   // seconds between hints
 export const SHOP_HINT_CASH = 20;
 // Playthrough 4 A16: the onboarding tips belong to the Muni's first two days (a Club crew already knows them).
 export const EARLY_HINTS = ['shop', 'sprint', 'bv'];
 export const earlyDay = ({ venue = 0, day = 1 } = {}) => venue === 0 && (day ?? 1) <= 2;
 // Playthrough 4 A16: a just-bought item's tip jumps the queue (and the gap): shop item id -> its tip.
-export const BOUGHT_HINT = Object.freeze({ washer: 'crank', shed: 'shed', cart: 'cart', pond: 'tube', gutters: 'gutters', dive: 'dive' });
+export const BOUGHT_HINT = Object.freeze({ washer: 'crank', shed: 'shed', cart: 'cart', pond: 'tube', gutters: 'gutters', dive: 'dive', drones: 'drones' });
 export const BOUGHT_SECS = 15;   // how long a purchase waits for its tip's condition before it joins the queue as usual   // the shop hint waits for cash >= this (ctx.cash): before that the crew can't buy anything
 
 export function loadSeen(storage = store()) {

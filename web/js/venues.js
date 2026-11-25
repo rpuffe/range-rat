@@ -90,15 +90,19 @@ export function createVenues(scene) {
       // old shed position). Faces the counter side (-z).
       const K = SIGN_BY_ID.kitchen, k = textPlane('KITCHEN', 2.0, 0.5, '#fff8ec', '#8a3b2e', 38, false);
       k.position.set(K.pos.x, K.pos.y, K.pos.z); k.rotation.y = yawOf(K.normal); g.add(tagSign(k, 'kitchen'));
-      // two club flags at the bank (the Board, sim.js BANK 26, 6; the ball return moved to the mats)
-      for (const dx of [-1.8, 1.8]) {
-        const pole = box(0.07, 5, 0.07, lambert(0xcccccc), 26 + dx, 2.5, 6.0); g.add(pole);
+      // two club flags beside the Board (board.js: 6 m wide at BANK + (0, 1.2), turned BOARD_YAW 35°). Playthrough 5
+      // B6: they stood 1.2 m in front of it and covered the price and the FED chip; now each pole is 4.6 m out along
+      // the Board's width, a little behind its face, and its flag flies outward, away from the Board.
+      const BY = 35 * Math.PI / 180, bx = 26, bz = 7.2;
+      for (const side of [-1, 1]) {
+        const px = bx + side * 4.6 * Math.cos(BY) - 0.3 * Math.sin(BY), pz = bz - side * 4.6 * Math.sin(BY) - 0.3 * Math.cos(BY);
+        const pole = box(0.07, 5, 0.07, lambert(0xcccccc), px, 2.5, pz); g.add(pole);
         const geo = new THREE.PlaneGeometry(1.4, 0.8); geo.translate(0.7, 0, 0);
         const flag = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x1d6b3a, side: THREE.DoubleSide }));
-        flag.position.set(26 + dx, 4.5, 6.0); g.add(flag);
+        flag.position.set(px, 4.5, pz); g.add(flag);
         const stripe = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.2), new THREE.MeshBasicMaterial({ color: 0xe8b04a, side: THREE.DoubleSide }));
         stripe.position.set(0.7, 0, 0.01); flag.add(stripe);
-        live.flags.push({ m: flag, ph: dx });
+        live.flags.push({ m: flag, ph: side * 1.8, yaw: BY + (side < 0 ? Math.PI : 0) });   // along the Board's line, outward
       }
     },
     tiered() {
@@ -232,7 +236,7 @@ export function createVenues(scene) {
   let heavyAcc = 0;
   function tick(dt, t) {
     if (venue >= 1 && live.flags.length) for (const f of live.flags) {
-      f.m.rotation.y = Math.sin(t * 4 + f.ph) * 0.35; f.m.scale.x = 0.9 + 0.1 * Math.sin(t * 7 + f.ph);
+      f.m.rotation.y = (f.yaw ?? 0) + Math.sin(t * 4 + f.ph) * 0.35; f.m.scale.x = 0.9 + 0.1 * Math.sin(t * 7 + f.ph);
     }
     // The neon colours and the stadium crowd's bob (hundreds of matrix writes) run at heavyHz on Xbox / Low.
     let heavy = true;

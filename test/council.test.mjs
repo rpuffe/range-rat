@@ -620,7 +620,10 @@ test('the day-2 target is Rate x (1 + 0.30), set at the start of the shift (roun
   const d3 = makeCrew({ day: 3 }).crew; d3.startShift();
   assert.deepEqual(d3.quota, { q: 0.3 });
   assert.equal(d3.quotaTarget(), 1.63);
-  const d6 = makeCrew({ day: 6 }).crew; d6.startShift();
+  // Playthrough 5 A10: the target holds at day 4's while the card's review goal is open; it climbs once that's done.
+  const held = makeCrew({ day: 6 }).crew; held.startShift();
+  assert.equal(held.quotaTarget(), 1.63, 'the review goal is open: the day-4 target holds');
+  const d6 = makeCrew({ day: 6 }).crew; d6.goals.n.reviews = 2; d6.startShift();
   assert.equal(d6.quotaTarget(), 1.75);
   assert.equal(d6.quotaPct(), 80);
 });

@@ -129,3 +129,9 @@ export function pipsOf(fixtures, nMats = 10) {
   for (let i = 0; i < nMats; i++) add('mat' + i, 'MATS');
   return out;
 }
+
+// ---- Playthrough 5 labels ----
+// B7: a day's take with its sign in front ("+$1,200", "−$3,800"; it read "+$-3,800"). The minus is U+2212.
+export const signedMoney = v => ((v ?? 0) < 0 ? '−' : '+') + money(Math.abs(v ?? 0));
+// A4: the report's stamp says "daily target", the card's word for it (it said QUOTA).
+export const targetStamp = q => (q?.hit ? 'DAILY TARGET HIT' : q?.idle ? 'DAILY TARGET MISSED: nothing was banked' : 'DAILY TARGET MISSED');

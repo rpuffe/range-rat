@@ -12,6 +12,8 @@ export const AUTO = {
   HOLD_SECS: 0.6,     // hold Ⓨ this long at a cart to switch lap <-> harvest (a tap still climbs in)
   SKIP_SECS: 12,      // a ball it can't drive to (the creek, the pond) is skipped this long
   LAP_CROWD: 0.03,    // an autopilot lap: half credit
+  RINSE_AT: 0.5,      // playthrough 5 C5: a lapping cart this muddy drives to the return to rinse (mud -> 0 there)
+  DETOUR: 1.5,        // playthrough 5 C6: m past the return's stop radius that its route to the Track swings wide
   MODES: ['lap', 'harvest'],
 };
 
@@ -24,6 +26,26 @@ export function lapGoal(x, z) {
   if (!onTrack(x, z, 0.5)) return trackPoint(th);
   const r = Math.hypot(T.a * Math.sin(th), T.b * Math.cos(th)) || 1;   // |dP/dth|
   return trackPoint(th + AUTO.LAP_LEAD / r);
+}
+
+// Playthrough 5 C6: the second cart's morning pose, half a lap round the Track from where a cart parked at `from`
+// joins it, facing the way the laps run (th increasing).
+export function halfLapPose(from) {
+  const th = trackTh(from.x, from.z) + Math.PI, p = trackPoint(th);
+  return { x: p.x, z: p.z, yaw: Math.atan2(T.a * Math.sin(th), -T.b * Math.cos(th)), v: 0 };
+}
+// Playthrough 5 C6: steer round a circle (the return and the Rats standing at it): if the straight line from c to goal
+// passes inside avoid.r, aim at a point avoid.r + DETOUR out on the side the line passes, else the goal itself.
+export function detour(c, goal, avoid, world) {
+  if (!avoid) return goal;
+  const dx = goal.x - c.x, dz = goal.z - c.z, L = Math.hypot(dx, dz);
+  if (L < 1e-6 || Math.hypot(c.x - avoid.x, c.z - avoid.z) < avoid.r) return goal;
+  const t = Math.max(0, Math.min(1, ((avoid.x - c.x) * dx + (avoid.z - c.z) * dz) / (L * L)));
+  const px = c.x + dx * t - avoid.x, pz = c.z + dz * t - avoid.z, d = Math.hypot(px, pz);
+  if (d >= avoid.r) return goal;
+  const nx = d > 1e-6 ? px / d : -dz / L, nz = d > 1e-6 ? pz / d : dx / L, k = avoid.r + AUTO.DETOUR;
+  const w = { x: avoid.x + nx * k, z: avoid.z + nz * k };
+  return world !== undefined && cartBlocked(w.x, w.z, world) ? goal : w;
 }
 
 // Is the straight drive from (x0, z0) to (x1, z1) clear for a cart (half-metre steps)?
@@ -69,14 +91,18 @@ export function stepAutopilot(c, a, ctx) {
   const out = { moved: 0, scooped: [] };
   if (c.tipT > 0 || blockedBy(c, ctx.people ?? [])) return out;
   const v = ctx.speed * AUTO.SPEED * (ctx.mul?.(c.x, c.z) ?? 1);
-  const home = ctx.stand && c.load > 0 && (c.load >= ctx.cap || a.mode === 'lap');   // full (or back to lapping): tip it first
+  const atReturn = ctx.stand && Math.hypot(c.x - ctx.stand.x, c.z - ctx.stand.z) < ctx.reach;
+  if (atReturn && c.load <= 0 && (c.mud ?? 0) > 0) { c.mud = 0; out.rinsed = true; }   // playthrough 5 C5: it rinses at the return
+  const rinse = a.mode === 'lap' && (c.mud ?? 0) >= AUTO.RINSE_AT;
+  const home = ctx.stand && ((c.load > 0 && (c.load >= ctx.cap || a.mode === 'lap')) || rinse);   // full (or back to lapping, or muddy): to the return
   if (home) {
-    if (Math.hypot(c.x - ctx.stand.x, c.z - ctx.stand.z) < ctx.reach) return out;       // the return tips it (crew.mjs)
+    if (atReturn) return out;       // the return tips it (crew.mjs)
     out.moved = driveToward(c, ctx.stand, v, ctx.dt, ctx.world).moved;
     return out;
   }
   if (a.mode === 'lap') {
-    out.moved = driveToward(c, lapGoal(c.x, c.z), v, ctx.dt, ctx.world).moved;
+    const lg = lapGoal(c.x, c.z);
+    out.moved = driveToward(c, onTrack(c.x, c.z, 0.5) ? lg : detour(c, lg, ctx.avoid, ctx.world), v, ctx.dt, ctx.world).moved;   // C6: round the return
     return out;
   }
   // Harvest: to the nearest ball it can reach; scoop whatever passes under the reels on the way.

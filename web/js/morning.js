@@ -53,7 +53,7 @@ export const MORNING_AT = {
 export const GOAL_AT = {
   bank: { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6 }, huddle: { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6 },
   seal: { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6 }, pass: { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6 },
-  hotdogs: { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6 }, orders: { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6 },
+  fed: { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6 }, orders: { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6 },
   treasures: { x: POND.DOCK.x, z: POND.DOCK.z, y: 2.2 },
   targets: { x: BAYS[0].x, z: BAYS[0].z, y: 2.2 }, pings: { x: BAYS[0].x, z: BAYS[0].z, y: 2.2 },
   laps: { x: MAP.TRACK.x, z: MAP.TRACK.z + MAP.TRACK.b, y: 2.6 },

@@ -10,13 +10,14 @@ import { createSky } from './sky.js';
 import { readPad, BTN, GLYPH, navTargets, navPick } from './pad.js';
 import { padBindings, wandA } from './padbind.js';                                     // owner playtest 3 §7.1-7.2: RT sprays, L3 sprints
 import { primaryOf, focusMemo, focusRestore, menuA } from './menufocus.js';            // §7.3: every card works on a pad
+import { goalShopIds, shopSort } from './promopanel.js';   // playthrough 5: the shop's order and ✦ GOAL tags
 import { createPadlog } from './padlog.js';                                            // §7.3: ?padlog
 import { garyParked, garyPlate, chatBit, CHAT_END, CHAT_FEED, SEAL_LINE } from './garyvisit.js';   // owner playtest 3 §6: Gary
 import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, shopShows, tierLock, shopDay, priceScale, perks,
   CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB,
   VENUE_RULES, GARY, BANK } from './sim.js';
 import { createBallReturn, createFieldReturns } from './ballreturn.js';   // owner layout: the pipe from the return to the bank, the basket
-import { atFieldReturn } from './layout.js';   // council round 10 §C: the field ball returns
+import { atFieldReturn, FILL_POINT } from './layout.js';   // council round 10 §C: the field ball returns
 import { detailFor } from './detail.js';
 import { stationsShown } from './stations.js';
 import * as NET from './net.js';
@@ -47,9 +48,9 @@ import { createPerf } from './perf.js';
 import { createPace } from './pace.js'; const pace = createPace({ search: location.search, storage: (() => { try { return sessionStorage; } catch { return null; } })(), clipboard: navigator.clipboard }); pace.bind(document.getElementById('pace-copy'));   // ?pace: the pace log
 import { setHeavyRate } from './venues.js';
 import { createProps } from './props.js';
-import { tipCtx, createTipPointer, tipsAllowed } from './tips.js'; const tipPointer = createTipPointer();   // owner notes: a tip per new thing, and the arrow
+import { tipCtx, createTipPointer, tipsAllowed, emptyBasketRat, withBasketAlarm } from './tips.js'; const tipPointer = createTipPointer();   // owner notes: a tip per new thing, and the arrow
 import { PAYFLOAT, payRoute, createRoller } from './payfloat.js';   // council round 6 #7: only your own cash floats over you
-import { bvLine, ceilingOf, priceOf, popupLine, reportRow, sealRow, gainText } from './bvtext.js';   // owner playtest 3 §1 (builder 1): Ball Value in one look
+import { bvLine, ceilingOf, priceOf, popupLine, reportRow, sealRow, gainText, signedMoney, targetStamp } from './bvtext.js';   // owner playtest 3 §1 (builder 1): Ball Value in one look
 import { atFill } from './basket.js';   // owner playtest 3 §3.3: the bucket basket (builder 2)
 import { nudgeLine, nudgeTarget, GARY_STALLED, garyExtra } from './nudge.js';    // council round 6 #10 / round 7 #4: day 2, Gary's dealt stops, day 3
 import { createSay } from './say.js';                     // council round 7 #3: the one centre-text queue
@@ -243,9 +244,12 @@ const shedSign = (() => {
   return { fries, boards };
 })();
 
-// Last Call floodlights: on for the final minute of a shift.
+// Last Call floodlights: on for the final minute of a shift. Playthrough 5 A8: at 420 with distance decay the near
+// grass (20-25 m from the masts) took ~6× the sun's light and read neon lime from 1:30; with no decay, FLOOD_I each
+// is a warm lift about the dusk sun's level where all three overlap, near and far alike.
+const FLOOD_I = 0.7;
 const floods = [-14, 0, 14].map(x => {
-  const l = new THREE.SpotLight(0xfff1c8, 0, 140, 0.55, 0.4, 1);
+  const l = new THREE.SpotLight(0xfff1c8, 0, 140, 0.55, 0.4, 0);
   l.position.set(x, 14, 8); l.target.position.set(x * 0.6, 0, -55);
   scene.add(l, l.target);
   return l;
@@ -583,6 +587,7 @@ function onEvent(e) {
   if (e.t === 'deckFall') onDeckFall(e);   // council round 10 #4: the Deck Cam (views/deck.js plays the fall)
   if (e.t === 'tube' && e.at) fieldReturns.thunk();   // council round 10 §C: a pocket went in a field return
   if (e.t === 'auto') { if (e.by === me.id) toast(e.mode === 'harvest' ? 'Autopilot: harvesting.' : 'Autopilot: lapping the Track.', 2); else feed(`${nameOf(e.by)} set the cart to ${e.mode}`); }
+  if (e.t === 'clockout' && e.on && e.by !== me.id && e.of > 1) feed(`${nameOf(e.by)} wants to clock out (${e.n} / ${e.of}). Hold ${document.body.classList.contains('pad') ? GLYPH.Y : 'F'} to agree.`);
   if (e.t === 'dispatch') { if (e.by === me.id) { toast('Drones, here!', 2); } else feed(`${nameOf(e.by)}: "Drones, here!"`); dispatchRing.show(e); }
   switch (e.t) {
     case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, kind: e.kind, curve: e.curve ?? 0 }); customerSwing(e.x, e.y, e.z); break;
@@ -700,6 +705,7 @@ function onEvent(e) {
     case 'served':
       if (e.item === 'beer' && e.quality !== 'burnt') beersPoured++;
       if (e.by === me.id && e.n) toast(`+${e.n} for Fry Satisfaction`, 1.5);
+      if (e.by === me.id && e.float) kitchen.payoff(e.float);   // playthrough 5 B12: the SERVED card shows the payoff
       break;
     case 'fries':
       if (e.by === me.id) { SFX.scoop(); toast(`A basket of fries (${e.stock}/${FRIES.MAX})`, 1.2, 'fries'); }
@@ -795,6 +801,7 @@ let my = perks();                   // what the crew's upgrades add up to
 let gp = gearPerks(0);              // what my own carrying gear adds up to
 function applySnapshot(s) {
   crew = s;
+  { const el = $('cash'); if (el) el.textContent = money(s.cash ?? 0); }   // playthrough 5 B9: a rejoin's first snapshot shows the real cash (not $0 until it changes)
   if (paused) pauseGoals();   // council round 10 #1: the Goals panel stays live while paused
   my = perks(s.up);
   if (s.mats) crowd.sync(s.mats, s.ct);
@@ -836,7 +843,7 @@ function applySnapshot(s) {
     garyView.to = gw;
     garyView.plate.set(garyPlate(!!gw.first));
   } else if (garyView) garyView.g.visible = false;
-  floods.forEach(l => { l.intensity = s.lastCall ? 420 : 0; });
+  floods.forEach(l => { l.intensity = s.lastCall ? FLOOD_I : 0; });
   const seen = new Set();
   const people = [...s.players, ...(s.helpers ?? []).map(h => ({ ...h, helper: true, color: '#b9c0c8', online: true }))];
   for (const p of people) {
@@ -891,7 +898,8 @@ let shopKey = '';
 function renderShop() {
   const size = Math.max(1, crew.players.filter(p => p.online).length);   // the server prices by Rats online
   const day = shopDay(crew.phase, crew.day ?? 1);
-  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase, me.gear, me.dive, crew.venue, day]);
+  const goalIds = goalShopIds(crew.goals?.rows);   // playthrough 5: a row the card asks for wears ✦ GOAL
+  const key = JSON.stringify([crew.cash, crew.up, size, crew.phase, me.gear, me.dive, crew.venue, day, [...goalIds]]);
   if (key === shopKey) return;
   shopKey = key;
   const root0 = menuRoot(), memo = focusMemo(document.activeElement, root0);   // §7.3: focus survives the re-render
@@ -899,14 +907,14 @@ function renderShop() {
   const scale = priceScale(size);
   const html = `<h3>${crew.phase === 'report' ? 'Overnight shop' : 'Shop'} <span>${money(crew.cash)} to spend</span></h3>
     ${size > 1 ? `<p class="note">Prices are ×${scale.toFixed(1)} for a crew of ${size}.</p>` : ''}
-    <ul>${SHOP.filter(item => shopShows(item, crew.venue ?? 0, day, crew.endless, size))
-      .sort((a, b) => (crew.endless ? !!b.endless - !!a.endless : 0))   // playthrough 3: the Owner's projects row first in endless
+    <ul>${shopSort(SHOP.filter(item => shopShows(item, crew.venue ?? 0, day, crew.endless, size)),   // playthrough 3: the Owner's projects first in endless
+      { endless: !!crew.endless, maxed: item => !item.tiers[(item.personal ? (item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0) : crew.up?.[item.id] ?? 0) + 1] })   // playthrough 5: maxed rows last
       .map(item => {
       const mineLvl = item.id === 'dive' ? me.dive ?? 0 : me.gear ?? 0;
       const lvl = item.personal ? mineLvl : crew.up?.[item.id] ?? 0, now = item.tiers[lvl], next = item.tiers[lvl + 1];
       const price = nextPrice(item.id, crew.up, size, mineLvl, crew.venue ?? 0, day, crew.endless);
       return `<li>
-        <div><b>${item.title}</b>: ${now.name}${next ? `<small>Next: <i>${next.name}</i><span class="desc">. ${next.desc}</span></small>` : `<small>${now.desc} (maxed out)</small>`}</div>
+        <div><b>${item.title}</b>${next && goalIds.has(item.id) ? ' <span class="goal-tag">✦ GOAL</span>' : ''}: ${now.name}${next ? `<small>Next: <i>${next.name}</i><span class="desc">. ${next.desc}</span></small>` : `<small>${now.desc} (maxed out)</small>`}</div>
         ${!next ? '<span class="max">✓</span>' : price == null ? `<span class="max">🔒 ${tierLock(item, lvl, crew.venue ?? 0, day) ?? VENUE_RULES[next.minVenue ?? item.minVenue ?? 0]?.name ?? 'later'}</span>` : `<button data-buy="${item.id}" ${price > crew.cash ? 'disabled' : ''}>${money(price)}</button>`}
       </li>`;
     }).join('')}</ul>`;
@@ -951,7 +959,13 @@ const nearCart = () => crewCarts().some((c, i) => !c.driver && cartViews[i] && M
 const canSwing = () => crew.phase === 'shift' && atBay(me) && me.pocket > 0 && !driving() && !me.wand;
 // Council round 10 §D: Ⓨ / F held. At an undriven cart with Autopilot owned, a tap still climbs in and a 0.6 s hold
 // switches it lap <-> harvest. On foot at the County with drones and no cart near, a 0.6 s hold is "Drones, here!".
-let yHold = null;   // { kind: 'auto' | 'dispatch', t }
+let yHold = null;   // { kind: 'auto' | 'dispatch' | 'clockout', t, sent? }
+// Playthrough 5: "Card done · clock out". The server offers it (crew.clockOut = { n, of }) once the card is done; a Rat
+// votes by holding Ⓨ / F away from a cart (CLOCKOUT_HOLD s first, so a stray tap never rings the bell), and letting
+// go takes the vote back. Every online Rat holding rings the bell now (solo: at once). It outranks "Drones, here!".
+const CLOCKOUT_HOLD = 0.6;
+const canClockOut = () => !!crew.clockOut && playing() && !driving() && !nearCart() && !me.diving;
+function clockOutRelease() { if (yHold?.kind === 'clockout' && yHold.sent) link?.act({ t: 'clockout', on: false }); }
 const autoOwned = () => !!my.autopilot && (crew.venue ?? 0) >= 3;
 const dronesOwned = () => !!crew.mods?.county?.drones?.length && crew.phase === 'shift';
 const nearAutoMode = () => {   // the mode of the undriven cart in reach ('lap' | 'harvest'), or null
@@ -960,17 +974,24 @@ const nearAutoMode = () => {   // the mode of the undriven cart in reach ('lap' 
 };
 function cartPress() {
   if (!playing() || me.down > 0) return;
+  if (canClockOut()) { yHold = { kind: 'clockout', t: 0 }; return; }
   if (!driving() && nearCart() && autoOwned()) { yHold = { kind: 'auto', t: 0 }; return; }
   if (!driving() && !nearCart() && dronesOwned() && !me.diving) { yHold = { kind: 'dispatch', t: 0 }; return; }
   interact('cart');
 }
 function cartRelease() {
+  clockOutRelease();
   const h = yHold; yHold = null;
   if (h?.kind === 'auto' && h.t < AUTO.HOLD_SECS) interact('cart');   // a tap: climb in
 }
 function cartHoldTick(dt) {
   if (!yHold) return;
-  if (!playing() || me.down > 0 || driving()) { yHold = null; return; }
+  if (!playing() || me.down > 0 || driving()) { clockOutRelease(); yHold = null; return; }
+  if (yHold.kind === 'clockout') {   // held: the vote stays in until release (the server clears it at the bell)
+    if (!crew.clockOut) { yHold = null; return; }
+    if ((yHold.t += dt) >= CLOCKOUT_HOLD && !yHold.sent) { yHold.sent = true; link.act({ t: 'clockout', on: true }); }
+    return;
+  }
   if ((yHold.t += dt) < (yHold.kind === 'auto' ? AUTO.HOLD_SECS : DISPATCH.HOLD_SECS)) return;
   link.act({ t: yHold.kind === 'auto' ? 'auto' : 'dispatch' });
   yHold = null;
@@ -1135,9 +1156,16 @@ async function enter(how) {
   $('join-error').textContent = '';
   try {
     seat = how === 'create' ? await NET.createCrew(name) : await NET.joinCrew(code, name);
-  } catch (e) { $('join-error').textContent = e.message; return; }
+  } catch (e) { if (/No crew/.test(e.message)) crewClosed(); else $('join-error').textContent = e.message; return; }
   NET.rememberUsed(seat.code, name);
   go();
+}
+
+// Playthrough 5 A9: a stale code (an old link, a crew that closed) says so kindly and offers the way on.
+function crewClosed() {
+  $('join-error').textContent = 'That crew has closed. Start a new one?';
+  $('join-code').value = '';
+  $('create').focus();
 }
 
 function go() {
@@ -1173,7 +1201,7 @@ function rejoin() {
     $('net').textContent = '';
     $('hud').classList.add('hidden');
     $('title').classList.remove('hidden');
-    $('join-error').textContent = `Couldn't get back into crew ${seat.code}. It may have closed.`;
+    crewClosed();   // playthrough 5 A9 (it read "Couldn't get back into crew ABCD. It may have closed.")
   })().finally(() => { rejoining = null; });
   return rejoining;
 }
@@ -1207,6 +1235,7 @@ function showPhase() {
   $('hud').classList.toggle('in-lobby', crew.phase === 'lobby');   // the lobby card owns the screen
   $('lobby').classList.toggle('hidden', crew.phase !== 'lobby' || !link);
   $('report').classList.toggle('hidden', crew.phase !== 'report' || !report || !!report?.ending || performance.now() < stampUntil);   // the ending has its own card
+  document.body.classList.toggle('report-open', !$('report').classList.contains('hidden'));   // playthrough 5 A9: the toast moves up
   $('crewline').classList.toggle('hidden', crew.phase === 'report');   // playtest round 2 #14: the report's panels would sit on the crew list
   renderLobby();
   if (crew.phase === 'shift' && link && joinToastFor !== link) {
@@ -1217,15 +1246,15 @@ function showPhase() {
   if (crew.phase === 'report' && !$('report').classList.contains('hidden')) sayer.report();   // the card is open: feedback may show again
   if (crew.phase === 'report' && report) {
     $('report-body').innerHTML = `<h2>Day ${report.day} is done</h2>
-      <p class="big-stat">+${money(report.cash)} <small>${report.deposited} balls banked</small></p>
+      <p class="big-stat">${signedMoney(report.cash)} <small>${report.deposited} balls banked</small></p>
       ${report.helped ? `<p>Banked by hired help <b>${report.helped}</b></p>` : ''}
       ${report.carted ? `<p>Scooped by the cart <b>${report.carted}</b></p>` : ''}
       ${report.swings ? `<p>Hit the Cart <b>${report.pings ?? 0} pings from ${report.swings} swings</b></p>` : ''}
       ${report.knockdowns ? `<p>Knockdowns <b>${report.knockdowns}</b></p>` : ''}
       ${report.runOver ? `<p>Run over <b>${report.runOver}</b></p>` : ''}
       ${report.unwashed > 0 ? `<p>Unwashed at the bell: ${report.unwashed} <b>(missed washer bonus ${money(report.lostPremium ?? 0)})</b></p>` : ''}
-      <p>In the bank <b>${money(report.bank)}</b></p>
-      ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b${!report.quota.hit && (report.quota.need != null ? report.quota.clean >= report.quota.need : report.quota.bv >= report.quota.target) ? ' class="pass"' : ''}>${report.quota.need != null ? reportRow(report.quota) : `BV ${money(report.quota.bv >= 100 ? Math.round(report.quota.bv) : report.quota.bv)} / ${money(report.quota.target >= 100 ? Math.round(report.quota.target) : report.quota.target)}`}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
+      <p>In the bank <b id="report-bank">${money(crew.promotedTo ? crew.cash : report.bank)}</b></p>
+      ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${targetStamp(report.quota)} <b${!report.quota.hit && (report.quota.need != null ? report.quota.clean >= report.quota.need : report.quota.bv >= report.quota.target) ? ' class="pass"' : ''}>${report.quota.need != null ? reportRow(report.quota) : `BV ${money(report.quota.bv >= 100 ? Math.round(report.quota.bv) : report.quota.bv)} / ${money(report.quota.target >= 100 ? Math.round(report.quota.target) : report.quota.target)}`}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
       ${report.quota?.gauge != null ? `<p${report.quota.gaugeOk ? '' : ' class="stamp miss"'}>${crew.venue === 3 ? 'Crowd (last 2 min)' : 'Venue gauge at the bell'} <b>${Math.round(report.quota.gauge * 100)}% · ${report.quota.gaugeOk ? 'held' : report.quota.why ?? 'under 50%'}</b></p>` : ''}
       ${report.sealCash > 0 ? `<p>${sealRow(report.sealCash).replace(': ', ': <b>')}</b></p>` : ''}
       ${report.tomorrow ? `<p class="dim">${report.tomorrow}</p>` : ''}`;
@@ -1239,6 +1268,9 @@ $('join').addEventListener('click', () => enter('join'));
 $('join-code').addEventListener('keydown', e => { if (e.key === 'Enter') enter('join'); });
 $('start').addEventListener('click', startShift);
 $('next').addEventListener('click', startShift);
+// The clock-out button with a free mouse (the pointer is usually locked: F does it then): press holds the vote.
+$('clockout').addEventListener('pointerdown', e => { e.preventDefault(); if (canClockOut()) yHold = { kind: 'clockout', t: 0 }; });
+for (const ev of ['pointerup', 'pointerleave']) $('clockout').addEventListener(ev, () => { if (yHold?.kind === 'clockout') { clockOutRelease(); yHold = null; } });
 $('resume').addEventListener('click', () => pause(false));
 $('settings-open').addEventListener('click', () => openSettings(true));
 $('store-close').addEventListener('click', () => toggleStore(false));
@@ -1467,7 +1499,7 @@ const todoArrow = (() => {
   scene.add(g); scene.add(ring); ring.visible = g.visible = false;
   return { g, ring };
 })();
-let todoKey = '', todoSeen = null, todoDoneT = 0, todoT = 0;
+let todoKey = '', todoSeen = null, todoDoneT = 0, todoT = 0, basketStocked = false;
 function todoTarget(id) {
   const ball = () => { const b = nearestBall(80); return b ? { x: b.x, z: b.z, y: 0.6, s: 0.6 } : null; };
   if (id === 'pick') return ball();
@@ -1488,7 +1520,10 @@ function renderTodo(dt) {
   } else { todoSeen = null; todoDoneT = 0; }
   const cur = list?.find(t => !t.done) ?? null;
   // Day 2's one-line suggestion (council round 6 #10) uses this slot and arrow, only once the checklist is gone.
-  const nudge = !list || todoDoneT >= 3 ? garyExtra(crew.mods?.nudge?.[me.id] ?? null, garyParked(crew.gary)) : null;   // §6.3: parked, chat him
+  basketStocked = crew.phase === 'shift' && (basketStocked || (crew.basket ?? 0) > 0);   // playthrough 5 A5: it held buckets this shift
+  const basketRat = emptyBasketRat(crew, basketStocked, FILL_POINT);
+  ballReturn.alarm(!!basketRat);   // the dispenser's lamp
+  const nudge = !list || todoDoneT >= 3 ? garyExtra(withBasketAlarm(crew.mods?.nudge?.[me.id] ?? null, basketRat === me.id), garyParked(crew.gary)) : null;   // §6.3: parked, chat him
   const show = (!!list && todoDoneT < 3 || !!nudge) && playing() && !textBusy();
   const tg = show && nudge ? nudgeTarget(nudge, me.wand, me, { cart: crewCarts().reduce((m, c) => (!m || (c.mud ?? 0) > (m.mud ?? 0) ? c : m), null), gary: crew.gary ? (crew.gary.phase === 'drive' ? garyPose : crew.gary) : null }) : show && cur ? todoTarget(cur.id)
     : !list && !nudge ? tipPointer.target(dt, crew, me, playing() && !textBusy()) : null;   // owner notes: the arrow points at a new thing's tip
@@ -1543,7 +1578,7 @@ function hud(dt = 0) {
   const left = Math.max(0, crew.shiftSecs - crew.shiftT);
   $('clock').textContent = crew.phase === 'shift' ? `Day ${crew.day} · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : `Day ${crew.day}`;
   const load = (mc?.load ?? 0) + pendingCart.size;
-  $('prompt').textContent = !playing() || r2?.cctvOn || sayer.busy() ? ''   // ambient: it hides while any centre item shows (round 7 #3)
+  $('prompt').textContent = !playing() || r2?.cctvOn || sayer.busy() || crew.phase !== 'shift' || dusk.active ? ''   // ambient: it hides while any centre item shows (round 7 #3), and in the walk-off (playthrough 5 A9: a stale "Full")
     : me.down > 0 ? 'Seeing stars…'
     : crew.lastBucket?.phase === 'huddle' ? ''          // round 6 #5: the banner says HOLD Ⓐ TOGETHER (one text)
     : me.one ? ''   // the Last Bucket banner says it
@@ -1572,6 +1607,17 @@ function hud(dt = 0) {
     : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `${pad ? 'Pull back, push through' : 'Flick'} to swing · ${(crew.venue ?? 0) >= 2 ? 'land it in a green' : 'hit the cart'} (${me.pocket})` : 'Bring balls to hit them')
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up`
     : n >= cap ? 'Full: head to the ball return' : '';
+  { // playthrough 5: the clock-out button (the server offers it once the card is done)
+    const co = $('clockout'), offer = crew.clockOut && playing() ? crew.clockOut : null;
+    co.classList.toggle('hidden', !offer);
+    if (offer) {
+      const held = yHold?.kind === 'clockout', many = (offer.of ?? 1) > 1;
+      co.classList.toggle('holding', held);
+      co.textContent = held && !yHold.sent ? 'Clocking out… keep holding'
+        : held ? (many ? `Clocking out · ${offer.n} / ${offer.of} holding` : 'Clocking out…')
+        : `Card done · clock out (${pad ? `${GLYPH.Y} hold` : 'hold F'})${many && offer.n ? ` · ${offer.n} / ${offer.of}` : ''}`;
+    }
+  }
   $('air').classList.toggle('hidden', !me.diving);
   $('air').firstElementChild.style.width = `${((me.air ?? POND.AIR) / diveTiers(me.dive).air) * 100}%`;
   const maxStam = sprintSecs(crew.up?.shoes);
@@ -1890,6 +1936,11 @@ function frame(now) {
     if (ch) { garyView.chatT = (garyView.chatT ?? garyView.to.chatT ?? 0) + dt; garyView.bubble.set(chatBit(garyView.chatT)); }
     else { garyView.chatT = null; if (garyView.bubbleEnd > 0) garyView.bubble.set(CHAT_END); }
     garyView.bubble.sprite.visible = !!ch || garyView.bubbleEnd > 0;
+    if (garyView.bubble.sprite.visible) {   // playthrough 5 A7: in chat reach (1-2.5 m) a bubble at 3.15 m sat off the top of the screen
+      const d = Math.hypot(garyPose.x - camera.position.x, garyPose.z - camera.position.z);
+      garyView.bubble.sprite.position.y = Math.max(2.3, Math.min(3.15, camera.position.y + 0.45 * d));   // ≤ ~29° above level
+    }
+    garyView.plate.sprite.visible = !garyView.bubble.sprite.visible;   // one label over him at a time (the bubble may sit at the plate's height)
   }
   if (link) hud(dt);
   ballReturn.update(stationsShown(crew).washer); ballReturn.basket(crew.basket ?? 0, crew.filling?.length ?? 0); ballReturn.tick(dt); fieldReturns.update(crew.up?.returns ?? 0); fieldReturns.tick(dt); dispatchRing.sync(crew.mods?.county?.zone);   // §3.3: the basket's heap   // the pipe runs through the washer once it's in the world
@@ -1920,7 +1971,8 @@ perf.attach({ sun: sky.sun, crowd, scuba, ballMesh, venueRate: setHeavyRate, toa
 // Station details and the cheap graphics pass (props.js), scaled by the perf profile.
 const props = createProps({ scene, camera, renderer, perf, sky, me, cartViews, fpGear, myGear, others,
   crew: () => crew, sprayOn: () => (spraying || rtSpray) && me.wand && playing() && me.down <= 0, ballCount: () => balls.size });
-const dusk = createDusk({ scene, camera, me, others, balls, crew: () => crew, buildPerson, animatePerson, perf, settings: SET.get, fpGear, myGear });
+const dusk = createDusk({ scene, camera, me, others, balls, crew: () => crew, buildPerson, animatePerson, perf, settings: SET.get, fpGear, myGear,
+  quiet: () => sayer.busy('STAMP', 'MEMO') || sayer.visible?.key === 'rally' });   // playthrough 5 B3: the pill steps aside
 SET.set({});   // re-apply saved settings now the PA exists
 requestAnimationFrame(frame);
 

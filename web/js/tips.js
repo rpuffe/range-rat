@@ -84,3 +84,19 @@ export function createTipPointer() {
     },
   };
 }
+
+// Playthrough 5 A5: the empty-basket alarm. Mid-day (the basket held buckets earlier this shift: `stocked`) the basket
+// runs dry: the dispenser's lamp lights and the nearest able Rat (online, not down, not diving) is re-dealt "Fill the
+// bucket basket!" ('am:basket'). -> that Rat's id, or null (no alarm). `at`: the fill point (layout.js FILL_POINT).
+export function emptyBasketRat(c, stocked, at) {
+  if (!stocked || c?.phase !== 'shift' || (c.basket ?? 0) > 0 || c.lastBucket || c.todo?.some(t => !t.done)) return null;
+  let best = null, bd = Infinity;
+  for (const p of c.players ?? []) {
+    if (!p.online || p.down > 0 || p.diving) continue;
+    const d = Math.hypot(p.x - at.x, p.z - at.z);
+    if (d < bd) { bd = d; best = p.id; }
+  }
+  return best;
+}
+// The dealt line: the alarm outranks the morning deal and the goal line, never Gary's lines.
+export const withBasketAlarm = (serverNudge, alarmMine) => (alarmMine && (!serverNudge || serverNudge.startsWith('am:')) ? 'am:basket' : serverNudge ?? null);

@@ -1,7 +1,8 @@
 // The Deck Cam (council round 10 #4): web/js/deckcam.js, pure.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DECKCAM, CUT_LABEL, cutPlan, shotFor, skips, cutAt } from '../web/js/deckcam.js';
+import { DECKCAM, CUT_LABEL, cutPlan, shotFor, skips, cutAt, fallRate } from '../web/js/deckcam.js';
+import { DECK } from '../web/js/deck.js';
 import { wordCount } from '../web/js/say.js';
 
 const fall = (k = 1) => ({ t: 'deckFall', seat: 2, x: -6, z: 1, k });
@@ -17,6 +18,18 @@ test('the shot: from (x + 3.5, 1.4, -2.5) up at (x, 2.2, 1.8)', () => {
   assert.deepEqual(shotFor(-6), { from: { x: -2.5, y: 1.4, z: -2.5 }, at: { x: -6, y: 2.2, z: 1.8 } });
   const p = cutPlan(fall(), {});
   assert.deepEqual([p.from, p.at], [shotFor(-6).from, shotFor(-6).at]);
+});
+
+test('playthrough 5 B4: the short cut frames the drop (from above the customers) and the BONK lands inside it', () => {
+  const p = cutPlan(fall(2), {});
+  assert.deepEqual([p.from, p.at], [shotFor(-6, true).from, shotFor(-6, true).at]);
+  assert.ok(p.from.y > 2.2, 'over a customer head');
+  // The fall's own clock: the lean (u < 0.25) then the drop, at the short cut's rates.
+  let t = 0, u = 0; const dt = 1 / 120;
+  while (u < 1) { u += dt * fallRate(u, DECKCAM.SECS_LATER) / DECK.FALL_SECS; t += dt; }
+  assert.ok(t < DECKCAM.SECS_LATER, `the BONK at ${t.toFixed(2)} s`);
+  assert.equal(fallRate(0.1, DECKCAM.SECS), 1, 'the first cut keeps its lean');
+  assert.equal(fallRate(0.5, DECKCAM.SECS), DECKCAM.SLOW);
 });
 
 test('who is left out: driving, diving, the Lift or EVA, a menu, knocked down, and the setting off', () => {

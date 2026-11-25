@@ -48,7 +48,8 @@ function dealAm(crew, st) {
   // Council round 10 #1: one Rat the jobs leave over takes the card's open feature goal (once a morning).
   const goal = !st.am.goal ? goalJob(crew.goalRows?.() ?? []) : null;
   let rest = free;
-  if (goal && free.length > jobs.length) {
+  // Playthrough 5 B1: at 2P the jobs always take both Rats, so the goal never got dealt: there, one Rat takes it anyway.
+  if (goal && (free.length > jobs.length || (crew.onlineCount() === 2 && free.length > 0))) {
     const at = GOAL_AT[goal.id] ?? { x: 0, z: 0 }, d = p => Math.hypot(p.x - at.x, p.z - at.z);
     const p = free.reduce((a, b) => (d(b) < d(a) ? b : a));
     st.am.by[p.id] = { id: 'goal', goal: goal.id, done: false }; st.am.goal = goal.id;
@@ -157,12 +158,26 @@ function stepDay3(crew, st, dt) {
   }
 }
 
+// Playthrough 5 B1: "Deck order! Pour a beer!" to the Rat nearest the kitchen while a deck order is open and the card's
+// order goal is open (2P stalled with nobody at the kitchen). Clears when the order is filled or lapses.
+function stepOrder(crew, st) {
+  const order = crew.mods?.state('deck')?.deck?.order;
+  const want = !!order && crew.phase === 'shift' && !crew.lastCall?.() && !!crew.goalOpen?.('orders');
+  if (!want) { if (st.order) { st.order = null; crew.dirty = true; } return; }
+  if (st.order && crew.players.get(st.order)?.online > 0) return;
+  const rats = crew.online().filter(p => !crew.driving(p) && !p.diving);
+  if (!rats.length) return;
+  const d = p => Math.hypot(p.x - FRIES.SHED.x, p.z - FRIES.SHED.z);
+  st.order = rats.reduce((a, b) => (d(b) < d(a) ? b : a)).id;
+  crew.dirty = true;
+}
+
 export default {
   id: 'nudge',
   venue: 0,
 
-  init: () => ({ dealt: 0, by: {}, gary: null, d3: null, am: null }),
-  startShift(crew, st) { st.dealt = 0; st.by = {}; st.gary = null; st.d3 = null; st.am = null; dealAm(crew, st); deal(crew, st); },
+  init: () => ({ dealt: 0, by: {}, gary: null, d3: null, am: null, order: null }),
+  startShift(crew, st) { st.dealt = 0; st.by = {}; st.gary = null; st.d3 = null; st.am = null; st.order = null; dealAm(crew, st); deal(crew, st); },
 
   tick(crew, st, dt) {
     if (!crew.working()) return;
@@ -170,6 +185,7 @@ export default {
     stepDay3(crew, st, dt);
     dealAm(crew, st);                                       // late joiners, and the crew once the checklist is done
     stepAm(crew, st);
+    stepOrder(crew, st);
     if (!nudgeDay(crew)) return;
     deal(crew, st);                                         // late joiners, and the crew once the checklist is done
     const counting = (crew.shiftT ?? 0) >= NUDGE.WAIT;
@@ -189,6 +205,7 @@ export default {
     for (const [id, n] of Object.entries(st.am?.by ?? {})) if (!n.done) out[id] = n.goal ? goalNudgeId(rows.find(r => r.id === n.goal)) ?? 'am:goal:' + n.goal + ':0' : 'am:' + n.id;   // owner playtest 3 §3.4; round 10 #1 'am:goal:hotdogs:12'
     if (nudgeDay(crew)) for (const [id, n] of Object.entries(st.by)) if (!n.done) out[id] = n.id;
     if (st.d3?.id) out[st.d3.id] = 'mats3';
+    if (st.order) out[st.order] = 'order';   // playthrough 5 B1: over the morning line, under Gary's
     for (const [id, stop] of Object.entries(st.gary?.by ?? {})) out[id] = 'gary:' + stop;   // Gary outranks the rest
     return Object.keys(out).length ? out : undefined;
   },

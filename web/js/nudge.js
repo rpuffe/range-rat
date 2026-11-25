@@ -18,6 +18,7 @@ export const NUDGE_TEXT = {
   stand: 'Try banking at the ball return.',
   washer: 'Try the ball washer crank.',
   shop: 'Try the shop: get a washer.',
+  order: 'Deck order! Pour a beer!',   // playthrough 5 B1 (dealt at Tiered while an order and the order goal are open)
 };
 
 // The pool, in dealing order: the washer line depends on whether the crew owns one.
@@ -62,6 +63,7 @@ export function nudgeTarget(id, wand = false, at = { x: 0, z: 0 }, { cart = null
   if (id === 'gary:sign') return wand ? { x: FIXTURE_BY_ID.sign.x, z: FIXTURE_BY_ID.sign.z, y: 3.4, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
   if (id === 'gary:stand') return wand ? { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
   if (id === 'gary:cart') return wand && cart ? { x: cart.x, z: cart.z, y: 2.2, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
+  if (id === 'order') return { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6, s: 1 };   // the beer comes from the kitchen
   if (id === 'gary:kitchen') return { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6, s: 1 };
   if (id === 'hose') return wand ? { x: MATS.reduce((b, m) => Math.abs(m.x - at.x) < Math.abs(b.x - at.x) ? m : b).x, z: 0, y: 2.2, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
   if (id === 'far') { const f = MAP.FLAGS.find(g => g.id === 'yellow'); return { x: f.x, z: f.z, y: 3, s: 1 }; }

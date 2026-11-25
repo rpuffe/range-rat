@@ -103,8 +103,13 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
     // The report closed (the next morning, the lobby): everything flows.
     open() { lock = 'open'; },
     // Council round 10 #4: the Deck Cam's cut. For `secs` a queued PA card or memo waits (as the memo waits for the PA);
-    // hold(0) lets them go at once (the cut was skipped). Whatever already shows keeps its slot.
-    hold(secs) { holdUntil = secs > 0 ? now() + secs : -Infinity; },
+    // hold(0) lets them go at once (the cut was skipped). Playthrough 5 B3: a PA card or memo already up goes back to
+    // the front of the queue (it shows again after the cut) instead of sitting over the fall.
+    hold(secs) {
+      const t = now();
+      holdUntil = secs > 0 ? t + secs : -Infinity;
+      if (secs > 0 && visible && HELD.has(visible.kind)) { queue.unshift({ ...visible, at: t, seq: -1 - seq++ }); hide(t); }
+    },
     get held() { return now() < holdUntil; },
     clear() { dropped += queue.length; queue = []; if (visible) hide(now()); },
     // Playthrough 4 C6: a keyed line that stopped being true leaves (queued or showing).
@@ -132,6 +137,9 @@ export function createSay({ $ = id => document.getElementById(id), dev = false, 
   }
   function draw(item, on) {
     const d = item.data ?? {};
+    // Playthrough 5 B3: a memo and the PA card never share the screen, whatever a card's own show/hide did.
+    if (on && item.kind !== 'MEMO') $('memo')?.classList.toggle('hidden', true);
+    if (on && item.kind !== 'PA') $('pa-card')?.classList.toggle('on', false);
     if (item.kind === 'PA' || item.kind === 'STAMP') { (on ? d.show : d.hide)?.(item); return; }
     if (item.kind === 'MEMO') {
       if (on) {
