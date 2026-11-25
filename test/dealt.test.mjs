@@ -11,6 +11,7 @@ function makeCrew(save, n = 2, shiftSecs = 200) {
   const rats = [];
   for (let i = 0; i < n; i++) { const p = crew.join('R' + i); crew.connect(p); rats.push(p); }
   crew.startShift();
+  for (const n of Object.values(crew.mods.state('nudge').am?.by ?? {})) n.done = true;   // owner playtest 3 §3.4: past the morning deal
   for (const m of crew.mats) m.next = 1e9;      // no customers: the mud is what the test sets
   const step = (secs = 0.05) => { for (let t = 0; t < secs - 1e-9; t += 0.05) { clock.t += 50; crew.tick(0.05); } crew.flush(); };
   const nudges = () => crew.snapshot().mods?.nudge ?? {};

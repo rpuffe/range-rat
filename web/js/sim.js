@@ -28,6 +28,7 @@ export const SIM = {
   SPAWN: { x: 23, z: 2 },   // where Rats clock in (the old stand's -3, -4: the layout moved the bank, not the crew)
   STAND_REACH: 3.5,   // 3 m read as "go to the stand" while touching it (playtest)
   BALL_PRICE: 1,       // $ per ball dropped in the bucket stand
+  CLEAN_KIT: 1.25,     // owner playtest 3 §1.4: the clean-kit 25% is in the price (a clean carrier gets the Board's number)
   WALK: 4.2,           // m/s
   FIELD: { xMin: -64, xMax: 64, zMin: -189, zMax: 9 },   // Dimple Creek's netted field (map.js MAP.FIELD)
   MAX_PLAYERS: 6,
@@ -55,7 +56,8 @@ export const CART = {
   RUN_OVER_SPEED: 3,    // m/s, faster than this and people on foot go flying
   BOOST: 1.6,           // speed multiplier during a ping boost
   BOOST_SECS: 20,
-  JACKPOT_R: 15,        // m, a jackpot hoovers every resting ball this close
+  JACKPOT_R: 15,        // m, a jackpot hoovers every resting ball this close (until the hopper is full)
+  UNLOAD_SECS: 1.5,     // owner playtest 3 §5.3: the hopper tips over 1.5 s at the return; the bank lands at the end
   MAX_MULT: 2,          // Hustle: +MULT_STEP a ping, capped (council round 1: pings mustn't outearn chores)
   MULT_STEP: 0.25,
 };
@@ -110,7 +112,8 @@ export function stepCart(c, throttle, steer, dt, vmax, world) {
 export const MATS = Array.from({ length: 10 }, (_, i) => ({ i, x: -18 + i * 4 }));
 
 // How many mats have a customer: more crew, more customers. Balanced for 4.
-export const activeMats = players => Math.min(MATS.length, 4 + 2 * Math.max(1, players));
+// Owner playtest 3 §4: "Open every bay" (up.bays) puts all ten in play at any crew size, at every venue.
+export const activeMats = (players, up = null) => (up?.bays ?? 0) >= 1 ? MATS.length : Math.min(MATS.length, 4 + 2 * Math.max(1, players));
 
 export function mulberry32(a) {
   return () => {
@@ -200,18 +203,23 @@ export function ballHitsPlayer(x0, y0, z0, b, p) {
 // Tier 0 of each item is what you start with; buying moves up one tier.
 
 export const SHOP = [
-  // Personal: each Range Rat buys their own (from the crew wallet), at the
-  // catalog price, and keeps it under their name across sessions.
-  { id: 'gear', title: 'Your carrying gear', personal: true, tiers: [
-    { name: 'Bare hands', desc: 'Your pockets. Holds 3.' },
-    { name: 'Ball retriever tube', cost: 20, desc: 'Click, click, click. Holds 8 and reaches a bit further.' },
-    { name: 'Range bucket', cost: 75, desc: 'Holds 25. You look like you work here.' },
-    { name: 'Push picker', cost: 250, desc: 'Walk over balls and it scoops them up. Holds 60.' },
+  // Owner playtest 3 §5.2: carrying gear is a crew row (up.gear): one buy kits out every Rat, late joiners too.
+  { id: 'gear', title: 'Crew carrying gear', tiers: [
+    { name: 'Bare hands', desc: 'Everyone’s pockets. Holds 3.' },
+    { name: 'Ball retriever tubes', cost: 20, desc: 'One for every Rat. Click, click, click. Holds 8 and reaches a bit further.' },
+    { name: 'Range buckets', cost: 75, desc: 'Everyone holds 25. You all look like you work here.' },
+    { name: 'Push pickers', cost: 250, desc: 'Everyone walks over balls and scoops them up. Holds 60.' },
+  ] },
+  // Owner playtest 3 §4 ("Open every bay"): a small crew opens all ten mats. Hidden at 4+ Rats (they're all open).
+  // Main-session call: it carries over to every venue (a solo or small crew keeps its bays after promotion).
+  { id: 'bays', title: 'Open every bay', minDay: 2, maxCrew: 3, tiers: [
+    { name: 'A bay or two each', desc: 'More of you, more bays open.' },
+    { name: 'Every bay open', cost: 40, desc: 'Every bay open, however many of you there are.' },
   ] },
   { id: 'cart', title: 'Picker cart', minDay: 3, tiers: [
     { name: 'No cart', desc: 'Everything on foot.' },
-    { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 300, unloads itself at the ball return, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
-    { name: 'Wide gang reels', cost: 1500, desc: 'Scoops a lane almost twice as wide, holds 600, a bit faster.' },
+    { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 150, unloads itself at the ball return, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
+    { name: 'Wide gang reels', cost: 1500, desc: 'Scoops a lane almost twice as wide, holds 300, a bit faster.' },
     { name: 'A second cart', cost: 300000, minVenue: 3, desc: 'Another caged cart with wide reels, parked beside the first. One laps for the crowd, one harvests. Each pings on its own.' },
   ] },
   { id: 'shed', title: 'Snack shed', minVenue: 1, tiers: [
@@ -233,10 +241,23 @@ export const SHOP = [
     { name: 'Electric washer', cost: 160, desc: 'Sparkling balls: $3 each, and it washes 1 ball a second on its own.' },
     { name: 'Industrial ball wash', cost: 6000, minVenue: 1, desc: 'Washes 5 balls a second on its own. A ball car wash. It has a name. The name is Brent.' },
   ] },
+  // Owner playtest 3 §5.1: the pressure washer's own row (perks.washRate / washReach / foam / truck). The
+  // power-washing truck (Stadium, $300,000) is a later build: its tier is not in the shop yet.
+  { id: 'wand', title: 'Pressure washer', minDay: 2, tiers: [
+    { name: 'Garden-hose nozzle', desc: 'It sprays. Mostly forward.' },
+    { name: 'Fan nozzle', cost: 40, minDay: 2, desc: 'Cleans 1.5× as fast. A wider spray. Same tiny engine.' },
+    { name: 'Turbo nozzle', cost: 150, minDay: 4, desc: 'Cleans twice as fast and reaches 9 m. Corporate approved this nozzle after a brief incident.' },
+    { name: 'Foam cannon', cost: 20000, minVenue: 2, desc: 'Foams every fixture in a 2 m cone at once. Sweep a row of mats in one pass.' },
+  ] },
+  // Owner playtest 3 §3.3: the bucket basket's machine (BUCKETS.MACHINE_SECS). Hidden at the Muni.
+  { id: 'bucket', title: 'Bucket machine', minVenue: 1, tiers: [
+    { name: 'Filled by hand', desc: 'Hold the button at the dispenser. 30 balls a bucket.' },
+    { name: 'Bucket machine', cost: 400, desc: 'Fills a bucket every 10 s. It hums. Nobody knows the tune.' },
+  ] },
+  // Owner playtest 3 §5.1: the turbo nozzle moved to the wand row; amenities keep one tier (saves migrate in crew.mjs).
   { id: 'amen', title: 'Club amenities', minVenue: 1, tiers: [
     { name: 'None', desc: 'The members have noticed.' },
-    { name: 'Turbo nozzle', cost: 3000, desc: 'The pressure washer cleans twice as fast and reaches 9 m. Corporate approved this nozzle after a brief incident.' },
-    { name: 'Covered bays', cost: 8000, desc: 'Mats get no morning mud and scuff half as fast. The members do not like to see dirt. Or you.' },
+    { name: 'Covered bays', cost: 8000, desc: 'Mats scuff half as fast. The members approve.' },
   ] },
   DIVE_ROW,    // personal: the dive gear ladder (Scuba v2), kept by name as diveByName
   POND_ROW,    // crew: the pneumatic ball tube and the pond pump
@@ -252,11 +273,11 @@ export const SHOP = [
     { name: 'Radio spot', cost: 90, desc: 'Customers hit 55% more balls.' },
     { name: 'A blimp', cost: 250, desc: 'Customers hit twice as many balls.' },
   ] },
-  { id: 'shoes', title: 'Shoes', tiers: [
+  { id: 'shoes', title: 'Crew shoes', tiers: [
     { name: 'Range-issue loafers', desc: 'They squeak.' },
-    { name: 'Sneakers', cost: 15, desc: 'Walk 15% faster, sprint longer.' },
-    { name: 'Running shoes', cost: 45, desc: 'Walk 30% faster, sprint even longer.' },
-    { name: 'Carbon spikes', cost: 120, desc: 'Walk 45% faster, sprint for ages.' },
+    { name: 'Sneakers', cost: 15, desc: 'Everyone walks 15% faster and sprints longer.' },
+    { name: 'Running shoes', cost: 45, desc: 'Everyone walks 30% faster and sprints even longer.' },
+    { name: 'Carbon spikes', cost: 120, desc: 'Everyone walks 45% faster and sprints for ages.' },
   ] },
   { id: 'hardhat', title: 'Hard hats', tiers: [
     { name: 'No hats', desc: `A ball hit floors you for ${SIM.KNOCK_SECS} seconds.` },
@@ -270,24 +291,34 @@ export const HELPER_NAMES = ['Kyle', 'Madison', 'Tanner', 'Brayden'];
 // A row appears at its venue (`minVenue`) and, at the Muni, on its day (`minDay`): day 1 is
 // gear, shoes, hard hats and the teenagers; the washer and ads on day 2; the cart on day 3;
 // the snack shed (the kitchen) at the Range Club. Hidden rows are not shown at all.
-export const shopShows = (item, venue = 0, day = Infinity, endless = false) =>   // round 7 #9: an `endless` row shows only in endless
-  (item.minVenue ?? 0) <= venue && (venue > 0 || (item.minDay ?? 0) <= day) && (!item.endless || !!endless);
+// Owner playtest 3 §4: a row with `maxCrew` hides for bigger crews (Open every bay: at 4+ Rats every mat is open).
+export const shopShows = (item, venue = 0, day = Infinity, endless = false, crew = 1) =>   // round 7 #9: an `endless` row shows only in endless
+  (item.minVenue ?? 0) <= venue && (venue > 0 || (item.minDay ?? 0) <= day) && (!item.endless || !!endless) &&
+  (!item.maxCrew || Math.max(1, crew) <= item.maxCrew);
+// Why the next tier can't be bought yet: 'Day 4' (a Muni tier's own day) or the venue's name. Null when it can.
+export function tierLock(item, lvl, venue = 0, day = Infinity) {
+  const t = item?.tiers[lvl + 1];
+  if (!t) return null;
+  if ((t.minVenue ?? 0) > venue) return VENUE_RULES[t.minVenue]?.name ?? 'later';
+  if (venue === 0 && (t.minDay ?? 0) > day) return `Day ${t.minDay}`;
+  return null;
+}
 // The day the shop is shopping for: overnight (the report) it is tomorrow.
 export const shopDay = (phase, day) => (phase === 'report' ? day + 1 : day);
 
 // Crew upgrades scale with crew size (balanced for 4): ×1 solo, ×2.2 for four.
-// Personal gear doesn't: everyone buys their own at the catalog price.
+// Personal gear (only the dive gear now, §5.2) doesn't: everyone buys their own at the catalog price.
 export const priceScale = crewSize => 1 + 0.4 * (Math.max(1, crewSize) - 1);
 export function nextPrice(id, up, crewSize, gearLevel = 0, venue = 0, day = Infinity, endless = false) {
   const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
-  if (!item || !shopShows(item, venue, day, endless)) return null;
+  if (!item || !shopShows(item, venue, day, endless, crewSize)) return null;
   const lvl = item.personal ? gearLevel : up?.[id] ?? 0;
   const t = item.tiers[lvl + 1];
-  if (!t || (t.minVenue ?? 0) > venue) return null;    // maxed out, or not at this venue yet
+  if (!t || tierLock(item, lvl, venue, day)) return null;    // maxed out, or not at this venue (or Muni day) yet
   return item.personal ? t.cost : Math.round(t.cost * priceScale(crewSize));
 }
 
-// One Range Rat's own carrying gear.
+// The crew's carrying gear (up.gear, §5.2), the same for every Rat. p.gear is a copy on the wire.
 export function gearPerks(level = 0) {
   return {
     pocket: [3, 8, 25, 60][level],
@@ -308,14 +339,18 @@ export function perks(up = {}) {
     price: SIM.BALL_PRICE + Math.min(2, up.washer ?? 0),
     washer: up.washer ?? 0,
     washAuto: [0, 0, 1, 5][up.washer ?? 0],          // balls a second the ball washer cleans on its own
-    turbo: (up.amen ?? 0) >= 1,
-    covered: (up.amen ?? 0) >= 2,
+    washRate: [1, 1.5, 2, 2, 2][up.wand ?? 0],      // §5.1: the pressure washer's row (fan ×1.5, turbo ×2)
+    washReach: [7, 7, 9, 9, 9][up.wand ?? 0],      // m of spray (WASH.RANGE at tier 0)
+    foam: (up.wand ?? 0) >= 3,                     // the foam cannon: every fixture in a 2 m cone at once
+    truck: (up.wand ?? 0) >= 4,                    // the power-washing truck (a later build)
+    covered: (up.amen ?? 0) >= 1,
+    bays: (up.bays ?? 0) >= 1,                     // §4: Open every bay
     swingGapMult: [1, 0.8, 0.645, 0.5][up.ads ?? 0],
     walk: SIM.WALK * (1 + 0.15 * (up.shoes ?? 0)),
     knockSecs: up.hardhat ? 1 : SIM.KNOCK_SECS,
     cart: up.cart ?? 0,
     carts: [0, 1, 1, 2][up.cart ?? 0],               // how many carts the crew owns (tier 3: the fleet)
-    cartCap: [0, 300, 600, 600][up.cart ?? 0],
+    cartCap: [0, 150, 300, 300][up.cart ?? 0],   // owner playtest 3 §5.3: half the hopper, a fast unload
     cartReel: [0, 2.4, 4.2, 4.2][up.cart ?? 0],
     cartSpeed: [0, 9, 11, 11][up.cart ?? 0],
     shed: up.shed ?? 0,
@@ -332,7 +367,8 @@ export const WASH = {
   GRAB: 2.5,                  // m, how close to grab the wand
   HOSE: 60,                   // m of hose (reaches the mats and the sign); wander further and you drop the wand
   RANGE: 7,                   // m, how far the spray reaches
-  RATE: 0.08,                 // mud cleaned per second of spraying on target (stacks per sprayer)
+  RATE: 0.08,                 // mud cleaned per second of spraying on target (stacks per sprayer), × perks.washRate
+  FOAM_R: 2,                  // m: the foam cannon's cone, every fixture this close to the spray line at once
   MUD_PER_M: 0.003,           // the cart's mud per metre driven (full after ~330 m)
 };
 
@@ -344,7 +380,8 @@ export const WASH = {
 //            current venue's own gauge (round 4: Bay Utilization, Crowd Sentiment, Zoning Compliance,
 //            Orbital Debris); only the current venue's counts, and it is null at the Muni and the Club.
 //   Hustle = Hit the Cart: 1 + 0.25 a ping, max ×2, resets each morning
-//   Gear   = the cart: 1 + 0.25 × cleanliness; people ×1 (gear grime comes later)
+//   Gear   = owner playtest 3 §1.4 (the one price): Rate carries SIM.CLEAN_KIT ×1.25, so a clean carrier pays exactly
+//            BV × Hustle; grime takes off up to 20% (a Rat: 0.2 × grime / 3; the cart: 0.2 × mud). Machinery ×1.
 export const VENUES = [{ name: 'Muni Range', rate: 1 }, { name: 'Range Club', rate: 5 }, { name: 'Tiered Entertainment Range', rate: 25 },
   { name: 'Stadium Range', rate: 100 }, { name: 'County Range', rate: 500 }, { name: 'Orbital Range', rate: 2500 }];
 export const KIND_W = { range: 1, glow: 2, lead: 3, square: 2, gold: 10, splitter: 1, bouncy: 1.5, debris: 3 };
@@ -374,10 +411,10 @@ export const BALLS_OUTSTANDING = 4_213_377_019;   // down to Ball No. 1, hit int
 const clamp01 = v => Math.max(0, Math.min(1, v ?? 0));
 const c2 = v => Math.round(v * 100) / 100;
 
-// The cart's gear factor: 1 + 0.25 × cleanliness (no cart: 1). Each cart in the fleet pays its own.
-export const cartGearOf = cart => cart ? 1 + 0.25 * (1 - Math.max(0, Math.min(1, cart.mud ?? 0))) : 1;
+// The cart's gear factor: 1 − 0.2 × mud (no cart: 1; filthy 0.8). Each cart in the fleet pays its own.
+export const cartGearOf = cart => cart ? 1 - 0.2 * Math.max(0, Math.min(1, cart.mud ?? 0)) : 1;
 export function ballValue({ perks: k, mult = 1, cart = null, curb = 0.5, pond = null, fries = null, kpi = null, commendations = 0, venue = 0 }) {
-  const rate = VENUES[venue].rate * k.price * (1 + 0.05 * Math.min(10, commendations));
+  const rate = VENUES[venue].rate * k.price * (1 + 0.05 * Math.min(10, commendations)) * SIM.CLEAN_KIT;
   const upkeep = 1 + 0.5 * (clamp01(curb) + (pond == null ? 0 : clamp01(pond)) + (fries == null ? 0 : clamp01(fries)) + (kpi == null ? 0 : clamp01(kpi)));
   const bv = c2(rate * upkeep);
   const cartGear = cartGearOf(cart);
@@ -404,7 +441,15 @@ export function quotaQ(day, ceiling) {
   const q = [0.15, 0.2, 0.3, 0.35][day - 2] ?? 0.35 + 0.05 * (day - 5);
   return Math.min(Math.max(0.3, q), 0.8 * (ceiling - 1));
 }
-export const LAST_CALL = { SECS: 60, FROM_DAY: 2, SWING: 1.5 };
+// Owner playtest 3 §2: Last Call at T−90 (glow, customers swing ×3 as often for 30 s), then the cleanup minute:
+// at T−CLEANUP every customer walks out, no customer ball after it, and the mats stop scuffing.
+export const LAST_CALL = { SECS: 90, FROM_DAY: 2, SWING: 3 };
+export const CLEANUP = 60;
+// Owner playtest 3 §3.1: mats keep their mud overnight, capped here ("the night crew knocks the worst off").
+export const MAT_NIGHT_CAP = 0.6;
+// Owner playtest 3 §3.3: the bucket basket by the dispenser. Empty every morning; the crew fills it by hand at the
+// Muni (hold Ⓐ, two chutes), the Bucket machine (SHOP `bucket`, the Club) adds one every MACHINE_SECS.
+export const BUCKETS = { BASKET: 12, BALLS: 30, BALLS_CLUB: 40, FILL_SECS: 1.5, CHUTES: 2, MACHINE_SECS: 10, WAIT: 25 };
 // Council round 6 #2: from Tiered on, the bell's review also needs the venue gauge at or above this.
 // The Muni and the Club have no gauge (kpi null), so their rule is unchanged.
 export const QUOTA_KPI = 0.5;
@@ -443,7 +488,7 @@ export const SILO = { x: BANK.x + 2.5 * Math.cos(35 * Math.PI / 180), z: BANK.z 
 export const atHandle = (p, side) => Math.hypot(p.x - WASHER_HANDLES[side].x, p.z - WASHER_HANDLES[side].z) < WASHER.REACH;
 
 // ---- gear grime (council round 2, §4.7) ------------------------------------
-export const gearGrimeFactor = grime => 1 + 0.25 * (1 - Math.max(0, Math.min(3, grime ?? 0)) / 3);
+export const gearGrimeFactor = grime => 1 - 0.2 * Math.max(0, Math.min(3, grime ?? 0)) / 3;   // owner playtest 3 §1.4: 1.0 clean -> 0.8 caked
 
 // The pond (council round 1, #5): balls that land in it sink and stay overnight.
 // Pond Clarity counts toward Upkeep from day 4, when lead balls start arriving.
@@ -493,6 +538,13 @@ export const GARY = {
   HUDDLE_R: 8,              // every online Rat this close to the stand when he arrives: it counts twice
   STALL: 3, STALLS: 3,      // council round 8 #2: a crew ball on his cart while he drives: 3 s of notes, 3 times a visit
   SOLO_WARN: 60, SOLO_MATS: 2,   // playthrough 4 A18: solo, a 60 s warning and only the two muddiest mats in play
+  // Owner playtest 3 §6.2–6.4: the schedule, the chat and the Seal.
+  GAP: 2, GAP_LONG: 3, GAP_LONG_P: 1 / 3,   // the next visit is 2 days later, or 3 with a 1-in-3 chance (crew RNG)
+  STALL_BUDGET: 12,         // s of stalling a visit, shared by chat and cart pings (each ping still GARY.STALL)
+  CHAT_R: 2.5,              // m: hold Ⓐ this close to a parked Gary to chat
+  CHAT_RESUME: 1,           // s he waits after a chat ends ("Right, then.")
+  SEAL: 1.25,               // Gary's Seal: a passed visit with a full huddle pays ×1.25 a ball until the bell
+  COMMEND_HUDDLE: 3, COMMEND_PASS: 1, COMMEND_CAP: 10,   // commendations for a pass with / without the full huddle
   START: { x: 60, z: 14 },
   STOPS: [
     { id: 'sign', x: 14, z: 13 },

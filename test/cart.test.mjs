@@ -98,7 +98,7 @@ test('buying the cart in the shop creates it (cash needed, outside a shift)', ()
   assert.ok(crew.cart, 'cart created on purchase');
   assert.equal(crew.cart.x, CART.PARK.x);
   assert.ok(crew.snapshot().cart);
-  assert.equal(crew.perks.cartCap, 300);
+  assert.equal(crew.perks.cartCap, 150);
 });
 
 test('cart tier 2 (wide reels) improves perks and keeps the same cart object', () => {
@@ -109,7 +109,7 @@ test('cart tier 2 (wide reels) improves perks and keeps the same cart object', (
   act(crew, p, { t: 'buy', id: 'cart' });
   assert.equal(crew.up.cart, 2);
   assert.equal(crew.cart, before);
-  assert.equal(crew.perks.cartCap, 600);
+  assert.equal(crew.perks.cartCap, 300);
   assert.ok(crew.perks.cartReel > perks({ cart: 1 }).cartReel);
   assert.ok(crew.perks.cartSpeed > perks({ cart: 1 }).cartSpeed);
 });
@@ -356,6 +356,9 @@ test('pulling up to the stand banks the load at the ball price', () => {
   crew.flush();
   c.x = SIM.STAND.x + 2; c.z = SIM.STAND.z + 2; c.mud = 0;   // spotless cart: Gear 1.25
   run(0.25);
+  assert.equal(c.load, 5, 'owner playtest 3 §5.3: the hopper is still tipping');
+  assert.ok(crew.flush().ev.some(e => e.t === 'tip' && e.cart === 0));
+  run(1.5);
   assert.equal(c.load, 0);
   assert.equal(crew.cash, 9.38, 'washer tier 1: rate $2, BV $3 at Curb 1, x 1.25 Gear = $18.75 in all; the muddy half (/ price 2) is paid now');
   assert.equal(crew.hopper.n, 5);
@@ -687,13 +690,14 @@ test('mult raises the multiplier, caps at MAX_MULT, and multiplies banked cash',
   assert.equal(pings(crew).at(-1).mult, CART.MAX_MULT);
 
   crew.cart.mud = 0;
-  assert.equal(crew.ballPrice(), 1.5 * CART.MAX_MULT, 'BV $1.5 x Hustle 2; the cart Gear is applied at the deposit, not in the headline');
+  const bv = crew.valueNow().bv;   // owner playtest 3 §1.4: ~$1.87 (the one price)
+  assert.equal(crew.ballPrice(), Math.round(bv * CART.MAX_MULT * 100) / 100, 'BV x Hustle 2; the cart Gear is applied at the deposit, not in the headline');
   crew.cart.load = 4; crew.cart.loadW = 4;
   const before = crew.cash;
   crew.cart.x = SIM.STAND.x + 2; crew.cart.z = SIM.STAND.z + 2;
-  run(0.25);
+  run(1.75);   // the hopper tips for 1.5 s (owner playtest 3 §5.3)
   assert.equal(crew.cart.load, 0);
-  assert.equal(crew.cash - before, 4 * 1.5 * CART.MAX_MULT * 1.25, 'cart deposit: weights x BV x Hustle x Gear');
+  assert.equal(Math.round((crew.cash - before) * 100) / 100, Math.round(4 * bv * CART.MAX_MULT * 100) / 100, 'cart deposit: weights x BV x Hustle x Gear (spotless: 1)');
 });
 
 test('a customer ball (no `by`) rings the cage for no prize', () => {
@@ -804,10 +808,10 @@ test('endShift banks any cart load into the report', () => {
   assert.equal(crew.phase, 'report');
   assert.equal(crew.cart.load, 0);
   assert.equal(crew.cart.boostT, 0);
-  assert.equal(crew.cash, 26.25, '7 balls x BV 1.5 x Hustle 2 x Gear 1.25 (spotless cart)');
+  assert.equal(crew.cash, 26.18, '7 balls x BV 1.87 (the one price) x Hustle 2 x Gear 1 (spotless cart)');
   assert.equal(crew.report.deposited, 7);
-  assert.equal(crew.report.cash, 26.25);
-  assert.equal(crew.report.bank, 26.25);
+  assert.equal(crew.report.cash, 26.18);
+  assert.equal(crew.report.bank, 26.18);
   assert.equal(crew.totals.deposited, 7);
 });
 
@@ -816,7 +820,7 @@ test('endShift banks a driverless cart\'s load too', () => {
   openShift(crew);
   crew.cart.load = 3; crew.cart.loadW = 3;
   run(6);
-  assert.equal(crew.cash, 5.63, '3 balls x BV 1.5 x Gear 1.25 = 5.625, to cents (spotless cart)');
+  assert.equal(crew.cash, 5.61, '3 balls x BV 1.87 (the one price) x Gear 1 (spotless cart)');
   assert.equal(crew.report.deposited, 3);
 });
 
@@ -891,7 +895,7 @@ test('fleet: tier 3 is the second cart, from the Stadium, $300k base, parked at 
   assert.equal(nextPrice('cart', { cart: 2 }, 1, 0, 3), 300_000);
   assert.equal(nextPrice('cart', { cart: 2 }, 4, 0, 3), 660_000);
   assert.equal(perks({ cart: 3 }).carts, 2);
-  assert.equal(perks({ cart: 3 }).cartCap, 600);
+  assert.equal(perks({ cart: 3 }).cartCap, 300);
   const { crew } = fleetCrew({ up: { cart: 2 }, cash: 400_000 });
   const first = crew.cart;
   const p = addPlayer(crew, 'A', 0, 0);
@@ -966,7 +970,7 @@ test('fleet: both hoppers unload at the stand, each at its own gear', () => {
   crew.carts[0].load = 4; crew.carts[0].loadW = 4; crew.carts[0].mud = 0;
   crew.carts[1].load = 4; crew.carts[1].loadW = 4; crew.carts[1].mud = 1;
   for (const c of crew.carts) { c.x = SIM.STAND.x + 2; c.z = SIM.STAND.z + 2; }
-  run(0.25);
+  run(1.75);   // the hoppers tip for 1.5 s (owner playtest 3 §5.3)
   assert.equal(crew.carts[0].load, 0); assert.equal(crew.carts[1].load, 0);
   const ev = crew.flush().ev.filter(e => e.t === 'cash' && e.kind === 'cart');
   assert.deepEqual(ev.map(e => e.cart).sort(), [0, 1]);

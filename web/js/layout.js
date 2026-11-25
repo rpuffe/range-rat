@@ -38,3 +38,10 @@ export const PIPE_SECS = { direct: 1.7, washer: 1.5 };   // how long a ball take
 export const DISPENSER = { x: 23.5, z: 8.5 };
 export const BASKET = { x: DISPENSER.x, z: 7.5, r: 0.32 };
 export const BASKET_POINT = { x: DISPENSER.x, z: 6.8 };
+// Owner playtest 3 §3.3: where a Rat fills buckets, 1.2 m east of the dispenser (beside its east side), clear of the
+// customers' spot (BASKET_POINT). The basket's 12 bucket slots: a little heap on the ground beside the basket.
+export const FILL_POINT = { x: DISPENSER.x + 1.2, z: 8.2 };
+export const BASKET_SLOTS = Array.from({ length: 12 }, (_, i) => {
+  const row = i < 5 ? 0 : i < 9 ? 1 : i < 11 ? 2 : 3, k = [0, 5, 9, 11][row], m = [5, 4, 2, 1][row];
+  return { x: BASKET.x - 0.85 + (i - k - (m - 1) / 2) * 0.34, y: 0.15 + row * 0.26, z: BASKET.z + 0.05 };
+});

@@ -63,11 +63,12 @@ export function createCrowd({ scene, people, maxFull: maxFull0 = 14, nearM: near
       if (!w) return;
       const taken = w.st === 'playing' || w.st === 'sulk';
       if (w.cust && w.st && w.st !== 'empty') { upsert(w.cust, i, w.st, w.t0, w.look, false); seen.add(w.cust); }
-      if (w.inc) { upsert(w.inc.cust, i, 'arrive', w.inc.t0, w.inc.look, taken); seen.add(w.inc.cust); }
+      if (w.inc) { upsert(w.inc.cust, i, 'arrive', w.inc.t0, w.inc.look, taken).wb = !!w.inc.wb; seen.add(w.inc.cust); }
     });
     for (const f of [...figs.values()]) {
       if (seen.has(f.cust) || f.st === 'leave') continue;
-      if (f.st === 'arrive') drop(f);                    // the mat closed on them
+      if (f.st === 'arrive' && f.wb) { f.st = 'leave'; f.t0 = t; f.basket = true; }   // owner playtest 3 §3.3: no bucket, walk out
+      else if (f.st === 'arrive') drop(f);               // the mat closed on them
       else { f.st = 'leave'; f.t0 = t; }                 // vanished from the wire mid-play: walk out
     }
   }

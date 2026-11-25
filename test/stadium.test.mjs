@@ -189,15 +189,15 @@ test('playthrough 3 #1: the Stadium\'s first day gets the Two-Minute Warning too
   assert.equal(crew.events.filter(e => e.t === 'lastcall').length, 1, 'Last Call rings with no second line');
 });
 
-test('playthrough 3 #2: the T-30 re-check reads the live crowd; live fine but graded short says "Keep lapping!"', () => {
+test('playthrough 3 #2: the re-check (T-60 since owner playtest 3) reads the live crowd; live fine but graded short says "Keep lapping!"', () => {
   const { crew, run, st } = stadiumCrew();
   crew.venueDay = 2; crew.shiftSecs = 300;
   crew.fixtures = Object.fromEntries(Object.keys(crew.fixtures).map(k => [k, 0]));   // Upkeep clean: only the crowd counts
   st.win.a = Array(120).fill(0.2); st.win.i = 0;     // the graded mean is short (from before the bell: no slip line)...
   st.s = 1;                                          // ...but the Rats are lapping at 100% live
-  crew.shiftT = 300 - 60; run(0.2);
+  crew.shiftT = 300 - 90; run(0.2);
   crew.events.length = 0;
-  crew.shiftT = 300 - 30.1; run(0.3);
+  crew.shiftT = 300 - 60.1; run(0.3);
   const r = crew.events.filter(e => e.t === 'rally');
   assert.equal(r.length, 1);
   assert.equal(r[0].need, RALLY_LINES.keepLapping);
@@ -206,8 +206,8 @@ test('playthrough 3 #2: the T-30 re-check reads the live crowd; live fine but gr
   const b = stadiumCrew();
   b.crew.venueDay = 2; b.crew.shiftSecs = 300;
   b.st.win.a = Array(120).fill(0.2); b.st.win.i = 0; b.st.s = 0.3;
-  b.crew.shiftT = 300 - 60; b.run(0.2);
+  b.crew.shiftT = 300 - 90; b.run(0.2);
   b.crew.events.length = 0;
-  b.crew.shiftT = 300 - 30.1; b.run(0.3);
+  b.crew.shiftT = 300 - 60.1; b.run(0.3);
   assert.equal(b.crew.events.find(e => e.t === 'rally')?.need, RALLY_LINES.gauge[3]);
 });

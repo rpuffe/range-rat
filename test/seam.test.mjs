@@ -95,7 +95,9 @@ test('GOLDEN: cartBlocked, fieldFor, clampToField and BV are unchanged at venues
     assert.deepEqual(netsFor({ venue: v }), { left: -64.5, right: 64.5, back: -190 });
   }
   assert.deepEqual(fieldFor(), SIM.FIELD);
-  assert.equal(fnv(bvs()), 'a648feb3', 'BV is byte-identical with no kpi');
+  // Re-recorded for owner playtest 3 §1.4 (the one price, one cause: put SIM.CLEAN_KIT back to 1 and the gear factors
+  // back to 1 + 0.25 x cleanliness and a648feb3 comes out again).
+  assert.equal(fnv(bvs()), '18de0432', 'BV is byte-identical with no kpi');
   assert.equal('kpi' in ballValue({ perks: perks({}), curb: 1 }), false, 'no kpi key unless a venue has one');
 });
 
@@ -104,14 +106,14 @@ test('GOLDEN: cartBlocked, fieldFor, clampToField and BV are unchanged at venues
 // customers' walk to the basket by the dispenser (was 10b46ff0), the Club run only with the bank point moving to the
 // ball return, where its two teenagers bank (was 71c4c5b). With both put back, the old fingerprints come out exactly.
 test('GOLDEN: a whole seeded crew plays out identically at the Muni and the Club (no modules)', () => {
-  assert.equal(fnv(crewRun(null)), '4e1c4b49');
-  assert.equal(fnv(crewRun(CLUB_SAVE)), 'd9a67881');
+  assert.equal(fnv(crewRun(null)), '47588632');
+  assert.equal(fnv(crewRun(CLUB_SAVE)), 'a1dfbc50');
 });
 
 test('GOLDEN: a module that lives at venue 2+ changes nothing at venues 0-1', () => {
   const noisy = { id: 'noisy', venue: 2, kpi: () => 0, launchMod: (c, st, shot) => ({ ...shot, vx: shot.vx + 9 }), tick: c => { c.cash += 1000; } };
-  assert.equal(fnv(crewRun(null, { modules: [noisy] })), '4e1c4b49');
-  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), 'd9a67881');
+  assert.equal(fnv(crewRun(null, { modules: [noisy] })), '47588632');
+  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), 'a1dfbc50');
 });
 
 // ---- the fourth gauge ------------------------------------------------------------------------------------------------
@@ -123,7 +125,7 @@ test('kpi: 1 gives an Upkeep ceiling of 3.0, and the KPI adds 0.5 x kpi to Upkee
   assert.equal(ballValue({ perks: k, curb: 1, pond: 1, fries: 1, kpi: 1 }).upkeep, 3.0);
   assert.equal(ballValue({ perks: k, curb: 1, pond: 1, fries: 1, kpi: 0.5 }).upkeep, 2.75);
   assert.equal(ballValue({ perks: k, curb: 1, kpi: 7 }).kpi, 1, 'clamped');
-  assert.equal(ballValue({ perks: k, curb: 1, kpi: 0.5 }).bv, 1.75);
+  assert.equal(ballValue({ perks: k, curb: 1, kpi: 0.5 }).bv, 2.19, '1.25 (the one price) x 1.75');
 });
 
 const dummyKpi = (venue, v = 1) => ({ id: 'dial', venue, kpi: () => v });

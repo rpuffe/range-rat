@@ -24,7 +24,7 @@ function recount(crew, st) {
   }
   st.cups = cups;
   st.kpi = bayUtil(cups.reduce((a, c) => a + c, 0));
-  if (st.saved && st.kpi + 1e-9 < QUOTA_KPI) st.saved = null;     // round 8 #6: a later dip under the tick undoes the save
+  if (st.saved && st.kpiAtClose == null && st.kpi + 1e-9 < QUOTA_KPI) st.saved = null;     // round 8 #6: a later dip under the tick undoes the save
 }
 function remove(crew, b, by) {
   crew.balls.delete(b.id);
@@ -35,12 +35,15 @@ export default {
   id: 'tiered',
   venue: 2,
 
-  init: () => ({ cups: MAP.BOWLS.map(() => 0), kpi: 1, gt: MAP.BOWLS.map(() => 0), rc: 0, saved: null }),
+  // kpiAtClose (owner playtest 3 §2): "the last customer out reads the bowls". At T-60 the gauge is stored and the
+  // review reads it from then on (the purple bar freezes with a padlock tick, views/tiered.js).
+  init: () => ({ cups: MAP.BOWLS.map(() => 0), kpi: 1, gt: MAP.BOWLS.map(() => 0), rc: 0, saved: null, kpiAtClose: null }),
 
-  startShift(crew, st) { st.cups = MAP.BOWLS.map(() => 0); st.kpi = 1; st.gt = MAP.BOWLS.map(() => 0); st.rc = 0; st.saved = null; },
+  startShift(crew, st) { st.cups = MAP.BOWLS.map(() => 0); st.kpi = 1; st.gt = MAP.BOWLS.map(() => 0); st.rc = 0; st.saved = null; st.kpiAtClose = null; },
 
   tick(crew, st, dt) {
     if ((st.rc += dt) >= 0.25) { st.rc = 0; recount(crew, st); }      // balls are picked up elsewhere: recount
+    if (st.kpiAtClose == null && crew.closing?.()) { recount(crew, st); st.kpiAtClose = st.kpi; crew.dirty = true; }
     if (!crew.working() || !guttersDrain(crew.up, crew.venue)) return;
     MAP.BOWLS.forEach((bowl, i) => {
       st.gt[i] = Math.min(st.gt[i] + dt * GUTTERS.PER_SEC, 1 + 1e-9);
@@ -83,7 +86,7 @@ export default {
       recount(crew, st);
       // Round 8 #6 (B2): in Last Call at Tiered, a TARGET that lifts Bay Utilization from under the tick to over it saved
       // the stamp ("Saved by Cy's TARGET at 0:12." on a stamped bell). A later save replaces it; a dip clears it.
-      if (crew.venue === 2 && crew.lastCall() && before + 1e-9 < QUOTA_KPI && st.kpi + 1e-9 >= QUOTA_KPI) {
+      if (crew.venue === 2 && crew.lastCall() && st.kpiAtClose == null && before + 1e-9 < QUOTA_KPI && st.kpi + 1e-9 >= QUOTA_KPI) {
         st.saved = { by: shooter.id, name: shooter.name, left: Math.max(0, Math.round(crew.shiftSecs - crew.shiftT)) };
         crew.events.push({ t: 'tieredsave', by: shooter.id });   // playthrough 4 B11: the live 'SAVED!' toast (views/tiered.js)
       }
@@ -95,8 +98,9 @@ export default {
     recount(crew, st);
   },
 
-  kpi: (crew, st) => st.kpi,
+  kpi: (crew, st) => st.kpiAtClose ?? st.kpi,
   awards: () => [['Bullseye (Noted)', 'targets']],
   // saved (round 8 #6): { by, name, left } until the next morning, so the report card can name the save.
-  snapshot: (crew, st) => ({ cups: st.cups, util: Math.round(st.kpi * 100) / 100, ...(st.saved ? { saved: st.saved } : {}) }),
+  // judged: the bowls were read at T-60 (util is then the frozen value).
+  snapshot: (crew, st) => ({ cups: st.cups, util: Math.round((st.kpiAtClose ?? st.kpi) * 100) / 100, ...(st.kpiAtClose != null ? { judged: 1 } : {}), ...(st.saved ? { saved: st.saved } : {}) }),
 };

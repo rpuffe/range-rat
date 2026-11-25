@@ -111,15 +111,17 @@ test('#3: just over the target is not "On target" at the rally (the margin), but
   assert.ok(UPKEEP_MARGIN >= 0.05 && UPKEEP_MARGIN <= 0.07);
 });
 
-test('#3: the Last Call rally and the 30 s re-check agree (both read the margin)', () => {
+// Owner playtest 3 §2: the re-check is now the cleanup deal at T-60, after which nothing scuffs: it reads margin 0.
+test('#3: the Last Call rally reads the margin; the cleanup deal (T-60) reads none, as nothing scuffs after it', () => {
   const m = makeCrew({ day: 4 });
   m.crew.quota = { ...(m.crew.quota ?? {}), q: 0.3 };
   m.crew.valueNow = () => val(1.3 + UPKEEP_MARGIN / 2);
   m.mats(0.2); m.crew.fixtures.sign = 0; m.crew.fixtures.stand = 0;
   const first = m.crew.rallyNeeds();
   assert.notEqual(first.need, RALLY_LINES.onTarget);
-  const again = m.crew.recheckNeeds();
-  assert.equal(again.need, first.need);
+  assert.equal(m.crew.recheckNeeds().need, RALLY_LINES.onTarget, 'margin 0 at the cleanup deal');
+  m.crew.valueNow = () => val(1.3 - 0.01);
+  assert.equal(m.crew.recheckNeeds().need, first.need, 'still short: the same line');
   m.crew.valueNow = () => val(1.3 + UPKEEP_MARGIN + 0.02);
   assert.equal(m.crew.rallyNeeds().need, RALLY_LINES.onTarget);
   assert.equal(m.crew.recheckNeeds().need, RALLY_LINES.onTarget);
@@ -166,5 +168,5 @@ test('#10: the gold debut memo is 8 words; the day-5 line with stamps and fee in
     return crew.report.tomorrow;
   };
   assert.equal(run({ day: 5, stamps: 3, cash: 1e6 }), 'Tomorrow: sign at the bell for the Club.');
-  assert.match(run({ day: 5, stamps: 3, cash: 0 }), /three review stamps plus the fee/);
+  assert.match(run({ day: 5, stamps: 3, cash: 0, garyDay: 99 }), /three review stamps plus the fee/);
 });

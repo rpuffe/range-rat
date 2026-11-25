@@ -4,6 +4,7 @@
 // Pure (no THREE, no DOM): server/venues/nudge.mjs deals and clears it, main.js shows it in the checklist's slot.
 import { MAP } from './map.js';
 import { SIM, WASHER_HANDLES, WASH, MATS, FIXTURE_BY_ID, FRIES } from './sim.js';
+import { morningLine, morningTarget } from './morning.js';   // owner playtest 3 §3.4: the morning deal ('am:*', builder 2)
 
 export const NUDGE = {
   SECS: 45,          // the line goes after 45 s of working time...
@@ -54,7 +55,8 @@ export function dealFor(i, p, up) {
 // Where the yellow arrow goes (client). wand: does this Rat hold the wand; at: where they stand (the nearest mat).
 // null = no place (the shop is a menu).
 export function nudgeTarget(id, wand = false, at = { x: 0, z: 0 }, { cart = null, gary = null } = {}) {
-  if (id === 'gary:stall') return gary ? { x: gary.x, z: gary.z, y: 2.6, s: 1 } : null;   // round 8 #2: his cart, wherever it is
+  if (id?.startsWith('am:')) return id === 'am:mats' || ((id === 'am:sign' || id === 'am:stand') && !wand) ? nudgeTarget(id === 'am:mats' ? 'hose' : 'gary:' + id.slice(3), wand, at) : morningTarget(id);
+  if (id === 'gary:stall' || id === 'gary:chat') return gary ? { x: gary.x, z: gary.z, y: 2.6, s: 1 } : null;   // round 8 #2: his cart, wherever it is
   if (id === 'gary:meet') return nudgeTarget('stand');
   if (id === 'mats3' || id === 'gary:mats') return nudgeTarget('hose', wand, at);   // the wash station, then the nearest mat
   if (id === 'gary:sign') return wand ? { x: FIXTURE_BY_ID.sign.x, z: FIXTURE_BY_ID.sign.z, y: 3.4, s: 1 } : { x: WASH.STATION.x, z: WASH.STATION.z, y: 2.2, s: 1 };
@@ -81,8 +83,12 @@ export const GARY_TEXT = {
   // Council round 8 #2: no duplicate stops. An extra Rat stalls him while something fails, else meets him at the
   // stand (a full huddle counts twice). 'meet', not 'stand': gary:stand is already the hose-the-stand line.
   stall: 'Stall Gary: ping his cart!',
+  chat: 'Keep Gary talking: hold Ⓐ!',   // owner playtest 3 §6.3: the stall line while he's parked (garyExtra)
   meet: 'All clean. Meet Gary at the return!',
 };
+// Owner playtest 3 §6.3: the dealt stall line reads by what Gary is doing: parked (the warning, a stop) he can be
+// chatted to; driving, ping his cart. The server deals 'gary:stall' either way; the client shows the right one.
+export const garyExtra = (id, parked) => (id === 'gary:stall' && parked ? 'gary:chat' : id);
 // The two lines that aren't a stop (nothing to hose, nothing to clear at Spotless).
 export const GARY_EXTRA = ['stall', 'meet'];
 // Playthrough 4 A14: a Rat's stall/meet line switches only after the other has been wanted this long (s), so it never flips.
@@ -92,7 +98,7 @@ export const GARY_STALLED = "Gary stalled! He's taking notes.";
 export const DAY3 = { DAY: 3, VENUE: 0, AT: 0.5, MUD: 0.3, TEXT: 'Keep the mats clean.' };
 
 // The line for any nudge id (day 2, Gary's, day 3).
-export const nudgeLine = id => NUDGE_TEXT[id] ?? (id === 'mats3' ? DAY3.TEXT : id?.startsWith('gary:') ? GARY_TEXT[id.slice(5)] : null) ?? null;
+export const nudgeLine = id => NUDGE_TEXT[id] ?? morningLine(id) ?? (id === 'mats3' ? DAY3.TEXT : id?.startsWith('gary:') ? GARY_TEXT[id.slice(5)] : null) ?? null;
 
 // stops: Gary's failing stops [{ id, x, z }] (route order); rats: [{ id, x, z }]. Returns { [ratId]: stopId }.
 // Nearest first: the closest (Rat, stop) pair is dealt, then the next closest among the rest, until every failing

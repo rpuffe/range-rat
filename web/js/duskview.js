@@ -8,6 +8,8 @@
 //   const end = dusk.queue({ at: stampUntil, ending, onDone });   // performance.now() ms the card may open, or null
 //   dusk.tick(dt);   // every frame, after everything else has placed the camera
 //   dusk.stop();     // a new shift (or the lobby): everything back as it was
+// Owner playtest 3 §2: from 1:00 (the snapshot's `closing`) the same label shows live on the top edge and counts down
+// as the crew picks: the cleanup minute's scoreboard. The walk-off then shows the final number as before.
 import * as THREE from 'three';
 import { DUSK, duskPlan, duskStage, camPath, leftOut, outThere, leftLine, glowBudget, holdEnd, walkRoute, walkAt, padEdge } from './dusk.js';
 import { detailFor } from './detail.js';
@@ -86,7 +88,22 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
     return { walkers: out, hidden };
   }
 
+  function makeLabel() {
+    label = label ?? el('position:fixed;left:50%;top:11%;transform:translateX(-50%);padding:0.45em 1.1em;border-radius:1em;'
+      + 'background:rgba(20,16,32,0.72);color:#ffe7a8;font:600 1.35em system-ui,sans-serif;letter-spacing:0.02em;pointer-events:none;'
+      + 'z-index:30;opacity:0;transition:opacity 0.5s;white-space:nowrap');
+    return label;
+  }
+  let liveT = 0, liveOn = false;
+  function live(dt) {
+    const c = crew(), on = c?.phase === 'shift' && !!c.closing && !cardUp();
+    if (!on) { if (liveOn) { liveOn = false; if (label) label.style.opacity = '0'; } return; }
+    if (!liveOn || (liveT -= dt) <= 0) { liveT = 0.5; makeLabel().textContent = leftLine(leftOut(balls)); }
+    if (!liveOn) { liveOn = true; label.style.opacity = '1'; }
+  }
+
   function begin() {
+    liveOn = false;
     const plan = run.plan, budget = glowBudget(detailFor(perf?.profile));
     run.from = { pos: camera.position.clone(), quat: camera.quaternion.clone() };
     run.budget = budget;
@@ -94,10 +111,7 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
     buildGlow(budget); fillGlow(); run.fillT = 0.5;
     run.count = leftOut(balls);
     root.visible = true;
-    label = label ?? el('position:fixed;left:50%;top:11%;transform:translateX(-50%);padding:0.45em 1.1em;border-radius:1em;'
-      + 'background:rgba(20,16,32,0.72);color:#ffe7a8;font:600 1.35em system-ui,sans-serif;letter-spacing:0.02em;pointer-events:none;'
-      + 'z-index:30;opacity:0;transition:opacity 0.5s;white-space:nowrap');
-    label.textContent = leftLine(run.count);
+    makeLabel().textContent = leftLine(run.count);
     if (!plan.cam) veil = veil ?? el('position:fixed;inset:0;background:#120d24;pointer-events:none;z-index:29;opacity:0');
     run.pads = padState();
     addEventListener('keydown', onSkip, true); addEventListener('pointerdown', onSkip, true);
@@ -177,7 +191,7 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
       return end;
     },
     tick(dt) {
-      if (!run) return;
+      if (!run) { live(Math.min(dt, 0.1)); return; }
       if (run.t < 0) { if (performance.now() < run.at) return; begin(); }
       else run.t += Math.min(dt, 0.1);
       step(Math.min(dt, 0.1));
@@ -191,7 +205,7 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
       root.visible = false;
       if (label) label.style.opacity = '0';
       if (veil) veil.style.opacity = '0';
-      run = null;
+      run = null; liveOn = false;
     },
     get active() { return !!run; },
     get state() { return run ? { t: run.t, finished: run.finished, count: run.count, walkers: run.walkers.length, cam: run.plan.cam } : null; },

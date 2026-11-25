@@ -81,7 +81,7 @@ test('dropping balls in the bucket stand pays the whole crew', () => {
   assert.equal(crew.cash, 0, 'not at the stand');
   standOn(crew, a, SIM.STAND.x, SIM.STAND.z - 1);
   crew.input(a, { a: [{ t: 'deposit' }] });
-  assert.equal(crew.cash, 5.63, 'BV = rate 1 x Upkeep 1.5 (Curb 1), x 1.25 for a clean Rat: 5.625 to cents');
+  assert.equal(crew.cash, 5.64, 'BV = rate 1.25 (the one price) x Upkeep 1.5 (Curb 1) = 1.88, x 1 for a clean Rat');
   assert.equal(a.pocket, 0);
 });
 

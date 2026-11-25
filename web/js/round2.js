@@ -5,7 +5,7 @@
 // main.js hands over a context of the things it owns and calls these hooks.
 
 import * as THREE from 'three';
-import { WASHER_HANDLES, WASHER, atHandle, WASH, VENUE_RULES, gearGrimeFactor, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
+import { WASHER_HANDLES, WASHER, atHandle, WASH, VENUE_RULES, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
 import { createPA } from './pa.js';
 import { streakLine } from './owner.js';                                         // council round 8 #3: racing yesterday
 import { showPromo, promoPanelHtml, feeHeadline } from './promopanel.js';   // council round 6 #7: the fee line from 2 stamps; round 7 #10.1 the headline
@@ -234,9 +234,15 @@ export function setupRound2(ctx) {
     if (!el || c.phase !== 'report' || !r) return;
     const promo = c.promo, mine = c.players?.find(p => p.id === me.id);
     const online = (c.players ?? []).filter(p => p.online);
-    const key = JSON.stringify([promo, c.cash, online.map(p => [p.id, p.ready, p.signed]), r.day, c.venue, c.readyIn, c.promotedTo]);
+    // Owner playtest 3 §7.3: the Ready countdown only rewrites #next's text; it never rebuilds the panels (that
+    // destroyed a focused Sign button every second, and the next Ⓐ fell through to the first Buy).
+    const readyN = online.filter(p => p.ready).length;
+    const btn = $('next');
+    if (btn) btn.textContent = online.length > 1 ? (mine?.ready ? 'Ready ✓ (' + readyN + ' / ' + online.length + ')' : 'Ready (' + readyN + ' / ' + online.length + ')') + (c.sigWait ? ' · waiting for signatures (' + c.sigWait.n + ' of ' + c.sigWait.of + ')' : c.readyIn != null ? ' · starts in ' + c.readyIn + 's' : '') : 'Next shift';
+    const key = JSON.stringify([promo, c.cash, online.map(p => [p.id, p.ready, p.signed]), r.day, c.venue, c.promotedTo]);
     if (key === ledgerKey && !force) return;
     ledgerKey = key;
+    const hadFocus = el.contains(document.activeElement) ? document.activeElement.id : '';   // refocus it after the rebuild
     const esc = s => String(s).replace(/[&<>"']/g, ch => '&#' + ch.charCodeAt(0) + ';');
     let html = '';
     // Council round 8 #3: in endless the headline races yesterday ("Beat yesterday · 4 in a row.", owner.js streakLine).
@@ -257,9 +263,7 @@ export function setupRound2(ctx) {
     }
     el.innerHTML = html;
     $('sign-btn')?.addEventListener('click', () => link()?.act({ t: 'sign', on: !mine?.signed }));
-    const readyN = online.filter(p => p.ready).length;
-    const btn = $('next');
-    if (btn) btn.textContent = online.length > 1 ? (mine?.ready ? 'Ready ✓ (' + readyN + ' / ' + online.length + ')' : 'Ready (' + readyN + ' / ' + online.length + ')') + (c.sigWait ? ' · waiting for signatures (' + c.sigWait.n + ' of ' + c.sigWait.of + ')' : c.readyIn != null ? ' · starts in ' + c.readyIn + 's' : '') : 'Next shift';
+    if (hadFocus) ($(hadFocus) ?? btn)?.focus();   // gone (the panel closed): the primary, Next / Ready
   }
 
   function showEndCard(report) {
@@ -336,10 +340,10 @@ export function setupRound2(ctx) {
     mouse = { dx: 0, dy: 0, wheel: 0, down: mouse.down, click: false };
   }
 
-  // HUD bits: the gear factor (grime) and the next goal.
+  // HUD bits: the next goal. Owner playtest 3 §1.4: the gear factor left the HUD (the clean kit is in the price;
+  // muddy boots show on your bank popup instead).
   function hudLine() {
     const c = crew(), parts = [];
-    parts.push('gear ×' + gearGrimeFactor(me.grime ?? 0).toFixed(2) + ((me.grime ?? 0) === 0 ? ' ✦' : ''));
     if (c.promo?.ready) parts.push('PROMOTION READY');
     return parts.join(' · ');
   }

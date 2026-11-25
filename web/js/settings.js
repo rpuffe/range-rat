@@ -66,7 +66,7 @@ export function set(patch, storage) {
 export const HINTS = Object.freeze({
   // Playthrough 4 A16: shop, sprint and bv are 8 words or fewer, and only on the Muni's days 1-2 (EARLY_HINTS).
   shop: { kb: 'Tab opens the shop. The range keeps going.', pad: 'D-pad up: the shop. The range keeps going.' },
-  sprint: { kb: 'Hold Shift to sprint. It costs stamina.', pad: 'Click the right stick to sprint. Costs stamina.' },
+  sprint: { kb: 'Hold Shift to sprint. It costs stamina.', pad: 'Click the left stick to sprint. Costs stamina.' },
   cctv: { kb: 'Press C for Corporate CCTV.', pad: 'D-pad down for Corporate CCTV.' },
   wand: { kb: 'The sign is filthy. Grab the pressure washer by the cart bay: E.', pad: 'The sign is filthy. Grab the pressure washer by the cart bay: Ⓧ.' },
   bank: { kb: 'Full. The ball return pays per ball: E there.', pad: 'Full. The ball return pays per ball: Ⓧ there.' },
@@ -79,7 +79,7 @@ export const HINTS = Object.freeze({
   tube: { kb: 'Red box on the dock: E feeds balls.', pad: 'Red box on the dock: Ⓧ feeds balls.' },
   gutters: { kb: 'Gutters linked: one TARGET drains all three cups.', pad: 'Gutters linked: one TARGET drains all three cups.' },
   lift: { kb: 'The Lift: E on the platform rides up.', pad: 'The Lift: Ⓧ on the platform rides up.' },
-  bv: { kb: 'Ball Value: pay per ball. Clean pays more.', pad: 'Ball Value: pay per ball. Clean pays more.' },
+  bv: { kb: 'A ball pays more the cleaner it is.', pad: 'A ball pays more the cleaner it is.' },   // owner playtest 3 §1.2
   deck: { kb: 'Fill their orders. Rounds count double.', pad: 'Fill their orders. Rounds count double.' },   // council round 7 #8
 });
 // Context-driven hints (council round 4, §4.2): fires when its condition holds, once ever.
@@ -187,8 +187,8 @@ export function render(root, { onBack } = {}) {
   const s = get();
   root.innerHTML = `<h1>Settings</h1>
   <div class="settings-grid">
-    ${SLIDERS.map(([k, label, lo, hi, step, fmt]) => `<label class="srow"><span>${label}</span>
-      <input type="range" data-set="${k}" min="${lo}" max="${hi}" step="${step}" value="${s[k]}" aria-label="${label}"><output data-out="${k}">${fmt(s[k])}</output></label>`).join('')}
+    ${SLIDERS.map(([k, label, lo, hi, step, fmt], i) => `<label class="srow"><span>${label}</span>
+      <input type="range"${i ? "" : " data-primary"} data-set="${k}" min="${lo}" max="${hi}" step="${step}" value="${s[k]}" aria-label="${label}"><output data-out="${k}">${fmt(s[k])}</output></label>`).join('')}
     <div class="srow"><span>Corporate PA</span><button type="button" class="quiet" data-toggle="paMode"></button><output></output></div>
     <div class="srow"><span>Invert look Y</span><button type="button" class="quiet" data-toggle="invertY"></button><output></output></div>
     <div class="srow"><span>Graphics</span><button type="button" class="quiet" data-toggle="graphics"></button><output></output></div>

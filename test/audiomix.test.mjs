@@ -30,3 +30,18 @@ test('PA ducks while it speaks and restores after', async () => {
   pa.stop();
   assert.deepEqual(calls, [true, false]);
 });
+
+// Owner playtest 3 §7.4: the cart's engine is a low motor, not a whine.
+test('the cart engine: ≤ 160 Hz and a filter ≤ 900 Hz at top speed, glide 0.25 s, gain 0.012 + 0.028 × speed', () => {
+  const top = SFX.engineParams(1), idle = SFX.engineParams(0.05);
+  assert.ok(top.freq <= 160 && top.lowpass <= 900, JSON.stringify(top));
+  assert.ok(idle.freq >= 70 && idle.lowpass >= 400);
+  assert.equal(SFX.engineParams(3).freq, top.freq, 'clamped: turbo never raises the pitch');
+  assert.ok(Math.abs(top.gain - 0.04) < 1e-9);
+  assert.equal(SFX.engineParams(0).gain, 0);
+  assert.equal(SFX.ENGINE.GLIDE, 0.25);
+  assert.ok(top.trem === 28 && SFX.engineParams(0).trem === 12);
+  const k = SFX.tanhCurve();
+  assert.ok(Math.abs(k[0] + 1) < 1e-6 && Math.abs(k[k.length - 1] - 1) < 1e-6, 'normalised tanh');
+  assert.doesNotThrow(() => { const e = SFX.cartEngine(); e.set(1); e.stop(); });
+});

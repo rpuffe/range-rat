@@ -11,6 +11,7 @@ export const PA_LINES = {
   splitter: { line: 'A ball has divided into three. Corporate considers this growth.', caption: 'A ball divided into three. Growth.' },
   bouncy: { line: 'The members have requested a livelier ball. Please do not chase it. It can tell.', caption: 'A livelier ball. Do not chase it.' },
   gary: { line: 'Gary from Regional is on site. Look busy. Then be busy.', caption: 'Gary from Regional is on site.' },
+  garyIntro: { line: 'This is Gary. Gary is the Regional Manager. Gary has a clipboard, and Gary is not afraid to use it.', caption: 'Gary. Regional Manager. He has a clipboard.' },   // owner playtest 3 §6.1: the drive-by, once ever
   mower: { line: 'Corporate has deployed an autonomous mower. It has been trained on your movements.', caption: 'A robot mower. Trained on your movements.' },
   treasure: { line: 'An item has been recovered from the pond. Corporate will be keeping it in a glass case. Corporate keeps everything in a glass case.', caption: 'Recovered from the pond. Now in a case.' },
   huddle: { line: 'Gary from Regional is satisfied. Gary has never been satisfied.', caption: 'Gary is satisfied. Gary is never satisfied.' },

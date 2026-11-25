@@ -306,10 +306,10 @@ function rushShift(seed, shotAt) {
   crew.startShift();
   const shooter = [...crew.players.values()][0];
   const st = crew.mods.state('tiered');
-  let shot = false;
+  let shot = shotAt == null;
   const end = crew.shiftSecs - 0.1;
   while (crew.phase === 'shift' && crew.shiftT < end) {
-    clock.t += 50;
+    clock.t += 50; crew.basket.n = 12;                 // owner playtest 3 §3.3: someone keeps the basket stocked
     for (const r of crew.players.values()) { r.seenAt = clock.t; r.movedAt = clock.t; }
     if (!shot && crew.shiftT >= crew.shiftSecs - shotAt) {
       shot = true;
@@ -318,13 +318,34 @@ function rushShift(seed, shotAt) {
     }
     crew.tick(0.05);
   }
-  return st.kpi;
+  return crew.mods.kpi();                              // what the review reads (owner playtest 3 §2: the T-60 gauge)
 }
 
-test('round 8 #1: seeded 4P shifts: a TARGET at T-15 passes seeds 1-3; one at T-50 fails at least 2 of seeds 1-6', () => {
-  for (const s of [1, 2, 3]) assert.ok(rushShift(s, 15) >= 0.5, 'seed ' + s + ' T-15');
-  const fails = [1, 2, 3, 4, 5, 6].filter(s => rushShift(s, 50) < 0.5).length;
-  assert.ok(fails >= 2, 'the rush has teeth: ' + fails + ' of 6 fail at T-50');
+// Owner playtest 3 §2: the bowls are judged at T-60 ("the last customer out reads the bowls"). Council 9 N5: a TARGET
+// at 1:05 passes 6/6, at 1:15 3/6; none fails; one at T-50 is too late to change the stamp.
+test('owner playtest 3 §2: seeded 4P shifts: a TARGET at T-65 passes seeds 1-6, none fails, one at T-50 changes nothing', () => {
+  for (const s of [1, 2, 3, 4, 5, 6]) assert.ok(rushShift(s, 65) >= 0.5, 'seed ' + s + ' T-65');
+  for (const s of [1, 2, 3]) assert.ok(rushShift(s, null) < 0.5, 'seed ' + s + ' with no TARGET fails');
+  for (const s of [1, 2, 3]) assert.equal(rushShift(s, 50), rushShift(s, null), 'seed ' + s + ': a TARGET after 1:00 is not read');
+  const early = [1, 2, 3, 4, 5, 6].filter(s => rushShift(s, 75) >= 0.5).length;
+  assert.ok(early >= 2 && early <= 5, 'the rush has teeth: ' + early + ' of 6 pass at T-75');
+});
+
+test('owner playtest 3 §2: the review reads the gauge stored at T-60 (kpiAtClose), and the snapshot says judged', () => {
+  const { crew, drop, run, st } = setup({ gutters: 1 });
+  for (const m of crew.mats) m.next = 1e9;
+  crew.shiftSecs = 200;                                // long enough for the cleanup minute
+  run(crew.shiftSecs - 61 - crew.shiftT);
+  assert.equal(st().kpiAtClose, null);
+  run(1.2);
+  assert.ok(crew.closing());
+  const atClose = st().kpiAtClose;
+  assert.equal(typeof atClose, 'number');
+  for (let i = 0; i < 21; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);   // cups fill after 1:00
+  run(0.5);
+  assert.notEqual(st().kpi, atClose, 'the live gauge moved');
+  assert.equal(crew.mods.kpi(), atClose, 'the review reads the T-60 gauge');
+  assert.equal(crew.snapshot().mods.tiered.judged, 1);
 });
 
 // ---- Council round 8 #6: "Saved by Cy's TARGET at 0:12." ------------------------------------------------------------

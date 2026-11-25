@@ -25,9 +25,10 @@ test('prices scale with crew size, balanced for 4', () => {
   assert.equal(nextPrice('helpers', {}, 1), 60);
   assert.equal(nextPrice('helpers', {}, 4), 132);
   assert.equal(nextPrice('gear', {}, 1, 0), 20);
-  assert.equal(nextPrice('gear', {}, 4, 0), 20, 'personal gear is not scaled by crew size');
-  assert.equal(nextPrice('gear', {}, 4, 2), 250, 'uses the passed gear level');
-  assert.equal(nextPrice('gear', {}, 1, 3), null, 'gear maxed out');
+  assert.equal(nextPrice('gear', {}, 4, 0), 44, 'crew gear is scaled by crew size (§5.2)');
+  assert.equal(nextPrice('gear', { gear: 2 }, 1), 250, 'uses the crew level');
+  assert.equal(nextPrice('gear', { gear: 3 }, 1), null, 'gear maxed out');
+  assert.equal(nextPrice('dive', {}, 4, 0, 1), 1200, 'dive gear is still personal');
   assert.equal(nextPrice('hardhat', { hardhat: 1 }, 1), null, 'maxed out');
 });
 
@@ -50,7 +51,7 @@ test('buying: any time, only with the cash', () => {
   crew.cash = 100;
   buy(crew, a, 'gear');
   assert.equal(a.gear, 1);
-  assert.equal(crew.up.gear, undefined, 'gear is personal, not a crew upgrade');
+  assert.equal(crew.up.gear, 1, 'gear is a crew upgrade (§5.2)');
   assert.equal(crew.cash, 80);
   assert.ok(crew.flush().ev.some(e => e.t === 'buy' && e.id === 'gear' && e.level === 1 && e.by === a.id));
 
@@ -66,7 +67,7 @@ test('buying: any time, only with the cash', () => {
   assert.equal(crew.cash, 20);
 
   buy(crew, a, 'nonsense');
-  assert.deepEqual(Object.keys(crew.up), ['shoes']);
+  assert.deepEqual(Object.keys(crew.up).sort(), ['gear', 'shoes']);
 });
 
 test('better gear: a bigger pocket on the server too', () => {
@@ -90,12 +91,12 @@ test('the washer makes every banked ball worth more', () => {
   crew.input(a, { a: [{ t: 'start' }] });
   a.pocket = 3; a.pocketW = 3; a.x = SIM.STAND.x; a.z = SIM.STAND.z;
   crew.input(a, { a: [{ t: 'deposit' }] });
-  // washer 2: rate $3, BV $4.5 at Curb 1, a clean Rat x1.25 = $16.88 in all. The muddy third is paid now.
+  // washer 2: rate $3.75 (the one price), BV $5.63 at Curb 1, a clean Rat x1 = $16.89 in all. The muddy third is paid now.
   assert.equal(crew.cash, 5.63, 'the muddy price (full / 3) is paid at the stand');
   assert.equal(crew.hopper.n, 3);
-  assert.equal(crew.hopper.credit, 11.25, 'the premium waits in the hopper');
+  assert.equal(crew.hopper.credit, 11.26, 'the premium waits in the hopper');
   crew.washBalls(3, a.id);
-  assert.equal(crew.cash, 16.88, 'washed: every ball pays the full washer price');
+  assert.equal(crew.cash, 16.89, 'washed: every ball pays the full washer price');
   assert.equal(crew.hopper.n, 0);
 });
 
@@ -135,11 +136,11 @@ test('at closing, helpers turn in what they carry and it counts today', () => {
   run(6);
   assert.equal(crew.phase, 'report');
   assert.equal(crew.report.helped, 4);
-  // 4 balls x BV $3 (rate 2 x Upkeep 1.5), helpers have Gear 1 = $12: $6 muddy now, $6 waiting.
-  // The bell washes half of what is left (2 balls) at half pay: $6 x 0.5 x 0.5 = $1.50.
-  assert.equal(crew.report.cash, 7.5, 'muddy $6 + the night crew $1.50');
+  // 4 balls x BV $3.75 (rate 2.5 x Upkeep 1.5), helpers pay the full price (owner playtest 3 §1.4) = $15: $7.50 muddy
+  // now, $7.50 waiting. The bell washes half of what is left (2 balls) at half pay: $7.50 x 0.5 x 0.5 = $1.88.
+  assert.equal(crew.report.cash, 9.38, 'muddy $7.50 + the night crew $1.88');
   assert.equal(crew.report.unwashed, 2);
-  assert.equal(crew.report.lostPremium, 4.5);
+  assert.ok(Math.abs(crew.report.lostPremium - 5.62) < 0.011, String(crew.report.lostPremium));
   assert.equal(crew.helpers[0].pocket, 0);
 });
 
@@ -159,9 +160,9 @@ test('upgrades and helpers survive a save', () => {
   crew.cash = 1000;
   for (const id of ['gear', 'gear', 'helpers', 'helpers', 'washer']) buy(crew, a, id);
   const save = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.deepEqual(save.gear, { A: 2 });
+  assert.equal(save.up.gear, 2);
   const { crew: back } = makeCrew(save);
-  assert.deepEqual(back.up, { helpers: 2, washer: 1 });
+  assert.deepEqual(back.up, { gear: 2, helpers: 2, washer: 1 });
   assert.equal(back.join('A').gear, 2);
   assert.equal(back.helpers.length, 2);
   assert.equal(back.cash, crew.cash);
@@ -169,8 +170,7 @@ test('upgrades and helpers survive a save', () => {
 
 test('a tampered save cannot give tiers that do not exist', () => {
   const { crew } = makeCrew({ up: { gear: 99, helpers: -3, bogus: 2, washer: 99 }, gear: { A: 99, B: -2 } });
-  assert.deepEqual(crew.up, { washer: 3 }, 'personal gear is not a crew upgrade');
-  assert.deepEqual(crew.gearByName, { A: 3 });
+  assert.deepEqual(crew.up, { gear: 3, washer: 3 }, 'clamped to the catalog');
 });
 
 // Council round 7 #9: the Owner's projects row is endless-only: it never leaks into venues 0–5.
@@ -183,4 +183,67 @@ test("no endless-only row (the Owner's projects) leaks into venues 0–5", async
     }
   }
   assert.ok(SHOP.some(i => i.id === 'owner' && i.endless));
+});
+
+// ---- owner playtest 3 §4, §5 ---------------------------------------------------
+test('§4 Open every bay: Muni from day 2 for 1–3 Rats, hidden at 4+, and it carries over to every venue', async () => {
+  const { shopShows, SHOP_BY_ID, activeMats } = await import('../web/js/sim.js');
+  const bays = SHOP_BY_ID.bays;
+  assert.equal(shopShows(bays, 0, 1, false, 1), false, 'not on day 1');
+  for (const n of [1, 2, 3]) assert.equal(shopShows(bays, 0, 2, false, n), true, `${n} Rats, day 2`);
+  assert.equal(shopShows(bays, 0, 2, false, 4), false, 'every mat is already open at 4');
+  assert.equal(nextPrice('bays', {}, 1, 0, 0, 2), 40);
+  assert.equal(nextPrice('bays', {}, 2, 0, 0, 2), 56);
+  assert.equal(nextPrice('bays', {}, 4, 0, 0, 2), null);
+  assert.equal(nextPrice('bays', { bays: 1 }, 1, 0, 0, 5), null, 'one tier');
+  assert.equal(activeMats(1), 6);
+  assert.equal(activeMats(1, { bays: 1 }), 10);
+  assert.equal(activeMats(2, { bays: 1 }), 10);
+  // Main-session call (overrides the spec's Muni-only rule): the bays stay open after promotion.
+  assert.equal(activeMats(1, { bays: 1 }, 1), 10);
+  assert.equal(shopShows(bays, 1, 1, false, 1), true, 'still in the Club shop (owned, or a late buy)');
+  assert.equal(perks({ bays: 1 }).bays, true);
+});
+
+test('§5.1 the pressure washer row: fan (day 2), turbo (day 4), foam cannon (Tiered)', async () => {
+  const { tierLock, SHOP_BY_ID } = await import('../web/js/sim.js');
+  const wand = SHOP_BY_ID.wand;
+  assert.deepEqual(wand.tiers.map(t => t.name), ['Garden-hose nozzle', 'Fan nozzle', 'Turbo nozzle', 'Foam cannon']);
+  assert.equal(nextPrice('wand', {}, 1, 0, 0, 1), null, 'not on day 1');
+  assert.equal(nextPrice('wand', {}, 1, 0, 0, 2), 40);
+  assert.equal(nextPrice('wand', {}, 4, 0, 0, 2), 88);
+  assert.equal(nextPrice('wand', { wand: 1 }, 1, 0, 0, 3), null, 'the turbo waits for day 4');
+  assert.equal(tierLock(wand, 1, 0, 3), 'Day 4');
+  assert.equal(nextPrice('wand', { wand: 1 }, 4, 0, 0, 4), 330);
+  assert.equal(nextPrice('wand', { wand: 1 }, 1, 0, 1, 1), 150, 'day gates are Muni-only');
+  assert.equal(nextPrice('wand', { wand: 2 }, 1, 0, 1, 9), null, 'the foam cannon is Tiered');
+  assert.equal(tierLock(wand, 2, 1, 9), 'Tiered Entertainment Range');
+  assert.equal(nextPrice('wand', { wand: 2 }, 4, 0, 2, 9), 44000);
+  assert.equal(nextPrice('wand', { wand: 3 }, 1, 0, 5, 99), null, 'the truck is a later build');
+  assert.deepEqual([0, 1, 2, 3].map(w => perks({ wand: w }).washRate), [1, 1.5, 2, 2]);
+  assert.deepEqual([0, 1, 2, 3].map(w => perks({ wand: w }).washReach), [7, 7, 9, 9]);
+  assert.equal(perks({ wand: 2 }).foam, false);
+  assert.equal(perks({ wand: 3 }).foam, true);
+  // Club amenities keep one tier: covered bays.
+  assert.equal(SHOP_BY_ID.amen.tiers.length, 2);
+  assert.equal(nextPrice('amen', {}, 1, 0, 1), 8000);
+  assert.equal(perks({ amen: 1 }).covered, true);
+  assert.equal(SHOP_BY_ID.amen.tiers[1].desc, 'Mats scuff half as fast. The members approve.');
+});
+
+test('§5.2 carrying gear and shoes are crew rows at the crew price', async () => {
+  const { SHOP_BY_ID } = await import('../web/js/sim.js');
+  assert.equal(SHOP_BY_ID.gear.personal, undefined);
+  assert.equal(SHOP_BY_ID.gear.title, 'Crew carrying gear');
+  assert.equal(SHOP_BY_ID.shoes.title, 'Crew shoes');
+  assert.equal(SHOP_BY_ID.dive.personal, true, 'dive gear stays personal');
+  assert.deepEqual([0, 1, 2].map(g => nextPrice('gear', { gear: g }, 4)), [44, 165, 550]);
+  assert.deepEqual([0, 1, 2].map(g => nextPrice('gear', { gear: g }, 1)), [20, 75, 250]);
+  assert.equal(44 + 165 + 550, 759, 'a 4P crew pays $759, not 4 × $345');
+});
+
+test('§5.3 the cart carries half', async () => {
+  const { CART } = await import('../web/js/sim.js');
+  assert.deepEqual([0, 1, 2, 3].map(c => perks({ cart: c }).cartCap), [0, 150, 300, 300]);
+  assert.equal(CART.UNLOAD_SECS, 1.5);
 });

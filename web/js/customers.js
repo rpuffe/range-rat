@@ -17,6 +17,11 @@
 // gate -> the basket by the BUCKETS dispenser (grab a bucket; owner layout, layout.js) -> mat. It is a second slot so the next
 // customer is already walking in while the last bucket empties (no idle mat, no queue).
 //
+// Owner playtest 3 §3.3: the basket can run out. An arriving customer reaches it at inc.t0 + tA and takes a bucket
+// through ctx.takeBucket() (none given: there's always one). An empty basket: they wait there (inc.wb, arms crossed,
+// facing the machine; inc.t0 is held so the walk resumes from the basket) for WAIT_MAX s, then refuse ('nobucket').
+// §3.2: an arrival picks its mat among the free open ones (pickMat, weighted 1 − mud) when ctx.mats is given.
+//
 // Time is one monotonic server clock in seconds (`now`); it never pauses.
 
 import { MATS } from './sim.js';
@@ -76,9 +81,11 @@ export function arriveRoute(mat, dx = CUST.PLAY_DX) {
 export const arriveDur = (mat, dx) => { const r = arriveRoute(mat, dx); return r.tA + r.tG + r.tB; };
 
 // Mat -> back to the walkway -> path -> out through the gate.
-export function leaveRoute(mat, dx = CUST.PLAY_DX) {
+// basket: they never got a bucket (owner playtest 3 §3.3), so they walk back out from the basket.
+export function leaveRoute(mat, dx = CUST.PLAY_DX, basket = false) {
   const sx = matX(mat) - dx;
-  const P = [[sx, PLAY_Z], [sx, APPROACH_Z], [-3, 5.5], [GATE.x, GATE.z], [EXIT_POINT.x, EXIT_POINT.z]];
+  const P = basket ? [[STAND_POINT.x, STAND_POINT.z], [18, 5.5], [-3, 5.5], [GATE.x, GATE.z], [EXIT_POINT.x, EXIT_POINT.z]]
+    : [[sx, PLAY_Z], [sx, APPROACH_Z], [-3, 5.5], [GATE.x, GATE.z], [EXIT_POINT.x, EXIT_POINT.z]];
   return { P, dur: polyLen(P) / CUST.WALK, sx };
 }
 export const leaveDur = (mat, dx) => leaveRoute(mat, dx).dur;
@@ -97,6 +104,7 @@ export function custPos(c, t, opt = {}) {
     const r = arriveRoute(c.mat, dx);
     const uu = c.hold ? Math.min(u, r.tHold) : Math.min(u, r.tA + r.tG + r.tB);
     if (uu < r.tA) { const p = polyAt(r.A, uu * CUST.WALK); return at(p.x, p.z, { yaw: heading(p.hx, p.hz), speed: CUST.WALK, act: 'walk' }); }
+    if (c.wb) return at(STAND_POINT.x, STAND_POINT.z, { yaw: heading(0, 1), act: 'wait' });   // no bucket: arms crossed at the machine
     if (uu < r.tA + r.tG) return at(STAND_POINT.x, STAND_POINT.z, { yaw: heading(0, 1), act: 'grab', carry: uu - r.tA > r.tG * 0.5 });   // facing the machine (+z)
     const p = polyAt(r.B, (uu - r.tA - r.tG) * CUST.WALK);
     const end = uu >= r.tA + r.tG + r.tB || (c.hold && uu >= r.tHold);
@@ -106,9 +114,9 @@ export function custPos(c, t, opt = {}) {
   if (c.st === 'wait') return at(sx, APPROACH_Z, { act: 'wait', carry: true });
   if (c.st === 'sulk') return at(sx, APPROACH_Z, { act: 'sulk', carry: true });
   if (c.st === 'leave') {
-    const r = leaveRoute(c.mat, dx), d = Math.min(u * CUST.WALK, r.dur * CUST.WALK);
+    const r = leaveRoute(c.mat, dx, !!c.basket), d = Math.min(u * CUST.WALK, r.dur * CUST.WALK);
     const p = polyAt(r.P, d), done = u >= r.dur;
-    return at(p.x, p.z, { yaw: heading(p.hx, p.hz), speed: done ? 0 : CUST.WALK, act: 'walk', carry: true, done });
+    return at(p.x, p.z, { yaw: heading(p.hx, p.hz), speed: done ? 0 : CUST.WALK, act: 'walk', carry: !c.basket, done });
   }
   return at(sx, APPROACH_Z);
 }
@@ -193,12 +201,26 @@ export function stepMat(mat, dt, ctx = {}) {
   if (mat.inc && !open) { ev.push({ t: 'leave', mat: mat.i, cust: mat.inc.cust, why: 'closed' }); mat.inc = null; }
 
   const arr = arriveDur(mat.i);
-  if (!mat.inc && open && now + arr >= mat.noBefore) {
-    const free = mat.st === 'empty' || mat.st === 'leave' || mat.st === 'sulk';
-    const endingSoon = mat.st === 'playing' && mat.balls * gap + CUST.FINISH <= arr + 1;
-    if (free || endingSoon) {
-      mat.inc = { cust: nextId(ctx), look: newLook(rng), t0: now };
-      ev.push({ t: 'arrive', mat: mat.i, cust: mat.inc.cust, look: mat.inc.look });
+  if (!mat.inc && open && canCall(mat, now, gap)) {
+    const dest = ctx.mats ? pickMat(ctx.mats, mat.i, { ...ctx, now, gap }) : mat;
+    if (dest) {
+      dest.inc = { cust: nextId(ctx), look: newLook(rng), t0: now };
+      ev.push({ t: 'arrive', mat: dest.i, cust: dest.inc.cust, look: dest.inc.look });
+    }
+  }
+
+  // at the basket: take a bucket, or wait for one (owner playtest 3 §3.3)
+  if (mat.inc && !mat.inc.got && ctx.takeBucket) {
+    const tA = arriveRoute(mat.i).tA;
+    if (now >= mat.inc.t0 + tA) {
+      if (ctx.takeBucket()) { mat.inc.got = true; if (mat.inc.wb != null) { mat.inc.t0 = now - tA; mat.inc.wb = null; } }
+      else {
+        mat.inc.wb ??= now; mat.inc.t0 = now - tA;
+        if (now >= mat.inc.wb + CUST.WAIT_MAX) {
+          ev.push({ t: 'refuse', mat: mat.i, cust: mat.inc.cust, why: 'nobucket' }, { t: 'leave', mat: mat.i, cust: mat.inc.cust, why: 'nobucket' });
+          mat.inc = null;
+        }
+      }
     }
   }
 
@@ -213,8 +235,39 @@ export function stepMat(mat, dt, ctx = {}) {
   return ev;
 }
 
+// Is this mat free (or about to be) for a new customer? (§3.2: the arrival trigger and pickMat's candidates.)
+function canCall(mat, now, gap) {
+  const arr = arriveDur(mat.i);
+  if (now + arr < mat.noBefore) return false;
+  const free = mat.st === 'empty' || mat.st === 'leave' || mat.st === 'sulk';
+  return free || (mat.st === 'playing' && mat.balls * gap + CUST.FINISH <= arr + 1);
+}
+
+// Owner playtest 3 §3.2: an arriving customer picks among the free open mats (no incoming customer, free or about
+// to be), weighted 1 − mud; a mat at REFUSE_MUD or over weighs 0. When no free mat is clean, a muddy trigger calls
+// nobody while any open mat is clean (busy): the muddy bay just stays empty, which you can see from the return. Only
+// when every open mat is that muddy do they head for it (and wait there, as before). Returns the mat, or null (nobody
+// comes). One candidate: no RNG draw.
+// mats: every mat; i: the triggering mat's index; ctx: { rng, now, gap, mudOf(i), isOpen(i) }.
+export function pickMat(mats, i, ctx = {}) {
+  const { rng = Math.random, now = 0, gap = CUST.GAP } = ctx;
+  const mudOf = ctx.mudOf ?? (() => 0), isOpen = ctx.isOpen ?? (() => true);
+  const self = mats.find(m => m.i === i) ?? mats[i];
+  const cands = [];
+  for (const m of mats) {
+    if (m !== self && (m.inc || !isOpen(m.i) || !canCall(m, now, gap))) continue;
+    const mud = mudOf(m.i), w = mud >= CUST.REFUSE_MUD ? 0 : 1 - mud;
+    if (w > 0) cands.push([m, w]);
+  }
+  if (!cands.length) return mats.some(m => m !== self && isOpen(m.i) && mudOf(m.i) < CUST.REFUSE_MUD) ? null : self;
+  if (cands.length === 1) return cands[0][0];
+  let r = rng() * cands.reduce((a, c) => a + c[1], 0);
+  for (const [m, w] of cands) if ((r -= w) < 0) return m;
+  return cands.at(-1)[0];
+}
+
 // What goes in the snapshot for one mat.
 export const matWire = mat => ({
   cust: mat.cust, st: mat.st, t0: +mat.t0.toFixed(2), look: mat.look, left: mat.balls,
-  inc: mat.inc && { cust: mat.inc.cust, look: mat.inc.look, t0: +mat.inc.t0.toFixed(2) },
+  inc: mat.inc && { cust: mat.inc.cust, look: mat.inc.look, t0: +mat.inc.t0.toFixed(2), ...(mat.inc.wb != null ? { wb: 1 } : {}) },
 });

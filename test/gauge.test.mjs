@@ -43,7 +43,7 @@ test('the report and the quota event carry gauge and gaugeOk, and the miss line 
   const q = low.report.quota;
   assert.equal(q.gauge, 0.43);
   assert.equal(q.gaugeOk, false);
-  assert.equal(q.why, 'Missed: the glow rush filled the bowls.');
+  assert.equal(q.why, 'Missed: the bowls were full at 1:00.');
   const ev = low.flush().ev.find(e => e.t === 'quota');
   assert.equal(ev.gauge, 0.43);
   assert.equal(ev.gaugeOk, false);
@@ -68,7 +68,7 @@ test('at the Muni and the Club there is no gauge: the quota entry has no gauge f
     const crew = bell(venue, null);
     const q = crew.report.quota;
     assert.ok(q, `venue ${venue} has a review`);
-    assert.deepEqual(Object.keys(q).sort(), ['bonus', 'bv', 'hit', 'stamps', 'target', 'title']);
+    assert.deepEqual(Object.keys(q).sort(), ['bonus', 'bv', 'clean', 'hit', 'need', 'stamps', 'target', 'title', 'venue']);   // owner playtest 3 §1.2: the bar's %
   }
 });
 

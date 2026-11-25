@@ -4,6 +4,8 @@
 //   const b = createBoard(scene, { x, z });
 //   b.update(state);                       // ~10x/s; redraws only when displayed values change
 //     state: { bv, rate, upkeep, hustle, curb, pond, fries, kpiLabel, kpi, slogan, quota, outstanding, lastCall, gary, title, silo }
+//     owner playtest 3 §1.1/§6.4 adds: price (BV × Hustle × Seal), seal, ceiling, q (the quota's share), venue,
+//     fixtures ({ id: mud }), nMats (mats in play), garyToday (the banner before his warning)
 //   b.floatText(x, y, z, 'text', '#fff');  // rises ~1.5 m and fades over 1.6 s
 //   b.tick(dt);                            // call every frame (flip animation + float labels)
 //   b.stamp(quotaEvent, { low });          // the Closing Bell's APPROVED / DENIED stamp (council round 6, #3)
@@ -13,6 +15,7 @@ import * as THREE from 'three';
 import { BOARD_YAW } from './signs.js';
 import { BELL, crossing, gaugeRed, gaugePass, stampFor } from './closingbell.js';
 import { sharedConfetti, confettiCount } from './confetti.js';
+import { cleanFrac, targetFrac, pct, barWord, whyLine, pipsOf, PIP_HEX } from './bvtext.js';   // owner playtest 3 §1: Ball Value in one look
 
 const W = 1024, H = 512;
 const MONO = '"Courier New", ui-monospace, Menlo, Consolas, monospace';
@@ -160,29 +163,10 @@ export function createBoard(scene, { x, z, onCross = null }) {
       g.font = `600 ${px}px ${SANS}`; g.fillText(String(st.title).toUpperCase(), W - 24, 40);
     }
 
-    // BV big
-    g.textAlign = 'left';
-    const bvText = boardMoney(st.bv);
-    g.fillStyle = '#1d2129'; g.fillRect(24, 96, 560, 170);
-    g.fillStyle = '#f5e6b8';
-    const bpx = fit(show('bv', bvText), p => `700 ${p}px ${MONO}`, hustleShown(st) ? 360 : 530, 160);
-    g.font = `700 ${bpx}px ${MONO}`; g.textBaseline = 'alphabetic';
-    g.fillText(show('bv', bvText), 40, 96 + 170 - 28);
-    g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`; g.textBaseline = 'middle';
-    g.fillText('BALL VALUE', 36, 108);
-    if (hustleShown(st)) {
-      g.fillStyle = '#6fd36f'; g.textAlign = 'right'; g.font = `700 56px ${MONO}`;
-      g.fillText('×' + st.hustle.toFixed(2), 572, 130);
-      g.font = `600 18px ${SANS}`; g.fillStyle = '#7d8594'; g.fillText('HUSTLE', 572, 170);
-    }
-    g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `600 24px ${MONO}`;
-    g.fillStyle = '#6fd36f'; g.fillText(`+${money(st.rate)}/s`, 40, 284);
-    g.fillStyle = '#e06a5a'; g.fillText(`UPKEEP -${money(st.upkeep)}/s`, 250, 284);
-
     // gauges (right column). Three rows at 58 px at the Muni and the Club; from Tiered on, a fourth row for the
     // current venue's own KPI (VENUE_RULES[v].kpi), so four at 44 px (council round 4, §3.0).
     const gx = 612, gw = 388;
-    const gauges = [['CURB APPEAL', st.curb, '#6fd36f'], ['POND CLARITY', st.pond, '#4fb3e8'], ['FRY SATISFACTION', st.fries, '#f0a93a']];
+    const gauges = [['GROUNDS', st.curb, '#6fd36f'], ['POND CLARITY', st.pond, '#4fb3e8'], ['FRY SATISFACTION', st.fries, '#f0a93a']];
     if (st.kpiLabel) gauges.push([String(st.kpiLabel).toUpperCase(), st.kpi, '#c77dff']);
     const four = gauges.length > 3, rowH = four ? 44 : 58, lab = four ? 17 : 20, barY = four ? 20 : 24, barH = four ? 18 : 24;
     gauges.forEach(([label, v, color], i) => {
@@ -203,39 +187,96 @@ export function createBoard(scene, { x, z, onCross = null }) {
       }
     });
 
-    // target
-    g.textBaseline = 'middle';
     const pace = st.quota == null ? st.pace : null;         // endless: record pace instead of a target
-    if (pace) drawEndless(pace);                            // round 7 #9 (C4): TODAY big, a bar to the record, the pace tick
-    else {
-    const hasQuota = st.quota != null;
-    g.textAlign = 'left'; g.font = `700 30px ${MONO}`;
-    g.fillStyle = hasQuota ? '#f5e6b8' : '#4a4f5a';
-    g.fillText(hasQuota ? show('quota', 'TARGET ' + money(st.quota)) : 'TARGET  --', 24, 322);
-    const tx = 360, tw = 640;
-    bar(tx, 308, tw, 28, hasQuota ? st.bv / Math.max(st.quota, 0.0001) : 0, '#e8b04a');
-    if (hasQuota) {
-      const mx = tx + tw - 4;                 // quota marks the bar's end; the bar is BV / quota
-      g.fillStyle = '#e03a3a'; g.fillRect(mx - 3, 300, 6, 44);
+    // The price, big (owner playtest 3 §1.1): what one ball pays right now = BV × Hustle × Gary's Seal ("$2.62 A BALL").
+    g.textAlign = 'left';
+    const bvText = boardMoney(priceShown(st));
+    const chips = hustleShown(st) || sealShown(st);
+    g.fillStyle = '#1d2129'; g.fillRect(24, 92, 560, 136);
+    g.font = `700 34px ${SANS}`; const aBallW = g.measureText(' A BALL').width;
+    g.fillStyle = '#f5e6b8';
+    const bpx = fit(show('bv', bvText), p => `700 ${p}px ${MONO}`, (chips ? 410 : 530) - aBallW, 104);
+    g.font = `700 ${bpx}px ${MONO}`; g.textBaseline = 'alphabetic';
+    const bvBase = 92 + 136 - 22;
+    g.fillText(show('bv', bvText), 36, bvBase);
+    const numW = g.measureText(show('bv', bvText)).width;
+    g.font = `700 34px ${SANS}`; g.fillStyle = '#cfc8b0'; g.fillText(' A BALL', 36 + numW, bvBase);
+    g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`; g.textBaseline = 'middle';
+    g.fillText('EACH BALL PAYS', 36, 108);
+    g.textAlign = 'right';
+    if (hustleShown(st)) {                     // the Hustle chip (green), then Gary's Seal under it (gold, §6.4)
+      g.fillStyle = '#6fd36f'; g.font = `700 40px ${MONO}`; g.fillText('×' + st.hustle.toFixed(2), 572, 124);
+      g.font = `600 16px ${SANS}`; g.fillStyle = '#7d8594'; g.fillText('HUSTLE', 572, 152);
     }
-    if (flash.t > 0) {                        // round 6 #3: BV crossed the target: green over, amber back under
+    if (sealShown(st)) {
+      const y = hustleShown(st) ? 186 : 124;
+      g.fillStyle = '#f2c94c'; g.font = `700 40px ${MONO}`; g.fillText('×' + st.seal.toFixed(2), 572, y);
+      g.font = `600 16px ${SANS}`; g.fillStyle = '#c9a640'; g.fillText('GARY', 572, y + 28);
+    }
+
+    // The bar (§1.1): CLEAN at the Muni, UPKEEP from the Club, as a percentage, with today's target as a red tick.
+    const ceil = st.ceiling ?? 1.5, fill = cleanFrac(st.upkeep, ceil);
+    const tgt = st.quota == null || st.q == null ? null : targetFrac(st.q, ceil);
+    const bx = 24, bw = 560, by = 256, bh = 26;
+    g.textAlign = 'left'; g.textBaseline = 'middle'; g.font = `700 26px ${MONO}`; g.fillStyle = '#f5e6b8';
+    const barLab = `${barWord(st.venue)} ${pct(fill)}%`;
+    g.fillText(barLab, bx, 238);
+    const labW = g.measureText(barLab).width;
+    bar(bx, by, bw, bh, fill, tgt == null || fill + 1e-9 >= tgt ? '#6fd36f' : '#e8b04a');
+    if (tgt != null) {
+      const kx = bx + 2 + (bw - 4) * tgt;
+      g.fillStyle = '#e03a3a'; g.fillRect(kx - 3, by - 8, 6, bh + 16);
+      g.font = `700 20px ${MONO}`;
+      const tt = show('quota', `TARGET ${pct(tgt)}%`), ttw = g.measureText(tt).width;
+      g.textAlign = 'center'; g.fillStyle = '#ff8a7a';
+      g.fillText(tt, Math.min(bx + bw - ttw / 2, Math.max(bx + labW + 26 + ttw / 2, kx)), 238);
+    }
+    if (flash.t > 0 && !pace) {               // round 6 #3: the fill crossed the tick: green over, amber back under
       g.globalAlpha = Math.min(1, flash.t / BELL.FLASH_SECS) * 0.85;
-      g.fillStyle = flash.up ? BELL.GREEN : BELL.AMBER; g.fillRect(tx - 6, 300, tw + 12, 44);
+      g.fillStyle = flash.up ? BELL.GREEN : BELL.AMBER; g.fillRect(bx - 6, by - 8, bw + 12, bh + 16);
       g.globalAlpha = 1;
     }
 
+    // endless: record pace instead of a target (round 7 #9, C4: TODAY big, a bar to the record, the pace tick)
+    if (pace) drawEndless(pace);
+    else {
+    // The why line, then the fixture pips (§1.1: what do I hose? green ≤ 0.34, amber ≤ 0.6, brown above).
+    g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = '#9aa3b2'; g.font = `600 20px ${SANS}`;
+    g.fillText(whyLine(st.venue), bx, 302);
+    if (!st.kpiLabel) {                       // from Tiered on, the fourth gauge row matters more
+      const P = 20, GAP = 6, GG = 18, groups = [];
+      for (const p of pipsOf(st.fixtures, st.nMats ?? 10)) {
+        if (groups.at(-1)?.name !== p.group) groups.push({ name: p.group, pips: [] });
+        groups.at(-1).pips.push(p);
+      }
+      g.font = `600 15px ${SANS}`; g.textBaseline = 'middle';
+      let px = bx;
+      for (const grp of groups) {                 // each group as wide as its pips or its label, whichever is wider
+        const pw = grp.pips.length * (P + GAP) - GAP, lw = g.measureText(grp.name).width, w = Math.max(pw, lw);
+        let x = px + (w - pw) / 2;
+        for (const p of grp.pips) {
+          g.fillStyle = PIP_HEX[p.colour]; g.fillRect(x, 318, P, P);
+          g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1; g.strokeRect(x + 0.5, 318.5, P - 1, P - 1);
+          x += P + GAP;
+        }
+        g.textAlign = 'center'; g.fillStyle = '#7d8594'; g.fillText(grp.name, px + w / 2, 350);
+        px += w + GG;
+      }
+    }
+
     // outstanding
-    g.fillStyle = '#1d2129'; g.fillRect(24, 358, W - 48, 72);
-    g.textAlign = 'left'; g.fillStyle = '#7d8594'; g.font = `600 26px ${SANS}`;
-    g.fillText('BALLS OUTSTANDING', 44, 394);
-    g.textAlign = 'right'; g.fillStyle = '#f5e6b8'; g.font = `700 56px ${MONO}`;
-    g.fillText(commas(st.outstanding), W - 44, 396);
+    g.fillStyle = '#1d2129'; g.fillRect(24, 368, W - 48, 64);
+    g.textAlign = 'left'; g.fillStyle = '#7d8594'; g.font = `600 24px ${SANS}`; g.textBaseline = 'middle';
+    g.fillText('BALLS OUTSTANDING', 44, 400);
+    g.textAlign = 'right'; g.fillStyle = '#f5e6b8'; g.font = `700 48px ${MONO}`;
+    g.fillText(commas(st.outstanding), W - 44, 402);
     }
 
     // banner
     let banner = '', bcol = '#e8b04a', bg = '#1b1f27', fg = '#8f98a8';
     if (st.lastCall) { banner = 'LAST CALL'; bg = '#d98a12'; fg = '#1a1203'; }
     else if (st.gary) { banner = String(st.gary); bg = '#9c1f1f'; fg = '#ffe9e6'; }
+    else if (st.garyToday) { banner = 'GARY VISITS TODAY'; bg = '#5e1717'; fg = '#ffe9e6'; }   // owner playtest 3 §6.2: until his warning
     else if (st.slogan) {         // a venue view's slogan (round 4), e.g. DAYS WITHOUT AN INCIDENT
       const sl = typeof st.slogan === 'string' ? { text: st.slogan } : st.slogan;
       banner = String(sl.text ?? ''); if (sl.bg) bg = sl.bg; if (sl.fg) fg = sl.fg;
@@ -259,9 +300,11 @@ export function createBoard(scene, { x, z, onCross = null }) {
     tex.needsUpdate = true;
   }
   const hustleShown = st => st.hustle > 1;
+  const sealShown = st => st.seal > 1;          // Gary's Seal (owner playtest 3 §6.4)
+  const priceShown = st => st.price ?? (st.bv ?? 0) * (st.hustle ?? 1) * (st.seal ?? 1);
 
   const sloganText = sl => (sl == null ? '' : typeof sl === 'string' ? sl : String(sl.text ?? '') + '|' + (sl.bg ?? '') + '|' + (sl.fg ?? ''));
-  function bannerOf(st) { return st.lastCall ? 'LAST CALL' : st.gary ? String(st.gary) : st.slogan ? 'S:' + sloganText(st.slogan) : 'SLOGAN'; }
+  function bannerOf(st) { return st.lastCall ? 'LAST CALL' : st.gary ? String(st.gary) : st.garyToday ? 'GARY VISITS TODAY' : st.slogan ? 'S:' + sloganText(st.slogan) : 'SLOGAN'; }
 
   // ---------- The Ball Silo ----------
   const SILO_H = 2.5, SILO_R = 0.5;
@@ -317,9 +360,13 @@ export function createBoard(scene, { x, z, onCross = null }) {
     const x2 = c.getContext('2d');
     x2.font = `700 38px ${SANS}`; x2.textAlign = 'center'; x2.textBaseline = 'middle';
     x2.lineJoin = 'round'; x2.lineWidth = 8; x2.strokeStyle = 'rgba(15,12,25,0.85)';
-    const t = String(text);
+    // text is a string, or [[text, colour], ...] segments drawn side by side (owner playtest 3 §1.3: "8 × $1.31 + wash").
+    const segs = Array.isArray(text) ? text.map(([t, c]) => [String(t), c ?? color]) : [[String(text), color]];
+    const t = segs.map(q => q[0]).join('');
     let px = 38; while (x2.measureText(t).width > 240 && px > 14) { px -= 2; x2.font = `700 ${px}px ${SANS}`; }
-    x2.strokeText(t, 128, 34); x2.fillStyle = color; x2.fillText(t, 128, 34);
+    x2.textAlign = 'left';
+    let sx = 128 - x2.measureText(t).width / 2;
+    for (const [st, sc] of segs) { x2.strokeText(st, sx, 34); x2.fillStyle = sc; x2.fillText(st, sx, 34); sx += x2.measureText(st).width; }
     const map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace;
     const mat = new THREE.SpriteMaterial({ map, depthTest: false, transparent: true });
     const sp = new THREE.Sprite(mat);
@@ -342,7 +389,10 @@ export function createBoard(scene, { x, z, onCross = null }) {
 
     // board
     const k = [
-      boardMoney(state.bv), money(state.rate), money(state.upkeep), state.hustle > 1 ? state.hustle.toFixed(2) : '-',
+      boardMoney(priceShown(state)), state.hustle > 1 ? state.hustle.toFixed(2) : '-', state.seal > 1 ? state.seal.toFixed(2) : '-',
+      // owner playtest 3 §1.1: the bar's whole %, the tick's, the venue's word and the pips' colours
+      pct(cleanFrac(state.upkeep, state.ceiling ?? 1.5)), state.q == null ? 'x' : pct(targetFrac(state.q, state.ceiling ?? 1.5)), barWord(state.venue),
+      pipsOf(state.fixtures, state.nMats ?? 10).map(p => p.colour[0]).join(''), state.garyToday ? 'G' : '',
       state.curb == null ? 'x' : Math.round(clamp01(state.curb) * 100),
       state.pond == null ? 'x' : Math.round(clamp01(state.pond) * 100),
       state.fries == null ? 'x' : Math.round(clamp01(state.fries) * 100),
@@ -352,7 +402,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
     ].join('|');
     if (k === key) return;
     key = k;
-    const next = { bv: boardMoney(state.bv), quota: state.quota == null ? '' : money(state.quota), banner: bannerOf(state) };
+    const next = { bv: boardMoney(priceShown(state)), quota: state.quota == null || state.q == null ? '' : String(pct(targetFrac(state.q, state.ceiling ?? 1.5))), banner: bannerOf(state) };
     if (s) {                                   // no flip on the very first draw
       for (const f of ['bv', 'quota', 'banner']) if (next[f] !== prev[f]) { flipping[f] = true; flipT = FLIP_TIME; }
     }

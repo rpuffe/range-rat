@@ -1,12 +1,13 @@
 // The Closing Bell (council round 6, #2 and #3): what the crew is short of at Last Call, and why a review missed on
 // the venue gauge. Pure rules: no THREE, no DOM. The server picks the line; the client only shows it.
-import { QUOTA_KPI, FRIES, POND, FIXTURE_BY_ID } from './sim.js';
+import { QUOTA_KPI, FRIES, POND, FIXTURE_BY_ID, LAST_CALL } from './sim.js';
 import { MAP } from './map.js';
+import { upkeepMet } from './bvtext.js';   // owner playtest 3 §1.4
 
 // Every line is one centre toast: 8 words or fewer.
 export const RALLY_LINES = {
   gauge: {                                   // by venue: the fourth gauge is under QUOTA_KPI
-    2: 'Glow rush! Cups fill double. Shoot late!',   // round 8 #1: the Glow Rush (glow balls cup x2 at Tiered)
+    2: 'Glow rush! Shoot before they leave!',   // round 8 #1: the Glow Rush (glow balls cup x2); owner playtest 3 §2: bowls judged at 1:00
     3: 'The crowd is bored. Lap the Track!',
     4: 'Strays in the Yards. Go get them!',
     5: 'Debris overhead. Everyone up the Lift!',   // round 8 #4: the crank is gone, so every Rat rides
@@ -18,11 +19,12 @@ export const RALLY_LINES = {
   pond: 'The pond is murky. Dive!',
   onTarget: 'On target. Hold it till the bell.',
   keepLapping: 'Keep lapping!',              // playthrough 3: the Stadium re-check, live crowd fine, graded mean short
+  pick: 'Grab the last balls!',              // owner playtest 3 §2: the cleanup deal, over RALLY_PICK balls out there
 };
 
 // The report's miss line when the gauge, not Upkeep, cost the stamp (by venue).
 export const GAUGE_MISS = {
-  2: 'Missed: the glow rush filled the bowls.',
+  2: 'Missed: the bowls were full at 1:00.',   // owner playtest 3 §2: the last customer out reads the bowls
   3: 'Missed: the crowd was bored.',
   4: 'Missed: strays in the Yards.',
   5: 'Missed: too much debris overhead.',
@@ -36,7 +38,8 @@ export const POND_MURKY = 0.6;
 export const gaugeOk = kpi => kpi == null || kpi + 1e-9 >= QUOTA_KPI;
 // The same test the review uses: Upkeep (BV / Rate) against 1 + q.
 // margin: Upkeep the rally asks for above that (UPKEEP_MARGIN); the review itself uses 0.
-export const upkeepOk = (value, quota, margin = 0) => !quota || value.bv / value.rate + 1e-9 >= 1 + quota.q + margin;
+// Owner playtest 3 §1.4: judged on Upkeep itself (BV / Rate lost a cent of rounding once Rate carried the clean kit).
+export const upkeepOk = (value, quota, margin = 0) => !quota || upkeepMet(value, quota.q, margin);
 // Playthrough 3 #3: Last Call scuffs ×1.5, so "On target" at the bell was DENIED 25 of 31 times (4P). The rally
 // forecasts Upkeep at the bell: it says "On target" only with this much Upkeep to spare. The Last Call rally and the
 // 30 s re-check both use it, so they agree.
@@ -73,17 +76,19 @@ export const RALLY_MARGIN = Object.freeze({ 2: 0.5, 3: 0.1, 4: 0.1, 5: 0.1 });
 // Playtest round 2 #1: a second look this many seconds into Last Call. If the crew is still short, the server posts
 // one more line (the 'rally' event), at most once a shift.
 export const RALLY_RECHECK = 30;
+// Owner playtest 3 §2: the re-check is the cleanup deal at T-60; over this many balls out there it deals 'pick'.
+export const RALLY_PICK = 30;
 
-// Round 7 #7: when the rally fires, in seconds before the bell, by venue (default: Last Call's 60). The Stadium's
-// Two-Minute Warning rallies at T-120; its Last Call rules (x1.5 swings, glow balls) still start at T-60.
+// Round 7 #7: when the rally fires, in seconds before the bell, by venue (default: Last Call's, T-90 since owner
+// playtest 3). The Stadium's Two-Minute Warning rallies at T-120; its Last Call rules still start at T-90.
 export const RALLY_AT = Object.freeze({ 3: 120 });
-export const rallyAt = venue => RALLY_AT[venue] ?? 60;
+export const rallyAt = venue => RALLY_AT[venue] ?? LAST_CALL.SECS;
 
 // ---- Round 7 #4: dealt jobs. The ranked shortfalls, dealt round the crew by distance: no roles, only nudges. ----------
 // Where each job is. The gauge's place is per venue: the worst bowl (Tiered), the Track (Stadium), Yard 2 (County),
 // the Lift (Orbital).
 export const JOB_AT = Object.freeze({
-  mats: { x: 0, z: 3.5 }, sign: { x: FIXTURE_BY_ID.sign.x, z: FIXTURE_BY_ID.sign.z }, stand: { x: FIXTURE_BY_ID.stand.x, z: FIXTURE_BY_ID.stand.z },
+  mats: { x: 0, z: 3.5 }, pick: { x: 0, z: -40 }, sign: { x: FIXTURE_BY_ID.sign.x, z: FIXTURE_BY_ID.sign.z }, stand: { x: FIXTURE_BY_ID.stand.x, z: FIXTURE_BY_ID.stand.z },
   fries: { x: FRIES.SHED.x, z: FRIES.SHED.z }, pond: { x: POND.DOCK.x, z: POND.DOCK.z },
   gauge: {
     3: { x: MAP.TRACK.x, z: MAP.TRACK.z + MAP.TRACK.b },                    // the Track's near side
@@ -105,7 +110,8 @@ export function gaugeAt(venue, cups = null) {
 // cost (Upkeep's biggest term always, when Upkeep is under target). [] = on target (or no review). [{ id, line, loss, at }].
 // shortfall() is this list's head (or the on-target line): the solo line and old clients' `need`.
 export const JOB_MIN_LOSS = 0.01;
-export function shortfalls({ value, quota, kpi = null, fixtures = {}, fries = value?.fries ?? null, pond = value?.pond ?? null, venue = 0, endless = false, cups = null, margin = 0 }) {
+// left: the balls out there (owner playtest 3 §2's cleanup deal): over RALLY_PICK adds 'pick', last.
+export function shortfalls({ value, quota, kpi = null, fixtures = {}, fries = value?.fries ?? null, pond = value?.pond ?? null, venue = 0, endless = false, cups = null, margin = 0, left = 0 }) {
   if (endless || !value) return [];
   if (venue === 5 && !quota) return gaugeOk(kpi) ? [] : [{ id: 'gauge', line: RALLY_LINES.gauge[5], loss: 1, at: gaugeAt(5) }];
   if (!quota) return [];
@@ -122,6 +128,7 @@ export function shortfalls({ value, quota, kpi = null, fixtures = {}, fries = va
   const under = !upkeepOk(value, quota, margin);
   const real = terms.filter((t, i) => (under && i === 0) || t.loss >= JOB_MIN_LOSS);   // under target names at least its biggest term
   for (const t of real) out.push({ ...t, line: RALLY_LINES[t.id], at: JOB_AT[t.id] });
+  if (out.length && left > RALLY_PICK) out.push({ id: 'pick', line: RALLY_LINES.pick, loss: 0, at: JOB_AT.pick });
   return out;
 }
 

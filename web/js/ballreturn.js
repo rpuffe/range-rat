@@ -3,8 +3,11 @@
 // own chute, washer.js, carries on to the silo), balls rolling along it when anyone banks, and the customers'
 // basket of balls by the BUCKETS dispenser. Draw calls: one pipe (the other is hidden), one InstancedMesh of
 // rolling balls (hidden when none roll; its pool is the detail.js tier's pipeBalls), one merged basket.
+// Owner playtest 3 §3.3: the basket's buckets are one InstancedMesh of 12 slots (layout.js BASKET_SLOTS): count = the
+// snapshot's basket, so the heap is the readout (+1 draw call); while a Rat fills, balls drop from the dispenser's
+// chute into the bucket by them, drawn from the same rolling-ball pool.
 import * as THREE from 'three';
-import { PIPE_DIRECT, PIPE_WASHER, PIPE_SECS, BASKET } from './layout.js';
+import { PIPE_DIRECT, PIPE_WASHER, PIPE_SECS, BASKET, BASKET_SLOTS, DISPENSER, FILL_POINT } from './layout.js';
 
 const v3 = p => new THREE.Vector3(p[0], p[1], p[2]);
 
@@ -41,7 +44,6 @@ export function createBallReturn(scene, { pool = 24 } = {}) {
       const a = i * 2.4, rr = (i < 9 ? 0.22 : i < 17 ? 0.13 : 0.05) * (0.85 + 0.3 * r());
       put(new THREE.SphereGeometry(0.06, 7, 5), 0xf6f4ee, Math.cos(a) * rr, 0.3 + (i < 9 ? 0 : i < 17 ? 0.06 : 0.11) + r() * 0.02, Math.sin(a) * rr);
     }
-    for (let i = 0; i < 4; i++) put(new THREE.CylinderGeometry(0.2, 0.15, 0.3, 12, 1, true), 0x2f6fbf, 0.6, 0.15 + i * 0.07, 0.15);
     const pos = [], nor = [], col = [];
     for (const [g, c] of parts) {
       pos.push(...g.attributes.position.array); nor.push(...g.attributes.normal.array);
@@ -55,6 +57,15 @@ export function createBallReturn(scene, { pool = 24 } = {}) {
     basket.position.set(BASKET.x, 0, BASKET.z); basket.castShadow = true; basket.name = 'basket';
     scene.add(basket);
   }
+
+  // The filled buckets (owner playtest 3 §3.3): blue buckets heaped by the basket, one per bucket in it.
+  const bucketGeo = new THREE.CylinderGeometry(0.17, 0.13, 0.26, 12, 1, true);
+  const buckets = new THREE.InstancedMesh(bucketGeo, new THREE.MeshLambertMaterial({ color: 0x2f6fbf, side: THREE.DoubleSide }), BASKET_SLOTS.length);
+  buckets.name = 'basket.buckets'; buckets.castShadow = true; buckets.count = 0; buckets.visible = false; scene.add(buckets);
+  BASKET_SLOTS.forEach((s, i) => buckets.setMatrixAt(i, _m.makeTranslation(s.x, s.y, s.z)));
+  buckets.instanceMatrix.needsUpdate = true;
+  let shownN = 0, chutes = 0, chuteT = 0;
+  const CHUTE = { x: DISPENSER.x + 0.5, y: 1.05, z: FILL_POINT.z };   // the dispenser's east-side chute mouth
 
   return {
     pipes, curves,
@@ -71,13 +82,27 @@ export function createBallReturn(scene, { pool = 24 } = {}) {
       const want = Math.min(6, Math.max(0, k | 0), n - live.length);
       for (let i = 0; i < want; i++) live.push({ t: 0, delay: i * 0.14, route });
     },
+    // The snapshot's basket count and how many Rats are filling (the chute's ball stream).
+    basket(n, filling = 0) {
+      const k = Math.max(0, Math.min(BASKET_SLOTS.length, n | 0));
+      if (k !== shownN) { shownN = k; buckets.count = k; buckets.visible = k > 0; }
+      chutes = Math.max(0, Math.min(2, filling | 0));
+    },
     tick(dt) {
       let c = 0;
+      if (chutes) {                      // a ball every 0.05 s: 30 in 1.5 s, falling out of the chute
+        chuteT = (chuteT + dt) % 0.3;
+        for (let j = 0; j < Math.min(chutes * 3, n) && c < n; j++) {
+          const u = ((chuteT / 0.3) + j / 3) % 1;
+          balls.setMatrixAt(c++, _m.makeTranslation(CHUTE.x + (j % 2) * 0.12, CHUTE.y - 0.75 * u * u, CHUTE.z));
+        }
+      }
       for (let i = live.length - 1; i >= 0; i--) {
         const b = live[i];
         if (b.delay > 0) { b.delay -= dt; continue; }
         b.t += dt / PIPE_SECS[b.route];
         if (b.t >= 1) { live.splice(i, 1); continue; }
+        if (c >= n) continue;              // the chute's balls share the pool
         curves[b.route].getPoint(b.route === 'direct' ? b.t * (0.6 + 0.4 * b.t) : b.t, _p);   // the direct pipe falls: they speed up
         balls.setMatrixAt(c++, _m.makeTranslation(_p.x, _p.y, _p.z));
       }

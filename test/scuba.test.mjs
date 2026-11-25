@@ -396,7 +396,7 @@ test('treasure: pick it up in the Deep End, bank it at the stand for 200 x BV, l
   assert.ok(e.some(x => x.t === 'pa' && x.id === 'treasure'), 'the first-treasure PA line');
   assert.deepEqual(crew.snapshot().pond.lostFound, ['keys', 'trophy']);
   const save = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.equal(save.v, 3); assert.deepEqual(save.lostFound, ['keys', 'trophy']);
+  assert.equal(save.v, 4); assert.deepEqual(save.lostFound, ['keys', 'trophy']);
   const back = new Crew('DIVE', save, { shiftSecs: 600, seed: 3 });
   assert.deepEqual(back.lostFound, ['keys', 'trophy']);
 });
@@ -426,7 +426,7 @@ test('the dive gear row is bought from the crew wallet at catalog price, kept by
   assert.equal(crew.buy(a, 'dive'), true); assert.equal(a.dive, 1); assert.equal(crew.cash, 98_800);
   assert.equal(crew.buy(a, 'dive'), true); assert.equal(crew.cash, 93_800);
   assert.equal(crew.buy(a, 'dive'), false, 'the scooter is a County purchase');
-  assert.equal(b.dive, 0); assert.equal(a.gear, crew.gearByName.Ann ?? a.gear, 'carrying gear untouched');
+  assert.equal(b.dive, 0); assert.equal(a.gear, crew.up.gear ?? 0, 'carrying gear untouched');
   assert.deepEqual(crew.toSave().diveByName, { Ann: 2 });
   const back = new Crew('DIVE', JSON.parse(JSON.stringify(crew.toSave())), { shiftSecs: 600, seed: 5 });
   const again = back.join('Ann'); assert.equal(again.dive, 2); assert.equal(again.air, 70);
@@ -443,7 +443,8 @@ test('saves from before v3 load with empty dive gear and an empty case', () => {
   assert.equal(crew.join('Ann').dive, 0);
   const junk = new Crew('JNK', { diveByName: { A: 9, B: -1, C: 'x', D: 2 }, lostFound: ['keys', 'keys', 'nope', 5] }, { shiftSecs: 600, seed: 1 });
   assert.deepEqual(junk.diveByName, { A: 3, D: 2 }); assert.deepEqual(junk.lostFound, ['keys']);
-  assert.equal(crew.toSave().v, 3);
+  assert.equal(crew.toSave().v, 4);
+  assert.equal(crew.up.gear, 2, 'owner playtest 3 §5.2: the old bucket by name became the crew gear');
 });
 
 test('the pneumatic tube: feed it by the dock, balls bank at the stand 6 s later at the gear factor you fed with', () => {

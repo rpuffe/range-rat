@@ -210,28 +210,55 @@ export function scoop() {
   burst(c, { dur: 0.025, vol: 0.04, f: 3000 + Math.random() * 2000, q: 3 });
 }
 
-// Quiet electric-cart whine. Nodes persist across set() calls and only their
-// parameters ramp, so per-frame calls stay cheap. Built lazily so it still
-// works if the cart spawns before the first unlock.
+// The cart's engine (owner playtest 3 §7.4): a little petrol motor, not a reed. Two square waves an octave
+// apart (detuned ±4 cents; squares have no even harmonics) at 70 → 160 Hz, a lowpass at 400 → 900 Hz that
+// never opens the top end, a gentle tanh saturation (warmth, not fuzz), a "putt" tremolo at 12 → 28 Hz,
+// and tyre noise. Every parameter glides (0.25 s), so throttle stabs slur. Nodes persist across set() calls
+// and only their parameters ramp, so per-frame calls stay cheap. Built lazily so it still works if the cart
+// spawns before the first unlock. speed01 is speed ÷ the base top speed, clamped, so turbo never raises the pitch.
+export const ENGINE = Object.freeze({ F0: 70, F1: 160, LP0: 400, LP1: 900, Q: 0.7, DRIVE: 1.5, TREM0: 12, TREM1: 28, TREM_DEPTH: 0.25,
+  TYRE_HZ: 250, TYRE_GAIN: 0.012, GAIN0: 0.012, GAIN1: 0.028, DETUNE: 4, GLIDE: 0.25 });
+// Pure: the engine's parameters at a speed (tested in test/audiomix.test.mjs).
+export function engineParams(speed01) {
+  const s = Math.min(1, Math.max(0, Number(speed01) || 0)), E = ENGINE, lerp = (x, y) => x + (y - x) * s;
+  return { freq: lerp(E.F0, E.F1), lowpass: lerp(E.LP0, E.LP1), trem: lerp(E.TREM0, E.TREM1),
+    gain: s < 0.02 ? 0 : E.GAIN0 + E.GAIN1 * s, tyres: E.TYRE_GAIN * s };
+}
+// tanh curve for the WaveShaper
+export function tanhCurve(drive = ENGINE.DRIVE, n = 256) {
+  const k = new Float32Array(n), norm = Math.tanh(drive);
+  for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; k[i] = Math.tanh(drive * x) / norm; }
+  return k;
+}
 export function cartEngine() {
-  let osc = null;
-  let gain = null;
-  let flt = null;
+  let nodes = null;
   let stopped = false;
 
   function build() {
     const c = live();
     if (!c) return false;
-    osc = c.createOscillator();
-    flt = c.createBiquadFilter();
-    gain = c.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.value = 120;
-    flt.type = 'lowpass';
-    flt.frequency.value = 900;
-    gain.gain.value = 0;
-    osc.connect(flt).connect(gain).connect(master);
-    osc.start();
+    const E = ENGINE;
+    const lo = c.createOscillator(), hi = c.createOscillator();
+    lo.type = hi.type = 'square';
+    lo.frequency.value = E.F0; hi.frequency.value = E.F0 * 2;
+    lo.detune.value = -E.DETUNE; hi.detune.value = E.DETUNE;
+    const hiG = c.createGain(); hiG.gain.value = 0.5;              // the upper octave sits under the fundamental
+    const flt = c.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = E.LP0; flt.Q.value = E.Q;
+    const sat = c.createWaveShaper(); sat.curve = tanhCurve(); sat.oversample = '2x';
+    const trem = c.createGain(); trem.gain.value = 1 - E.TREM_DEPTH;   // the LFO swings it ±depth around 1 - depth
+    const lfo = c.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = E.TREM0;
+    const lfoG = c.createGain(); lfoG.gain.value = E.TREM_DEPTH;
+    const gain = c.createGain(); gain.gain.value = 0;
+    lo.connect(flt); hi.connect(hiG).connect(flt);
+    flt.connect(sat).connect(trem).connect(gain).connect(master);
+    lfo.connect(lfoG).connect(trem.gain);
+    // tyres: the shared noise through a band-pass
+    const tyre = c.createBufferSource(); tyre.buffer = noise(c); tyre.loop = true;
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = E.TYRE_HZ; bp.Q.value = 1;
+    const tyreG = c.createGain(); tyreG.gain.value = 0;
+    tyre.connect(bp).connect(tyreG).connect(master);
+    for (const o of [lo, hi, lfo, tyre]) o.start();
+    nodes = { lo, hi, hiG, flt, sat, trem, lfo, lfoG, gain, tyre, bp, tyreG };
     return true;
   }
 
@@ -239,26 +266,26 @@ export function cartEngine() {
     set(speed01) {
       if (stopped) return;
       try {
-        if (!osc && !build()) return;
-        const c = ctx;
-        const s = Math.min(1, Math.max(0, Number(speed01) || 0));
-        const t = c.currentTime;
-        osc.frequency.setTargetAtTime(110 + s * 330, t, 0.08);
-        flt.frequency.setTargetAtTime(600 + s * 1400, t, 0.08);
-        gain.gain.setTargetAtTime(s < 0.02 ? 0 : 0.015 + s * 0.035, t, 0.08);
+        if (!nodes && !build()) return;
+        const t = ctx.currentTime, p = engineParams(speed01), G = ENGINE.GLIDE, n = nodes;
+        n.lo.frequency.setTargetAtTime(p.freq, t, G);
+        n.hi.frequency.setTargetAtTime(p.freq * 2, t, G);
+        n.flt.frequency.setTargetAtTime(p.lowpass, t, G);
+        n.lfo.frequency.setTargetAtTime(p.trem, t, G);
+        n.gain.gain.setTargetAtTime(p.gain, t, G);
+        n.tyreG.gain.setTargetAtTime(p.tyres, t, G);
       } catch { /* ignore */ }
     },
     stop() {
       stopped = true;
-      if (!osc) return;
+      if (!nodes) return;
       try {
-        const t = ctx.currentTime;
-        gain.gain.setTargetAtTime(0, t, 0.03);
-        osc.stop(t + 0.2);
-        const o = osc, f = flt, g = gain;
-        o.onended = () => { o.disconnect(); f.disconnect(); g.disconnect(); };
+        const t = ctx.currentTime, n = nodes;
+        n.gain.gain.setTargetAtTime(0, t, 0.03); n.tyreG.gain.setTargetAtTime(0, t, 0.03);
+        for (const o of [n.lo, n.hi, n.lfo, n.tyre]) o.stop(t + 0.2);
+        n.lo.onended = () => { for (const k of Object.values(n)) { try { k.disconnect(); } catch {} } };
       } catch { /* ignore */ }
-      osc = null;
+      nodes = null;
     },
   };
 }

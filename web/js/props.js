@@ -916,7 +916,8 @@ varying vec2 vMudUv; uniform sampler2D uMudTex; uniform sampler2D uMem; uniform 
       wg.position.y = wand.recoil * Math.sin(t * 47) * 0.004;
       wand.cone.visible = wand.recoil > 0.05;
       wand.coneMat.opacity = wand.recoil * (0.1 + Math.random() * 0.05);
-      wand.cone.scale.set(0.8 + Math.random() * 0.3, 1, 0.8 + Math.random() * 0.3);
+      const foamK = (st.up?.wand ?? 0) >= 3 ? 2.4 : 1;   // owner playtest 3 §5.1: the foam cannon's cone is wide (builder 4)
+      wand.cone.scale.set((0.8 + Math.random() * 0.3) * foamK, 1, (0.8 + Math.random() * 0.3) * foamK);
       // The nozzle tip in the world (owner notes: the spray must come out of the nozzle): main.js's 'nozzleTip'.
       if (wand.tipObj) wand.tipObj.getWorldPosition(wand.tip); else { tmp.set(0.32, 1.0, -1.23); wg.updateWorldMatrix(true, false); wg.localToWorld(wand.tip.copy(tmp)); }
     }

@@ -35,10 +35,10 @@ const restingBall = (crew, x, z) => {
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} vs ${b}`);
 const ST = WASH.STATION;
 
-// ---- personal gear ---------------------------------------------------------
+// ---- crew carrying gear (owner playtest 3 §5.2: was personal) -----------------
 
-test('gear is a personal shop item and perks() carries no personal stats', () => {
-  assert.equal(SHOP_BY_ID.gear.personal, true);
+test('gear is a crew shop item and perks() carries no carrying stats', () => {
+  assert.equal(SHOP_BY_ID.gear.personal, undefined);
   assert.notEqual(SHOP_BY_ID.washer.personal, true);
   const k = perks({ gear: 3 });
   for (const f of ['pocket', 'reach', 'scoop']) assert.equal(f in k, false, f);
@@ -46,38 +46,37 @@ test('gear is a personal shop item and perks() carries no personal stats', () =>
   assert.equal(HELPER_POCKET, 8);
 });
 
-test('buying gear raises only the buyer, paid from the shared wallet', () => {
+test('one gear purchase lifts every Rat, at the crew price', () => {
   const { crew } = makeCrew();
   const a = addPlayer(crew, 'A'), b = addPlayer(crew, 'B');
   assert.equal(a.gear, 0); assert.equal(b.gear, 0);
   crew.cash = 1000;
   buy(crew, a, 'gear');
-  assert.equal(a.gear, 1);
-  assert.equal(b.gear, 0, 'B is untouched');
-  assert.equal(crew.cash, 980);
-  assert.equal(crew.up.gear, undefined, 'not a crew upgrade');
+  assert.equal(a.gear, 1); assert.equal(b.gear, 1, 'B gets one too');
+  assert.equal(crew.up.gear, 1, 'a crew upgrade');
+  assert.equal(crew.cash, 1000 - 28, '$20 x 1.4 for two');
   const ev = crew.flush().ev.find(e => e.t === 'buy' && e.id === 'gear');
-  assert.ok(ev && ev.by === a.id && ev.level === 1 && ev.price === 20 && ev.personal === true);
-  buy(crew, b, 'gear'); buy(crew, b, 'gear');
-  assert.equal(b.gear, 2);
-  assert.equal(a.gear, 1);
-  assert.equal(crew.cash, 980 - 20 - 75);
+  assert.ok(ev && ev.by === a.id && ev.level === 1 && ev.price === 28 && ev.personal === false);
+  buy(crew, b, 'gear');
+  assert.equal(a.gear, 2); assert.equal(b.gear, 2);
+  assert.equal(crew.cash, 1000 - 28 - 105);
+  const c = addPlayer(crew, 'C');
+  assert.equal(c.gear, 2, 'a late joiner gets the crew tier');
 });
 
-test('gear price is the catalog price whatever the crew size, and follows the buyer\'s own level', () => {
+test('gear is crew-priced: $44 / $165 / $550 for four ($759, not 4 x $345)', () => {
   const { crew } = makeCrew();
   const [a, b] = ['A', 'B', 'C', 'D'].map(n => addPlayer(crew, n));
   crew.cash = 1000;
   assert.equal(crew.players.size, 4);
   buy(crew, a, 'gear');
-  assert.equal(crew.cash, 980, 'tier 1 is $20 even with four players');
-  assert.equal(nextPrice('gear', crew.up, 4, a.gear), 75);
-  assert.equal(nextPrice('gear', crew.up, 4, b.gear), 20);
-  buy(crew, a, 'gear');
-  assert.equal(crew.cash, 905);
-  // crew items are still scaled (x2.2 for four)
+  assert.equal(crew.cash, 956, 'tier 1 is $44 with four players');
+  assert.equal(nextPrice('gear', crew.up, 4), 165);
+  assert.equal(b.gear, 1);
+  buy(crew, b, 'gear');
+  assert.equal(crew.cash, 791);
   buy(crew, b, 'helpers');
-  assert.equal(crew.cash, 905 - 132);
+  assert.equal(crew.cash, 791 - 132);
 });
 
 test('gear can be maxed, not bought without the cash, and bought mid-shift', () => {
@@ -90,39 +89,55 @@ test('gear can be maxed, not bought without the cash, and bought mid-shift', () 
   assert.equal(a.gear, 3, 'tier 3 is the top');
   assert.equal(crew.cash, 10000 - 20 - 75 - 250);
   const b = addPlayer(crew, 'B');
-  crew.startShift();
-  buy(crew, b, 'gear');
-  assert.equal(b.gear, 1, 'the shop is open mid-shift');
+  assert.equal(b.gear, 3, 'a late joiner wears the crew tier');
+  const { crew: c2 } = makeCrew(); const x = addPlayer(c2, 'X'); c2.cash = 100;
+  c2.startShift();
+  buy(c2, x, 'gear');
+  assert.equal(x.gear, 1, 'the shop is open mid-shift');
 });
 
-test('gear is remembered by name: saved, restored from a save, and on rejoin', () => {
+test('crew gear is saved in up.gear and restored for everyone', () => {
   const { crew } = makeCrew();
-  const a = addPlayer(crew, 'Ann'), b = addPlayer(crew, 'Bob');
+  const a = addPlayer(crew, 'Ann');
   crew.cash = 1000;
-  buy(crew, a, 'gear'); buy(crew, a, 'gear'); buy(crew, b, 'gear');
-  assert.deepEqual(crew.gearByName, { Ann: 2, Bob: 1 });
+  buy(crew, a, 'gear'); buy(crew, a, 'gear');
   const save = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.deepEqual(save.gear, { Ann: 2, Bob: 1 });
-  assert.equal(save.up.gear, undefined);
-
+  assert.equal(save.up.gear, 2);
+  assert.equal(save.gear, undefined, 'gear by name is no longer written');
+  assert.equal(save.v, 4);
   const { crew: back } = makeCrew(save);
   assert.equal(back.join('Ann').gear, 2);
-  assert.equal(back.join('Bob').gear, 1);
-  assert.equal(back.join('Cy').gear, 0, 'a stranger starts bare-handed');
-
-  // Leaving and rejoining the same live crew under the same name.
-  crew.removePlayer(a);
-  assert.equal(crew.join('Ann').gear, 2);
+  assert.equal(back.join('Cy').gear, 2, 'a stranger wears the crew gear');
 });
 
-test('a crew-level up.gear in a save is ignored, and bad personal gear is clamped', () => {
-  const { crew } = makeCrew({ up: { gear: 3, washer: 1 }, gear: { Hi: 99, Neg: -4, Junk: 'x', ThisNameIsFarTooLongToKeep: 2 } });
-  assert.deepEqual(crew.up, { washer: 1 });
-  assert.equal(crew.join('Neg').gear, 0);
-  assert.equal(crew.join('Hi').gear, 3);
-  assert.equal(crew.join('Rando').gear, 0, 'crew-level gear gives nobody anything');
-  assert.equal(crew.gearByName.Junk, undefined);
-  assert.equal(crew.gearByName.ThisNameIsFarTooLongToKeep, undefined);
+test('migration: an old save\'s personal gear lifts the crew to the best anyone had; nobody loses gear', () => {
+  const { crew } = makeCrew({ v: 3, up: { washer: 1 }, gear: { Hi: 99, Neg: -4, Junk: 'x', Bob: 1 } });
+  assert.deepEqual(crew.up, { washer: 1, gear: 3 }, 'clamped to the top tier');
+  assert.equal(crew.join('Neg').gear, 3);
+  assert.equal(crew.join('Rando').gear, 3);
+  const two = makeCrew({ v: 3, up: { gear: 1 }, gear: { Ann: 2, Bob: 1 } }).crew;
+  assert.equal(two.up.gear, 2);
+  const none = makeCrew({ v: 3, gear: {} }).crew;
+  assert.equal(none.up.gear, undefined);
+});
+
+test('migration: the Club\'s old turbo nozzle (amen 1) becomes the wand row\'s turbo; covered bays stay', () => {
+  const t = makeCrew({ v: 3, venue: 1, up: { amen: 1 } }).crew;
+  assert.equal(t.up.wand, 2); assert.equal(t.up.amen, undefined);
+  assert.equal(t.perks.washRate, 2); assert.equal(t.perks.covered, false);
+  const c = makeCrew({ v: 3, venue: 1, up: { amen: 2 } }).crew;
+  assert.equal(c.up.wand, 2); assert.equal(c.up.amen, 1); assert.equal(c.perks.covered, true);
+  const now = makeCrew({ v: 4, venue: 1, up: { amen: 1 } }).crew;
+  assert.equal(now.up.wand, undefined, 'a v4 save is already in the new shape');
+  assert.equal(now.perks.covered, true);
+});
+
+test('from the Club the crew gear is at least a bucket (the New Hire Kit is a floor)', () => {
+  const club = makeCrew({ v: 4, venue: 1, day: 5 }).crew;
+  assert.equal(club.up.gear, 2);
+  assert.equal(club.join('Newbie').gear, 2);
+  const muni = makeCrew({ v: 4, day: 5 }).crew;
+  assert.equal(muni.join('Newbie').gear, 0, 'no free tube at the Muni: the crew buys it once');
 });
 
 test('the pocket cap comes from your own gear, at every tier', () => {
@@ -174,45 +189,47 @@ test('a helper carries at most HELPER_POCKET, whatever the crew\'s gear', () => 
 
 // ---- ball value --------------------------------------------------------------
 
+// Owner playtest 3 §1.4 (the one price): Rate carries SIM.CLEAN_KIT ×1.25, so the Muni's rate is $1.25.
 test('ballValue: BV = rate x Upkeep; no cart means Gear 1', () => {
   assert.deepEqual(ballValue({ perks: perks({}), curb: 1 }),
-    { value: 1.5, bv: 1.5, rate: 1, upkeep: 1.5, hustle: 1, cartGear: 1, curb: 1, pond: null, fries: null });
-  assert.equal(ballValue({ perks: perks({ washer: 2 }), curb: 1 }).value, 4.5, 'rate 3 x Upkeep 1.5');
+    { value: 1.88, bv: 1.88, rate: 1.25, upkeep: 1.5, hustle: 1, cartGear: 1, curb: 1, pond: null, fries: null });
+  assert.equal(ballValue({ perks: perks({}), curb: 0 }).value, 1.25, 'the Muni day 1: $1.25 A BALL');
+  assert.equal(ballValue({ perks: perks({ washer: 2 }), curb: 1 }).value, 5.63, 'rate 3.75 x Upkeep 1.5');
   assert.equal(ballValue({ perks: perks({ washer: 1 }), curb: 1, cart: null }).cartGear, 1);
 });
 
-test('ballValue: a spotless cart is Gear x1.25, a filthy one x1; the headline value excludes Gear', () => {
+test('ballValue: a spotless cart is Gear x1 (full price), a filthy one x0.8; the headline value excludes Gear', () => {
   const k = perks({ washer: 2, cart: 1 });
-  near(ballValue({ perks: k, curb: 1, cart: { mud: 0 } }).cartGear, 1.25);
-  near(ballValue({ perks: k, curb: 1, cart: { mud: 1 } }).cartGear, 1);
-  near(ballValue({ perks: k, curb: 1, cart: { mud: 0.5 } }).cartGear, 1.125);
-  near(ballValue({ perks: k, curb: 1, cart: {} }).cartGear, 1.25, 1e-9);   // missing mud counts as spotless
-  near(ballValue({ perks: k, curb: 1, cart: { mud: 7 } }).cartGear, 1, 1e-9);   // mud is clamped to 1
-  near(ballValue({ perks: k, curb: 1, cart: { mud: -3 } }).cartGear, 1.25, 1e-9);   // and to 0
+  near(ballValue({ perks: k, curb: 1, cart: { mud: 0 } }).cartGear, 1);
+  near(ballValue({ perks: k, curb: 1, cart: { mud: 1 } }).cartGear, 0.8);
+  near(ballValue({ perks: k, curb: 1, cart: { mud: 0.5 } }).cartGear, 0.9);
+  near(ballValue({ perks: k, curb: 1, cart: {} }).cartGear, 1, 1e-9);   // missing mud counts as spotless
+  near(ballValue({ perks: k, curb: 1, cart: { mud: 7 } }).cartGear, 0.8, 1e-9);   // mud is clamped to 1
+  near(ballValue({ perks: k, curb: 1, cart: { mud: -3 } }).cartGear, 1, 1e-9);   // and to 0
   const clean = ballValue({ perks: k, curb: 1, cart: { mud: 0 } }), filthy = ballValue({ perks: k, curb: 1, cart: { mud: 1 } });
-  assert.equal(clean.value, 4.5);
-  assert.equal(filthy.value, 4.5, 'the per-ball headline does not move with cart mud');
-  assert.equal(payFor(1, clean, clean.cartGear), 5.63, '4.5 x 1.25 = 5.625, to cents');
-  assert.equal(payFor(1, filthy, filthy.cartGear), 4.5);
+  assert.equal(clean.value, 5.63);
+  assert.equal(filthy.value, 5.63, 'the per-ball headline does not move with cart mud');
+  assert.equal(payFor(1, clean, clean.cartGear), 5.63, 'a clean cart pays exactly the Board');
+  assert.equal(payFor(1, filthy, filthy.cartGear), 4.5, '5.63 x 0.8');
 });
 
 test('ballValue: Hit the Cart multiplies BV; the cart Gear applies on top at the deposit', () => {
   const k = perks({ washer: 1, cart: 1 });
-  assert.equal(ballValue({ perks: k, curb: 1, mult: 3, cart: { mud: 0 } }).value, 9);
-  assert.equal(ballValue({ perks: k, curb: 1, mult: 3, cart: { mud: 1 } }).value, 9);
-  const v = ballValue({ perks: k, curb: 1, mult: 3, cart: { mud: 0 } });
-  assert.equal(payFor(1, v, v.cartGear), 11.25, '3 x 3 x 1.25');
-  assert.equal(payFor(1, v), 9, 'people carry at Gear 1');
-  assert.equal(ballValue({ perks: k, curb: 1, mult: 2 }).value, 6, 'no cart: BV x mult');
+  assert.equal(ballValue({ perks: k, curb: 1, mult: 3, cart: { mud: 0 } }).value, 11.25);
+  assert.equal(ballValue({ perks: k, curb: 1, mult: 3, cart: { mud: 1 } }).value, 11.25);
+  const v = ballValue({ perks: k, curb: 1, mult: 3, cart: { mud: 1 } });
+  assert.equal(payFor(1, v, v.cartGear), 9, '3.75 x 3 x 0.8');
+  assert.equal(payFor(1, v), 11.25, 'a clean carrier pays the headline');
+  assert.equal(ballValue({ perks: k, curb: 1, mult: 2 }).value, 7.5, 'no cart: BV x mult');
   assert.equal(ballValue({ perks: k, curb: 1, mult: 2 }).hustle, 2);
 });
 
 test('ballValue rounds BV to cents first, then the pay to cents', () => {
   const k = perks({});
-  assert.equal(ballValue({ perks: k, curb: 0.1234 }).bv, 1.06);                  // 1.0617
-  assert.equal(ballValue({ perks: k, mult: 3, curb: 0.1234 }).value, 3.18, 'BV rounded before Hustle: 1.06 x 3');
+  assert.equal(ballValue({ perks: k, curb: 0.1234 }).bv, 1.33);                  // 1.25 x 1.0617 = 1.3271
+  assert.equal(ballValue({ perks: k, mult: 3, curb: 0.1234 }).value, 3.99, 'BV rounded before Hustle: 1.33 x 3');
   const v = ballValue({ perks: k, curb: 0.1234, cart: { mud: 0.1234 } });
-  assert.equal(payFor(1, v, v.cartGear), 1.29);                                  // 1.06 x 1.21915 = 1.2923
+  assert.equal(payFor(1, v, v.cartGear), 1.3);                                   // 1.33 x 0.97532 = 1.2972
 });
 
 test('money() formats whole dollars plainly and fractions to cents', () => {
@@ -224,47 +241,47 @@ test('money() formats whole dollars plainly and fractions to cents', () => {
 test('crew.ballPrice() follows BV and Hustle, not the cart; the snapshot reports the value', () => {
   const { crew } = makeCrew({ up: { cart: 1, washer: 2 } });
   assert.equal(crew.cart.mud, 0, 'the cart starts spotless');
-  assert.equal(crew.ballPrice(), 4.5);
-  assert.equal(crew.snapshot().value.value, 4.5);
-  assert.equal(crew.snapshot().value.cartGear, 1.25);
-  crew.cart.mud = 1;
-  assert.equal(crew.ballPrice(), 4.5, 'cart mud only changes the cart Gear');
+  assert.equal(crew.ballPrice(), 5.63);
+  assert.equal(crew.snapshot().value.value, 5.63);
   assert.equal(crew.snapshot().value.cartGear, 1);
+  crew.cart.mud = 1;
+  assert.equal(crew.ballPrice(), 5.63, 'cart mud only changes the cart Gear');
+  assert.equal(crew.snapshot().value.cartGear, 0.8);
   crew.mult = 2;
-  assert.equal(crew.ballPrice(), 9);
-  assert.equal(crew.snapshot().value.value, 9);
+  assert.equal(crew.ballPrice(), 11.26);
+  assert.equal(crew.snapshot().value.value, 11.26);
 
   const { crew: bare } = makeCrew({ up: { washer: 1 } });
   assert.equal(bare.cart, null);
-  assert.equal(bare.ballPrice(), 3, 'rate 2 x Upkeep 1.5');
-  assert.equal(bare.snapshot().value.value, 3);
+  assert.equal(bare.ballPrice(), 3.75, 'rate 2.5 x Upkeep 1.5');
+  assert.equal(bare.snapshot().value.value, 3.75);
 });
 
 test('banking pays weights x BV, in whole cents', () => {
   const { crew } = makeCrew({ up: { cart: 1 } });
   crew.fixtures.sign = 0.5;                            // Curb 1 - 0.5/12
-  assert.equal(crew.ballPrice(), 1.48);                // 1.4792 -> 1.48
+  assert.equal(crew.ballPrice(), 1.85);                // 1.25 x 1.4792 = 1.849 -> 1.85
   crew.bank(3, 'x');
-  assert.equal(crew.cash, 4.44);
+  assert.equal(crew.cash, 5.55);
   crew.bank(7, 'x');
-  assert.equal(crew.cash, 14.8, '10 x 1.48, no float dust');
-  assert.equal(crew.stats.cash, 14.8);
+  assert.equal(crew.cash, 18.5, '10 x 1.85, no float dust');
+  assert.equal(crew.stats.cash, 18.5);
   assert.equal(crew.stats.deposited, 10);
   const ev = crew.flush().ev.filter(e => e.t === 'cash');
-  assert.deepEqual(ev.map(e => e.cash), [4.44, 10.36]);
+  assert.deepEqual(ev.map(e => e.cash), [5.55, 12.95]);
 });
 
-test('a player depositing at the stand is paid at their own grime Gear (clean = x1.25), whatever the cart looks like', () => {
+test('a player depositing at the stand is paid at their own grime Gear (clean = x1, the Board), whatever the cart looks like', () => {
   const { crew } = makeCrew({ up: { cart: 1 } });
   const a = addPlayer(crew, 'A', SIM.STAND.x, SIM.STAND.z);
   crew.cart.mud = 0;
   a.pocket = 4; a.pocketW = 4;
   act(crew, a, { t: 'deposit' });
-  assert.equal(crew.cash, 7.5, '4 x BV 1.5 x 1.25');
+  assert.equal(crew.cash, 7.52, '4 x BV 1.88 (1.25 x 1.5, to cents) x 1');
   crew.cart.mud = 1;
   a.pocket = 10; a.pocketW = 10;   // deposit() zeroes pocketW; real pickups keep both in step
   act(crew, a, { t: 'deposit' });
-  assert.equal(crew.cash, 26.25, '+ 10 x 1.5 x 1.25: the muddy cart changes nothing for a Rat');
+  assert.equal(crew.cash, 26.32, '+ 10 x 1.88: the muddy cart changes nothing for a Rat');
 });
 
 // ---- mud from driving ---------------------------------------------------------
@@ -284,7 +301,7 @@ test('mud accumulates with distance driven', () => {
   assert.ok(moved > 25, `drove ${moved.toFixed(1)} m`);
   near(crew.cart.mud, moved * WASH.MUD_PER_M, 1e-6);
   assert.equal(crew.snapshot().cart.mud, +crew.cart.mud.toFixed(3));
-  assert.ok(crew.valueNow().cartGear < 1.25, 'the cart Gear bonus is wearing off');
+  assert.ok(crew.valueNow().cartGear < 1, 'the cart Gear is wearing off');
 });
 
 test('standing still, or driving junk poses, adds no mud', () => {
@@ -304,7 +321,7 @@ test('mud is capped at 1', () => {
   crew.cart.mud = 0.99;
   for (let i = 0; i < 12; i++) { run(0.25); crew.input(d, { cart: { x: crew.cart.x - 2, z: crew.cart.z, yaw: crew.cart.yaw } }); }
   assert.equal(crew.cart.mud, 1);
-  near(crew.valueNow().cartGear, 1, 1e-9);
+  near(crew.valueNow().cartGear, 0.8, 1e-9);
 });
 
 // ---- the wand -------------------------------------------------------------------
@@ -391,10 +408,10 @@ test('washing removes RATE x secs of mud', () => {
 
 test('washing goes through input and makes the cart worth more', () => {
   const { crew, p } = washSetup(1);
-  near(crew.valueNow().cartGear, 1);
+  near(crew.valueNow().cartGear, 0.8);
   act(crew, p, { t: 'wash', secs: 0.4 });
   near(crew.cart.mud, 1 - WASH.RATE * 0.4);
-  assert.ok(crew.valueNow().cartGear > 1, 'a cleaner cart earns more Gear');
+  assert.ok(crew.valueNow().cartGear > 0.8, 'a cleaner cart earns more Gear');
 });
 
 test('a wash is capped at 0.5 s', () => {
@@ -474,7 +491,7 @@ test('crossing below 0.05 snaps the cart to spotless and cheers once', () => {
   crew.wash(p, 0.5);                                  // 0.07 - 0.04 = 0.03 -> spotless
   assert.equal(crew.cart.mud, 0, 'snapped to exactly zero');
   assert.deepEqual(crew.flush().ev.filter(e => e.t === 'spotless'), [{ t: 'spotless', by: p.id, target: 'cart' }]);
-  assert.equal(crew.valueNow().cartGear, 1.25);
+  assert.equal(crew.valueNow().cartGear, 1);
 
   crew.cart.mud = 0.03;                               // already under: washing more is silent
   clock.t += 500;

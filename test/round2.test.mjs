@@ -57,32 +57,33 @@ test('Hustle is unchanged: +0.25 a ping, capped at x2', () => {
   assert.equal(CART.MAX_MULT, 2);
 });
 
-test('gearGrimeFactor: 1 + 0.25 x (1 - grime/3), clamped to 0..3', () => {
-  near(gearGrimeFactor(0), 1.25);
-  near(gearGrimeFactor(1), 1 + 0.25 * 2 / 3);
-  near(gearGrimeFactor(2), 1 + 0.25 / 3);
-  assert.equal(gearGrimeFactor(3), 1);
-  assert.equal(gearGrimeFactor(9), 1, 'more than three layers is still three');
-  assert.equal(gearGrimeFactor(-4), 1.25, 'negative is clean');
-  assert.equal(gearGrimeFactor(undefined), 1.25, 'no grime recorded is clean');
+// Owner playtest 3 §1.4 (the one price): the clean kit's 25% is in the Rate, so clean gear is x1 and grime takes off 20%.
+test('gearGrimeFactor: 1 - 0.2 x grime/3, clamped to 0..3', () => {
+  near(gearGrimeFactor(0), 1);
+  near(gearGrimeFactor(1), 1 - 0.2 / 3);
+  near(gearGrimeFactor(2), 1 - 0.4 / 3);
+  near(gearGrimeFactor(3), 0.8);
+  near(gearGrimeFactor(9), 0.8, 1e-9, 'more than three layers is still three');
+  assert.equal(gearGrimeFactor(-4), 1, 'negative is clean');
+  assert.equal(gearGrimeFactor(undefined), 1, 'no grime recorded is clean');
 });
 
 test('perks: the washer tiers, turbo and covered bays', () => {
   assert.deepEqual([0, 1, 2, 3].map(w => perks({ washer: w }).washAuto), [0, 0, 1, 5]);
   assert.deepEqual([0, 1, 2, 3].map(w => perks({ washer: w }).price), [1, 2, 3, 3], 'the industrial tier adds throughput, not Rate');
   assert.deepEqual([0, 1, 2, 3].map(w => perks({ washer: w }).washer), [0, 1, 2, 3]);
-  assert.equal(perks({}).turbo, false);
-  assert.equal(perks({ amen: 1 }).turbo, true);
-  assert.equal(perks({ amen: 1 }).covered, false);
-  assert.equal(perks({ amen: 2 }).covered, true);
+  // Owner playtest 3 §5.1: the turbo is the wand row's tier 2; amenities are covered bays only.
+  assert.equal(perks({}).washRate, 1);
+  assert.equal(perks({ wand: 2 }).washRate, 2);
+  assert.equal(perks({}).covered, false);
+  assert.equal(perks({ amen: 1 }).covered, true);
 });
 
 test('venue-gated shop rows: Club amenities and the industrial washer open at venue 1', () => {
   assert.equal(nextPrice('amen', {}, 1, 0, 0), null, 'not at the Muni');
-  assert.equal(nextPrice('amen', {}, 1, 0, 1), 3000);
-  assert.equal(nextPrice('amen', { amen: 1 }, 1, 0, 1), 8000);
-  assert.equal(nextPrice('amen', { amen: 2 }, 1, 0, 1), null, 'maxed');
-  assert.equal(nextPrice('amen', {}, 4, 0, 1), Math.round(3000 * priceScale(4)), 'a crew price');
+  assert.equal(nextPrice('amen', {}, 1, 0, 1), 8000);
+  assert.equal(nextPrice('amen', { amen: 1 }, 1, 0, 1), null, 'maxed');
+  assert.equal(nextPrice('amen', {}, 4, 0, 1), Math.round(8000 * priceScale(4)), 'a crew price');
   assert.equal(nextPrice('washer', { washer: 2 }, 1, 0, 0), null, 'the industrial wash is hidden at the Muni');
   assert.equal(nextPrice('washer', { washer: 2 }, 1, 0, 1), 6000);
   assert.equal(nextPrice('washer', { washer: 1 }, 1, 0, 0), 160, 'the electric tier is still a Muni purchase');
@@ -101,10 +102,9 @@ test('buying: amenities and the industrial wash are refused at the Muni, bought 
   club.cash = 100000;
   const b = addPlayer(club, 'B');
   act(club, b, { t: 'buy', id: 'amen' }, { t: 'buy', id: 'amen' }, { t: 'buy', id: 'washer' });
-  assert.equal(club.up.amen, 2);
+  assert.equal(club.up.amen, 1, 'one tier');
   assert.equal(club.up.washer, 3);
-  assert.equal(club.cash, 100000 - 3000 - 8000 - 6000);
-  assert.equal(club.perks.turbo, true);
+  assert.equal(club.cash, 100000 - 8000 - 6000);
   assert.equal(club.perks.covered, true);
   assert.equal(club.perks.washAuto, 5);
 });
@@ -298,9 +298,9 @@ test('every later venue has its reveal line', () => {
 });
 
 test('at the Club: Rate is x5, and it multiplies with the washer', () => {
-  assert.equal(makeCrew().crew.valueNow().rate, 1);
-  assert.equal(makeCrew({ venue: 1 }).crew.valueNow().rate, 5);
-  assert.equal(makeCrew({ venue: 1, up: { washer: 2 } }).crew.valueNow().rate, 15);
+  assert.equal(makeCrew().crew.valueNow().rate, 1.25, 'the one price: x the clean kit 1.25');
+  assert.equal(makeCrew({ venue: 1 }).crew.valueNow().rate, 6.25);
+  assert.equal(makeCrew({ venue: 1, up: { washer: 2 } }).crew.valueNow().rate, 18.75);
   assert.equal(VENUES[1].rate, 5);
 });
 
@@ -360,7 +360,7 @@ test('Gary visits the kitchen on his round and a thin fryer counts as a fail', (
   assert.ok(verdict.gained >= 1, 'one fail is still a commendation');
 });
 
-test('amenities: the turbo nozzle reaches further, covered bays skip the morning mud and halve scuffs', () => {
+test('the turbo nozzle reaches further, covered bays halve scuffs', () => {
   const reachAt = up => {
     const { crew } = makeCrew({ up, venue: 1 });
     openShift(crew);
@@ -372,21 +372,14 @@ test('amenities: the turbo nozzle reaches further, covered bays skip the morning
     // a mat 9.5 m away (the mat's own radius is added to the reach)
     const f = { x: o.x, z: o.z };
     crew.cart = null;
-    return Math.hypot(f.x - a.x, f.z - a.z) <= 7 * (crew.perks.turbo ? 9 / 7 : 1) + 1.5;
+    return Math.hypot(f.x - a.x, f.z - a.z) <= crew.perks.washReach + 1.5;
   };
   assert.equal(reachAt({}), false);
-  assert.equal(reachAt({ amen: 1 }), true);
-
-  const bare = makeCrew({ day: 2 }).crew; bare.startShift();
-  const mats = c => Object.entries(c.fixtures).filter(([k]) => k.startsWith('mat')).map(([, v]) => v);
-  assert.ok(mats(bare).some(v => v > 0.5), 'the morning mud is on the mats');
-  const covered = makeCrew({ day: 2, venue: 1, up: { amen: 2 } }).crew; covered.startShift();
-  assert.ok(mats(covered).every(v => v === 0), 'covered bays: the members never see a muddy mat');
-  assert.ok(covered.fixtures.sign > 0.5, 'the sign still gets dusty');
+  assert.equal(reachAt({ wand: 2 }), true);
 
   const scuff = up => { const { crew } = makeCrew({ venue: 1, up }, 100000); openShift(crew); swing(crew); return crew.fixtures.mat0; };
   near(scuff({}), 0.006);
-  near(scuff({ amen: 2 }), 0.003);
+  near(scuff({ amen: 1 }), 0.003);
 });
 
 // ---- the quota is judged on Upkeep -------------------------------------------------------
@@ -397,24 +390,24 @@ test('a mid-shift purchase cannot buy the quota (judged on Upkeep, not dollars)'
   crew.bank(10, 'x');
   crew.cash = 1000;
   const a = addPlayer(crew, 'A');
-  act(crew, a, { t: 'buy', id: 'washer' });            // Rate 1 -> 2: BV doubles, Upkeep does not
-  assert.equal(crew.valueNow().bv, 2);
-  assert.equal(crew.quotaTarget(), 2.6, 'the line moved with the Rate');
+  act(crew, a, { t: 'buy', id: 'washer' });            // Rate 1.25 -> 2.5: BV doubles, Upkeep does not
+  assert.equal(crew.valueNow().bv, 2.5);
+  assert.equal(crew.quotaTarget(), 3.25, 'the line moved with the Rate');
   run(6);
   assert.equal(crew.report.quota.hit, false);
-  assert.equal(crew.report.quota.bv, 2);
-  assert.equal(crew.report.quota.target, 2.6);
+  assert.equal(crew.report.quota.bv, 2.5);
+  assert.equal(crew.report.quota.target, 3.25);
   assert.equal(crew.stamps, 0);
 });
 
 test('hit = deposited > 0 and bv / rate >= 1 + q', () => {
   const { crew, run } = makeCrew({ day: 2, up: { washer: 1 } }, 5);
-  openShift(crew, 0);                                  // Upkeep 1.5 vs 1.3, at Rate 2
+  openShift(crew, 0);                                  // Upkeep 1.5 vs 1.3, at Rate 2.5
   crew.bank(1, 'x');
   run(6);
   assert.equal(crew.report.quota.hit, true);
-  assert.equal(crew.report.quota.target, 2.6);
-  assert.equal(crew.report.quota.bv, 3);
+  assert.equal(crew.report.quota.target, 3.25);
+  assert.equal(crew.report.quota.bv, 3.75);
 });
 
 test('the Club quota: q = (ceiling - 1) x venueQuotaF(venueDay)', () => {
@@ -431,9 +424,10 @@ test('the Club quota: q = (ceiling - 1) x venueQuotaF(venueDay)', () => {
   crew.startShift();
   near(crew.quota.q, 1.5 * venueQuotaF(1));             // day 1 at the venue
   assert.equal(crew.venueDay, 1);
-  near(crew.quotaTarget(), 5 * (1 + 1.5 * venueQuotaF(1)), 0.011);
+  near(crew.quotaTarget(), 6.25 * (1 + 1.5 * venueQuotaF(1)), 0.011);
   const memo = events(crew).find(e => e.t === 'memo');
-  near(memo.target, crew.quotaTarget(), 1e-9);
+  assert.equal(memo.target, 35, "owner playtest 3 §1.1: the Club's venue day 1 reads 35%");
+  assert.equal(memo.text, 'Today: 35% upkeep by the bell.');
 
   const d3 = makeCrew({ venue: 1, venueDay: 2, stamps: 2, up: { shed: 1 }, day: 4 }).crew;
   d3.startShift();
@@ -461,7 +455,7 @@ test('at the Club: a tidy crew hits the quota, a muddy one misses', () => {
   tidy.run(6);
   assert.equal(tidy.crew.report.quota.hit, true, 'Upkeep 2.5 vs the ask');
   assert.equal(tidy.crew.stamps, 1);
-  near(tidy.crew.report.quota.target, 5 * (1 + 1.5 * venueQuotaF(1)), 0.011);
+  near(tidy.crew.report.quota.target, 6.25 * (1 + 1.5 * venueQuotaF(1)), 0.011);
 
   const messy = makeCrew({ venue: 1, up: { shed: 1 }, fries: 0, day: 1 }, 5);
   openShift(messy.crew, 1);
@@ -544,21 +538,21 @@ test('the washer station geometry: a handle each side, reach 1.8 m', () => {
 
 test('banking with a washer pays the muddy price now and parks the premium in the hopper', () => {
   const { crew } = washerCrew(1);
-  crew.bank(10, 'x');                                  // BV 3 (Rate 2, Upkeep 1.5): $30 in all
-  assert.equal(crew.cash, 15, 'muddy: full / price (2)');
+  crew.bank(10, 'x');                                  // BV 3.75 (Rate 2.5, Upkeep 1.5): $37.50 in all
+  assert.equal(crew.cash, 18.75, 'muddy: full / price (2)');
   assert.equal(crew.hopper.n, 10);
-  assert.equal(crew.hopper.credit, 15);
-  assert.equal(crew.stats.cash, 15);
+  assert.equal(crew.hopper.credit, 18.75);
+  assert.equal(crew.stats.cash, 18.75);
   assert.equal(crew.stats.deposited, 10);
   const ev = events(crew).find(e => e.t === 'cash');
-  assert.equal(ev.cash, 15); assert.equal(ev.credit, 15); assert.equal(ev.n, 10);
+  assert.equal(ev.cash, 18.75); assert.equal(ev.credit, 18.75); assert.equal(ev.n, 10);
 });
 
 test('no washer: pay in full, no hopper', () => {
   const { crew } = makeCrew();
   openShift(crew);
   crew.bank(10, 'x');
-  assert.equal(crew.cash, 15);
+  assert.equal(crew.cash, 18.8);
   assert.deepEqual(crew.hopper, { n: 0, credit: 0, frac: 0 });
   assert.equal(events(crew).find(e => e.t === 'cash').credit, 0);
   assert.equal(crew.snapshot().washer, null);
@@ -567,25 +561,29 @@ test('no washer: pay in full, no hopper', () => {
 test('the premium follows the carrier: grime and the cart gear decide the full price', () => {
   const { crew, a } = washerCrew(1);
   a.grime = 0;
-  crew.bank(4, a.id, null, 4);                         // 4 x 3 x 1.25 = 15, muddy 7.5
+  crew.bank(4, a.id, null, 4);                         // 4 x 3.75 x 1 = 15, muddy 7.5
   assert.equal(crew.cash, 7.5);
   assert.equal(crew.hopper.credit, 7.5);
-  crew.bank(4, 'h0', 'helper', 4);                     // helpers are x1: 12, muddy 6
+  a.grime = 3;
+  crew.bank(4, a.id, null, 4);                         // caked: x0.8 = 12, muddy 6
   assert.equal(crew.cash, 13.5);
   assert.equal(crew.hopper.credit, 13.5);
+  crew.bank(4, 'h0', 'helper', 4);                     // helpers pay the full price (the one price): 15, muddy 7.5
+  assert.equal(crew.cash, 21);
+  assert.equal(crew.hopper.credit, 21);
 });
 
 test('washBalls pays credit x washed / n and shrinks both', () => {
   const { crew, a } = washerCrew(1);
   crew.bank(10, 'x');
   assert.equal(crew.washBalls(4, a.id), 4);
-  assert.equal(crew.cash, 21, '15 + 15 x 4/10');
+  assert.equal(crew.cash, 26.25, '18.75 + 18.75 x 4/10');
   assert.equal(crew.hopper.n, 6);
-  assert.equal(crew.hopper.credit, 9);
+  assert.equal(crew.hopper.credit, 11.25);
   assert.equal(crew.stats.scrubbed, 4);
   assert.equal(a.shift.scrubbed, 4);
   assert.equal(crew.washBalls(50, a.id), 6, 'cannot wash more than the hopper holds');
-  assert.equal(crew.cash, 30, 'the whole $30');
+  assert.equal(crew.cash, 37.5, 'the whole $37.50');
   assert.equal(crew.hopper.n, 0);
   assert.equal(crew.hopper.credit, 0);
   assert.equal(crew.washBalls(1, a.id), 0, 'nothing left to wash');
@@ -615,11 +613,11 @@ test('crank validation: tier, side, reach, turns, and a Rat who is down', () => 
 
 test('crank: honest cranking at 2.5 turns a second washes a ball a turn', () => {
   const { crew, clock, a } = washerCrew(1);
-  crew.bank(12, 'x');                                  // credit 18
+  crew.bank(12, 'x');                                  // credit 22.5
   const before = crew.cash;
   for (let i = 0; i < 16; i++) { clock.t += 250; crank(crew, a, 'L', 0.625); }
   assert.equal(crew.hopper.n, 2, '10 turns, 10 balls');
-  assert.equal(crew.cash - before, 15, '18 x 10/12');
+  assert.equal(crew.cash - before, 18.75, '22.5 x 10/12');
   assert.equal(a.shift.scrubbed, 10);
 });
 
@@ -658,7 +656,7 @@ test('snapshot.washer: the hopper, the auto rate, and who is cranking which hand
   const b = addPlayer(crew, 'B', WASHER_HANDLES.R.x, WASHER_HANDLES.R.z);
   crew.bank(10, 'x');
   let w = crew.snapshot().washer;
-  assert.deepEqual(w, { n: 10, credit: 15, auto: 0, L: null, R: null, rateL: 0, rateR: 0 });
+  assert.deepEqual(w, { n: 10, credit: 18.75, auto: 0, L: null, R: null, rateL: 0, rateR: 0 });
   clock.t += 250; crank(crew, a, 'L', 0.625);
   w = crew.snapshot().washer;
   assert.equal(w.L, a.id); assert.equal(w.R, null);
@@ -690,11 +688,11 @@ test('washed events batch what each Rat cranked', () => {
 
 test('the electric washer cleans a ball a second on its own, and pays for each', () => {
   const { crew, run } = washerCrew(2);
-  crew.bank(10, 'x');                                  // BV 4.5, $45: muddy 15, credit 30
-  assert.equal(crew.cash, 15);
+  crew.bank(10, 'x');                                  // BV 5.63, $56.30: muddy 18.77, credit 37.53
+  assert.equal(crew.cash, 18.77);
   run(5.5);
   assert.equal(crew.hopper.n, 5);
-  assert.equal(crew.cash, 30, '15 + 30 x 5/10');
+  near(crew.cash, 18.77 + 37.53 * 5 / 10, 0.011);
   const ev = events(crew).filter(e => e.t === 'washed');
   assert.ok(ev.length > 0 && ev.every(e => e.by === 'machine'));
   assert.equal(crew.stats.scrubbed, 5);
@@ -724,18 +722,18 @@ test('the auto washer rests between shifts and with an empty hopper', () => {
 test('at the bell: half of what is left is washed at half pay, the rest is lost', () => {
   const { crew, run, a } = washerCrew(1, 5);
   crew.bank(10, 'x');
-  crew.washBalls(2, a.id);                             // n 8, credit 12, cash 18
-  assert.equal(crew.cash, 18);
+  crew.washBalls(2, a.id);                             // n 8, credit 15, cash 22.5
+  assert.equal(crew.cash, 22.5);
   run(6);
   assert.equal(crew.phase, 'report');
   assert.equal(crew.report.unwashed, 4);
-  assert.equal(crew.report.lostPremium, 9, 'of $12 waiting, $3 was paid');
-  assert.equal(crew.cash, 21, '18 + the night crew\'s $3');
-  assert.equal(crew.report.cash, 21);
+  assert.equal(crew.report.lostPremium, 11.25, 'of $15 waiting, $3.75 was paid');
+  assert.equal(crew.cash, 26.25, '22.5 + the night crew\'s $3.75');
+  assert.equal(crew.report.cash, 26.25);
   assert.equal(crew.stats.unwashed, 4);
   assert.deepEqual(crew.hopper, { n: 0, credit: 0, frac: 0 });
   assert.equal(crew.totals.unwashed, 4);
-  assert.equal(crew.totals.lostPremium, 9);
+  assert.equal(crew.totals.lostPremium, 11.25);
 });
 
 test('the bell split with an odd hopper rounds the washed half down', () => {
@@ -767,7 +765,7 @@ test('cart and helper loads go through the hopper too', () => {
   openShift(crew);
   crew.cart.load = 4; crew.cart.loadW = 4; crew.cart.mud = 0;
   crew.cart.x = STAND.x + 2; crew.cart.z = STAND.z + 2;
-  run(0.25);
+  run(1.75);   // the hopper tips for 1.5 s (owner playtest 3 §5.3)
   assert.equal(crew.hopper.n, 4);
   assert.equal(crew.cash, 7.5, '4 x 3 x 1.25 = 15, half now');
   assert.equal(crew.hopper.credit, 7.5);
@@ -814,7 +812,7 @@ test('pay reflects grime on a Rat\'s own deposits; helpers stay x1', () => {
     act(crew, a, { t: 'deposit' });
     return { cash: crew.cash, ev: events(crew).find(e => e.t === 'cash') };
   };
-  assert.equal(pay(0).cash, 1.88, 'BV 1.5 x 1.25 = 1.875');
+  assert.equal(pay(0).cash, 1.88, 'BV 1.88 (1.25 x 1.5) x 1');
   assert.equal(pay(1).cash, 1.75);
   assert.equal(pay(2).cash, 1.63);
   assert.equal(pay(3).cash, 1.5);
@@ -823,7 +821,7 @@ test('pay reflects grime on a Rat\'s own deposits; helpers stay x1', () => {
   const { crew } = makeCrew();
   openShift(crew);
   crew.bank(2, 'h0', 'helper', 2);
-  assert.equal(crew.cash, 3);
+  assert.equal(crew.cash, 3.76, 'a helper pays the full price (the one price)');
   assert.equal(events(crew).find(e => e.t === 'cash').clean, undefined);
 });
 
@@ -884,7 +882,7 @@ test('the turbo nozzle stretches the hose to 9 m', () => {
     return crew.wash(a, 0.5, 'p:' + b.id);
   };
   assert.equal(hosedAt({}, 9), false);
-  assert.equal(hosedAt({ amen: 1 }, 9), true);
+  assert.equal(hosedAt({ wand: 2 }, 9), true);
   assert.equal(hosedAt({}, 8), true, 'within the standard 7 m + 1.5');
 });
 
@@ -909,39 +907,15 @@ test('the wand on yourself (look down): a layer per 1.5 s; the spigot is gone', 
 
 // ---- the New Hire Kit --------------------------------------------------------------------------
 
-test('New Hire Kit: a new name after day 1 gets a tube and a kit event', () => {
-  const { crew } = makeCrew({ day: 2 });
-  const p = crew.join('Newbie');
-  assert.equal(p.gear, 1);
-  assert.equal(crew.gearByName.Newbie, 1, 'recorded at once');
-  const kit = events(crew).find(e => e.t === 'kit');
-  assert.deepEqual({ id: kit.id, level: kit.level }, { id: p.id, level: 1 });
-  assert.equal(crew.toSave().gear.Newbie, 1);
-});
-
-test('New Hire Kit: at the Club it is a range bucket', () => {
-  const { crew } = makeCrew({ day: 5, venue: 1 });
-  const p = crew.join('Newbie');
-  assert.equal(p.gear, 2);
-  assert.equal(events(crew).find(e => e.t === 'kit').level, 2);
-});
-
-test('New Hire Kit: day 1 gets nothing, and a known name keeps its gear', () => {
+// Owner playtest 3 §5.2: carrying gear is the crew's, so a new hire wears the crew tier (the Club's floor is a bucket).
+test('New Hire Kit: a new name wears the crew gear; at the Club that is at least a range bucket', () => {
+  const { crew } = makeCrew({ day: 2, up: { gear: 1 } });
+  assert.equal(crew.join('Newbie').gear, 1);
+  assert.equal(events(crew).filter(e => e.t === 'kit').length, 0, 'no kit event: nothing personal to hand out');
+  const club = makeCrew({ day: 5, venue: 1 }).crew;
+  assert.equal(club.join('Newbie').gear, 2);
   const day1 = makeCrew().crew;
   assert.equal(day1.join('Early').gear, 0);
-  assert.equal(events(day1).filter(e => e.t === 'kit').length, 0);
-
-  const { crew } = makeCrew({ day: 6, gear: { Vet: 3 } });
-  assert.equal(crew.join('Vet').gear, 3, 'a known Rat is not a new hire');
-  assert.equal(events(crew).filter(e => e.t === 'kit').length, 0);
-
-  const b = crew.join('Fresh');
-  crew.removePlayer(b);
-  crew.flush();
-  assert.equal(crew.join('Fresh').gear, 1, 'rejoining under the same name keeps the kit');
-  assert.equal(events(crew).filter(e => e.t === 'kit').length, 0, 'no second kit');
-  crew.gearByName.Fresh = 3;
-  assert.equal(crew.join('Fresh').gear, 3);
 });
 
 // ---- the Corporate PA --------------------------------------------------------------------------
@@ -1034,7 +1008,7 @@ test('PA: debut lines fire with the debut, once', () => {
 test('PA: the glow line plays at the first Last Call', () => {
   const { crew } = makeCrew({ day: 2, voiced: ['welcome'] }, 600);
   openShift(crew);
-  crew.shiftT = 560;
+  crew.shiftT = 530;   // owner playtest 3 §2: in Last Call (T-90), before the cleanup minute (T-60)
   swing(crew);
   const ev = events(crew);
   assert.ok(ev.find(e => e.t === 'debut' && e.kind === 'glow'));
@@ -1104,7 +1078,7 @@ test('ledger: one entry per online Rat, with the shift stats and an award', () =
   const la = l.find(e => e.id === a.id), lb = l.find(e => e.id === b.id);
   assert.equal(la.name, 'A'); assert.equal(la.color, a.color);
   assert.equal(la.banked, 4);
-  assert.equal(la.cash, 7.5, '4 x 1.5 x 1.25');
+  assert.equal(la.cash, 7.52, '4 x 1.88 x 1');
   assert.equal(lb.knockdowns, 1);
   for (const k of ['dived', 'cooked', 'scrubbed', 'hosed', 'pings']) assert.equal(typeof la[k], 'number', k);
   assert.equal(la.award, 'Employee of the Shift', 'the most banked');
@@ -1159,13 +1133,13 @@ test('a record shift from day 3 sets report.record, saves records (no PA: it lan
   openShift(crew);
   crew.bank(10, 'x');
   run(6);
-  assert.deepEqual(crew.report.record, { cash: 15, was: 0 });
+  assert.deepEqual(crew.report.record, { cash: 18.8, was: 0 });
   const { curve, ...rec } = crew.records;   // round 7 #9: the record keeps its own 14-point pace curve
-  assert.deepEqual(rec, { cash: 15, banked: 10, day: 3 });
-  assert.equal(curve.length, 14); assert.equal(curve[13], 15);
+  assert.deepEqual(rec, { cash: 18.8, banked: 10, day: 3 });
+  assert.equal(curve.length, 14); assert.equal(curve[13], 18.8);
   assert.ok(!events(crew).find(e => e.t === 'pa' && e.id === 'record'), 'the report line says it, not a PA over the stamp');
   const save = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.deepEqual(save.records, { cash: 15, banked: 10, day: 3, curve });
+  assert.deepEqual(save.records, { cash: 18.8, banked: 10, day: 3, curve });
   assert.deepEqual(makeCrew(save).crew.records, save.records);
   assert.deepEqual(crew.snapshot().records, save.records);
 });
@@ -1176,12 +1150,12 @@ test('records: a better shift beats it, a worse one does not, days 1 and 2 never
   assert.equal(early.crew.report.record, null);
   assert.equal(early.crew.records.cash, 0);
 
-  const { crew, run } = makeCrew({ day: 3, voiced: ['welcome', 'gary'], records: { cash: 15, banked: 10, day: 2 } }, 5);
+  const { crew, run } = makeCrew({ day: 3, voiced: ['welcome', 'gary'], records: { cash: 18.8, banked: 10, day: 2 } }, 5);
   openShift(crew); crew.bank(10, 'x'); run(6);
   assert.equal(crew.report.record, null, 'equal is not a record');
   crew.phase = 'report';
   openShift(crew); crew.bank(20, 'x'); run(6);
-  assert.deepEqual(crew.report.record, { cash: 30, was: 15 });
+  assert.deepEqual(crew.report.record, { cash: 37.6, was: 18.8 });
   assert.equal(crew.records.banked, 20);
   assert.equal(crew.records.day, 4);
 });
@@ -1515,7 +1489,7 @@ test('save v2: venue, venueDay, outstanding, pendingReveal, endless, records and
     records: { cash: 99.5, banked: 40, day: 12 }, voiced: ['welcome', 'cart'], debuts: ['gold'], day: 20 };
   const crew = makeCrew(save).crew;
   const back = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.equal(back.v, 3, 'v3 adds diveByName and lostFound');
+  assert.equal(back.v, 4, 'v3 adds diveByName and lostFound; v4 (owner playtest 3) the crew gear and the wand row');
   assert.equal(back.venue, 3);
   assert.equal(back.venueDay, 4);
   assert.equal(back.outstanding, 123456);
@@ -1609,10 +1583,10 @@ test('a banked splitter counts as 3 balls', () => {
   openShift(crew);
   crew.cart.load = 3; crew.cart.loadW = 3; crew.cart.mud = 0;
   crew.cart.x = STAND.x + 2; crew.cart.z = STAND.z + 2;
-  crew.tick(0.05);
+  for (let i = 0; i < 32; i++) crew.tick(0.05);   // the hopper tips for 1.5 s (owner playtest 3 §5.3)
   assert.equal(crew.stats.deposited, 3);
   assert.equal(crew.outstanding, BALLS_OUTSTANDING - 3);
-  assert.equal(crew.cash, 5.63);
+  assert.equal(crew.cash, 5.61, '3 x BV 1.87 (the one price), a spotless cart x1');
 });
 
 test('a diver surfacing with a bag keeps the kinds\' weights', () => {

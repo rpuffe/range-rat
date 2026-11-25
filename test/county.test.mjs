@@ -166,7 +166,7 @@ test('round 7 #6: a seeded 4P County shift with four teenagers and no Yards visi
   for (let i = 0; i < 4; i++) { const p = crew.join('R' + i); crew.connect(p); p.x = 27 + i; p.z = 9; }
   crew.startShift();
   while (crew.phase === 'shift' && crew.shiftT < crew.shiftSecs - 0.1) {
-    clock.t += 50;
+    clock.t += 50; crew.basket.n = 12;                 // owner playtest 3 §3.3: the basket stays stocked
     for (const p of crew.players.values()) { p.seenAt = clock.t; p.movedAt = clock.t; }
     crew.tick(0.05);
   }

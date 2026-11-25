@@ -141,7 +141,7 @@ test('every kind has a name, and every non-range kind a blurb and a weight', () 
 // ---- weights, end to end -----------------------------------------------------------
 
 for (const [kind, w] of [['range', 1], ['gold', 10], ['bouncy', 1.5], ['square', 2]]) {
-  test(`a ${kind} ball banks ${w} x a range ball (BV 1.5 at Curb 1, clean Rat x1.25)`, () => {
+  test(`a ${kind} ball banks ${w} x a range ball (BV 1.88 at Curb 1: the one price, clean Rat x1)`, () => {
     const { crew } = makeCrew();
     openShift(crew, 0);
     const a = addPlayer(crew, 'A', STAND.x, STAND.z);
@@ -152,7 +152,7 @@ for (const [kind, w] of [['range', 1], ['gold', 10], ['bouncy', 1.5], ['square',
     crew.flush();
     act(crew, a, { t: 'deposit' });
     assert.equal(a.pocket, 0);
-    assert.equal(crew.cash, Math.round(w * 1.5 * 1.25 * 100) / 100, `${kind} x BV 1.5 x a clean Rat's 1.25`);
+    assert.equal(crew.cash, Math.round(w * 1.88 * 100) / 100, `${kind} x BV 1.88 (1.25 x 1.5, to cents) x a clean Rat's 1`);
     assert.equal(crew.stats.deposited, 1, 'one ball, whatever it weighs');
   });
 }

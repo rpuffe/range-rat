@@ -6,7 +6,8 @@
 // Round 7 #4: the same slot carries Gary's warning, dealt (one failing stop per Rat, nearest first, at every venue:
 // a venue-0 module runs everywhere), and the Muni's day-3 rhythm line ("Keep the mats clean." at half-shift).
 import { NUDGE, DAY3, dealFor, nudgeDay, nudgeDone, redealGary, GARY_SPOTLESS, GARY_EXTRA, GARY_LINE_HOLD } from '../../web/js/nudge.js';
-import { FRIES, GARY, activeMats } from '../../web/js/sim.js';
+import { FRIES, GARY, activeMats, pondClarity } from '../../web/js/sim.js';
+import { MORNING, morningJobs, morningDone, dealMorning } from '../../web/js/morning.js';   // owner playtest 3 §3.4
 
 const todoOpen = crew => !!crew.todo && !(crew.todo.pick && crew.todo.bank && crew.todo.sign && crew.todo.buy);
 const baseOf = p => ({ banked: p.shift?.banked ?? 0, washAt: p.washAt ?? 0, crankAt: p.crankAt ?? 0 });
@@ -15,11 +16,47 @@ const MATS_AT = GARY.STOPS.find(s => s.id === 'mats');
 function deal(crew, st) {
   if (!nudgeDay(crew) || crew.phase !== 'shift' || todoOpen(crew) || crew.lastCall?.()) return;   // Last Call is the rally's (playtest round 2 #7)
   for (const p of crew.online()) {
-    if (st.by[p.id]) continue;
+    if (st.by[p.id] || (st.am?.by?.[p.id] && !st.am.by[p.id].done)) continue;   // the morning deal goes first (owner playtest 3 §3.4)
     const { id, used } = dealFor(st.dealt, p, crew.up);    // skip what this Rat already does (the host always got "hose")
     st.dealt += used;
     st.by[p.id] = { id, left: NUDGE.SECS, base: baseOf(p), done: id == null };
     crew.dirty = true;
+  }
+}
+
+// ---- Owner playtest 3 §3.4: the morning deal --------------------------------------------------------------------
+// What the morning pool reads (web/js/morning.js), as plain numbers.
+export function morningView(crew) {
+  const v = crew.venue ?? 0;
+  return {
+    venue: v, basket: crew.basket?.n ?? 0, fixtures: crew.fixtures, nMats: activeMats(crew.onlineCount(), crew.up),
+    shed: !!crew.perks?.shed, fries: crew.fries, pondOpen: !!crew.pondOpen?.(), clarity: crew.pondOpen?.() ? pondClarity(crew.sunkCount()) : null,
+    deck: !!crew.mods?.state('deck'), poured: (crew.mods?.state('deck')?.deck?.drinks ?? 0) > 0 || (crew.stats?.deckOrders ?? 0) > 0,
+    crowd: v === 3 ? crew.mods?.state('stadium')?.s ?? null : null,
+    strays: v === 4 ? crew.mods?.state('county')?.strays ?? 0 : 0,
+    debris: v === 5 ? crew.skyDebris?.() ?? 0 : 0,
+  };
+}
+// Deal at the morning (and to a late joiner while the deal is still up): each Rat one job, nearest first.
+function dealAm(crew, st) {
+  if (crew.phase !== 'shift' || crew.endless || todoOpen(crew) || crew.lastCall?.()) return;
+  st.am ??= { by: {} };
+  if (amOver(crew)) return;                                              // the morning is over
+  const free = crew.online().filter(p => !(p.id in st.am.by));
+  if (!free.length) return;
+  const jobs = morningJobs(morningView(crew));
+  const dealt = dealMorning(jobs, free.map(p => ({ id: p.id, x: p.x, z: p.z })));
+  for (const p of free) st.am.by[p.id] = dealt[p.id] ? { id: dealt[p.id], done: false } : { id: null, done: true };
+  crew.dirty = true;
+}
+// The lines go after MORNING.SECS of working time from NUDGE.WAIT (shiftT only runs while the crew works).
+const amOver = crew => (crew.shiftT ?? 0) >= NUDGE.WAIT + MORNING.SECS;
+function stepAm(crew, st) {
+  if (!st.am) return;
+  const v = morningView(crew), over = amOver(crew);
+  for (const n of Object.values(st.am.by)) {
+    if (n.done) continue;
+    if (over || morningDone(n.id, v)) { n.done = true; crew.dirty = true; }
   }
 }
 
@@ -86,7 +123,7 @@ function stepGary(crew, st, dt = 0) {
 
 // The Muni's day 3 (A3): at half-shift, "Keep the mats clean." to the Rat nearest the mats, if they're over 0.3 mud.
 export function matsMud(crew) {
-  const n = activeMats(crew.onlineCount()), mats = Object.entries(crew.fixtures).filter(([k]) => k.startsWith('mat') && +k.slice(3) < n);
+  const n = activeMats(crew.onlineCount(), crew.up), mats = Object.entries(crew.fixtures).filter(([k]) => k.startsWith('mat') && +k.slice(3) < n);
   return mats.length ? mats.reduce((a, [, v]) => a + v, 0) / mats.length : 0;
 }
 function stepDay3(crew, st, dt) {
@@ -113,13 +150,15 @@ export default {
   id: 'nudge',
   venue: 0,
 
-  init: () => ({ dealt: 0, by: {}, gary: null, d3: null }),
-  startShift(crew, st) { st.dealt = 0; st.by = {}; st.gary = null; st.d3 = null; deal(crew, st); },
+  init: () => ({ dealt: 0, by: {}, gary: null, d3: null, am: null }),
+  startShift(crew, st) { st.dealt = 0; st.by = {}; st.gary = null; st.d3 = null; st.am = null; dealAm(crew, st); deal(crew, st); },
 
   tick(crew, st, dt) {
     if (!crew.working()) return;
     stepGary(crew, st, dt);
     stepDay3(crew, st, dt);
+    dealAm(crew, st);                                       // late joiners, and the crew once the checklist is done
+    stepAm(crew, st);
     if (!nudgeDay(crew)) return;
     deal(crew, st);                                         // late joiners, and the crew once the checklist is done
     const counting = (crew.shiftT ?? 0) >= NUDGE.WAIT;
@@ -135,6 +174,7 @@ export default {
   snapshot(crew, st) {
     if (crew.phase !== 'shift') return undefined;
     const out = {};
+    for (const [id, n] of Object.entries(st.am?.by ?? {})) if (!n.done) out[id] = 'am:' + n.id;   // owner playtest 3 §3.4
     if (nudgeDay(crew)) for (const [id, n] of Object.entries(st.by)) if (!n.done) out[id] = n.id;
     if (st.d3?.id) out[st.d3.id] = 'mats3';
     for (const [id, stop] of Object.entries(st.gary?.by ?? {})) out[id] = 'gary:' + stop;   // Gary outranks the rest

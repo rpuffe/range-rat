@@ -43,7 +43,7 @@ function lastCallRun(save, setup) {
 }
 
 test('a second rally line ~30 s into Last Call when still short, once', () => {
-  const ev = lastCallRun({ day: 2 });
+  const ev = lastCallRun({ day: 2, fixtures: Object.fromEntries(Array.from({ length: 10 }, (_, i) => ['mat' + i, 0.6])) });   // owner playtest 3 §3.1: yesterday's mats
   const rallies = ev.filter(e => e.t === 'rally');
   assert.equal(rallies.length, 1);
   assert.equal(rallies[0].need, RALLY_LINES.mats);
@@ -126,6 +126,8 @@ test('the host who already hosed is not dealt "hose"; nothing is dealt in Last C
   host.washAt = 999_000;                                    // sprayed the sign yesterday
   crew.startShift();
   const nudges = () => crew.snapshot().mods?.nudge ?? {};
+  assert.ok(nudges()[host.id]?.startsWith('am:'), 'owner playtest 3 §3.4: the morning deal first');
+  crew.mods.state('nudge').am.by[host.id].done = true; clock.t += 50; crew.tick(0.05);
   assert.equal(nudges()[host.id], 'far');
   crew.shiftT = crew.shiftSecs - 30;                         // Last Call
   const late = crew.join('Late'); crew.connect(late);

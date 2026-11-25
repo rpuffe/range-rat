@@ -17,7 +17,7 @@ test('day 1 at the Muni shows only gear, the teenagers, shoes and hard hats', ()
   assert.deepEqual(rows(0, 1), ['gear', 'helpers', 'shoes', 'hardhat']);
 });
 test('the washer and ads join on day 2, the cart on day 3', () => {
-  assert.deepEqual(rows(0, 2), ['gear', 'helpers', 'washer', 'ads', 'shoes', 'hardhat']);
+  assert.deepEqual(rows(0, 2), ['gear', 'bays', 'helpers', 'washer', 'wand', 'ads', 'shoes', 'hardhat']);   // owner playtest 3 §4, §5.1: Open every bay and the pressure washer on day 2
   assert.ok(rows(0, 3).includes('cart'));
   assert.ok(!rows(0, 9).includes('shed'), 'no kitchen at the Muni, ever');
 });
@@ -138,6 +138,9 @@ function day2(n, save = {}) {
   const { crew, run, clock } = makeCrew({ day: 2, ...save });
   const rats = Array.from({ length: n }, (_, i) => { const p = crew.join('R' + i); crew.connect(p); return p; });
   crew.startShift();
+  // Owner playtest 3 §3.4: the morning deal goes first; these tests start once it's done (the day-2 line is dealt then).
+  for (const v of Object.values(crew.mods.state('nudge').am?.by ?? {})) v.done = true;
+  crew.tick(1e-4);
   return { crew, run, clock, rats };
 }
 
@@ -157,17 +160,25 @@ test('the washer nudge depends on up.washer', () => {
   assert.equal(nudgeTarget('shop'), null, 'the shop is a menu: no arrow');
   assert.ok(nudgeTarget('washer') && nudgeTarget('far') && nudgeTarget('stand') && nudgeTarget('hose', true));
 });
+// Owner playtest 3 §3.4: the morning deal ('am:*') runs every morning from day 2; the day-2 suggestions don't.
+const day2Lines = crew => Object.values(nudges(crew)).filter(v => !v.startsWith('am:'));
 test('no nudges on day 1, day 3, at the Club, or in endless', () => {
   for (const save of [{ day: 1 }, { day: 3 }, { day: 2, venue: 1, venueDay: 2 }]) {
     const { crew } = makeCrew(save);
     const p = crew.join('A'); crew.connect(p); crew.startShift();
-    assert.deepEqual(nudges(crew), {}, JSON.stringify(save));
+    assert.deepEqual(day2Lines(crew), [], JSON.stringify(save));
   }
+  const { crew } = makeCrew({ day: 1 });
+  const p = crew.join('A'); crew.connect(p); crew.startShift();
+  assert.deepEqual(nudges(crew), {}, 'day 1: no morning deal either (the checklist)');
 });
 test('a late joiner on day 2 gets the next one in the pool', () => {
   const { crew, run } = day2(2);
   run(1);
   const late = crew.join('Late'); crew.connect(late);
+  run(0.2);
+  assert.ok(nudges(crew)[late.id]?.startsWith('am:'), 'the morning deal first');
+  crew.mods.state('nudge').am.by[late.id].done = true;
   run(0.2);
   assert.equal(nudges(crew)[late.id], 'stand');
 });
@@ -193,5 +204,8 @@ test('the unfinished day-1 checklist keeps precedence: no nudge while it is up',
   assert.deepEqual(nudges(crew), {}, 'the checklist first');
   crew.todo = { pick: true, bank: true, sign: true, buy: true };
   crew.tick(0.05);
-  assert.equal(nudges(crew)[a.id], 'hose', 'dealt once the checklist is done');
+  assert.ok(nudges(crew)[a.id]?.startsWith('am:'), 'the morning deal once the checklist is done');
+  crew.mods.state('nudge').am.by[a.id].done = true;
+  crew.tick(0.05);
+  assert.equal(nudges(crew)[a.id], 'hose', 'then the day-2 line');
 });

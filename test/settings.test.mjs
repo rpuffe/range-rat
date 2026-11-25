@@ -59,7 +59,7 @@ test('nextHint: shop first, then sprint, CCTV only at venue 1+', () => {
 });
 test('hint text differs for keyboard and pad', () => {
   assert.match(hintText('shop', false), /Tab/); assert.match(hintText('shop', true), /D-pad up/);
-  assert.match(hintText('sprint', false), /Shift/); assert.match(hintText('sprint', true), /right stick/);
+  assert.match(hintText('sprint', false), /Shift/); assert.match(hintText('sprint', true), /left stick/);
   assert.match(hintText('cctv', false), /Press C/); assert.match(hintText('cctv', true), /D-pad down/);
 });
 test('hinter shows each hint once ever, persisting across instances', () => {

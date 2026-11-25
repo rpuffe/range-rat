@@ -41,7 +41,7 @@ export function readPad(pads, prev) {
 // stickTempo), and the push's sideways lean curves the ball. Deterministic: the same stick
 // path always gives the same shot. Letting the stick spring back to centre
 // (no push) cancels at no cost; so does B.
-// Power swing: with `over` (RT held, or the stick clicked in) the rim is 115%,
+// Power swing: with `over` (RT held: swing.js reads RT only) the rim is 115%,
 // the same overswing a mouse gets by dragging further: more distance, a hook.
 // settle: seconds the stick must rest at centre before it counts as let go
 // (a smooth swing passes through the centre far quicker than that)
@@ -66,7 +66,7 @@ export function stickPower(depth, over = false) {
   return Math.min(over ? SWING.over : 1, Math.max(0, depth / 0.95) * (over ? SWING.over : 1));
 }
 export function newStickSwing() { return { phase: 'idle', back: 0, tTop: 0, tDown: 0, restAt: undefined }; }
-// One step. stick: {x, y} dead-zoned right stick; now: milliseconds; over: right stick clicked in.
+// One step. stick: {x, y} dead-zoned right stick; now: milliseconds; over: RT held (the power swing).
 // Returns null or an event: begin | back | down | strike {power, drift, tDown} | cancel.
 export function stepStickSwing(s, stick, now, { over = false, allowed = true } = {}) {
   const depth = Math.max(0, stick.y), push = Math.max(0, -stick.y), mag = Math.hypot(stick.x, stick.y);
