@@ -19,14 +19,16 @@ export const DECK = {
   FINE_CAP: 4,                  // council round 8 #5: the k-th fall of a shift costs FINE x min(2^(k-1), FINE_CAP)
   RESET_TO: 2,                  // drinks after an incident
   FALL_R: 1.5,                  // a Rat this close to the landing spot is knocked flat
-  SEATS: [-14, -6, 6, 14],      // lounger x at the rail
-  SEAT_Y: 3, SEAT_Z: 2.4,       // the deck top, and the rail
+  // Council round 10 #3: the drinkers ARE the six upper-bay customers (customers.js UPPER.X; a test keeps them equal).
+  SEATS: [-10, -6, -2, 2, 6, 10],
+  SEAT_Y: 3, SEAT_Z: 2.6,       // the deck top, and where an upper-bay golfer stands (behind the low rail)
   LAND_Z: 1.0,                  // between the mat line and the walkway
   DROP: 3,                      // metres fallen
   FALL_SECS: 1.4, LIE_SECS: 3, REPLACE_SECS: 20,
   WOOO_SECS: 6,                 // from WARN, a lounger shouts this often
   STAIRS_X: -27.5,              // a new lounger comes up the stairs from here
   FROM_VENUE: 2,
+  LOOK_SECS: 3,                 // council round 10 #4: after a fall, 3 s with no ball hits on foot and no customer swing
 };
 
 const clampDrinks = n => Math.max(0, Math.min(DECK.MAX, n));
@@ -34,7 +36,34 @@ const clampDrinks = n => Math.max(0, Math.min(DECK.MAX, n));
 // The deck's state: Drinks 0..6, the next seat (round robin), the sober-up timer, and the loungers' order (council
 // round 6 #6): one open order at a time, { seat, left, round? } or null, raised every orderEvery() seconds by the next
 // seat; norders counts the orders raised this shift (every ROUND_EVERY-th from ROUND_FROM Drinks is a round).
-export const newDeck = () => ({ drinks: 0, seat: 0, soberT: 0, orderT: 0, oseat: 0, order: null, norders: 0 });
+// Council round 10 #3: the one Drinks count is split across the seats, d.mugs[6], always summing to drinks. `seats` (every
+// rule below takes it, default all six) is the list of upper bays in play (customers.js upperOpen).
+export const newDeck = () => ({ drinks: 0, seat: 0, soberT: 0, orderT: 0, oseat: 0, order: null, norders: 0, mugs: DECK.SEATS.map(() => 0) });
+const ALL = DECK.SEATS.map((_, i) => i);
+const seatsOf = seats => (seats?.length ? seats : ALL);
+const mugsOf = d => (d.mugs ??= DECK.SEATS.map(() => 0));
+// The drunkest seat in play: most mugs; ties go round robin from d.seat (the seat after the last faller).
+export function drunkest(d, seats) {
+  const s = seatsOf(seats), m = mugsOf(d), from = d.seat ?? 0;
+  const ring = [...s.filter(i => i >= from), ...s.filter(i => i < from)];
+  let best = ring[0];
+  for (const i of ring) if (m[i] > m[best]) best = i;
+  return best;
+}
+// The most mugs in play, of any seat with at least one (for taking a mug off), or -1.
+function drunkestWithMugs(d) {
+  const m = mugsOf(d); let best = -1;
+  for (let i = 0; i < m.length; i++) if (m[i] > 0 && (best < 0 || m[i] > m[best])) best = i;
+  return best;
+}
+// Make the mugs sum to drinks: extra mugs come off the drunkest; missing ones go to the drunkest in play.
+function settleMugs(d, seats, skip = -1) {
+  const m = mugsOf(d);
+  let sum = m.reduce((a, b) => a + b, 0);
+  while (sum > d.drinks) { const i = drunkestWithMugs(d); if (i < 0) break; m[i]--; sum--; }
+  const pool = seatsOf(seats).filter(i => i !== skip);
+  while (sum < d.drinks) { m[drunkest(d, pool.length ? pool : seats)]++; sum++; }
+}
 export const isRoundOrder = (n, drinks) => (n | 0) > 0 && (n | 0) % DECK.ROUND_EVERY === 0 && drinks >= DECK.ROUND_FROM;
 
 // Seconds between orders: 30, or 20 once the deck is amber ("they're getting loud").
@@ -42,13 +71,13 @@ export const orderEvery = drinks => drinks >= DECK.WARN ? DECK.ORDER_LOUD_SECS :
 
 // Time passes (call only while the shift clock runs). Returns { sobered, order, expired }: sobered when the deck
 // sobered up by one, order when a lounger just ordered (d.order is the new order), expired when an order lapsed.
-export function stepDeck(d, dt) {
+export function stepDeck(d, dt, seats) {
   const out = { sobered: false, order: false, expired: false };
   if (!(dt > 0)) return out;
   d.soberT += dt;
   while (d.soberT >= DECK.SOBER_SECS) {
     d.soberT -= DECK.SOBER_SECS;
-    if (d.drinks > 0) { d.drinks = clampDrinks(d.drinks - 1); out.sobered = true; }
+    if (d.drinks > 0) { d.drinks = clampDrinks(d.drinks - 1); settleMugs(d, seats); out.sobered = true; }   // off the drunkest
   }
   if (d.order) {
     d.order.left -= dt;
@@ -57,7 +86,7 @@ export function stepDeck(d, dt) {
   d.orderT = (d.orderT ?? 0) + dt;
   if (!d.order && d.orderT >= orderEvery(d.drinks)) {
     d.orderT = 0;
-    const seat = (d.oseat ?? 0) % DECK.SEATS.length;
+    const s = seatsOf(seats), k = s.findIndex(i => i >= (d.oseat ?? 0)), seat = s[k < 0 ? 0 : k];   // round robin over the bays in play
     d.oseat = (seat + 1) % DECK.SEATS.length;
     d.norders = (d.norders ?? 0) + 1;
     d.order = { seat, left: DECK.ORDER_OPEN, ...(isRoundOrder(d.norders, d.drinks) ? { round: true } : {}) };
@@ -91,16 +120,27 @@ export const ordinal = k => { const n = k | 0, t = n % 100; return n + (t >= 11 
 
 // Apply a serve. Returns { delta, incident }; on an incident the caller pays the fine, then calls afterIncident.
 // filled: the order this serve filled (fillOrder), if any; a round is ROUND_DRINKS drinks, not 1.
-export function applyServe(d, item, quality, filled = null) {
+// Council round 10 #3: an ordered beer goes to the seat that ordered, an unordered one to the drunkest ("they always want
+// another"); food comes off the drunkest. Returns { delta, incident, seat } (seat: where a beer went, else -1).
+export function applyServe(d, item, quality, filled = null, seats) {
   const delta = filled?.round && serveEffect(item, quality) > 0 ? DECK.ROUND_DRINKS : serveEffect(item, quality);
+  const before = d.drinks;
   d.drinks = clampDrinks(d.drinks + delta);
-  return { delta, incident: d.drinks >= DECK.MAX };
+  let seat = -1;
+  if (d.drinks > before) {
+    seat = filled && Number.isInteger(filled.seat) ? filled.seat : drunkest(d, seats);
+    mugsOf(d)[seat] += d.drinks - before;
+  } else if (d.drinks < before) settleMugs(d, seats);
+  return { delta, incident: d.drinks >= DECK.MAX, seat };
 }
-// An incident happened: the lounger at the next seat (round robin) fell. Returns that seat's index.
-export function afterIncident(d) {
-  const seat = d.seat % DECK.SEATS.length;
+// An incident happened: the drunkest seat in play fell (ties round robin from the last faller), and their mugs leave
+// with them. Drinks resets to RESET_TO as before; the mugs are settled to match. Returns the faller's seat index.
+export function afterIncident(d, seats) {
+  const seat = drunkest(d, seats);
   d.seat = (seat + 1) % DECK.SEATS.length;
+  mugsOf(d)[seat] = 0;
   d.drinks = DECK.RESET_TO;
+  settleMugs(d, seats, seat);
   return seat;
 }
 

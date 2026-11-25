@@ -6,7 +6,7 @@
 //   const scuba = createScuba(scene, camera, POND, { mode: 'pond', onPing });
 //   scuba.attach({ water: pondWater, bed: pondBed });  // once: carves the Deep End, tints the water
 //   scuba.setUnder(true|false);                       // when scene.userData.under flips
-//   scuba.tick(dt, t, { air01, pumping, pumpRate, clarity, glintR, mine });   // once per frame
+//   scuba.tick(dt, t, { air01, pumping, pumpRate, clarity, glintR, mine, creek });   // once per frame (creek: diving the creek)
 //   scuba.setFound(ids); scuba.setTreasure(id, x, z); scuba.plunge(x, z, mine); scuba.surface(x, z, { bag, mine });
 //   scuba.ping(x, z); scuba.placeCase(x, z, yaw); scuba.setMode('pond' | 'eva');
 // (see the block above "public API" for what each does and when to call it)
@@ -15,7 +15,7 @@
 
 import * as THREE from 'three';
 import { tagSign } from './signs.js';
-import { POND_DEEP, bedAt, deepness, deepDist, TREASURE, TREASURE_BY_ID, waterLook } from './dive.js';
+import { POND_DEEP, bedAt, deepness, deepDist, TREASURE, TREASURE_BY_ID, waterLook, CREEK_DIVE } from './dive.js';
 import { FOLLOW, boilBubble, bagAt, pickGlints, caseSpin } from './scubafollow.js';   // round 6 #9
 
 const TAU = Math.PI * 2;
@@ -296,7 +296,8 @@ export function createScuba(scene, camera, POND, opts = {}) {
   const PX = POND.x, PZ = POND.z;
   const pitLocal = { x: POND_DEEP.x - PX, z: POND_DEEP.z - PZ };
   const nearPit = (x, z, m = PIT_CLEAR) => Math.hypot(x - pitLocal.x, z - pitLocal.z) < POND_DEEP.r + m;
-  const bedY = (lx, lz) => bedAt(lx + PX, lz + PZ) - 0.04;     // resting height of an item at pond-local (lx, lz)
+  // resting height of an item at pond-local (lx, lz); out of the pond it lies on the creekbed (council round 10 #5)
+  const bedY = (lx, lz) => (Math.hypot(lx, lz) > R ? CREEK_DIVE.BED : bedAt(lx + PX, lz + PZ)) - 0.04;
   let under = false, clock = 0, vignette = null, vigOp = -1, padTimer = 0;
 
   // --- caustics (bed: always, faint from above; wall: only underwater) ---
@@ -1335,7 +1336,8 @@ export function createScuba(scene, camera, POND, opts = {}) {
 
     // The water gets darker and thicker down the Deep End, and murkier with Pond Clarity.
     if (scene.fog) {
-      const look = lookFor(clarCur, cx + PX, cz + PZ);
+      // Council round 10 #5: in the creek (state.creek) the water runs clear teal, with the pond's 9 m fog.
+      const look = s.creek ? { ...waterLook(1), far: CREEK_DIVE.FOG_FAR } : lookFor(clarCur, cx + PX, cz + PZ);
       scene.fog.color.setHex(look.fog); scene.fog.near = look.near; scene.fog.far = look.far;
     }
 

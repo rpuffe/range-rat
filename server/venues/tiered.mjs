@@ -4,7 +4,10 @@
 // from the Stadium on they drain 1 ball a second from each cup. The Upper Deck is another module.
 import { KIND_W, CART, QUOTA_KPI } from '../../web/js/sim.js';
 import { MAP } from '../../web/js/map.js';
-import { inBowl, cupSpot, bayUtil, TARGET, GUTTERS, drainsAll, guttersDrain, cupWeight } from '../../web/js/tiered.js';
+import { inBowl, cupSpot, bayUtil, cupFull, TARGET, GUTTERS, drainsAll, guttersDrain, cupWeight } from '../../web/js/tiered.js';
+
+// Council round 10 #3: the dial's size, 30 + 2 x the upper bays in play (42 at 4P, 38 at 2P, 34 solo).
+export const fullFor = crew => cupFull(crew.upperSeats?.().length ?? 0);
 import { maxMult } from '../../web/js/owner.js';   // round 7 #9: the Owner's Hustle (x3 in endless)
 
 const ballWeight = b => (KIND_W[b.kind] ?? 1) * (b.kind === 'splitter' ? 3 : 1);
@@ -23,7 +26,8 @@ function recount(crew, st) {
     if (i >= 0) cups[i] += cupWeight(b, crew.venue);   // round 8 #1: a glow ball counts 2 at Tiered (the Glow Rush)
   }
   st.cups = cups;
-  st.kpi = bayUtil(cups.reduce((a, c) => a + c, 0));
+  st.full = fullFor(crew);
+  st.kpi = bayUtil(cups.reduce((a, c) => a + c, 0), st.full);
   if (st.saved && st.kpiAtClose == null && st.kpi + 1e-9 < QUOTA_KPI) st.saved = null;     // round 8 #6: a later dip under the tick undoes the save
 }
 function remove(crew, b, by) {
@@ -60,7 +64,7 @@ export default {
   },
 
   onRest(crew, st, b) {
-    if (b.kind === 'one' || b.sunk || b.drifting) return;
+    if (b.kind === 'one' || b.sunk || b.drifting || b.creek) return;
     delete b.cup;
     const shooter = b.by != null ? crew.players.get(b.by) : null;
     const target = !!shooter && crew.phase === 'shift';
@@ -102,5 +106,5 @@ export default {
   awards: () => [['Bullseye (Noted)', 'targets']],
   // saved (round 8 #6): { by, name, left } until the next morning, so the report card can name the save.
   // judged: the bowls were read at T-60 (util is then the frozen value).
-  snapshot: (crew, st) => ({ cups: st.cups, util: Math.round((st.kpiAtClose ?? st.kpi) * 100) / 100, ...(st.kpiAtClose != null ? { judged: 1 } : {}), ...(st.saved ? { saved: st.saved } : {}) }),
+  snapshot: (crew, st) => ({ cups: st.cups, full: st.full ?? fullFor(crew), util: Math.round((st.kpiAtClose ?? st.kpi) * 100) / 100, ...(st.kpiAtClose != null ? { judged: 1 } : {}), ...(st.saved ? { saved: st.saved } : {}) }),
 };

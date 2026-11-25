@@ -124,11 +124,12 @@ test('menu by venue: Muni fries, Club + hot dog, Tiered + beer', () => {
   assert.deepEqual(menuFor(0), ['fries']); assert.deepEqual(menuFor(7), ['fries', 'hotdog', 'beer']);
 });
 
-test('yields: fries 3 (+1 one peel)/2/0, hot dog and beer 2/1/0', () => {
+test('yields: fries 3 (+1 one peel)/2/0, beer 2/1/0, hot dog 0 (council round 10: it FEDs instead)', () => {
   assert.equal(yieldFor('fries', 'perfect'), 3);
   assert.equal(yieldFor('fries', 'perfect', true), 4);
   assert.equal(yieldFor('fries', 'good', true), 2);
-  assert.equal(yieldFor('hotdog', 'perfect', true), 2);
+  assert.equal(yieldFor('hotdog', 'perfect', true), 0);
+  assert.equal(yieldFor('hotdog', 'good'), 0);
   assert.equal(yieldFor('beer', 'good'), 1);
   for (const it of Object.keys(FRIES_YIELD)) assert.equal(yieldFor(it, 'burnt'), 0);
   assert.equal(yieldFor('nope', 'perfect'), 0);

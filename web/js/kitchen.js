@@ -14,8 +14,10 @@
 //
 // No top-level DOM access: the overlay is built lazily on first open().
 
-import { MENU_UNLOCK } from './menu.js';
-import { DECK, mugTone, MUG_CAPTION } from './deck.js';
+import { MENU_UNLOCK, menuPayoff } from './menu.js';
+import { DECK, mugTone, MUG_CAPTION, tabFor } from './deck.js';
+import { FRIES } from './sim.js';
+const PAYOFF = '#7fe07f';   // council round 10 #2: the card's one payoff, in money
 
 const W = 640, H = 420;
 const INK = '#fff8ec', DIM = '#e8d6bd', ACCENT = '#ffb347', BAD = '#ff8a7a';
@@ -749,6 +751,15 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
     c.beginPath(); c.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + u * Math.PI * 2); c.stroke();
     c.restore();
   }
+  // Council round 10 #2: "+$1.41 A BALL", "+5% EVERY BALL", "$2,900 TAB" from the live snapshot.
+  function payoffFor(item) {
+    try {
+      const s = state?.(), v = s?.value;
+      if (!v) return null;
+      const order = s?.mods?.deck?.order ?? null;
+      return menuPayoff(item, { v, stock: (v.fries ?? 0) * FRIES.MAX, fed: v.fed ?? 1, tab: tabFor(v.bv ?? 0, order ?? false) });
+    } catch { return null; }
+  }
   function deckCaption() { const n = deckDrinks(); return n == null ? '' : MUG_CAPTION[mugTone(n)]; }
 
   function drawMenu() {
@@ -768,7 +779,11 @@ export function createKitchen({ root, onServe, onSound, state } = {}) {
         text(c, '— Corporate', cx, CARD.y + 146, 18, DIM, 'center', CARD.w - 16);
         text(c, ITEM_LABEL[ITEMS[i]], cx, CARD.y + 206, 34, DIM, 'center', CARD.w - 16);
         text(c, MENU_UNLOCK[ITEMS[i]] ?? '', cx, CARD.y + 232, 14, DIM, 'center', CARD.w - 12);
-      } else if (ordered && ITEMS[i] === lastItem) text(c, 'LAST ORDER', cx, CARD.y + 232, 14, DIM);
+      } else {
+        const pay = payoffFor(ITEMS[i]);
+        if (pay) text(c, pay, cx, CARD.y + 234, 17, PAYOFF, 'center', CARD.w - 12);
+        if (ordered && ITEMS[i] === lastItem && !(ITEMS[i] === 'beer' && deckOrderRound())) text(c, 'LAST ORDER', cx, CARD.y + 168, 14, DIM);
+      }
       if (ITEMS[i] === 'beer' && !locked) { const n = deckDrinks(); if (n != null) drawMugs(cx, CARD.y + 30, n, 0.85); }
       if (ITEMS[i] === 'beer' && !locked) {                      // an open order: the BEER card glows gold, with its timer
         const left = deckOrderLeft();

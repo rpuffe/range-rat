@@ -44,7 +44,7 @@ export function createCrowd({ scene, people, maxFull: maxFull0 = 14, nearM: near
   function upsert(cust, mat, st, t0, look, hold) {
     let f = figs.get(cust);
     if (!f) {
-      f = { cust, mat, st, t0, look, hold, x: 0, z: 0, yaw: 0, carry: false, k: -1, acc: 0, speed: 0, lite: null, person: null, placed: false, d: 0 };
+      f = { cust, mat, st, t0, look, hold, x: 0, y: 0, z: 0, yaw: 0, carry: false, k: -1, acc: 0, speed: 0, lite: null, person: null, placed: false, d: 0, mug: 0 };
       figs.set(cust, f);
     } else { f.mat = mat; f.st = st; f.t0 = t0; f.hold = hold; }
     return f;
@@ -62,11 +62,13 @@ export function createCrowd({ scene, people, maxFull: maxFull0 = 14, nearM: near
     mats.forEach((w, i) => {
       if (!w) return;
       const taken = w.st === 'playing' || w.st === 'sulk';
-      if (w.cust && w.st && w.st !== 'empty') { upsert(w.cust, i, w.st, w.t0, w.look, false); seen.add(w.cust); }
+      // Council round 10 #3: an upper-bay drinker who fell off the deck is gone at once (views/deck.js plays the fall).
+      if (w.st === 'fell') { const f = figs.get(w.cust); if (f) drop(f); }
+      else if (w.cust && w.st && w.st !== 'empty') { const f = upsert(w.cust, i, w.st, w.t0, w.look, false); f.mug = w.mug | 0; seen.add(w.cust); }
       if (w.inc) { upsert(w.inc.cust, i, 'arrive', w.inc.t0, w.inc.look, taken).wb = !!w.inc.wb; seen.add(w.inc.cust); }
     });
     for (const f of [...figs.values()]) {
-      if (seen.has(f.cust) || f.st === 'leave') continue;
+      if (!figs.has(f.cust) || seen.has(f.cust) || f.st === 'leave') continue;
       if (f.st === 'arrive' && f.wb) { f.st = 'leave'; f.t0 = t; f.basket = true; }   // owner playtest 3 §3.3: no bucket, walk out
       else if (f.st === 'arrive') drop(f);               // the mat closed on them
       else { f.st = 'leave'; f.t0 = t; }                 // vanished from the wire mid-play: walk out
@@ -101,6 +103,7 @@ export function createCrowd({ scene, people, maxFull: maxFull0 = 14, nearM: near
       if (!f.placed) { f.x = c.x; f.z = c.z; f.yaw = c.yaw; f.placed = true; f.speed = 0; }
       const ex = c.x - f.x, ez = c.z - f.z, dist = Math.hypot(ex, ez);
       let moved = 0;
+      f.y = c.y ?? 0;   // the upper bays stand on the deck (y 3) and climb its stairs
       if (dist > 6) { f.x = c.x; f.z = c.z; }
       else if (dist > 1e-4) { moved = Math.min(dist, CHASE * dt); f.x += ex / dist * moved; f.z += ez / dist * moved; }
       const wantYaw = moved > 1e-3 && c.act !== 'play' && c.act !== 'set' && c.act !== 'sulk' ? Math.atan2(-ex, -ez) : c.yaw;
@@ -115,7 +118,9 @@ export function createCrowd({ scene, people, maxFull: maxFull0 = 14, nearM: near
         const p = f.person;
         p.root.visible = show;
         if (!show) continue;
-        p.root.position.set(f.x, 0, f.z); p.root.rotation.y = f.yaw;
+        p.root.position.set(f.x, f.y, f.z); p.root.rotation.y = f.yaw;
+        // Round 10 #3: a drinker sways, 0.2 rad x min(1, mugs / 3) (the snapshot's per-seat mugs).
+        p.root.rotation.z = f.mug > 0 ? Math.sin(t * 1.7 + f.cust) * 0.2 * Math.min(1, f.mug / 3) : 0;
         if (f.carry !== (p.carry === 'bucket')) p.setCarry(f.carry ? 'bucket' : 'none');
         f.acc += dt;
         if (dCam > nearM && (frame + f.cust) % 3) continue;      // far: every third frame
@@ -131,7 +136,7 @@ export function createCrowd({ scene, people, maxFull: maxFull0 = 14, nearM: near
         animatePerson(p, adt, state);
       } else if (f.lite) {
         const m = f.lite; m.visible = show;
-        m.position.set(f.x, 0.75 + (f.speed > 0.35 ? 0.03 * Math.abs(Math.sin(t * 7 + f.cust)) : 0), f.z);
+        m.position.set(f.x, f.y + 0.75 + (f.speed > 0.35 ? 0.03 * Math.abs(Math.sin(t * 7 + f.cust)) : 0), f.z);
         m.rotation.y = f.yaw;
       }
     }

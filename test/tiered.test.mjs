@@ -6,7 +6,7 @@ import { MODULES, checkModule } from '../server/venues/index.mjs';
 import tiered from '../server/venues/tiered.mjs';
 import { readFileSync } from 'node:fs';
 import { MAP } from '../web/js/map.js';
-import { inBowl, cupSpot, bayUtil, CUP_FULL, GUTTERS_ROW, GUTTERS, TARGET, drainsAll, guttersDrain } from '../web/js/tiered.js';
+import { inBowl, cupSpot, bayUtil, CUP_FULL, cupFull, GUTTERS_ROW, GUTTERS, TARGET, drainsAll, guttersDrain } from '../web/js/tiered.js';
 import { SHOP, CART, nextPrice } from '../web/js/sim.js';
 
 const [A, B, C] = MAP.BOWLS;
@@ -57,6 +57,7 @@ test('bayUtil: empty cups 1, 30 balls 0 (round 6 #2: was 40), clamped', () => {
   assert.equal(bayUtil(40), 0);
   assert.equal(bayUtil(400), 0);
   assert.equal(bayUtil(-3), 1);
+  assert.equal(bayUtil(21, 42), 0.5, 'round 10 #3: the dial can be bigger');
 });
 
 test('a customer ball resting at r 6.9 of A rolls into the cup; at r 7.5 it stays put', () => {
@@ -280,7 +281,7 @@ test('round 8 #1: a resting glow ball in Bowl A counts 2 at Tiered and 1 at the 
     dropKind(crew, A.x - 0.2, A.z, 'range');
     run(0.5);
     assert.equal(st().cups[0], want + 1, 'venue ' + venue);
-    assert.equal(st().kpi, bayUtil(want + 1));
+    assert.equal(st().kpi, bayUtil(want + 1, st().full));
   }
 });
 
@@ -327,8 +328,11 @@ test('owner playtest 3 §2: seeded 4P shifts: a TARGET at T-65 passes seeds 1-6,
   for (const s of [1, 2, 3, 4, 5, 6]) assert.ok(rushShift(s, 65) >= 0.5, 'seed ' + s + ' T-65');
   for (const s of [1, 2, 3]) assert.ok(rushShift(s, null) < 0.5, 'seed ' + s + ' with no TARGET fails');
   for (const s of [1, 2, 3]) assert.equal(rushShift(s, 50), rushShift(s, null), 'seed ' + s + ': a TARGET after 1:00 is not read');
-  const early = [1, 2, 3, 4, 5, 6].filter(s => rushShift(s, 75) >= 0.5).length;
-  assert.ok(early >= 2 && early <= 5, 'the rush has teeth: ' + early + ' of 6 pass at T-75');
+  // Council round 10 #3: this crew never picks, so with the upper bays its field sits at MAX_BALLS through the rush and
+  // the cups refill slowly: T-75 now passes here. The rush's teeth are measured with a crew that picks (council10
+  // upper.mjs, PICK=2: no TARGET 2/6, T-75 5/6, T-65 6/6 at CUP_FULL 42). Here: an earlier TARGET leaves fuller cups.
+  const early = [1, 2, 3].filter(s => rushShift(s, 75) >= 0.5).length;
+  assert.ok(early >= 1, 'a TARGET at T-75 can still pass: ' + early + ' of 3');
 });
 
 test('owner playtest 3 §2: the review reads the gauge stored at T-60 (kpiAtClose), and the snapshot says judged', () => {
@@ -353,7 +357,8 @@ test('round 8 #6: a Last Call TARGET that lifts the gauge from 0.3 over the tick
   const { savedLine, clockText } = await import('../web/js/tiered.js');
   for (const late of [true, false]) {
     const { crew, p, drop, run, st } = setup({ gutters: 1 });
-    for (let i = 0; i < 21; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);   // 21 balls: the gauge at 0.3
+    const n30 = Math.round(0.7 * cupFull(2));                                             // round 10 #3: solo's dial is 34
+    for (let i = 0; i < n30; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);   // the gauge at 0.3
     run(0.5);
     assert.ok(Math.abs(st().kpi - 0.3) < 0.04, 'gauge ' + st().kpi);
     for (const m of crew.mats) m.next = 1e9;                                             // no customers: a still bowl
@@ -392,4 +397,42 @@ test('round 8 #6: a dip back under the tick clears the save; a TARGET outside La
   for (let i = 0; i < 21; i++) drop(B.x + (i % 5) * 0.2, B.z + Math.floor(i / 5) * 0.2);
   run(0.5);
   assert.equal(st().saved, null, 'the cups filled again: no longer a save');
+});
+
+// ---- Council round 10 #3: six upper bays -----------------------------------------------------------------------------
+function upperCrew(n, venue = 2, up = { shed: 1 }) {
+  const clock = { t: 1_000_000 };
+  const crew = new Crew('UPPR', { venue, day: 12, venueDay: 2, up, cash: 1000 }, { shiftSecs: 240, seed: 11, now: () => clock.t });
+  for (let i = 0; i < n; i++) { const r = crew.join('U' + i); crew.connect(r); r.x = 27 + i; r.z = 9; }
+  crew.startShift();
+  const run = secs => { for (let i = 0; i < secs * 20; i++) { clock.t += 50; for (const r of crew.players.values()) { r.seenAt = clock.t; r.movedAt = clock.t; } crew.tick(0.05); } };
+  return { crew, run };
+}
+test('round 10 #3: CUP_FULL is 30 + 2 x the upper bays in play: 42 at 4P, 38 at 2P, 34 solo', () => {
+  assert.deepEqual([0, 2, 4, 6].map(cupFull), [30, 34, 38, 42]);
+  for (const [n, want] of [[1, 34], [2, 38], [4, 42]]) {
+    const { crew, run } = upperCrew(n); run(0.5);
+    assert.equal(crew.snapshot().mods.tiered.full, want, n + 'P');
+  }
+  const { crew, run } = upperCrew(1, 2, { shed: 1, bays: 1 }); run(0.5);
+  assert.equal(crew.snapshot().mods.tiered.full, 42, '"Open every bay" opens all six');
+});
+
+test('round 10 #3: upper customers hit from y 3.1 behind the rail; never a lead ball, never a scuff; none before Tiered', async () => {
+  const { UPPER } = await import('../web/js/customers.js');
+  const { crew, run } = upperCrew(4, 2, { shed: 1, pond: 1 });
+  const shots = [];
+  const o = crew.addBall.bind(crew); crew.addBall = s => { const b = o(s); if (b) shots.push(s); return b; };
+  const mud0 = JSON.stringify(Object.keys(crew.fixtures).filter(k => k.startsWith('mat')).sort());
+  run(150);
+  const up = shots.filter(s => s.y > 3);
+  assert.ok(up.length > 20, 'upper shots ' + up.length);
+  assert.ok(up.every(s => Math.abs(s.y - UPPER.Y) < 1e-9 && Math.abs(s.z - UPPER.Z) < 1e-9 && UPPER.X.includes(s.x)));
+  assert.equal(up.filter(s => s.kind === 'lead').length, 0, 'no lead from the deck');
+  assert.equal(JSON.stringify(Object.keys(crew.fixtures).filter(k => k.startsWith('mat')).sort()), mud0, 'no new fixtures');
+  const club = upperCrew(4, 1); const cs = [];
+  const o2 = club.crew.addBall.bind(club.crew); club.crew.addBall = s => { const b = o2(s); if (b) cs.push(s); return b; };
+  club.run(100);
+  assert.equal(cs.filter(s => s.y > 3).length, 0, 'the Club has no upper bays');
+  assert.equal(club.crew.snapshot().mats.length, 10, 'and its wire is unchanged');
 });

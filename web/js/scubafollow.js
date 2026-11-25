@@ -47,7 +47,7 @@ export function bagAt(from, to, u) {
 export function pickGlints(balls, eye, dir, { r = FOLLOW.GLINT_R, cos = FOLLOW.GLINT_COS, max = FOLLOW.GLINT_MAX } = {}) {
   const out = [];
   for (const b of balls) {
-    if (!b?.sunk || !FOLLOW.GLINT_KINDS.has(b.kind)) continue;
+    if (!(b?.creek || (b?.sunk && FOLLOW.GLINT_KINDS.has(b.kind)))) continue;   // council round 10 #5: every creek snag glints
     const dx = b.x - eye.x, dy = (b.y ?? 0) - eye.y, dz = b.z - eye.z, d = Math.hypot(dx, dy, dz);
     if (d > r || d < 1e-6) continue;
     if ((dx * dir.x + dy * dir.y + dz * dir.z) / d < cos) continue;

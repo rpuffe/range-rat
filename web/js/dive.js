@@ -181,6 +181,23 @@ export const TUBE = {
   FROM_TIER: 1,           // pond row tier that installs the tube
   PUMP_TIER: 2,           // ...and the pump
 };
+// ---- council round 10 #5: scuba in Dimple Creek (a lazy river, from the Club) ----------------
+// Stay in running creek water (off the bridges) for DUCK_SECS and you duck under; walk out sideways to surface.
+// Under, the current carries you CURRENT m/s downstream on top of your swim (the bed is slower than the
+// 1.5 m/s surface the balls ride). Shallow, so the snorkel breaks the surface: air drains x AIR_MULT.
+// Snags: 1 in SNAG_RANGE range balls, every gold and every glow ball rest on the bed at BED (map.js SNAG).
+export const CREEK_DIVE = {
+  FROM_VENUE: 1,          // the Club: the water runs (the Muni creek is dry gravel)
+  DUCK_SECS: 2,           // seconds in the water before you go under (a 3.2 m crossing never dunks you)
+  CURRENT: 0.8,           // m/s downstream while under
+  AIR_MULT: 0.5,          // air drains at half rate (the mask lasts 40 s)
+  BED: -0.95,             // the creekbed (the trench floor), where snags rest
+  EYE: 0.55,              // the diver's eye sits this far above BED
+  FOG_FAR: 9,             // m: the pond's fog distance, tinted waterLook(1) (the creek runs clear)
+  SNAG_RANGE: 3,          // 1 in 3 range balls snag (by id hash); gold and glow always do
+  TREASURE: { x: 18, z: -99 },   // the Club card's second treasure: under the Cart Bridge
+};
+export const creekAirMult = inCreek => (inCreek ? CREEK_DIVE.AIR_MULT : 1);
 export const atTube = p => Math.hypot(p.x - TUBE.BOX.x, p.z - TUBE.BOX.z) < TUBE.REACH;
 export const hasTube = up => pondTier(up) >= TUBE.FROM_TIER;
 export const hasPondPump = up => pondTier(up) >= TUBE.PUMP_TIER;
@@ -252,6 +269,13 @@ export function treasureSpot(seed, id, pond = PD_POND) {
   let h = (seed | 0) ^ 0x9E3779B9;
   for (let i = 0; i < String(id).length; i++) h = Math.imul(h ^ String(id).charCodeAt(i), 0x01000193);
   return deepEndSpot(seeded(h), pond, 0.5);
+}
+// Council round 10 #5: the Club card's second treasure (TREASURE[1], the trophy) lies under the Cart Bridge, on the
+// creekbed (CREEK_DIVE.TREASURE); every other one in the Deep End as before.
+export const CREEK_TREASURE_ID = TREASURE[1].id;
+export function treasureSpotFor(seed, id, pond = PD_POND) {
+  if (id === CREEK_TREASURE_ID) return { x: CREEK_DIVE.TREASURE.x, z: CREEK_DIVE.TREASURE.z, y: CREEK_DIVE.BED, creek: true };
+  return treasureSpot(seed, id, pond);
 }
 // What a treasure is worth when banked: 200 x BV (the Corporate "gesture").
 export const finderFee = (id, bv) => Math.round((TREASURE_BY_ID[id]?.fee ?? 200) * bv);

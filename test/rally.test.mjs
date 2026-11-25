@@ -196,3 +196,23 @@ test('round 8 #1: at Tiered the Last Call line is the Glow Rush at a gauge of 0.
   crew.mods.kpi = () => 0.6;
   assert.equal(crew.rallyNeed(), 'Glow rush! Shoot before they leave!');
 });
+
+// ---- council round 10 #2/#5: the Club's dusk always deals jobs ------------------------------------------------------
+test("the Club deals jobs at T-90 when on target: fries for the bell, glow in the creek; never 'hold it' with a job open", () => {
+  const clock = { t: 1_000_000 };
+  const crew = new Crew('RALY', { venue: 1, day: 6, venueDay: 1, up: { shed: 1 } }, { shiftSecs: 600, seed: 9, now: () => clock.t });
+  crew.startShift();
+  for (const m of crew.mats) m.next = 1e9;
+  for (const k of Object.keys(crew.fixtures)) crew.fixtures[k] = 0;
+  const a = crew.join('A'), b = crew.join('B'); crew.connect(a); crew.connect(b);
+  a.x = 40; a.z = 5; b.x = 15; b.z = -95;
+  crew.quota = { q: 0 };   // on target
+  crew.fries = 4;          // the fryer at 20%
+  for (let i = 0; i < 5; i++) { const s = crew.addBall({ x: 18 + i, y: -0.89, z: -99, vx: 0, vy: 0, vz: 0, kind: 'glow' }); s.rest = true; s.creek = true; }
+  const r = crew.rallyNeeds();
+  assert.equal(r.need, RALLY_LINES.friesBell);
+  assert.equal(r.needs[a.id], RALLY_LINES.friesBell, 'the Rat by the shed cooks');
+  assert.equal(r.needs[b.id], RALLY_LINES.glowDive, 'the Rat by the Bridge dives');
+  crew.fries = 20; for (const bl of [...crew.balls.values()]) crew.balls.delete(bl.id);
+  assert.equal(crew.rallyNeeds().need, RALLY_LINES.onTarget, 'nothing left to do: hold it');
+});

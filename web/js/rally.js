@@ -20,6 +20,8 @@ export const RALLY_LINES = {
   onTarget: 'On target. Hold it till the bell.',
   keepLapping: 'Keep lapping!',              // playthrough 3: the Stadium re-check, live crowd fine, graded mean short
   pick: 'Grab the last balls!',              // owner playtest 3 §2: the cleanup deal, over RALLY_PICK balls out there
+  friesBell: 'Fries for the bell!',          // council round 10 #2: the Club's dusk, on target, the fryer under half
+  glowDive: 'Glow in the creek! Dive!',      // council round 10 #5: the Club's dusk, 5+ glow balls snagged in the creek
 };
 
 // The report's miss line when the gauge, not Upkeep, cost the stamp (by venue).
@@ -89,7 +91,7 @@ export const rallyAt = venue => RALLY_AT[venue] ?? LAST_CALL.SECS;
 // the Lift (Orbital).
 export const JOB_AT = Object.freeze({
   mats: { x: 0, z: 3.5 }, pick: { x: 0, z: -40 }, sign: { x: FIXTURE_BY_ID.sign.x, z: FIXTURE_BY_ID.sign.z }, stand: { x: FIXTURE_BY_ID.stand.x, z: FIXTURE_BY_ID.stand.z },
-  fries: { x: FRIES.SHED.x, z: FRIES.SHED.z }, pond: { x: POND.DOCK.x, z: POND.DOCK.z },
+  fries: { x: FRIES.SHED.x, z: FRIES.SHED.z }, friesBell: { x: FRIES.SHED.x, z: FRIES.SHED.z }, glowDive: { x: 18, z: -99 }, pond: { x: POND.DOCK.x, z: POND.DOCK.z },
   gauge: {
     3: { x: MAP.TRACK.x, z: MAP.TRACK.z + MAP.TRACK.b },                    // the Track's near side
     4: { x: (MAP.YARDS.xMin + MAP.YARDS.xMax) / 2, z: (MAP.YARDS.FENCES[0] + MAP.YARDS.FENCES[1]) / 2 },   // Yard 2
@@ -182,6 +184,26 @@ function reassign(jobs, rats, out) {
       if (d < bd) { bd = d; best = r; }
     }
     out[best.id] = job.line;
+  }
+  return out;
+}
+
+// ---- Council round 10 #2/#5: the Club's dusk always deals jobs. ----------------------------------------------
+// On target at the Club (from 1:30 customers swing x3 and eat x3), nobody is told to hold it: the rally deals
+// the fryer under half, 5+ glow balls snagged in the creek, 30+ balls left, then any short fixture's hose line.
+// After 1:00 nobody eats, so a fryer filled in the cleanup minute counts at the bell. [] = nothing to do.
+export const CLUB_GLOW_DIVE = 5;
+export function clubDuskJobs({ value, fixtures = {}, fries = value?.fries ?? null, left = 0, glowSnags = 0, glowAt = null }) {
+  const out = [];
+  if (fries != null && fries < FRIES_LOW) out.push({ id: 'friesBell', line: RALLY_LINES.friesBell, loss: 0.5 * (1 - fries), at: JOB_AT.friesBell });
+  if (glowSnags >= CLUB_GLOW_DIVE) out.push({ id: 'glowDive', line: RALLY_LINES.glowDive, loss: 0, at: glowAt ?? JOB_AT.glowDive });
+  if (left >= RALLY_PICK) out.push({ id: 'pick', line: RALLY_LINES.pick, loss: 0, at: JOB_AT.pick });
+  const ids = Object.keys(fixtures), n = ids.length;
+  if (n) {
+    const share = id => 0.5 * (fixtures[id] ?? 0) / n;
+    const hose = [{ id: 'mats', loss: ids.filter(id => id.startsWith('mat')).reduce((a, id) => a + share(id), 0) }];
+    for (const id of ids) if (!id.startsWith('mat') && RALLY_LINES[id]) hose.push({ id, loss: share(id) });
+    for (const t of hose.sort((a, b) => b.loss - a.loss)) if (t.loss >= JOB_MIN_LOSS) out.push({ ...t, line: RALLY_LINES[t.id], at: JOB_AT[t.id] });
   }
   return out;
 }

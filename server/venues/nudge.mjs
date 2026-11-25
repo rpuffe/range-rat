@@ -7,7 +7,7 @@
 // a venue-0 module runs everywhere), and the Muni's day-3 rhythm line ("Keep the mats clean." at half-shift).
 import { NUDGE, DAY3, dealFor, nudgeDay, nudgeDone, redealGary, GARY_SPOTLESS, GARY_EXTRA, GARY_LINE_HOLD } from '../../web/js/nudge.js';
 import { FRIES, GARY, activeMats, pondClarity } from '../../web/js/sim.js';
-import { MORNING, morningJobs, morningDone, dealMorning } from '../../web/js/morning.js';   // owner playtest 3 §3.4
+import { MORNING, morningJobs, morningDone, dealMorning, goalJob, goalNudgeId, GOAL_AT } from '../../web/js/morning.js';   // owner playtest 3 §3.4; round 10 #1 the goal deal
 
 const todoOpen = crew => !!crew.todo && !(crew.todo.pick && crew.todo.bank && crew.todo.sign && crew.todo.buy);
 const baseOf = p => ({ banked: p.shift?.banked ?? 0, washAt: p.washAt ?? 0, crankAt: p.crankAt ?? 0 });
@@ -45,8 +45,17 @@ function dealAm(crew, st) {
   const free = crew.online().filter(p => !(p.id in st.am.by));
   if (!free.length) return;
   const jobs = morningJobs(morningView(crew));
-  const dealt = dealMorning(jobs, free.map(p => ({ id: p.id, x: p.x, z: p.z })));
-  for (const p of free) st.am.by[p.id] = dealt[p.id] ? { id: dealt[p.id], done: false } : { id: null, done: true };
+  // Council round 10 #1: one Rat the jobs leave over takes the card's open feature goal (once a morning).
+  const goal = !st.am.goal ? goalJob(crew.goalRows?.() ?? []) : null;
+  let rest = free;
+  if (goal && free.length > jobs.length) {
+    const at = GOAL_AT[goal.id] ?? { x: 0, z: 0 }, d = p => Math.hypot(p.x - at.x, p.z - at.z);
+    const p = free.reduce((a, b) => (d(b) < d(a) ? b : a));
+    st.am.by[p.id] = { id: 'goal', goal: goal.id, done: false }; st.am.goal = goal.id;
+    rest = free.filter(o => o !== p);
+  }
+  const dealt = dealMorning(jobs, rest.map(p => ({ id: p.id, x: p.x, z: p.z })));
+  for (const p of rest) st.am.by[p.id] = dealt[p.id] ? { id: dealt[p.id], done: false } : { id: null, done: true };
   crew.dirty = true;
 }
 // The lines go after MORNING.SECS of working time from NUDGE.WAIT (shiftT only runs while the crew works).
@@ -54,8 +63,10 @@ const amOver = crew => (crew.shiftT ?? 0) >= NUDGE.WAIT + MORNING.SECS;
 function stepAm(crew, st) {
   if (!st.am) return;
   const v = morningView(crew), over = amOver(crew);
+  const rows = Object.values(st.am.by).some(n => n.goal && !n.done) ? crew.goalRows?.() ?? [] : null;
   for (const n of Object.values(st.am.by)) {
     if (n.done) continue;
+    if (n.goal) { if (over || !rows?.find(r => r.id === n.goal && !r.done)) { n.done = true; crew.dirty = true; } continue; }   // round 10 #1
     if (over || morningDone(n.id, v)) { n.done = true; crew.dirty = true; }
   }
 }
@@ -174,7 +185,8 @@ export default {
   snapshot(crew, st) {
     if (crew.phase !== 'shift') return undefined;
     const out = {};
-    for (const [id, n] of Object.entries(st.am?.by ?? {})) if (!n.done) out[id] = 'am:' + n.id;   // owner playtest 3 §3.4
+    const rows = Object.values(st.am?.by ?? {}).some(n => n.goal && !n.done) ? crew.goalRows?.() ?? [] : null;
+    for (const [id, n] of Object.entries(st.am?.by ?? {})) if (!n.done) out[id] = n.goal ? goalNudgeId(rows.find(r => r.id === n.goal)) ?? 'am:goal:' + n.goal + ':0' : 'am:' + n.id;   // owner playtest 3 §3.4; round 10 #1 'am:goal:hotdogs:12'
     if (nudgeDay(crew)) for (const [id, n] of Object.entries(st.by)) if (!n.done) out[id] = n.id;
     if (st.d3?.id) out[st.d3.id] = 'mats3';
     for (const [id, stop] of Object.entries(st.gary?.by ?? {})) out[id] = 'gary:' + stop;   // Gary outranks the rest

@@ -1,32 +1,25 @@
-// The report's "Request promotion" panel (round2.js), as pure HTML (council round 6 #7.3, the one-text pack): the panel
-// appears from the first stamp, and the franchise fee only from the second (or once the crew is ready to sign).
+// The report's promotion panel (round2.js), as pure HTML. Council round 10 #1: the venue goal card replaces the
+// review stamps: five rows (each a tick or a count, and its reward), today's newly done goals highlighted, and Sign
+// only when all five are done (same buttons, same focus rule as owner playtest 3 §7.3). The headline above the
+// report reads "3 of 5 done · 2 to go" or "Card done! Sign for Tiered." (goals.js headline).
 // No THREE, no DOM: test/promopanel.test.mjs reads it.
 import { money } from './sim.js';
+import { cardHtml, headline } from './goals.js';
 
-export const FEE_FROM_STAMPS = 2;
+// The card shows from the first report (it is the goal, not a reward for one).
+export const showPromo = promo => !!promo;
 
-export const showPromo = promo => !!promo && (promo.stamps > 0 || !!promo.ready);
-export const showFee = promo => !!promo && (promo.stamps >= FEE_FROM_STAMPS || !!promo.ready);
-
-// Playtest round 2, idea 5: stamps complete but the wallet isn't: say by how much.
-export const feeShort = (promo, cash = 0) => 'Fee: ' + money(Math.ceil(Math.max(0, promo.fee - cash))) + ' short';
-
-// Council round 7 #10.1 (A5): with every stamp in and the fee unpaid, the report LEADS with the shortfall:
-// "3 stamps. $895 short." (4 words). '' otherwise (fewer stamps, ready to sign, or the fee covered).
-export const feeHeadline = (promo, cash = 0) =>
-  !promo || promo.ready || promo.stamps < promo.need || !(promo.fee > cash) ? ''
-    : promo.stamps + ' stamps. ' + money(Math.ceil(promo.fee - cash)) + ' short.';
-
-// promo: crew.snapshot().promo; cash: the crew's cash; signed: did I sign; signedN / onlineN: the counts on the button.
-// headShown: the report's #fee-head headline already says the shortfall (playthrough 3 #9: say it once, not twice).
-export function promoPanelHtml(promo, { cash = 0, signed = false, signedN = 0, onlineN = 1, esc = s => String(s), headShown = false } = {}) {
+// promo: crew.snapshot().promo ({ next, fee, ready, signed, done, of }); goals: crew.snapshot().goals ({ rows, reward,
+// venue }); signed: did I sign; signedN / onlineN: the counts on the button.
+export function promoPanelHtml(promo, { goals = null, cash = 0, signed = false, signedN = 0, onlineN = 1, esc = s => String(s) } = {}) {
   if (!showPromo(promo)) return '';
-  const dots = '●'.repeat(Math.min(promo.stamps, promo.need)) + '○'.repeat(Math.max(0, promo.need - promo.stamps));
-  return '<div class="sheet promo"><h3>Request promotion: ' + esc(promo.next) + '</h3>' +
-    '<p>Review stamps <b>' + dots + '</b></p>' +
-    (showFee(promo) ? '<p>Franchise fee <b>' + money(promo.fee) + (promo.ready ? '' : ' · you have ' + money(cash)) + '</b></p>' : '') +
-    (!headShown && !promo.ready && promo.stamps >= promo.need && promo.fee > cash ? '<p class="note">' + feeShort(promo, cash) + '</p>' : '') +
+  const rows = goals?.rows ?? [];
+  return '<div class="sheet promo"><h3>The goal card: ' + esc(promo.next) + '</h3>' +
+    cardHtml(rows, { rewardNow: goals?.reward ?? 0, esc }) +
     (promo.ready ? '<button id="sign-btn">' + (signed ? 'Unsign' : 'Sign the franchise agreement') + ' (' + signedN + ' of ' + onlineN + ' signed)</button>'
-      : promo.stamps >= promo.need ? ''
-      : '<p class="note">Earn ' + promo.need + ' review stamps (hit the daily quota), then sign at the bell.</p>') + '</div>';
+      : rows.length && rows.filter(r => !r.done).every(r => r.kind === 'fee') ? '<p class="note">Fee: ' + money(Math.ceil(Math.max(0, promo.fee - cash))) + ' short</p>'
+      : '<p class="note">Every goal done, then sign at the bell.</p>') + '</div>';
 }
+
+// The report's headline: the card's count ("3 of 5 done · 2 to go"), '' with no card.
+export const cardHeadline = goals => (goals?.rows?.length ? headline(goals.rows, goals.venue) : '');

@@ -360,7 +360,7 @@ test('lead and gold roll into the Deep End', () => {
 test('treasure: a morning roll, one per shift, in order, from the Club on', () => {
   let ever = 0;
   for (let seed = 1; seed <= 12; seed++) {
-    const { crew } = makeCrew({ venue: 1, day: 3 }, seed); openShift(crew);
+    const { crew } = makeCrew({ venue: 1, day: 3, stamps: 3 }, seed); openShift(crew);   // stamps 3: a grandfathered card, so the 50% roll (an open treasure goal forces it: goalcard.test)
     if (crew.treasure) { ever++; assert.equal(crew.treasure.id, 'keys'); assert.ok(inDeepEnd(crew.treasure)); assert.ok(inPond(crew.treasure)); }
     // a second morning can't stack another on top of one that is still down there
     const before = crew.treasure;
@@ -396,7 +396,7 @@ test('treasure: pick it up in the Deep End, bank it at the stand for 200 x BV, l
   assert.ok(e.some(x => x.t === 'pa' && x.id === 'treasure'), 'the first-treasure PA line');
   assert.deepEqual(crew.snapshot().pond.lostFound, ['keys', 'trophy']);
   const save = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.equal(save.v, 4); assert.deepEqual(save.lostFound, ['keys', 'trophy']);
+  assert.equal(save.v, 5); assert.deepEqual(save.lostFound, ['keys', 'trophy']);
   const back = new Crew('DIVE', save, { shiftSecs: 600, seed: 3 });
   assert.deepEqual(back.lostFound, ['keys', 'trophy']);
 });
@@ -443,7 +443,7 @@ test('saves from before v3 load with empty dive gear and an empty case', () => {
   assert.equal(crew.join('Ann').dive, 0);
   const junk = new Crew('JNK', { diveByName: { A: 9, B: -1, C: 'x', D: 2 }, lostFound: ['keys', 'keys', 'nope', 5] }, { shiftSecs: 600, seed: 1 });
   assert.deepEqual(junk.diveByName, { A: 3, D: 2 }); assert.deepEqual(junk.lostFound, ['keys']);
-  assert.equal(crew.toSave().v, 4);
+  assert.equal(crew.toSave().v, 5);
   assert.equal(crew.up.gear, 2, 'owner playtest 3 §5.2: the old bucket by name became the crew gear');
 });
 
@@ -528,4 +528,79 @@ test('round 6 #9: the Lost & Found reveal spins for 2 s, then stops', () => {
   assert.ok(caseSpin(1).turn > Math.PI * 4);
   assert.equal(caseSpin(2), null);
   assert.equal(caseSpin(-1), null);
+});
+
+// ---- council round 10 #5: scuba in Dimple Creek ---------------------------------------------------------------------
+import { CREEK_DIVE, creekAirMult, treasureSpotFor, CREEK_TREASURE_ID } from '../web/js/dive.js';
+import { creekPoint, creekLength, MAP as CMAP, snagSpot } from '../web/js/map.js';
+import { creekStep, applyCurrent, bankSpot } from '../web/js/creekdive.js';
+const CLUB = { venue: 1 };
+const inWater = (s = 20) => creekPoint('out', s);   // open water on the out-branch, between the pond and the Cart Bridge
+
+test('creek: 2 s in the water ducks you under, 1.5 s does not; never at the Muni; out sideways surfaces', () => {
+  const p = inWater();
+  const st = { x: p.x, z: p.z };
+  for (let t = 0; t < 1.5; t += 0.05) creekStep(st, 0.05, CLUB);
+  assert.equal(!!st.creekDiving, false, 'a quick crossing never dunks you');
+  let got = null;
+  for (let t = 0; t < 0.6 && !got; t += 0.05) got = creekStep(st, 0.05, CLUB);
+  assert.equal(got, 'under'); assert.equal(st.creekDiving, true);
+  st.x += -p.dz * 3; st.z += p.dx * 3;   // walk out sideways
+  assert.equal(creekStep(st, 0.05, CLUB), 'up');
+  const muni = { x: p.x, z: p.z };
+  for (let t = 0; t < 5; t += 0.05) creekStep(muni, 0.05, { venue: 0 });
+  assert.equal(!!muni.creekDiving, false, 'the Muni creek is dry gravel');
+});
+
+test('creek: the current carries a still diver 0.8 m/s downstream, under the bridges too', () => {
+  const p = inWater(10), pos = { x: p.x, z: p.z };
+  for (let i = 0; i < 20; i++) applyCurrent(pos, 0.05, CLUB);
+  const moved = Math.hypot(pos.x - p.x, pos.z - p.z);
+  assert.ok(Math.abs(moved - CREEK_DIVE.CURRENT) < 0.02, `1 s: ${moved.toFixed(3)} m`);
+  assert.ok((pos.x - p.x) * p.dx + (pos.z - p.z) * p.dz > 0, 'downstream');
+  const br = { x: CMAP.BRIDGES[1].x, z: CMAP.BRIDGES[1].z };   // the Cart Bridge
+  applyCurrent(br, 1, CLUB);
+  assert.ok(br.x !== CMAP.BRIDGES[1].x, 'you float under the Cart Bridge');
+});
+
+test('creek: air drains x0.5, the in-branch carries you into the pond, a gasp lands you on the bank', () => {
+  assert.equal(creekAirMult(true), 0.5); assert.equal(creekAirMult(false), 1);
+  const { crew, step } = makeCrew(); openShift(crew);
+  const p = inWater(), d = addPlayer(crew, 'D', p.x, p.z);
+  for (let i = 0; i < 50; i++) step();   // 2.5 s
+  assert.equal(d.diving, true); assert.equal(d.creekDiving, true);
+  const a0 = d.air; for (let i = 0; i < 20; i++) step();
+  assert.ok(Math.abs((a0 - d.air) - 0.5) < 0.06, `1 s under costs 0.5 s of air (${(a0 - d.air).toFixed(2)})`);
+  d.air = 0.01; step();
+  assert.equal(d.diving, false); assert.equal(d.creekDiving, false);
+  assert.ok(Math.hypot(d.x - p.x, d.z - p.z) > CMAP.CREEK.HW, 'popped up on the bank');
+  const q = bankSpot(p.x, p.z); assert.ok(Math.abs(Math.hypot(q.x - p.x, q.z - p.z) - (CMAP.CREEK.HW + 0.8)) < 0.01);
+  // the in-branch hands you to the pond dive: still diving, now in the pond
+  const st = { x: 0, z: 0, creekDiving: true };
+  const end = creekPoint('in', creekLength('in') - 3); st.x = end.x; st.z = end.z;
+  let got = null;
+  for (let i = 0; i < 200 && !got; i++) { applyCurrent(st, 0.05, CLUB); got = creekStep(st, 0.05, CLUB); }
+  assert.equal(got, 'pond', 'the current runs you into the pond');
+  assert.ok(inPond(st));
+});
+
+test('creek: a snag is pickable underwater only, and is not sunk (Pond Clarity unchanged)', () => {
+  const { crew, step } = makeCrew(); openShift(crew);
+  const s = snagSpot(7, 'out', 20);
+  const b = crew.addBall({ x: s.x, y: s.y, z: s.z, vx: 0, vy: 0, vz: 0, kind: 'glow' }); b.rest = true; b.creek = true;
+  const before = crew.valueNow().pond;
+  assert.equal(crew.sunkCount(), 0); assert.equal(crew.valueNow().pond, before);
+  const w = addPlayer(crew, 'W', s.x, s.z);
+  assert.equal(crew.pickup(w, b.id), false, 'not from the bank or wading');
+  for (let i = 0; i < 50; i++) step();
+  assert.equal(w.diving, true);
+  assert.equal(crew.pondPickup(w, b.id), true);
+  assert.equal(w.bag, 1);
+});
+
+test('creek: the Club card\'s second treasure lies under the Cart Bridge', () => {
+  assert.equal(CREEK_TREASURE_ID, TREASURE[1].id);
+  const s = treasureSpotFor(5, CREEK_TREASURE_ID);
+  assert.deepEqual([s.x, s.z, s.y], [18, -99, CREEK_DIVE.BED]);
+  assert.deepEqual(treasureSpotFor(5, TREASURE[0].id), treasureSpot(5, TREASURE[0].id));
 });

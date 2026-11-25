@@ -49,16 +49,22 @@ export const DRONES = {
 };
 
 // Who a drone goes for: strays first (nearest to it), then the nearest ball. `claimed` is a Set of ball ids that
-// other drones already want. Returns the ball or null.
-export function droneTarget(d, balls, claimed = new Set()) {
-  let best = null, bd = Infinity, bs = false;
+// other drones already want. Council round 10 §D: with a dispatch `zone` ({ x, z, r }) pinned, every ball inside it
+// comes first (nearest), then strays, then the rest. Returns the ball or null.
+export function droneTarget(d, balls, claimed = new Set(), zone = null) {
+  let best = null, bd = Infinity, bs = -1;
   for (const b of balls) {
-    if (!b.rest || b.sunk || b.kind === 'one' || claimed.has(b.id)) continue;
-    const stray = isStray(b), dist = Math.hypot(b.x - d.x, b.z - d.z);
-    if (stray === bs ? dist < bd : stray) { best = b; bd = dist; bs = stray; }
+    if (!b.rest || b.sunk || b.creek || b.kind === 'one' || claimed.has(b.id)) continue;   // council round 10 #5: snags are divers' only
+    const score = zone && Math.hypot(b.x - zone.x, b.z - zone.z) <= zone.r ? 2 : isStray(b) ? 1 : 0, dist = Math.hypot(b.x - d.x, b.z - d.z);
+    if (score > bs || (score === bs && dist < bd)) { best = b; bd = dist; bs = score; }
   }
   return best;
 }
+
+// Council round 10 §D: drone dispatch. On foot at the County, hold Ⓨ: "Drones, here!" pins a 20 m zone for 30 s.
+export const DISPATCH = { R: 20, SECS: 30, HOLD_SECS: 0.6 };
+export const newZone = (x, z, t) => ({ x, z, r: DISPATCH.R, until: t + DISPATCH.SECS });
+export const zoneLive = (zone, t) => !!zone && t < zone.until;
 
 // One drone step toward goal {x, z, grab?}: flies at SPEED, climbs to ALT (dips to GRAB_Y close to a ball to grab).
 // Mutates d {x, y, z, yaw}. Returns true once it is over the goal (and, for a grab, down at the ball).

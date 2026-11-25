@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Crew } from '../server/crew.mjs';
-import { SIM, CART, WASH, FRIES, POND, VENUES, VENUE_RULES, PROMO_STAMPS, ONE_YEAR, BALLS_OUTSTANDING, WASHER, WASHER_HANDLES,
+import { SIM, CART, WASH, FRIES, POND, VENUES, VENUE_RULES, ONE_YEAR, BALLS_OUTSTANDING, WASHER, WASHER_HANDLES,
   atHandle, gearGrimeFactor, venueQuotaF, nextPrice, perks, priceScale, upkeepCeiling } from '../web/js/sim.js';
 
 // A crew on a fake clock. `run(secs)` steps 20 ticks a second.
@@ -113,15 +113,16 @@ test('buying: amenities and the industrial wash are refused at the Muni, bought 
 
 test('promoInfo: the fee scales with the online crew, stamps and ready', () => {
   const { crew } = atReport({ stamps: 3, cash: 10000 }, ['A', 'B', 'C', 'D']);
-  assert.deepEqual(crew.promoInfo(), { next: 'Range Club', fee: 5500, stamps: 3, need: PROMO_STAMPS, ready: true, signed: [] });
+  // Council round 10 #1: a v4 save with 3 stamps is grandfathered (the card done but the live fee).
+  assert.deepEqual(crew.promoInfo(), { next: 'Range Club', fee: 5500, reviews: 3, done: 5, of: 5, ready: true, signed: [] });
   addPlayer(crew, 'E').online = 0;
   assert.equal(crew.promoInfo().fee, 5500, 'an offline Rat does not raise the price');
   assert.equal(crew.snapshot().promo.fee, 5500);
   crew.cash = 5499;
   assert.equal(crew.promoInfo().ready, false, 'short of the fee');
-  crew.cash = 10000; crew.stamps = 2;
-  assert.equal(crew.promoInfo().ready, false, 'short of stamps');
-  assert.equal(crew.promoInfo().stamps, 2);
+  crew.cash = 10000; crew.goals.done = crew.goals.done.filter(id => id !== 'huddle');
+  assert.equal(crew.promoInfo().ready, false, 'a goal still open');
+  assert.equal(crew.promoInfo().done, 4);
 
   const solo = atReport({ stamps: 3, cash: 10000 }).crew;
   assert.equal(solo.promoInfo().fee, 2500, 'solo pays the catalogue fee');
@@ -191,7 +192,8 @@ test('promote(): fee, stamps, venue, write-off, reveal flag, shed, event, save',
   assert.equal(crew.promote(), true);
   assert.equal(crew.cash, 500, 'minus the $2,500 fee');
   assert.equal(crew.stamps, 0);
-  assert.equal(crew.totals.stamps, 3, 'lifetime stamps are kept');
+  assert.equal(crew.totals.reviews, 3, 'lifetime good days are kept (round 10: reviews)');
+  assert.equal(crew.goals, null, 'the Club card prints on its first morning');
   assert.equal(crew.venue, 1);
   assert.equal(crew.venueDay, 0);
   assert.equal(crew.outstanding, BALLS_OUTSTANDING - 1_200_000_000, 'the Club writes off 1.2 billion');
@@ -207,7 +209,7 @@ test('promote(): fee, stamps, venue, write-off, reveal flag, shed, event, save',
   assert.equal(save.venue, 1);
   assert.equal(save.pendingReveal, 1);
   assert.equal(save.outstanding, BALLS_OUTSTANDING - 1_200_000_000);
-  assert.equal(save.totals.stamps, 3);
+  assert.equal(save.totals.reviews, 3);
   assert.equal(save.up.shed, 1);
   assert.equal(a.name, 'A');
 });
@@ -307,7 +309,7 @@ test('at the Club: Rate is x5, and it multiplies with the washer', () => {
 // A customer swing, forced: mat 0 fires on the next tick.
 const swing = crew => { crew.mats[0].next = 0; crew.tick(0.05); };
 
-test('fries are eaten every 8 swings at the Muni and every 5 at the Club', () => {
+test('fries are eaten every 8 swings at the Muni and (council round 10) at the Club too', () => {
   const eaten = (venue, swings) => {
     const { crew } = makeCrew({ venue, up: { shed: 1 }, fries: 20 }, 100000);
     openShift(crew);
@@ -323,11 +325,11 @@ test('fries are eaten every 8 swings at the Muni and every 5 at the Club', () =>
   assert.equal(VENUE_RULES[0].eatEvery, undefined, 'the Muni uses FRIES.EAT_EVERY');
   assert.equal(FRIES.EAT_EVERY, 8);
 
-  const club = eaten(1, 14);
-  assert.equal(club[7], 19, 'the first basket still goes at swing 8 (the counter was already running)');
-  assert.equal(club[11], 19);
-  assert.equal(club[12], 18, 'then every 5');
-  assert.equal(VENUE_RULES[1].eatEvery, 5);
+  const club = eaten(1, 16);
+  assert.equal(club[7], 19, 'the 8th swing');
+  assert.equal(club[14], 19);
+  assert.equal(club[15], 18, 'then every 8 (council round 10 #2: was 5)');
+  assert.equal(VENUE_RULES[1].eatEvery, 8);
 });
 
 test('Gary adds a kitchen stop at the Club, and it passes with fries at 50% or more', () => {
@@ -427,7 +429,7 @@ test('the Club quota: q = (ceiling - 1) x venueQuotaF(venueDay)', () => {
   near(crew.quotaTarget(), 6.25 * (1 + 1.5 * venueQuotaF(1)), 0.011);
   const memo = events(crew).find(e => e.t === 'memo');
   assert.equal(memo.target, 35, "owner playtest 3 §1.1: the Club's venue day 1 reads 35%");
-  assert.equal(memo.text, 'Today: 35% upkeep by the bell.');
+  assert.equal(memo.text, 'Today: 35% clean by the bell.');   // council round 10: "clean" everywhere
 
   const d3 = makeCrew({ venue: 1, venueDay: 2, stamps: 2, up: { shed: 1 }, day: 4 }).crew;
   d3.startShift();
@@ -1489,7 +1491,7 @@ test('save v2: venue, venueDay, outstanding, pendingReveal, endless, records and
     records: { cash: 99.5, banked: 40, day: 12 }, voiced: ['welcome', 'cart'], debuts: ['gold'], day: 20 };
   const crew = makeCrew(save).crew;
   const back = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.equal(back.v, 4, 'v3 adds diveByName and lostFound; v4 (owner playtest 3) the crew gear and the wand row');
+  assert.equal(back.v, 5, 'v3 adds diveByName and lostFound; v4 (owner playtest 3) the crew gear and the wand row; v5 (round 10) the goal card');
   assert.equal(back.venue, 3);
   assert.equal(back.venueDay, 4);
   assert.equal(back.outstanding, 123456);

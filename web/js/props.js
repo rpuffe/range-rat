@@ -19,7 +19,7 @@ import { WASHER_POS } from './washer.js';
 import { detailFor, emit, wetStep, sagPoints, rollAngle, gaugeAngle, ease, throttle, rng, lightBalance } from './detail.js';
 import { createStations, findStations, REVEAL } from './stations.js';   // owner notes: the washer and shed appear when they matter
 import { sharedConfetti, confettiCount } from './confetti.js';
-import { MUD, mudField, paintClean, matAt, matUV, cameClean } from './mud.js';
+import { MUD, SURF, mudField, mudSurface, paintClean, matAt, matUV, cameClean } from './mud.js';
 
 const TAU = Math.PI * 2;
 
@@ -801,6 +801,159 @@ varying vec2 vMudUv; uniform sampler2D uMudTex; uniform sampler2D uMem; uniform 
   const sparkle = puffs(D.sparkle, { color: 0xffffff, opacity: 1, blending: THREE.AdditiveBlending });
   const jet = puffs(D.jet, { color: 0xdff4ff, opacity: 0.85 });   // crewmates' spray
 
+  // ---------------------------------------------------------------- council round 10 §B: dirt on the sign and the return
+  // The mats' mud shader on decals: one merged quad pair over the sign's two faces, and one merged mesh over the
+  // return's front face, its hopper lip and the lower half of the pipe's first stretch (rebuilt if the pipe re-routes
+  // through the washer). uMud is the server's fixtures.sign / fixtures.stand, so the dirt shows in splotches and
+  // washes off in patches (mud.js surfaceAlpha: the low edge washes last). Where my spray lands on one, its clean
+  // memory streaks (uploaded only while I spray it). +2 draw calls, hidden while spotless; the yard only.
+  const surfaces = [];
+  {
+    const f3 = v => v.toFixed(3);
+    const decalMaterial = U => {
+      const m = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+      m.onBeforeCompile = sh => {
+        Object.assign(sh.uniforms, U);
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+attribute vec2 mudUv; attribute vec2 memUv; attribute float mudV; varying vec2 vMudUv; varying vec2 vMemUv; varying float vMudV;`)
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMudUv = mudUv; vMemUv = memUv; vMudV = mudV;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec2 vMudUv; varying vec2 vMemUv; varying float vMudV; uniform sampler2D uMudTex; uniform sampler2D uMem; uniform float uMud;`)
+          .replace('#include <map_fragment>', `#include <map_fragment>
+{ vec4 mt = texture2D(uMudTex, vMudUv); float mem = texture2D(uMem, vMemUv).r;
+  float c = max(${f3(MUD.CLEAN + MUD.EDGE)}, min(0.98, ${f3(MUD.BASE)} + ${f3(MUD.NOISE)} * mt.g + ${f3(MUD.MEMK)} * mem) - ${f3(SURF.LOW)} * (1.0 - clamp(vMudV, 0.0, 1.0)));   // mud.js surfaceThreshold
+  float d = mt.r + (1.0 - mt.r) * ${f3(MUD.FILL)} * smoothstep(${f3(MUD.FILL_FROM)}, 1.0, uMud);   // mud.js mudSpread
+  float a = d * smoothstep(c - ${f3(MUD.EDGE)}, c + ${f3(MUD.EDGE)}, uMud);                // mud.js surfaceAlpha
+  if (a < 0.02) discard;
+  diffuseColor = vec4(mix(vec3(0.115, 0.056, 0.016), vec3(0.05, 0.026, 0.009), mt.g), a * 0.95); }`);
+      };
+      m.customProgramCacheKey = () => 'rr-surface-mud';
+      return m;
+    };
+    // S.build(parts): parts [{ geo (with a 0..1 'uv'), w, h, seed, mem: [u0, v0, u1, v1] (its patch of the memory), low(v) }]
+    const decal = (id, memSize, reach) => {
+      const mem = new Float32Array(memSize * memSize), memBytes = new Uint8Array(memSize * memSize * 4);
+      const memTex = new THREE.DataTexture(memBytes, memSize, memSize, THREE.RGBAFormat);
+      memTex.magFilter = memTex.minFilter = THREE.LinearFilter; memTex.needsUpdate = true;
+      const U = { uMudTex: { value: mats.tex }, uMem: { value: memTex }, uMud: { value: 0 } };
+      const mesh = new THREE.Mesh(new THREE.BufferGeometry(), decalMaterial(U));
+      mesh.name = 'mud.' + id; mesh.renderOrder = 3; mesh.visible = false;
+      scene.add(mesh);
+      const S = { id, mesh, U, mem, memBytes, memTex, memSize, reach, mud: -1, dirty: false, memUsed: false };
+      S.build = parts => {
+        const pos = [], nor = [], uv = [], mu = [], mv = [];
+        for (const p of parts) {
+          const g = p.geo.index ? p.geo.toNonIndexed() : p.geo, P = g.attributes.position, N = g.attributes.normal, T = g.attributes.uv;
+          const sf = mudSurface(p.w, p.h, p.seed), [u0, v0, u1, v1] = p.mem;
+          for (let i = 0; i < P.count; i++) {
+            const u = T.getX(i), v = T.getY(i), f = sf.uv(u, v);
+            pos.push(P.getX(i), P.getY(i), P.getZ(i)); nor.push(N.getX(i), N.getY(i), N.getZ(i));
+            uv.push(u0 + (u1 - u0) * u, v0 + (v1 - v0) * v); mu.push(f[0], f[1]); mv.push(p.low ? p.low(v) : v);
+          }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));        // for the raycast's hit.uv
+        geo.setAttribute('memUv', new THREE.Float32BufferAttribute(uv, 2));
+        geo.setAttribute('mudUv', new THREE.Float32BufferAttribute(mu, 2));
+        geo.setAttribute('mudV', new THREE.Float32BufferAttribute(mv, 1));
+        geo.computeBoundingSphere();
+        mesh.geometry.dispose(); mesh.geometry = geo;
+      };
+      surfaces.push(S);
+      return S;
+    };
+    scene.updateMatrixWorld(true);
+    // The sign: the two faces main.js tagged (road.field, road.road), a quad a hair in front of each.
+    const faces = [];
+    scene.traverse(o => { if (o.isMesh && (o.userData.sign === 'road.field' || o.userData.sign === 'road.road') && o.geometry?.type === 'PlaneGeometry') faces.push(o); });
+    if (faces.length) {
+      const S = decal('sign', 64, 0.5);
+      S.build(faces.map((o, i) => {
+        const { width: w, height: h } = o.geometry.parameters;
+        const geo = new THREE.PlaneGeometry(w, h).translate(0, 0, 0.012).applyMatrix4(o.matrixWorld);
+        o.material.userData.mudDecal = true;    // main.js paintFixtures: only a light tint now
+        return { geo, w, h, seed: i + 1, mem: [0, i * 0.5, 1, i * 0.5 + 0.5] };
+      }));
+    }
+    // The return: the box main.js built (2 x 1 x 1.2 at SIM.STAND), its hopper (the bucket on top) and the pipe.
+    let box = null, hopper = null;
+    scene.traverse(o => {
+      const p = o.isMesh ? o.geometry?.parameters : null;
+      if (!p || !o.parent || Math.abs(o.parent.position.x - SIM.STAND.x) > 0.01 || Math.abs(o.parent.position.z - SIM.STAND.z) > 0.01) return;
+      if (o.geometry.type === 'BoxGeometry' && p.width === 2 && p.height === 1 && p.depth === 1.2) box = o;
+      if (o.geometry.type === 'CylinderGeometry' && p.openEnded && Math.abs(p.radiusTop - 0.35) < 1e-6) hopper = o;
+    });
+    if (box) {
+      box.material.userData.mudDecal = true;
+      const S = decal('stand', 64, 0.75);
+      let route;
+      const halfPipe = (curve, R0) => {   // the lower half of a pipe's first 3 m, a hair outside it
+        const len = curve.getLength(), t1 = Math.min(1, 3 / len), segs = 18, rad = 8;
+        const pos = [], nor = [], uvs = [], idx = [];
+        const pt = new THREE.Vector3(), tan = new THREE.Vector3(), side = new THREE.Vector3(), up = new THREE.Vector3(), n = new THREE.Vector3();
+        for (let i = 0; i <= segs; i++) {
+          const t = t1 * i / segs; curve.getPointAt(t, pt); curve.getTangentAt(t, tan);
+          side.set(-tan.z, 0, tan.x); if (side.lengthSq() < 1e-6) side.set(1, 0, 0); side.normalize();
+          up.crossVectors(side, tan).normalize(); if (up.y < 0) up.negate();
+          for (let j = 0; j <= rad; j++) {
+            const a = Math.PI * j / rad;   // from one side, under the bottom, to the other side
+            n.copy(side).multiplyScalar(Math.cos(a)).addScaledVector(up, -Math.sin(a));
+            pos.push(pt.x + n.x * R0, pt.y + n.y * R0, pt.z + n.z * R0); nor.push(n.x, n.y, n.z); uvs.push(i / segs, j / rad);
+          }
+        }
+        for (let i = 0; i < segs; i++) for (let j = 0; j < rad; j++) { const a = i * (rad + 1) + j, b = a + rad + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); g.setIndex(idx);
+        return { geo: g, w: t1 * len, h: Math.PI * R0 };
+      };
+      S.rebuild = pipe => {
+        const parts = [];
+        // the front face (-z: the field side), 2 x 1 m
+        parts.push({ geo: new THREE.PlaneGeometry(2, 1).rotateY(Math.PI).translate(0, 0, -0.612).applyMatrix4(box.matrixWorld), w: 2, h: 1, seed: 3, mem: [0, 0, 1, 0.5] });
+        // the hopper lip: a band round the bucket's rim, outside, 13 cm deep
+        if (hopper) {
+          const p = hopper.geometry.parameters, top = p.height / 2, r = p.radiusTop + 0.006;
+          const band = new THREE.CylinderGeometry(r, r - 0.007, 0.13, 20, 1, true).translate(0, top - 0.065, 0).applyMatrix4(hopper.matrixWorld);
+          parts.push({ geo: band, w: TAU * r, h: 0.13, seed: 4, mem: [0, 0.5, 1, 0.58], low: v => 0.6 + 0.4 * v });
+        }
+        const curve = pipe?.geometry?.parameters?.path;
+        if (curve) parts.push({ ...halfPipe(curve, (pipe.geometry.parameters.radius ?? 0.11) + 0.006), seed: 5, mem: [0, 0.6, 1, 0.75], low: () => 0.25 });
+        S.build(parts);
+      };
+      S.sync = () => {   // ballreturn.js shows one pipe: direct, or the riser into the washer
+        const w = scene.getObjectByName('pipe.washer'), pipe = w?.visible ? w : scene.getObjectByName('pipe.direct');
+        const name = pipe?.name ?? null;
+        if (name !== route) { route = name; S.rebuild(pipe); }
+      };
+      S.sync();
+    }
+  }
+  const surfUpload = S => { for (let i = 0; i < S.mem.length; i++) S.memBytes[i * 4] = S.mem[i] * 255; S.memTex.needsUpdate = true; S.dirty = false; };
+  function tickSurfaces() {
+    const fx = crew()?.fixtures ?? {};
+    for (const S of surfaces) {
+      const mud = Math.max(0, Math.min(1, fx[S.id] ?? 0));
+      if (S.sync && mud > MUD.CLEAN) S.sync();
+      if (mud <= MUD.CLEAN && S.memUsed) { S.mem.fill(0); S.memUsed = false; S.dirty = true; }
+      if (S.dirty) surfUpload(S);
+      S.mud = mud; S.U.uMud.value = mud;
+      S.mesh.visible = mud > MUD.CLEAN;
+    }
+  }
+  // My jet on a dirty sign or return: streak its clean memory where it lands (not on Low).
+  const surfMeshes = [];
+  function spraySurfaces(dt) {
+    if (!D.matStreaks || !surfaces.length) return;
+    surfMeshes.length = 0; for (const S of surfaces) if (S.mesh.visible) surfMeshes.push(S.mesh);
+    if (!surfMeshes.length) return;
+    const h = ray.intersectObjects(surfMeshes, false)[0];
+    const S = h && surfaces.find(s => s.mesh === h.object);
+    if (S && h.uv && paintClean(S.mem, S.memSize, h.uv.x, h.uv.y, 1, 0.35, 2.2 * dt, S.reach)) S.dirty = S.memUsed = true;
+  }
+
   // ---------------------------------------------------------------- picker carts
   const cageBars = merge([
     ...[[-0.75, -0.85], [0.75, -0.85], [-0.75, 0.85], [0.75, 0.85]].map(([x, z]) => [new THREE.CylinderGeometry(0.025, 0.025, 1.55, 6), mtx(x, 0, z)]),
@@ -958,6 +1111,7 @@ varying vec2 vMudUv; uniform sampler2D uMudTex; uniform sampler2D uMem; uniform 
           if (D.matStreaks && uv && M.mud > MUD.CLEAN && paintClean(M.mem, MUD.MEM, uv.u, uv.v, jetDir.x, jetDir.z, 2.2 * dt)) M.dirty = M.memUsed = true;
         }
       }
+      spraySurfaces(dt);   // council round 10 §B: the sign and the return streak where my jet lands
     } else for (const w of wettable) w.hit = false;
     if (me?.wand && !on && wg) {   // a dripping nozzle
       const e = emit(1.6, dt, dripCarry); dripCarry = e.carry;
@@ -1130,6 +1284,7 @@ varying vec2 vMudUv; uniform sampler2D uMudTex; uniform sampler2D uMem; uniform 
       if (myGear) decorateGear(myGear);
       tickSpray(dt, t, on);          // every frame: it's in your hands
       tickMats(dt, t);
+      tickSurfaces();
       stations.update(crew()); stations.tick(dt);
       tickMates(dt); jet.update(dt); sparkle.update(dt);
       tickCarts(dt);

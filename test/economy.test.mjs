@@ -104,7 +104,7 @@ test('crew gear is saved in up.gear and restored for everyone', () => {
   const save = JSON.parse(JSON.stringify(crew.toSave()));
   assert.equal(save.up.gear, 2);
   assert.equal(save.gear, undefined, 'gear by name is no longer written');
-  assert.equal(save.v, 4);
+  assert.equal(save.v, 5);   // council round 10 #1: v5, the goal card
   const { crew: back } = makeCrew(save);
   assert.equal(back.join('Ann').gear, 2);
   assert.equal(back.join('Cy').gear, 2, 'a stranger wears the crew gear');

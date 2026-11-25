@@ -1,19 +1,19 @@
 // Tiered Entertainment Range (venue 2), client side: bowl decals, neon pins, the cup tween, gutter glass, the strobe.
 // Council round 6 (#4): 10 m pins with a flag showing the cup's count, light pillars over every bowl. Council round 7
-// (#2): the landing marker at a crew bay (aim.js predicts where a PURE strike rests): a constant-size disc
-// (round 8 #6 cut the beam).
+// (#2) put a landing marker at the crew bays; council round 10 #6 moved it to views/greens.js (every venue) and stood
+// the pin at the green's centre: one flag per green (terrain.js hides its landmark flag while this view is up).
 // The rules live in web/js/tiered.js (pure) and server/venues/tiered.mjs.
 import * as THREE from 'three';
 import { MAP } from '../map.js';
 import { TARGET, hasGutters, savedLine } from '../tiered.js';
-import { AIM, createAimer, ringBowl, flagNormal, cupWarn, markerState, markerPulse, markerScale } from '../aim.js';
+import { flagNormal, cupWarn } from '../aim.js';   // round 10 #6: the landing marker moved to views/greens.js (every venue)
 
 const FLAG = { red: 0xff3b5c, yellow: 0xffe14a, blue: 0x4aa8ff };
 const PIN_H = 10, PIN_R = 0.125, PILLAR_H = 30, FLAG_W = 2.6, FLAG_H = 2;   // the flag reads at 150 m
 
 // The flag's canvas: the bowl's colour with the cup's count on a plate (red plate at the cup's share of the pass line).
 function drawFlag(f, n) {
-  const { g, size, col } = f, warn = n >= cupWarn();
+  const { g, size, col } = f, warn = n >= cupWarn(undefined, f.full);   // round 10 #3: the dial grows with the upper bays
   g.fillStyle = '#' + col.toString(16).padStart(6, '0'); g.fillRect(0, 0, size, size);
   g.fillStyle = warn ? '#d0202a' : '#fff8e6';
   g.beginPath(); g.arc(size / 2, size / 2, size * 0.4, 0, Math.PI * 2); g.fill();
@@ -44,7 +44,7 @@ export default {
       const glass = mk(new THREE.RingGeometry(b.cup * 1.1, b.cup * 1.35, 24), new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.55, depthWrite: false }), 0.06);
       glass.visible = false;
       const pinMat = new THREE.MeshBasicMaterial({ color: col });
-      const px = b.r * 0.55;
+      const px = 0;   // round 10 #6: the pin stands at the green's centre, where the cup is (the landmark flag's spot)
       const pin = new THREE.Mesh(pinGeo, pinMat); pin.position.set(px, PIN_H / 2, 0); g.add(pin);
       // The flag: a canvas redrawn only when the cup's count changes, facing both crew bays.
       const c = document.createElement('canvas'); c.width = c.height = flagPx;
@@ -68,25 +68,7 @@ export default {
     pillars.instanceMatrix.needsUpdate = true; if (pillars.instanceColor) pillars.instanceColor.needsUpdate = true;
     pillars.frustumCulled = false;
     root.add(pillars);
-    // The landing marker (round 7 #2): where a PURE strike rests. A camera-facing disc, MARK_PX on a 1080p screen
-    // whatever the distance, drawn on top, with a dark outline, in your colour (the bowl's inside its lip, pulsing),
-    // 1 draw call (round 8 #6 cut the 6 m beam: invisible at 143 m, the disc does the work).
-    const dc = document.createElement('canvas'); dc.width = dc.height = 64;
-    {
-      const g = dc.getContext('2d'), ow = 64 * AIM.MARK_OUTLINE_PX / AIM.MARK_PX;
-      g.fillStyle = '#14161c'; g.beginPath(); g.arc(32, 32, 31, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#ffffff'; g.beginPath(); g.arc(32, 32, 31 - ow, 0, Math.PI * 2); g.fill();
-    }
-    const dtex = new THREE.CanvasTexture(dc); dtex.colorSpace = THREE.SRGBColorSpace;
-    const markMat = new THREE.SpriteMaterial({ map: dtex, color: 0xffffff, sizeAttenuation: false, depthTest: false, depthWrite: false, transparent: true });
-    const mark = new THREE.Sprite(markMat); mark.visible = false; mark.renderOrder = 10; mark.frustumCulled = false;
-    root.add(mark);
-    const MARK_Y = 0.6;
-    // Your swings at this venue, read from the snapshot: a pocket that drops while you stand at a bay is a release.
-    const aimSt = { venue: null, swung: false, releasedAt: -Infinity, lastPower: null, idleP: null, pocket: null, atBayAt: -Infinity, rest: null, color: null };
-    const hideMark = () => { mark.visible = false; };
     let saved = null;   // round 8 #6: the snapshot's { by, name, left } for the report's "Saved by ..." line
-    const aimer = createAimer({ hz: low ? AIM.LOW_HZ : AIM.HZ, now: () => performance.now() });
     ctx.scene.add(root);
     const tweens = [];
     let t = 0, lastThunk = -1;
@@ -95,52 +77,19 @@ export default {
     const THUNK_GAP = 0.15, THUNK_FLASH = 0.35, COUNT_SECS = 0.6;
 
     return {
-      show(on) { root.visible = on; if (!on) { hideMark(); aimer.update(null); } },
+      // Round 10 #6: one flag per green. The pin IS the landmark flag from Tiered on, so terrain.js hides its own.
+      show(on) { root.visible = on; ctx.terrain?.setFlags?.(!on); },
       onSnapshot(s, mine) {
         const own = hasGutters(ctx.crew()?.up);
         saved = mine?.saved ?? null;
         bowls.forEach((w, i) => {
           w.glass.visible = own;
+          if (mine?.full && mine.full !== w.flag.full) { w.flag.full = mine.full; w.flag.n = -1; }   // redraw at the new red line
           const n = Math.max(0, mine?.cups?.[i] | 0);
           if (w.count && n === 0) return;                         // the count-down owns the flag until it lands on 0
           w.count = null;
           if (n !== w.flag.n) { w.flag.n = n; drawFlag(w.flag, n); }
         });
-      },
-      // main.js, every frame: { bay, yaw, pitch, power, color, world } while you stand at a crew bay with balls, else null.
-      aim(input) {
-        const a = aimSt, s = ctx.crew?.(), venue = s?.endless ? 5 : s?.venue ?? null;
-        if (venue !== a.venue) Object.assign(a, { venue, swung: false, releasedAt: -Infinity, lastPower: null, idleP: null, rest: null });
-        const pocket = s?.players?.find(p => p.id === ctx.me.id)?.pocket ?? null;
-        if (input) {
-          if (a.idleP == null) a.idleP = input.power;                 // main.js holds this until you wind up
-          a.atBayAt = t;
-          a.color = input.color ?? a.color;
-        } else a.idleP = null;
-        if (pocket != null && a.pocket != null && pocket < a.pocket && t - a.atBayAt < 0.5) {
-          a.swung = true; a.releasedAt = t; a.idleP = null;           // released: main.js now holds the strike's power
-        }
-        a.pocket = pocket;
-        // Before the first swing here, winding = the power left main.js's held value; after it, the input already
-        // carries the live power while winding and your last swing's otherwise.
-        const winding = input && (a.swung ? input.power : (Math.abs(input.power - a.idleP) > 1e-9 ? input.power : 0));
-        if (input && a.swung) a.lastPower = input.power;
-        else if (input && winding > AIM.WIND_MIN) a.lastPower = winding;
-        const q = { power: a.swung ? 0 : winding || 0, lastPower: a.lastPower, swung: a.swung, sinceRelease: t - a.releasedAt, bay: !!input };
-        const want = markerState(q);
-        let rest = null;
-        if (want.power != null && input) rest = a.rest = aimer.update({ ...input, power: want.power });
-        else if (want.power != null) rest = a.rest;                     // just released with your last ball: hold it
-        else { aimer.update(null); a.rest = null; }
-        const bowl = ringBowl(rest);
-        const m = markerState({ ...q, rest, bowl });
-        if (!m.visible) { hideMark(); return; }
-        const col = m.color ? FLAG[m.color] ?? 0xffffff : a.color ?? '#ffffff';
-        const k = markerPulse(m.pulse, t);
-        mark.visible = true;
-        mark.position.set(rest.x, MARK_Y, rest.z);
-        mark.scale.setScalar(markerScale(ctx.camera?.fov ?? 60) * k);
-        markMat.color.set(col);
       },
       onEvent(e) {
         if (e.t === 'cup') {

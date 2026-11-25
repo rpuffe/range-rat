@@ -1,35 +1,30 @@
-// Council round 6 #7.3: the report's promotion panel shows stamps from the first, and the fee only from 2.
+// The report's promotion panel. Council round 10 #1: the goal card replaced the review stamps (council round 6 #7.3 /
+// round 7 #10.1 tested the stamps and the fee headline): five rows, Sign only when all five are done, and the
+// headline reads the card.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { promoPanelHtml, showPromo, showFee, FEE_FROM_STAMPS } from '../web/js/promopanel.js';
+import { promoPanelHtml, showPromo, cardHeadline } from '../web/js/promopanel.js';
+import { printCard, rowsOf } from '../web/js/goals.js';
 
-const promo = (stamps, ready = false) => ({ next: 'Range Club', fee: 6000, stamps, need: 3, ready, signed: [] });
+const promo = (ready = false) => ({ next: 'Range Club', fee: 6000, ready, signed: [], done: ready ? 5 : 1, of: 5 });
+const goals = (n = {}, live = {}) => { const c = printCard(0, 4); Object.assign(c.n, n); return { venue: 0, rows: rowsOf(c, { cash: 0, fee: 6000, ...live }), reward: 131 }; };
 
-test('no panel before the first stamp', () => {
-  assert.equal(showPromo(promo(0)), false); assert.equal(promoPanelHtml(promo(0)), ''); assert.equal(promoPanelHtml(null), '');
+test('the card shows from the first report: five rows, no stamps', () => {
+  assert.equal(showPromo(null), false); assert.equal(promoPanelHtml(null), '');
+  const h = promoPanelHtml(promo(), { goals: goals({ bank: 800 }), cash: 100 });
+  assert.doesNotMatch(h, /stamp/i);
+  assert.equal((h.match(/<li/g) ?? []).length, 5);
+  assert.match(h, /Bank 2,000 balls · 800 \/ 2,000/);
+  assert.match(h, /Save the \$6,000 fee/);
+  assert.doesNotMatch(h, /sign-btn/, 'no Sign before 5/5');
 });
-test('1 stamp: the stamps, no fee; 2 stamps: the fee', () => {
-  assert.equal(FEE_FROM_STAMPS, 2);
-  const one = promoPanelHtml(promo(1), { cash: 100 });
-  assert.match(one, /Review stamps/); assert.match(one, /●○○/); assert.doesNotMatch(one, /Franchise fee/);
-  const two = promoPanelHtml(promo(2), { cash: 100 });
-  assert.match(two, /Franchise fee <b>\$6,000 · you have \$100/);
-  assert.equal(showFee(promo(1)), false); assert.equal(showFee(promo(2)), true);
+test('ready: the sign button', () => {
+  const h = promoPanelHtml(promo(true), { goals: goals({ bank: 2000, huddle: 1, reviews: 2 }, { up: { washer: 1 }, cash: 9000 }), signedN: 1, onlineN: 2 });
+  assert.match(h, /Sign the franchise agreement \(1 of 2 signed\)/);
 });
-test('ready: the fee and the sign button', () => {
-  const h = promoPanelHtml(promo(3, true), { signedN: 1, onlineN: 2 });
-  assert.match(h, /Franchise fee <b>\$6,000<\/b>/); assert.match(h, /Sign the franchise agreement \(1 of 2 signed\)/);
-});
-
-// Council round 7 #10.1 (A5): stamps done, fee unpaid: the report leads with the shortfall.
-import { feeHeadline } from '../web/js/promopanel.js';
-test('the fee headline appears at 3 stamps only, and only while short', () => {
-  const p = { next: 'Range Club', fee: 5500, stamps: 3, need: 3, ready: false, signed: [] };
-  assert.equal(feeHeadline(p, 4605), '3 stamps. $895 short.');
-  assert.ok(feeHeadline(p, 4605).split(' ').length <= 8);
-  assert.equal(feeHeadline({ ...p, stamps: 2 }, 4605), '');
-  assert.equal(feeHeadline({ ...p, stamps: 0 }, 0), '');
-  assert.equal(feeHeadline(p, 5500), '');                    // the fee is covered
-  assert.equal(feeHeadline({ ...p, ready: true }, 100), ''); // ready to sign: the button leads instead
-  assert.equal(feeHeadline(null), '');
+test('the headline reads the card', () => {
+  assert.equal(cardHeadline(goals({ bank: 2000, reviews: 2 })), '2 of 5 done · 3 to go');
+  assert.equal(cardHeadline(goals({ bank: 2000, huddle: 1, reviews: 2 }, { up: { washer: 1 }, cash: 9000 })), 'Card done! Sign for the Club.');
+  assert.equal(cardHeadline(null), '');
+  for (const g of [goals(), goals({ bank: 2000 })]) assert.ok(cardHeadline(g).split(' ').length <= 8);
 });

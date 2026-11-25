@@ -8,7 +8,8 @@ import * as THREE from 'three';
 import { WASHER_HANDLES, WASHER, atHandle, WASH, VENUE_RULES, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
 import { createPA } from './pa.js';
 import { streakLine } from './owner.js';                                         // council round 8 #3: racing yesterday
-import { showPromo, promoPanelHtml, feeHeadline } from './promopanel.js';   // council round 6 #7: the fee line from 2 stamps; round 7 #10.1 the headline
+import { showPromo, promoPanelHtml, cardHeadline } from './promopanel.js';   // council round 10 #1: the goal card (round 7 #10.1: the headline)
+import { cardHtml, doneToast } from './goals.js';
 import { createWasher, createCrank } from './washer.js';
 import { createVenues, paintSign } from './venues.js';
 import { createEnding } from './ending.js';
@@ -89,6 +90,9 @@ export function setupRound2(ctx) {
         renderReport(true);
         break;
       case 'ready': renderReport(); break;
+      // Council round 10 #1: a goal completed: one toast ("Goal done! 30 hot dogs. +$1,450"), a ping; the Board's pip
+      // fills from the snapshot. Two in one tick queue in say() (the second waits its turn).
+      case 'goal': toast(doneToast(e.id, e.need, e.reward), 3); SFX.cash(e.reward > 0 ? 6 : 2); renderReport(true); break;
       case 'reveal': startReveal(e); break;
       case 'mark': cctv.showFlag({ x: e.x, z: e.z, by: nameOf(e.by), color: e.color }); break;
       case 'huddle': break;   // the Last Bucket banner (tick) shows who is still missing
@@ -239,15 +243,15 @@ export function setupRound2(ctx) {
     const readyN = online.filter(p => p.ready).length;
     const btn = $('next');
     if (btn) btn.textContent = online.length > 1 ? (mine?.ready ? 'Ready ✓ (' + readyN + ' / ' + online.length + ')' : 'Ready (' + readyN + ' / ' + online.length + ')') + (c.sigWait ? ' · waiting for signatures (' + c.sigWait.n + ' of ' + c.sigWait.of + ')' : c.readyIn != null ? ' · starts in ' + c.readyIn + 's' : '') : 'Next shift';
-    const key = JSON.stringify([promo, c.cash, online.map(p => [p.id, p.ready, p.signed]), r.day, c.venue, c.promotedTo]);
+    const key = JSON.stringify([promo, c.goals?.rows, c.cash, online.map(p => [p.id, p.ready, p.signed]), r.day, c.venue, c.promotedTo]);
     if (key === ledgerKey && !force) return;
     ledgerKey = key;
     const hadFocus = el.contains(document.activeElement) ? document.activeElement.id : '';   // refocus it after the rebuild
     const esc = s => String(s).replace(/[&<>"']/g, ch => '&#' + ch.charCodeAt(0) + ';');
     let html = '';
     // Council round 8 #3: in endless the headline races yesterday ("Beat yesterday · 4 in a row.", owner.js streakLine).
-    const head = c.promotedTo ? '' : c.endless && r.race ? streakLine(r.race) : feeHeadline(promo, c.cash);
-    feeHead(head);   // round 7 #10.1: "3 stamps. $895 short." leads the report
+    const head = c.promotedTo ? '' : c.endless && r.race ? streakLine(r.race) : cardHeadline(c.goals);
+    feeHead(head);   // round 10 #1: "3 of 5 done · 2 to go" leads the report (round 7 #10.1: it was the fee)
     if (r.ledger?.length) {
       html += '<div class="sheet ledger"><h3>The ledger</h3>' + r.ledger.map(l =>
         '<p style="color:' + l.color + '"><span>' + esc(l.name) + ' · banked ' + l.banked + ' · ' + money(l.cash) + (l.hosed ? ' · hosed ' + l.hosed : '') + ' · knocked down ' + l.knockdowns + '</span><b>' + esc(l.award) + ' — Corporate</b></p>').join('') + '</div>';
@@ -258,8 +262,10 @@ export function setupRound2(ctx) {
     if (c.promotedTo) {
       html += '<div class="sheet promo"><h3>Promoted!</h3><p>The ' + esc(c.promotedTo) + ' opens tomorrow.</p></div>';
       const tm = document.querySelector('#report-body .dim'); if (tm) tm.textContent = 'Tomorrow: the ' + c.promotedTo + '.';
-    } else if (showPromo(promo)) {   // nothing to request before the first stamp (playtest); the fee from 2 stamps (round 6 #7)
-      html += promoPanelHtml(promo, { cash: c.cash, signed: !!mine?.signed, signedN: promo.signed.length, onlineN: online.length, esc, headShown: !!head });
+    } else if (showPromo(promo)) {   // council round 10 #1: the goal card, Sign only when all five are done
+      html += promoPanelHtml(promo, { goals: c.goals, cash: c.cash, signed: !!mine?.signed, signedN: promo.signed.length, onlineN: online.length, esc });
+    } else if (c.goals?.rows?.length) {   // the Orbital: the Last Bucket's four steps
+      html += '<div class="sheet promo"><h3>The Last Bucket</h3>' + cardHtml(c.goals.rows, { rewardNow: c.goals.reward, esc }) + '</div>';
     }
     el.innerHTML = html;
     $('sign-btn')?.addEventListener('click', () => link()?.act({ t: 'sign', on: !mine?.signed }));
@@ -344,7 +350,7 @@ export function setupRound2(ctx) {
   // muddy boots show on your bank popup instead).
   function hudLine() {
     const c = crew(), parts = [];
-    if (c.promo?.ready) parts.push('PROMOTION READY');
+    if (c.promo?.ready) parts.push('CARD DONE');   // council round 10 #1 (it was PROMOTION READY)
     return parts.join(' · ');
   }
   function prompt(btn) {

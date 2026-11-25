@@ -3,7 +3,8 @@
 // after MORNING.SECS of working time. Day 1's checklist keeps precedence. Pure: no THREE, no DOM. The server side is
 // server/venues/nudge.mjs (it builds the plain `view` below from the crew); main.js shows it through nudgeLine().
 // Nudge ids: 'am:<job>'.
-import { FIXTURE_BY_ID, FRIES, POND, SIM, BUCKETS } from './sim.js';
+import { FIXTURE_BY_ID, FRIES, POND, SIM, BUCKETS, BAYS } from './sim.js';
+import { GOALS, dealGoal, dealLine } from './goals.js';   // council round 10 #1: the goal card joins the deal
 import { MAP } from './map.js';
 import { FILL_POINT } from './layout.js';
 
@@ -42,6 +43,29 @@ export const MORNING_AT = {
   crowd: { x: MAP.TRACK.x, z: MAP.TRACK.z + MAP.TRACK.b, y: 2.6 },
   strays: { x: (MAP.YARDS.xMin + MAP.YARDS.xMax) / 2, z: (MAP.YARDS.FENCES[0] + MAP.YARDS.FENCES[1]) / 2, y: 3 },
   debris: { x: MAP.LIFT.x, z: MAP.LIFT.z, y: 3 },
+};
+
+// ---- Council round 10 #1: the goal card in the deal ---------------------------------------------------------------
+// When a feature goal is open, ONE Rat can be dealt "Goal: 12 more hot dogs." (the open goal nearest done), below the
+// venue's own short jobs: only a Rat the jobs leave over gets it (every short job keeps its Rat). Never over the
+// day-1 checklist (nudge.mjs deals nothing while it's up). The nudge id carries the goal and what's left:
+// 'am:goal:<goalId>:<left>', so the line counts down live.
+export const GOAL_AT = {
+  bank: { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6 }, huddle: { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6 },
+  seal: { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6 }, pass: { x: SIM.STAND.x, z: SIM.STAND.z, y: 2.6 },
+  hotdogs: { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6 }, orders: { x: FRIES.SHED.x, z: FRIES.SHED.z, y: 2.6 },
+  treasures: { x: POND.DOCK.x, z: POND.DOCK.z, y: 2.2 },
+  targets: { x: BAYS[0].x, z: BAYS[0].z, y: 2.2 }, pings: { x: BAYS[0].x, z: BAYS[0].z, y: 2.2 },
+  laps: { x: MAP.TRACK.x, z: MAP.TRACK.z + MAP.TRACK.b, y: 2.6 },
+  strays: { x: (MAP.YARDS.xMin + MAP.YARDS.xMax) / 2, z: (MAP.YARDS.FENCES[0] + MAP.YARDS.FENCES[1]) / 2, y: 3 },
+  lift: { x: MAP.LIFT.x, z: MAP.LIFT.z, y: 3 }, debris: { x: MAP.LIFT.x, z: MAP.LIFT.z, y: 3 },
+};
+export const goalJob = rows => dealGoal(rows);
+export const goalNudgeId = r => (r ? 'am:goal:' + r.id + ':' + Math.max(0, r.need - r.have) : null);
+const goalOf = id => {
+  const [, , gid, left] = id.split(':');
+  const d = GOALS[gid];
+  return d ? { id: gid, kind: d.kind, need: Math.max(0, Number(left) || 0), have: 0 } : null;
 };
 
 // view: { venue, basket, fixtures: { id: mud }, nMats, shed, fries, pondOpen, clarity, deck, crowd, strays, debris }
@@ -103,5 +127,8 @@ export function dealMorning(jobs, rats) {
   return out;
 }
 
-export const morningLine = id => (id?.startsWith('am:') ? MORNING_TEXT[id.slice(3)] ?? null : null);
-export const morningTarget = id => (id?.startsWith('am:') ? (({ x, z, y }) => ({ x, z, y, s: 1 }))(MORNING_AT[id.slice(3)] ?? {}) : null);
+export const morningLine = id => (id?.startsWith('am:goal:') ? dealLine(goalOf(id)) : id?.startsWith('am:') ? MORNING_TEXT[id.slice(3)] ?? null : null);
+export const morningTarget = id => {
+  if (id?.startsWith('am:goal:')) { const at = GOAL_AT[id.split(':')[2]]; return at ? { ...at, s: 1 } : null; }   // a purchase: the shop is a menu
+  return id?.startsWith('am:') ? (({ x, z, y }) => ({ x, z, y, s: 1 }))(MORNING_AT[id.slice(3)] ?? {}) : null;
+};

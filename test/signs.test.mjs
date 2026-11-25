@@ -65,7 +65,7 @@ test('round 6 #4: every Target Green flag faces both crew bays (dot > 0.5), and 
   const { BAYS } = await import('../web/js/sim.js');
   for (const b of MAP.BOWLS) {
     const n = flagNormal(b);
-    const sign = { pos: { x: b.x + b.r * 0.55, y: 9.3, z: b.z }, normal: n };
+    const sign = { pos: { x: b.x, y: 9.3, z: b.z }, normal: n };   // round 10 #6: the pin stands at the green's centre
     for (const bay of BAYS) {
       const r = readable(sign, { x: bay.x, y: 1.6, z: bay.z });
       assert.ok(r.ok && r.dot > 0.5, `Bowl ${b.id} from bay ${bay.x}: ${r.why} (dot ${r.dot.toFixed(2)})`);
@@ -74,4 +74,22 @@ test('round 6 #4: every Target Green flag faces both crew bays (dot > 0.5), and 
     const yaw = Math.atan2(n.x, n.z);
     assert.ok(Math.abs(Math.sin(yaw) - n.x) < 1e-12 && Math.abs(Math.cos(yaw) - n.z) < 1e-12);
   }
+});
+
+test('round 10 #6: one pole per green at every venue: the landmark flag until Tiered, the target pin (same spot) after', async () => {
+  const { readFileSync } = await import('node:fs');
+  const tv = readFileSync(new URL('../web/js/views/tiered.js', import.meta.url), 'utf8');
+  const tr = readFileSync(new URL('../web/js/terrain.js', import.meta.url), 'utf8');
+  assert.match(tv, /const px = 0;/, 'the Tiered pin stands at the bowl centre');
+  assert.ok(tv.includes('setFlags?.(!on)'), 'and hides the landmark flag while the Tiered view is up');
+  assert.match(tr, /const setFlags = on =>/, 'terrain.js has the hook');
+  assert.equal(MAP.FLAGS.length, MAP.BOWLS.length);
+  for (const b of MAP.BOWLS) {
+    const flags = MAP.FLAGS.filter(f => Math.hypot(f.x - b.x, f.z - b.z) < b.r);
+    assert.equal(flags.length, 1, 'one landmark flag on green ' + b.id);
+    assert.ok(Math.hypot(flags[0].x - b.x, flags[0].z - b.z) < 1e-9, 'at the centre, where the pin and cup are');
+  }
+  // the views: tiered (venue 2+) toggles the terrain flags; nothing else draws a pole on a green
+  const { VIEWS } = await import('../web/js/views/index.js').catch(() => ({ VIEWS: null }));
+  if (VIEWS) assert.ok(VIEWS.some(v => v.id === 'greens' && v.venue === 0));
 });

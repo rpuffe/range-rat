@@ -46,7 +46,8 @@ import county from './county.js';
 //
 import orbit from './orbit.js';
 //
-import owner from './owner.js';   // endless (round 7 #9): crew colours and the statue
+import owner from './owner.js';
+import greens from './greens.js';   // council round 10 #6: the landing marker at every venue, ON THE GREEN!   // endless (round 7 #9): crew colours and the statue
 
 export const VIEWS = [
   tiered,
@@ -60,6 +61,8 @@ export const VIEWS = [
   orbit,
   //
   owner,
+  //
+  greens,
 ];
 
 // main.js: createViews(ctx) runs the list above (views/registry.js has the runner; tests use it directly).

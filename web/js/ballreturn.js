@@ -7,7 +7,7 @@
 // snapshot's basket, so the heap is the readout (+1 draw call); while a Rat fills, balls drop from the dispenser's
 // chute into the bucket by them, drawn from the same rolling-ball pool.
 import * as THREE from 'three';
-import { PIPE_DIRECT, PIPE_WASHER, PIPE_SECS, BASKET, BASKET_SLOTS, DISPENSER, FILL_POINT } from './layout.js';
+import { PIPE_DIRECT, PIPE_WASHER, PIPE_SECS, BASKET, BASKET_SLOTS, DISPENSER, FILL_POINT, FIELD_RETURNS, FIELD_RETURN, fieldReturns } from './layout.js';
 
 const v3 = p => new THREE.Vector3(p[0], p[1], p[2]);
 
@@ -109,5 +109,81 @@ export function createBallReturn(scene, { pool = 24 } = {}) {
       balls.count = c; balls.visible = c > 0;
       if (c) balls.instanceMatrix.needsUpdate = true;
     },
+  };
+}
+
+// Council round 10 §C: the field ball returns (layout.js FIELD_RETURNS), the crew owns `tier` of them. Each is the
+// pond tube's red FHI box, taller, with its number on a plate ("RETURN 2"), a feed mouth, and its grey pneumatic pipe
+// bending into the ground (it runs home buried). All the owned ones are ONE merged mesh (vertex colours, one canvas
+// for the plates): +1 draw call, rebuilt only when the tier changes. thunk(id) gives the box a little kick.
+export function createFieldReturns(scene) {
+  const c = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+  let tex = null;
+  if (c) {
+    c.width = 256; c.height = 160;
+    const g = c.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 256, 160);
+    FIELD_RETURNS.forEach((r, i) => {
+      const y0 = i * 64;
+      g.fillStyle = '#fbf6e8'; g.fillRect(0, y0, 256, 64);
+      g.strokeStyle = '#2a2418'; g.lineWidth = 5; g.strokeRect(3, y0 + 3, 250, 58);
+      g.fillStyle = '#b3261e'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = 'bold 34px "Courier New", monospace'; g.fillText(r.label, 128, y0 + 27);
+      g.fillStyle = '#2a2418'; g.font = '600 13px system-ui, sans-serif'; g.fillText('FHI · BALLS IN · THUNK', 128, y0 + 51);
+    });
+    tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  }
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: tex });
+  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), mat);
+  mesh.name = 'fieldReturns'; mesh.castShadow = true; mesh.visible = false;
+  scene.add(mesh);
+  const WHITE_V = 0.06;    // the canvas's plain white strip (rows 128-160: v 0..0.2)
+  const { W, D, H } = FIELD_RETURN;
+
+  function build(tier) {
+    const pos = [], nor = [], col = [], uv = [];
+    const put = (geo, color, m, plate = -1) => {
+      const gg = (geo.index ? geo.toNonIndexed() : geo).applyMatrix4(m);
+      const cc = new THREE.Color(color), p = gg.attributes.position, n = gg.attributes.normal, u = gg.attributes.uv;
+      for (let i = 0; i < p.count; i++) {
+        pos.push(p.getX(i), p.getY(i), p.getZ(i)); nor.push(n.getX(i), n.getY(i), n.getZ(i)); col.push(cc.r, cc.g, cc.b);
+        if (plate >= 0 && u) uv.push(u.getX(i), 1 - (plate * 64 + 64) / 160 + u.getY(i) * 64 / 160);   // plate i's band
+        else uv.push(0.5, WHITE_V);
+      }
+    };
+    const T = (x, y, z, ry = 0, rx = 0, rz = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(1, 1, 1));
+    for (const r of fieldReturns(tier)) {
+      const i = FIELD_RETURNS.indexOf(r), X = r.x, Z = r.z;
+      put(new THREE.BoxGeometry(W + 0.2, 0.08, D + 0.2), 0x7d7f80, T(X, 0.04, Z));                // the concrete pad
+      put(new THREE.BoxGeometry(W, H, D), 0xb3261e, T(X, 0.08 + H / 2, Z));                      // the red box
+      put(new THREE.BoxGeometry(W + 0.06, 0.07, D + 0.06), 0x7d1812, T(X, 0.08 + H + 0.035, Z)); // its lid
+      put(new THREE.BoxGeometry(0.5, 0.16, 0.04), 0x1c1a18, T(X, 0.08 + H - 0.35, Z + D / 2 + 0.01));   // the feed mouth (+z: the bank side)
+      put(new THREE.BoxGeometry(0.56, 0.04, 0.12), 0xd9d4c4, T(X, 0.08 + H - 0.44, Z + D / 2 + 0.05)); // its lip
+      put(new THREE.BoxGeometry(0.06, 0.6, 0.06), 0x6b5a45, T(X, 0.08 + H + 0.35, Z));            // the plate's post
+      put(new THREE.PlaneGeometry(1.0, 0.25), 0xffffff, T(X, 0.08 + H + 0.62, Z + 0.035), i);            // the plate, both faces
+      put(new THREE.PlaneGeometry(1.0, 0.25), 0xffffff, T(X, 0.08 + H + 0.62, Z - 0.035, Math.PI), i);
+      // The pneumatic pipe: out of the back, an elbow, and down into the ground (it runs home buried).
+      put(new THREE.CylinderGeometry(0.09, 0.09, 0.5, 10), 0x9aa3a8, T(X, 0.5, Z - D / 2 - 0.25, 0, Math.PI / 2));
+      put(new THREE.SphereGeometry(0.11, 10, 6), 0x9aa3a8, T(X, 0.5, Z - D / 2 - 0.5));
+      put(new THREE.CylinderGeometry(0.09, 0.09, 0.5, 10), 0x9aa3a8, T(X, 0.25, Z - D / 2 - 0.5));
+      put(new THREE.CylinderGeometry(0.2, 0.24, 0.06, 12), 0x5a4a3a, T(X, 0.03, Z - D / 2 - 0.5));   // the dug-in collar
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.computeBoundingSphere();
+    mesh.geometry.dispose(); mesh.geometry = geo;
+    mesh.visible = pos.length > 0;
+  }
+
+  let tier = -1, kick = 0;
+  return {
+    mesh,
+    // The crew's 'returns' tier (0 none, 1 Field, 2 + Back). Rebuilds only on a change.
+    update(t) { t = Math.max(0, Math.min(FIELD_RETURNS.length, t | 0)); if (t !== tier) { tier = t; build(t); } },
+    thunk() { kick = 1; },
+    tick(dt) { if (kick > 0) { kick = Math.max(0, kick - dt * 4); mesh.position.y = Math.sin(kick * 9) * 0.02 * kick; } },
   };
 }

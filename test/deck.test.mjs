@@ -13,7 +13,7 @@ test('constants match the doc', () => {
   assert.equal(DECK.MAX, 6); assert.equal(DECK.WARN, 4); assert.equal(DECK.SOBER_SECS, 60);
   assert.deepEqual(DECK.FOOD, { fries: 1, hotdog: 2 });
   assert.equal(DECK.TAB, 5); assert.equal(DECK.FINE, 50); assert.equal(DECK.RESET_TO, 2); assert.equal(DECK.FALL_R, 1.5);
-  assert.deepEqual(DECK.SEATS, [-14, -6, 6, 14]);
+  assert.deepEqual(DECK.SEATS, [-10, -6, -2, 2, 6, 10], 'round 10 #3: the six upper bays');
 });
 
 test('serveEffect: beer +1, hot dog -2, fries -1, burnt nothing', () => {
@@ -42,17 +42,17 @@ test('60 s sobers by 1; a hot dog is -2, fries -1, floored at 0; a burnt beer ad
 });
 
 test('landing spot and the 1.5 m rule', () => {
-  const s = landingSpot(2); assert.deepEqual(s, { x: 6, z: 1.0 });
+  const s = landingSpot(4); assert.deepEqual(s, { x: 6, z: 1.0 });
   assert.equal(hitByFall({ x: 6, z: 2.2 }, s), true, '1.2 m');
   assert.equal(hitByFall({ x: 6, z: 3.0 }, s), false, '2 m');
 });
 
 test('the fall runs from the rail to the ground; the climb ends at the seat; the mugs go amber then red', () => {
   const a = fallPose(1, 0), b = fallPose(1, 1);
-  assert.deepEqual([a.x, a.y, a.z], [-6, 3, 2.4]); assert.ok(Math.abs(b.y) < 1e-9 && Math.abs(b.z - 1.0) < 1e-9);
+  assert.deepEqual([a.x, a.y, a.z], [-6, 3, 2.6]); assert.ok(Math.abs(b.y) < 1e-9 && Math.abs(b.z - 1.0) < 1e-9);
   assert.ok(Math.abs(b.spin + Math.PI) < 1e-9, 'a half spin');
   const path = climbPath(3), end = pointAlong(path, pathLength(path) + 1);
-  assert.equal(end.done, true); assert.deepEqual([end.x, end.y, end.z], [14, 3, 2.4]);
+  assert.equal(end.done, true); assert.deepEqual([end.x, end.y, end.z], [2, 3, 2.6]);
   assert.deepEqual([3, 4, 5, 6].map(mugTone), ['ok', 'loud', 'cut', 'cut']);
 });
 
@@ -111,9 +111,10 @@ test('the fine never takes cash below $0', () => {
 test('a Rat 1.2 m from the landing spot is knocked down, one at 2 m is not', () => {
   const { crew, p, serve } = setup();
   const near = crew.join('Near'), far = crew.join('Far'); crew.connect(near); crew.connect(far);
-  near.x = -14; near.z = 2.2; far.x = -14; far.z = 3.0;       // the first fall is seat 0, x -14, z 1.0
+  // round 10 #3: three Rats seat all six bays; every unordered beer goes to the drunkest, seat 0 (x -10), who falls
+  near.x = -10; near.z = 2.2; far.x = -10; far.z = 3.0;
   const hold = (r, x, z) => { r.x = x; r.z = z; };
-  for (let i = 0; i < 5; i++) { serve('beer'); hold(near, -14, 2.2); hold(far, -14, 3.0); }
+  for (let i = 0; i < 5; i++) { serve('beer'); hold(near, -10, 2.2); hold(far, -10, 3.0); }
   serve('beer', 'good');
   assert.ok(near.down > 0, 'knocked flat'); assert.equal(far.down > 0, false);
   assert.ok(crew.events.some(e => e.t === 'knock' && e.id === near.id && e.by === 'customer'));
@@ -204,8 +205,8 @@ test('server: a filled order pays 10 x BV, an unordered beer 5 x BV; expiry cost
   const bv = crew.valueNow().bv;
   assert.ok(Math.abs(plain - 5 * bv) < 0.1 * 5 * bv + 0.5, `unordered ${plain} vs ${5 * bv}`);
   run(30.2);
-  assert.ok(crew.events.some(e => e.t === 'deckOrder' && e.seat === 0));
-  assert.equal(crew.snapshot().mods.deck.order.seat, 0);
+  assert.ok(crew.events.some(e => e.t === 'deckOrder' && e.seat === 2), 'solo: the centre bays (round 10 #3)');
+  assert.equal(crew.snapshot().mods.deck.order.seat, 2);
   c0 = crew.cash; serve('beer'); const ordered = crew.cash - c0;
   assert.ok(Math.abs(ordered - 10 * crew.valueNow().bv) < 0.1 * 10 * bv + 0.5, `ordered ${ordered} vs ${10 * bv}`);
   assert.ok(crew.events.some(e => e.t === 'deckTab' && e.order));
@@ -273,7 +274,7 @@ test('round 7 #8: a filled round is +2 Drinks and a 25 x BV tab; at 4 Drinks it 
     const d = newDeck(); d.drinks = 3; d.order = { seat: 1, left: 30, round: true };
     const o = fillOrder(d, 'beer', 'good');
     assert.equal(o.round, true);
-    assert.deepEqual(applyServe(d, 'beer', 'good', o), { delta: 2, incident: false });
+    assert.deepEqual(applyServe(d, 'beer', 'good', o), { delta: 2, incident: false, seat: 1 });
     assert.equal(d.drinks, 5);
   }
   {
@@ -335,4 +336,62 @@ test('round 8 #5: a greedy cook (every order and round, no food) ends a shift wi
   }
   assert.ok((crew.stats.incidents ?? 0) >= 2, 'falls ' + crew.stats.incidents);
   assert.ok(xbv >= 150 - 1e-6, 'fines ' + xbv.toFixed(1) + ' x BV');
+});
+
+// ---- Council round 10 #3: mugs per drinker; #4: the world pauses with the Deck Cam ---------------------------------
+test('round 10 #3: the mugs always sum to Drinks; an order goes to its seat, an unordered beer and food to/from the drunkest', async () => {
+  const { drunkest } = await import('../web/js/deck.js');
+  const sum = d => d.mugs.reduce((a, b) => a + b, 0);
+  const d = newDeck(), seats = [1, 2, 3, 4];
+  assert.equal(applyServe(d, 'beer', 'good', null, seats).seat, 1, 'all level: round robin from the first seat in play');
+  d.order = { seat: 3, left: 30 };
+  assert.equal(applyServe(d, 'beer', 'good', fillOrder(d, 'beer', 'good'), seats).seat, 3, 'the order goes to the seat that ordered');
+  d.order = { seat: 3, left: 30 }; applyServe(d, 'beer', 'good', fillOrder(d, 'beer', 'good'), seats);
+  assert.deepEqual(d.mugs, [0, 1, 0, 2, 0, 0]);
+  assert.equal(applyServe(d, 'beer', 'good', null, seats).seat, 3, '"they always want another"');
+  assert.equal(drunkest(d, seats), 3);
+  applyServe(d, 'hotdog', 'good', null, seats); assert.deepEqual(d.mugs, [0, 1, 0, 1, 0, 0], 'the dog sobers the drunkest');
+  const rng = (() => { let s = 1; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
+  for (let i = 0; i < 400; i++) {
+    const r = rng();
+    if (r < 0.2) { d.order = { seat: seats[Math.floor(rng() * 4)], left: 30, ...(rng() < 0.3 ? { round: true } : {}) }; }
+    const item = r < 0.6 ? 'beer' : r < 0.8 ? 'hotdog' : r < 0.9 ? 'fries' : 'beer';
+    const out = applyServe(d, item, rng() < 0.1 ? 'burnt' : 'good', fillOrder(d, item, 'good'), seats);
+    if (out.incident) { const s = afterIncident(d, seats); assert.ok(seats.includes(s)); assert.equal(d.mugs[s] <= 0 || d.drinks === DECK.RESET_TO, true); }
+    if (rng() < 0.2) stepDeck(d, 60, seats);
+    assert.equal(sum(d), d.drinks, 'step ' + i);
+    assert.ok(d.mugs.every((m, k) => m >= 0 && (m === 0 || seats.includes(k))), 'mugs only on seats in play');
+  }
+});
+
+test('round 10 #3: the incident fells the drunkest (ties round robin from the last faller) and their mugs leave', () => {
+  const d = newDeck(); d.drinks = 5; d.mugs = [0, 1, 3, 1, 0, 0];
+  applyServe(d, 'beer', 'good', null);
+  assert.equal(d.drinks, 6);
+  assert.equal(afterIncident(d), 2, 'seat 2 had the most');
+  assert.equal(d.mugs[2], 0); assert.equal(d.drinks, 2); assert.equal(d.mugs.reduce((a, b) => a + b, 0), 2);
+  const e = newDeck(); e.drinks = 6; e.mugs = [3, 0, 0, 3, 0, 0];
+  assert.equal(afterIncident(e), 0); e.drinks = 6; e.mugs = [3, 0, 0, 3, 0, 0];
+  assert.equal(afterIncident(e), 3, 'a tie goes round robin from the last faller');
+});
+
+test('round 10 #3/#4: the faller leaves their bay at once; 3 s with no ball knockdowns on foot; every next swing +3 s', async () => {
+  const { UPPER } = await import('../web/js/customers.js');
+  const { crew, p, serve, run } = setup();
+  run(1);
+  const seat = 2, m = crew.mats[UPPER.FROM + seat];
+  m.st = 'playing'; m.cust = 999; m.balls = 10; m.t0 = crew.custT - 5;
+  const nexts = crew.mats.map(x => x.next);
+  for (let i = 0; i < 5; i++) serve('beer');
+  serve('beer');
+  const ev = crew.events.find(e => e.t === 'deckFall');
+  assert.equal(ev.seat, seat, 'solo: the beers piled on the first centre bay');
+  assert.equal(m.st, 'fell'); assert.equal(m.balls, 0);
+  assert.ok(crew.mats.every((x, i) => x.next >= nexts[i] + DECK.LOOK_SECS - 1e-9 - 0.0), 'every customer stops to look');
+  assert.equal(crew.snapshot().mods.deck.mugs.reduce((a, b) => a + b, 0), 2);
+  // a fast ball straight through Pat during the look: no knockdown; after it, a knockdown
+  const shoot = () => { p.x = 0; p.z = -20; p.down = 0; crew.addBall({ x: 0, y: 1, z: -17, vx: 0, vy: 0, vz: -30, kind: 'range' }); run(0.3); return p.down > 0; };
+  assert.equal(shoot(), false, 'immune while everyone looks');
+  run(DECK.LOOK_SECS);
+  assert.equal(shoot(), true, 'and hit after');
 });

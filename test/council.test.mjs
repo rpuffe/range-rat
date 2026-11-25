@@ -655,7 +655,7 @@ test('hitting the quota: bonus of 15% of the day\'s cash, a stamp, a quota event
   assert.equal(q.clean, 100, 'owner playtest 3 §1.2: "Clean 100% · needed 60%"');
   assert.equal(q.need, 60);
   assert.equal(q.bonus, 2.82);
-  assert.equal(q.stamps, 1);
+  assert.equal(q.reviews, 1);
   assert.equal(q.title, 'Range Rat');
   const evs = crew.flush().ev.filter(e => e.t === 'quota');
   assert.equal(evs.length, 1);
@@ -686,7 +686,7 @@ test('missing the quota: no bonus, no stamp, still an event and a report entry',
   assert.equal(q.bv, 1.25);
   assert.equal(q.target, 1.63);
   assert.ok(q.clean < q.need, `Clean ${q.clean}% · needed ${q.need}%`);
-  assert.equal(q.stamps, 0);
+  assert.equal(q.reviews, 0);
   assert.equal(crew.flush().ev.filter(e => e.t === 'quota').length, 1);
 });
 
@@ -742,7 +742,7 @@ test('titles come from the venue, never from stamps; endless mode is Owner', () 
   VENUE_RULES.forEach((r, v) => assert.equal(title({ venue: v }), r.title, 'venue ' + v));
   assert.equal(title({ venue: 5, endless: true }), 'Owner');
   assert.equal(makeCrew({ stamps: 3 }).crew.snapshot().title, 'Range Rat');
-  assert.equal(makeCrew({ stamps: 3 }).crew.snapshot().stamps, 3);
+  assert.equal(makeCrew({ stamps: 3 }).crew.snapshot().reviews, 3);
 });
 
 test('stamps and commendations are saved and restored', () => {
@@ -750,14 +750,14 @@ test('stamps and commendations are saved and restored', () => {
   assert.equal(crew.stamps, 4);
   assert.equal(crew.commendations, 3);
   const save = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.equal(save.stamps, 4);
+  assert.equal(save.reviews, 4);
   assert.equal(save.commendations, 3);
   const { crew: back } = makeCrew(save);
   assert.equal(back.stamps, 4);
   assert.equal(back.commendations, 3);
   assert.equal(back.title(), 'Range Rat');
   const s = back.snapshot();
-  assert.equal(s.stamps, 4);
+  assert.equal(s.reviews, 4);
   assert.equal(s.commendations, 3);
   assert.equal(s.value.rate, 1.44, '1.15 x the clean kit 1.25');
 });
@@ -767,7 +767,7 @@ test('a stamp earned today is in the save', () => {
   openShift(crew, 0);
   crew.bank(1, 'x');
   run(6);
-  assert.equal(crew.toSave().stamps, 3);
+  assert.equal(crew.toSave().reviews, 3);
   assert.equal(crew.toSave().day, 3);
   assert.equal(makeCrew(crew.toSave()).crew.stamps, 3);
   assert.equal(makeCrew(crew.toSave()).crew.title(), 'Range Rat');

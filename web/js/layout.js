@@ -45,3 +45,26 @@ export const BASKET_SLOTS = Array.from({ length: 12 }, (_, i) => {
   const row = i < 5 ? 0 : i < 9 ? 1 : i < 11 ? 2 : 3, k = [0, 5, 9, 11][row], m = [5, 4, 2, 1][row];
   return { x: BASKET.x - 0.85 + (i - k - (m - 1) / 2) * 0.34, y: 0.15 + row * 0.26, z: BASKET.z + 0.05 };
 });
+
+// Council round 10 §C: the field ball returns (the crew row 'returns', sim.js perks().returns: 1 = the Field
+// return, 2 = + the Back return). A red FHI box out in the field: Ⓧ there sends your pocket home through its
+// buried pneumatic pipe, and it THUNKs into the main RETURN TUBE_SECS later (dive.js TUBE.DELAY, the pond tube's
+// queue), through the washer like any bank. Rats on foot and drones use them; the cart and teenagers never do.
+export const FIELD_RETURNS = [
+  { id: 'field', tier: 1, x: 10, z: -62, label: 'RETURN 2' },   // between Red and Yellow, north of both creek branches
+  { id: 'back', tier: 2, x: -6, z: -128, label: 'RETURN 3' },   // by Blue (the Club)
+];
+export const FIELD_RETURN = { REACH: 2.0, W: 0.8, D: 0.6, H: 1.5 };   // the pond tube's box, taller
+// The returns the crew owns (from the row's tier).
+export const fieldReturns = (tier = 0) => FIELD_RETURNS.filter(r => r.tier <= (tier | 0));
+// The owned field return a point is at (within REACH), or null.
+export function atFieldReturn(p, tier = 0) {
+  for (const r of fieldReturns(tier)) if (Math.hypot(p.x - r.x, p.z - r.z) < FIELD_RETURN.REACH) return r;
+  return null;
+}
+// The nearest place to bank from (x, z): the main return or an owned field return. { x, z, id } (id 'main' for RETURN).
+export function nearestReturn(x, z, tier = 0) {
+  let best = { x: RETURN.x, z: RETURN.z, id: 'main' }, bd = Math.hypot(x - RETURN.x, z - RETURN.z);
+  for (const r of fieldReturns(tier)) { const d = Math.hypot(x - r.x, z - r.z); if (d < bd) { bd = d; best = { x: r.x, z: r.z, id: r.id }; } }
+  return best;
+}

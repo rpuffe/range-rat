@@ -40,7 +40,8 @@ import county from './county.mjs';
 //
 import orbit from './orbit.mjs';
 //
-import nudge from './nudge.mjs';   // council round 6 #10: the Muni day-2 suggestions (venue 0)
+import nudge from './nudge.mjs';
+import greens from './greens.mjs';   // council round 10 #6: on the green (venues 0-1; Tiered on, tiered.mjs's TARGET)   // council round 6 #10: the Muni day-2 suggestions (venue 0)
 
 export const MODULES = [
   tiered,
@@ -54,6 +55,8 @@ export const MODULES = [
   orbit,
   //
   nudge,
+  //
+  greens,
 ];
 
 export const HOOKS = ['init', 'startShift', 'tick', 'endShift', 'serve', 'ping', 'knockDown', 'input', 'launchMod', 'onRest',

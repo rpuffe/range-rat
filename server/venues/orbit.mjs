@@ -25,8 +25,8 @@ export default {
 
   // 5% of customer shots go straight up. (Lead balls stay in the pond business.) None while the Last Bucket is on
   // (round 7 #5: the crew is clearing the sky for Ball No. 1, and the sky must not refill behind them).
-  launchMod(crew, st, shot, { lead }) {
-    if (lead || shot.kind === 'one' || (crew.lastBucket && crew.lastBucket.phase !== 'done')) return undefined;
+  launchMod(crew, st, shot, { lead, upper }) {   // council round 10 #3: the upper bays never orbit (keeps the debris tuned)
+    if (lead || upper || shot.kind === 'one' || (crew.lastBucket && crew.lastBucket.phase !== 'done')) return undefined;
     return crew.rng() < ORBIT.SHOT ? orbitShot(shot) : undefined;
   },
 

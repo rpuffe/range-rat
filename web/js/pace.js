@@ -13,7 +13,7 @@ export function makeRecord(report, ctx = {}) {
   const r = report ?? {}, v = ctx.value ?? {};
   return {
     day: num(r.day), venue: num(r.venue), venueName: String(ctx.venueName ?? r.title ?? ''),
-    minutes: r2(ctx.minutes), cash: r2(r.cash), banked: num(r.deposited), stamps: num(r.quota?.stamps),
+    minutes: r2(ctx.minutes), cash: r2(r.cash), banked: num(r.deposited), stamps: num(r.quota?.reviews ?? r.quota?.stamps),   // round 10: the review's count is `reviews`
     quotaHit: r.quota ? !!r.quota.hit : null,
     kpi: { bv: r2(v.bv), rate: r2(v.rate), upkeep: r2(v.upkeep), hustle: r2(v.hustle), curb: r2(v.curb), venue: v.kpi == null ? null : r2(v.kpi) },
     incidents: num(r.incidents), debris: ctx.debris == null ? null : num(ctx.debris),

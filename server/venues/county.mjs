@@ -1,7 +1,9 @@
 // The County (venue 4): customers slice into the Yards, Zoning Compliance counts the strays, drones fetch them.
 // Council round 4, section 3.3. Pure rules live in web/js/county.js; the look is web/js/views/county.js.
 import { SIM, KIND_W } from '../../web/js/sim.js';
-import { SLICE, ZONING, DRONES, strayCount, zoning, droneCount, droneTarget, droneStep } from '../../web/js/county.js';
+import { SLICE, ZONING, DRONES, DISPATCH, strayCount, zoning, droneCount, droneTarget, droneStep, newZone, zoneLive } from '../../web/js/county.js';
+import { nearestReturn } from '../../web/js/layout.js';
+import { tubeFeed } from '../../web/js/dive.js';
 
 const r2 = v => Math.round(v * 100) / 100;
 const PARK = { x: SIM.STAND.x, z: SIM.STAND.z, stand: true, idle: true };
@@ -17,28 +19,40 @@ function fleet(crew, st) {                      // keep the drone list at the ro
 // stepDrones lives here, NOT in stepHelpers. A drone flies at y 6 ignoring the creek, the kerb and wading; takes strays
 // first, then the nearest ball; carries 25; dips to y 1 to grab; banks at the stand. It is never knocked down: it is
 // not in crew.helpers or crew.players, so no ball, cart or mower ever asks it.
+// Council round 10 §C/§D: a drone banks at the NEAREST return (a field return's pipe THUNKs its load home in 6 s), and a
+// dispatch zone (st.zone) is cleared first.
+const homeFor = (crew, d) => { const r = nearestReturn(d.x, d.z, crew.perks?.returns ?? 0); return { x: r.x, z: r.z, stand: true, at: r.id }; };
 export function stepDrones(crew, st, dt) {
   fleet(crew, st);
   if (!st.drones.length) return;
   const working = crew.working();
+  st.t = (st.t ?? 0) + dt;
+  if (st.zone && !zoneLive(st.zone, st.t)) { st.zone = null; crew.dirty = true; }
+  const zone = st.zone;
   const claimed = new Set(st.drones.map(d => d.target).filter(v => v != null));
   for (const d of st.drones) {
     let goal = null;
-    if (d.pocket >= DRONES.POCKET || (d.pocket > 0 && !working)) goal = { x: SIM.STAND.x, z: SIM.STAND.z, stand: true };
+    if (d.pocket >= DRONES.POCKET || (d.pocket > 0 && !working)) goal = homeFor(crew, d);
     else if (working) {
       let b = d.target != null ? crew.balls.get(d.target) : null;
+      // A dispatch re-aims each drone once (it drops a target outside the zone for one inside).
+      if (b && zone && Math.hypot(b.x - zone.x, b.z - zone.z) > zone.r && d.retarget !== zone.until) { d.retarget = zone.until; b = null; }
       if (!b || !b.rest) {
         claimed.delete(d.target); d.target = null;
-        b = droneTarget(d, crew.balls.values(), claimed);
+        b = droneTarget(d, crew.balls.values(), claimed, zone);
         if (b) { d.target = b.id; claimed.add(b.id); }
       }
       if (b) goal = { x: b.x, z: b.z, grab: true, ball: b };
-      else if (d.pocket > 0) goal = { x: SIM.STAND.x, z: SIM.STAND.z, stand: true };
+      else if (d.pocket > 0) goal = homeFor(crew, d);
     }
     const there = droneStep(d, goal ?? PARK, dt);
     if (!there || !goal) continue;
     if (goal.stand) {
-      crew.bank(d.pocket, d.id, 'helper', d.pocketW || d.pocket);
+      if (goal.at && goal.at !== 'main' && crew.tube) {   // a field return: into its pipe, banked at the return 6 s later
+        tubeFeed(crew.tube, crew.tubeClock ?? 0, { n: d.pocket, w: d.pocketW || d.pocket, factor: 1 });
+        Object.assign(crew.tube.q.at(-1), { by: d.id, kind: 'helper' });
+        crew.events.push({ t: 'tube', id: d.id, at: goal.at });
+      } else crew.bank(d.pocket, d.id, 'helper', d.pocketW || d.pocket);
       d.pocket = 0; d.pocketW = 0;
     } else if (goal.ball) {
       crew.balls.delete(goal.ball.id);
@@ -57,7 +71,7 @@ export default {
   init() { return { drones: [], strays: 0, z: 0, kpi: 1, said: false }; },
 
   startShift(crew, st) {
-    st.z = 0; st.strays = 0; st.kpi = 1;
+    st.z = 0; st.strays = 0; st.kpi = 1; st.zone = null;
     for (const d of st.drones) { d.x = SIM.STAND.x; d.z = SIM.STAND.z + 1.5; d.y = DRONES.ALT; d.pocket = 0; d.pocketW = 0; d.target = null; }
   },
 
@@ -69,6 +83,17 @@ export default {
       st.strays = strayCount(crew.balls.values());
       st.kpi = zoning(st.strays);
     }
+  },
+
+  // Council round 10 §D: Ⓨ held on foot (drones owned): "Drones, here!" pins a 20 m zone at you for 30 s.
+  input(crew, st, p, a) {
+    if (a.t !== 'dispatch') return false;
+    if (!st.drones.length || !crew.working() || p.down > 0 || crew.driving(p) || p.diving) return true;
+    st.zone = newZone(p.x, p.z, st.t ?? 0);
+    for (const d of st.drones) d.retarget = null;
+    crew.events.push({ t: 'dispatch', by: p.id, x: +p.x.toFixed(1), z: +p.z.toFixed(1), r: DISPATCH.R, secs: DISPATCH.SECS });
+    crew.dirty = true;
+    return true;
   },
 
   endShift(crew, st) {                           // the drones bank what they carry, like the helpers
@@ -86,6 +111,7 @@ export default {
 
   snapshot: (crew, st) => ({
     strays: st.strays, kpi: r2(st.kpi),
+    ...(st.zone ? { zone: { x: r2(st.zone.x), z: r2(st.zone.z), r: st.zone.r, left: r2(st.zone.until - (st.t ?? 0)) } } : {}),
     drones: st.drones.map(d => ({ id: d.id, x: r2(d.x), y: r2(d.y), z: r2(d.z), yaw: r2(d.yaw), n: d.pocket })),
   }),
 };

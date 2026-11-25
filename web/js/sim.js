@@ -5,6 +5,7 @@
 // lives in map.js; world-dependent physics takes `world` ({venue}) as an argument.
 import { groundContact, ballFeatures, startDrift, cartBlocked, keepInField, fieldFor } from './map.js';
 import { DIVE_ROW, POND_ROW } from './dive.js';
+export { CREEK_DIVE } from './dive.js';   // council round 10 #5: the creek dive's numbers live with the pond's
 // Venue shop rows (council round 4, wave C): each venue build uncomments ITS OWN import here and its row in
 // SHOP below, nothing else. The row's file must import nothing from sim.js (see dive.js: a cycle is a TDZ crash).
 import { GUTTERS_ROW } from './tiered.js';
@@ -114,6 +115,9 @@ export const MATS = Array.from({ length: 10 }, (_, i) => ({ i, x: -18 + i * 4 })
 // How many mats have a customer: more crew, more customers. Balanced for 4.
 // Owner playtest 3 §4: "Open every bay" (up.bays) puts all ten in play at any crew size, at every venue.
 export const activeMats = (players, up = null) => (up?.bays ?? 0) >= 1 ? MATS.length : Math.min(MATS.length, 4 + 2 * Math.max(1, players));
+// Council round 10 §3: the Upper Deck's six middle bays (Tiered on). Solo 2, 2P 4, 3P+ 6; "Open every bay" opens all 6.
+export const UPPER_BAYS = 6;
+export const activeUpper = (players, up = null) => (up?.bays ?? 0) >= 1 ? UPPER_BAYS : Math.min(UPPER_BAYS, 2 * Math.max(1, players));
 
 export function mulberry32(a) {
   return () => {
@@ -221,12 +225,20 @@ export const SHOP = [
     { name: 'Caged picker cart', cost: 600, desc: 'Drive over balls to scoop them up. Holds 150, unloads itself at the ball return, and the cage keeps the driver safe. Hit it from a crew bay for prizes.' },
     { name: 'Wide gang reels', cost: 1500, desc: 'Scoops a lane almost twice as wide, holds 300, a bit faster.' },
     { name: 'A second cart', cost: 300000, minVenue: 3, desc: 'Another caged cart with wide reels, parked beside the first. One laps for the crowd, one harvests. Each pings on its own.' },
+    // Council round 10 §D: an undriven cart laps the Ping Track itself (half credit); hold Ⓨ at it to harvest.
+    { name: 'Autopilot', cost: 250000, minVenue: 3, desc: 'An empty cart drives the Ping Track by itself. Ping it from a bay. Hold Ⓨ at it to send it harvesting.' },
   ] },
   { id: 'shed', title: 'Snack shed', minVenue: 1, tiers: [
     { name: 'Boarded up', desc: 'The old shed. Something smells like fryer oil.' },
-    { name: 'Snack shed', cost: 200, desc: 'Reopens the shed: peel potatoes by hand for Fry Satisfaction (Upkeep up to +50%).' },
+    { name: 'Snack shed', cost: 200, desc: 'Reopens the shed. Fries raise what every ball pays.' },
     { name: 'Electric peeler', cost: 600, desc: 'Peels on its own: a basket every 10 s. Nobody asked how.' },
     { name: 'Fry conveyor', cost: 2000, desc: 'A basket every 3 s. Corporate does not explain why a driving range needs this many fries.' },
+  ] },
+  // Council round 10 §C: field ball returns (perks.returns). Ⓧ at one sends your pocket home in 6 s.
+  { id: 'returns', title: 'Field ball returns', minDay: 3, tiers: [
+    { name: 'One return', desc: 'Every ball walks home to the ball return.' },
+    { name: 'The Field return', cost: 150, minDay: 3, desc: 'A second return by the Yellow flag. Its pipe runs home. THUNK.' },
+    { name: 'The Back return', cost: 1500, minVenue: 1, desc: 'A third return out by the Blue flag. Same pipe, longer. THUNK.' },
   ] },
   { id: 'helpers', title: 'Hired help', tiers: [
     { name: 'Nobody', desc: 'It is just the crew.' },
@@ -349,10 +361,12 @@ export function perks(up = {}) {
     walk: SIM.WALK * (1 + 0.15 * (up.shoes ?? 0)),
     knockSecs: up.hardhat ? 1 : SIM.KNOCK_SECS,
     cart: up.cart ?? 0,
-    carts: [0, 1, 1, 2][up.cart ?? 0],               // how many carts the crew owns (tier 3: the fleet)
-    cartCap: [0, 150, 300, 300][up.cart ?? 0],   // owner playtest 3 §5.3: half the hopper, a fast unload
-    cartReel: [0, 2.4, 4.2, 4.2][up.cart ?? 0],
-    cartSpeed: [0, 9, 11, 11][up.cart ?? 0],
+    carts: [0, 1, 1, 2, 2][up.cart ?? 0],               // how many carts the crew owns (tier 3: the fleet)
+    cartCap: [0, 150, 300, 300, 300][up.cart ?? 0],   // owner playtest 3 §5.3: half the hopper, a fast unload
+    cartReel: [0, 2.4, 4.2, 4.2, 4.2][up.cart ?? 0],
+    cartSpeed: [0, 9, 11, 11, 11][up.cart ?? 0],
+    autopilot: (up.cart ?? 0) >= 4,                 // council round 10 §D: an undriven cart laps (or harvests) by itself
+    returns: Math.max(0, Math.min(2, up.returns ?? 0)),   // council round 10 §C: 1 = the Field return, 2 = + the Back return
     shed: up.shed ?? 0,
     autoFry: [0, 0, 10, 3][up.shed ?? 0],          // seconds per basket, 0 = by hand only
   };
@@ -457,20 +471,19 @@ export const QUOTA_KPI = 0.5;
 // ---- promotion and the venue ladder (council round 2, §4.1–4.2) -------------
 export const VENUE_RULES = [
   { name: 'Muni Range', title: 'Range Rat' },
-  { name: 'Range Club', title: 'Club Retrieval Associate', fee: 2500, writeOff: 1_200_000_000, memo: "1,200,000,000 balls have been reclassified as members' property.", pa: 'club', eatEvery: 5 },
-  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 50000, writeOff: 1_500_000_000, memo: '1,500,000,000 balls have been reclassified as experiential.', pa: 'tiered', eatEvery: 5,
+  { name: 'Range Club', title: 'Club Retrieval Associate', fee: 2500, writeOff: 1_200_000_000, memo: "1,200,000,000 balls have been reclassified as members' property.", pa: 'club', eatEvery: 8 },
+  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 50000, writeOff: 1_500_000_000, memo: '1,500,000,000 balls have been reclassified as experiential.', pa: 'tiered', eatEvery: 8,
     kpi: 'BAY UTILIZATION', howto: 'New: Target Greens. Balls in a cup block the sensors. Bay Utilization is now on the Board. The Upper Deck is now serving.' },
-  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 400000, writeOff: 800_000_000, memo: '800,000,000 balls have been sold to fans as souvenirs.', pa: 'stadium', eatEvery: 5,
+  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 600000, writeOff: 800_000_000, memo: '800,000,000 balls have been sold to fans as souvenirs.', pa: 'stadium', eatEvery: 8,
     kpi: 'CROWD SENTIMENT', howto: 'New: the Ping Track. The crowd grades you now. The crowd has never played golf.' },
-  { name: 'County Range', title: 'County Retrieval Director', fee: 2_000_000, writeOff: 712_000_000, memo: '712,000,000 balls have been reclassified as the county.', pa: 'county', eatEvery: 5,
+  { name: 'County Range', title: 'County Retrieval Director', fee: 3_000_000, writeOff: 712_000_000, memo: '712,000,000 balls have been reclassified as the county.', pa: 'county', eatEvery: 8,
     kpi: 'ZONING COMPLIANCE', howto: 'New: the Yards. Your customers now hit into the county. The county has noticed.' },
-  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 10_000_000, writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 5,
+  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 15_000_000, writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 8,
     kpi: 'ORBITAL DEBRIS', howto: 'The Lift is open. Keep the sky clear.' },
 ];
 // Round 4: VENUE_RULES[v].kpi is the Board's fourth gauge label (only the current venue's KPI is graded),
 // and .howto is the reveal's second memo card.
 export const revealCards = (venue, memo) => [memo, VENUE_RULES[venue]?.howto].filter(Boolean);
-export const PROMO_STAMPS = 3;
 export const ONE_YEAR = 1958;
 // Quota from the Club on: a share of the headroom, growing with days at the venue.
 // Softened from the council's 0.45..0.8 so a casual crew makes quota without every chore covered.
@@ -515,6 +528,10 @@ export const FRIES = {
   EAT_EVERY: 8,               // customer swings per basket eaten
   SERVE_MIN_SECS: 4,          // the kitchen minigame: at most one serve this often per Rat
 };
+// Council round 10 #2: a hot dog FEDs the crew. Every ball the crew banks pays × fed (a separate factor like
+// Gary's Seal: past the Hustle cap; Upkeep never sees it). Good +0.05, perfect +0.10, capped at ×1.25, and it
+// wears off 0.05 every 20 s of working time (the cleanup minute counts). Reset each morning.
+export const FED = { GOOD: 0.05, PERFECT: 0.10, MAX: 1.25, DECAY: 0.05, EVERY: 20 };
 export const atShed = p => Math.hypot(p.x - FRIES.SHED.x, p.z - FRIES.SHED.z) < FRIES.REACH;
 
 export const inPond = p => Math.hypot(p.x - POND.x, p.z - POND.z) < POND.r;

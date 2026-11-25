@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SIM, launch, leadLaunch, swingLaunch, spill, advanceBall, ballValue, perks, clampToField, mulberry32, MATS, BAYS,
   upkeepCeiling, VENUE_RULES, revealCards, stepCart } from '../web/js/sim.js';
-import { MAP, cartBlocked, fieldFor, netsFor, netClamp, ballFeatures, cartSpeedAt, onTrack, trackDist, kerbBlocked } from '../web/js/map.js';
+import { MAP, SNAG, cartBlocked, fieldFor, netsFor, netClamp, ballFeatures, cartSpeedAt, onTrack, trackDist, kerbBlocked } from '../web/js/map.js';
 import { Crew } from '../server/crew.mjs';
 import { VenueHooks, MODULES, checkModule } from '../server/venues/index.mjs';
 import { createViews } from '../web/js/views/registry.js';
@@ -105,15 +105,21 @@ test('GOLDEN: cartBlocked, fieldFor, clampToField and BV are unchanged at venues
 // Both re-recorded for the owner layout (2026-11-24), checked one cause at a time: the Muni run moved only with the
 // customers' walk to the basket by the dispenser (was 10b46ff0), the Club run only with the bank point moving to the
 // ball return, where its two teenagers bank (was 71c4c5b). With both put back, the old fingerprints come out exactly.
+// Council round 10 #5: the Club run re-recorded for the creek snags (one cause: SNAG.ON = 0 gives a1dfbc50 again, below).
 test('GOLDEN: a whole seeded crew plays out identically at the Muni and the Club (no modules)', () => {
   assert.equal(fnv(crewRun(null)), '47588632');
+  assert.equal(fnv(crewRun(CLUB_SAVE)), 'dc37044f');
+});
+
+test('GOLDEN: with the creek snags off, the Club run is the pre-round-10 fingerprint', (t) => {
+  SNAG.ON = 0; t.after(() => { SNAG.ON = 1; });
   assert.equal(fnv(crewRun(CLUB_SAVE)), 'a1dfbc50');
 });
 
 test('GOLDEN: a module that lives at venue 2+ changes nothing at venues 0-1', () => {
   const noisy = { id: 'noisy', venue: 2, kpi: () => 0, launchMod: (c, st, shot) => ({ ...shot, vx: shot.vx + 9 }), tick: c => { c.cash += 1000; } };
   assert.equal(fnv(crewRun(null, { modules: [noisy] })), '47588632');
-  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), 'a1dfbc50');
+  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), 'dc37044f');
 });
 
 // ---- the fourth gauge ------------------------------------------------------------------------------------------------

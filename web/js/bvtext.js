@@ -24,12 +24,16 @@ export const pct = f => Math.round(clamp01(f) * 100);
 // Whole-% target: the Muni's day 2–4 read 60%, day 5 70%, day 6+ 80%; the Club's venue day 1 35%.
 export const targetPct = (q, ceiling) => (q == null ? null : pct(targetFrac(q, ceiling)));
 
-// The bar's word: CLEAN at the Muni (it's only the grounds), UPKEEP from the Club (council 9).
-export const barWord = venue => ((venue ?? 0) === 0 ? 'CLEAN' : 'UPKEEP');
+// The bar's word: CLEAN everywhere (council round 10, main session: player-facing text says "clean"; it was UPKEEP
+// from the Club, council 9). Upkeep stays the code's name for it.
+export const barWord = () => 'CLEAN';
 export const whyLine = venue => ((venue ?? 0) === 0 ? 'Clean grounds pay up to +50%' : 'Each gauge pays up to +50%');
 
-// What one ball pays right now. `seal` defaults to the value's own (crew.mjs valueNow), else 1.
-export const priceOf = (v, seal = v?.seal ?? 1) => c2((v?.bv ?? 0) * (v?.hustle ?? 1) * (seal ?? 1));
+// What one ball pays right now. `seal` defaults to the value's own (crew.mjs valueNow), else 1; so does `fed`
+// (council round 10 #2: the hot dogs' FED factor, v.fed while fed, a separate factor like the Seal).
+export const priceOf = (v, seal = v?.seal ?? 1, fed = v?.fed ?? 1) => c2((v?.bv ?? 0) * (v?.hustle ?? 1) * (seal ?? 1) * (fed ?? 1));
+// "×1.2", "×1.15": the FED factor, trailing zeros dropped (the HUD's "· ×1.2 fed", the Board's chip).
+export const fedText = f => '×' + (Math.round((f ?? 1) * 100) / 100).toFixed(2).replace(/0$/, '').replace(/.0$/, '');
 
 // "$3.1M", "$412k", "$9,870": the endless HUD's short money.
 export function shortMoney(n) {
@@ -43,13 +47,15 @@ export function shortMoney(n) {
 
 // The HUD's line: "$2.62 a ball · 62% clean · need 60%" (Muni), "$30 a ball · 48% upkeep · need 40%" (Club and up),
 // "$19,240 a ball · today $3.1M" (endless). No quota (day 1): just the price and the bar.
-export function bvLine({ value, quota = null, venue = 0, endless = false, pace = null, seal } = {}) {
+// Council round 10 #2: "· ×1.2 fed" while the crew is FED (fed > 1; the value's own v.fed when not passed).
+export function bvLine({ value, quota = null, venue = 0, endless = false, pace = null, seal, fed } = {}) {
   if (!value) return '';
-  const price = money(priceOf(value, seal));
-  if (endless || (quota == null && pace)) return `${price} a ball${pace ? ' · today ' + shortMoney(pace.cash) : ''}`;
+  const f = fed ?? value.fed ?? 1;
+  const price = money(priceOf(value, seal, f)), fedPart = f > 1 + 1e-9 ? ` · ${fedText(f)} fed` : '';
+  if (endless || (quota == null && pace)) return `${price} a ball${fedPart}${pace ? ' · today ' + shortMoney(pace.cash) : ''}`;
   const ceil = ceilingOf(value), word = barWord(venue).toLowerCase();
   const now = `${pct(cleanFrac(value.upkeep, ceil))}% ${word}`;
-  return quota?.q != null ? `${price} a ball · ${now} · need ${targetPct(quota.q, ceil)}%` : `${price} a ball · ${now}`;
+  return quota?.q != null ? `${price} a ball${fedPart} · ${now} · need ${targetPct(quota.q, ceil)}%` : `${price} a ball${fedPart} · ${now}`;
 }
 
 // The morning memo (≤ 8 words): "Today: 60% clean by the bell." / "Gary visits today. 60% clean by the bell."
@@ -95,6 +101,24 @@ export function spotlessGain({ rate, hustle = 1, seal = 1, washFrom = 0, fixture
   return g >= 0.01 ? g : null;
 }
 export const gainText = g => `+${money(g)} a ball`;
+
+// ---- Council round 10 #2: food that pays, and says so (the menu cards' live values; kitchen.js and the floats) ----
+// Fries raise what every ball pays: a full fryer is one Upkeep gauge, +50% of the Rate, so each basket in stock is
+// rate × 0.5 / FRIES.MAX a ball (+$0.47 at the Club), times Hustle, the Seal and FED. `baskets` is what a serve adds
+// (capped at the fryer's room when `stock`/`max` are given).
+export function friesGain({ rate, baskets = 3, stock = null, max = 20, hustle = 1, seal = 1, fed = 1 }) {
+  const b = stock == null ? baskets : Math.max(0, Math.min(baskets, max - stock));
+  return c2((rate ?? 0) * 0.5 * b / Math.max(1, max) * (hustle ?? 1) * (seal ?? 1) * (fed ?? 1));
+}
+export const friesCard = g => `FRIES · +${money(g)} A BALL`;                       // "FRIES · +$1.41 A BALL"
+export const dogCard = step => `HOT DOG · +${Math.round((step ?? 0.05) * 100)}% EVERY BALL`;   // "HOT DOG · +5% EVERY BALL"
+export const beerCard = tab => `BEER · ${money(Math.round(tab ?? 0))} TAB`;          // "BEER · $2,900 TAB"
+export const fedFloat = step => `+${Math.round((step ?? 0.05) * 100)}% a ball`;        // the float over the shed on a dog
+export const tabFloat = tab => `+${money(Math.round(tab ?? 0))} tab`;                // over the lounger when the mug lands
+// The Board's fryer label: "FRIES 14/20" (baskets in stock / the fryer's size).
+export const friesLabel = (stock, max = 20) => `FRIES ${Math.max(0, Math.floor(stock ?? 0))}/${max}`;
+// The report row: "Hot dogs: +$8,300" (stats.fedCash).
+export const fedRow = cash => `Hot dogs: +${money(Math.round(cash ?? 0))}`;
 
 // The pips, left to right: the sign, the return, then each mat in play. [{ id, group, colour }]
 export function pipsOf(fixtures, nMats = 10) {

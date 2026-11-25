@@ -8,6 +8,8 @@
 //
 // This module deliberately imports nothing (sim.js is meant to import IT). The handful of constants it shares
 // with sim.js (BALL_R, STEP, ROLL_DECEL, POND) are mirrored below and pinned equal by test/map.test.mjs.
+// Council round 10 #5: the creek dive's numbers come from dive.js, which imports nothing (no cycle).
+import { CREEK_DIVE } from './dive.js';
 
 export const MAP = {
   // What walkers and the cart are held inside. The nets sit half a metre outside it (NETS), because a ball
@@ -354,27 +356,34 @@ export function startDrift(b, world) {
   const L = landBall(b, world);
   if (L.action !== 'drift') return null;
   b.drift = { branch: L.branch, s0: L.s0, v: MAP.CREEK.DRIFT, s: L.s0 };   // s0 is what the event carries; s is progress
+  const sn = snagS(b.id, b.kind, L.branch, L.s0);
+  if (sn != null) b.drift.snag = sn;   // council round 10 #5: it will snag on the creekbed there
   b.drifting = true;
   return b.drift;
 }
-export const driftEvent = b => ({ t: 'drift', id: b.id, branch: b.drift.branch, s0: b.drift.s0, v: b.drift.v });
+export const driftEvent = b => ({ t: 'drift', id: b.id, branch: b.drift.branch, s0: b.drift.s0, v: b.drift.v, ...(b.drift.snag != null ? { snag: +b.drift.snag.toFixed(2) } : {}) });
 export const driftSecs = (branch, s0, v = MAP.CREEK.DRIFT) => Math.max(0, END_S[branch]() - s0) / v;
 
 // Pure: where is a drift `t` seconds after it started? { x, z, s, end: null | 'sink' | 'rest' }.
 export function driftAt(d, t) {
-  const end = END_S[d.branch](), s = Math.min(end, d.s0 + d.v * Math.max(0, t));
+  const end = d.snag ?? END_S[d.branch](), s = Math.min(end, d.s0 + d.v * Math.max(0, t));
   const p = creekPoint(d.branch, s);
-  return { x: p.x, z: p.z, s, end: s >= end ? END_KIND[d.branch] : null };
+  return { x: p.x, z: p.z, s, end: s >= end ? (d.snag != null ? 'snag' : END_KIND[d.branch]) : null };
 }
 
 // Mutating step for the server's tick: advances b.drift.s, moves the ball, returns 'sink' | 'rest' | null.
 export function stepDrift(b, dt) {
   const d = b.drift;
   if (!d) return null;
-  const end = END_S[d.branch]();
+  const end = d.snag ?? END_S[d.branch]();
   d.s = Math.min(end, (d.s ?? d.s0) + d.v * dt);
   const p = creekPoint(d.branch, d.s);
   b.x = p.x; b.z = p.z; b.y = R; b.vx = b.vy = b.vz = 0;
+  if (d.s >= end && d.snag != null) {   // council round 10 #5: it snags on the bed (b.creek: divers only)
+    b.drifting = false; b.rest = true; b.creek = true;
+    const q = snagSpot(b.id, d.branch, d.snag); b.x = q.x; b.z = q.z; b.y = q.y;
+    return 'snag';
+  }
   if (d.s >= end) {
     b.drifting = false;
     const r = END_KIND[d.branch];
@@ -397,6 +406,41 @@ export function restSpot(id) {                                    // the Grate p
   const q = discSpot(MAP.GRATE, id, 0.75);
   q.x = Math.min(q.x, MAP.NETS.side - 0.3);
   return q;
+}
+
+// ---- council round 10 #5: snags and the dive current ---------------------------------------------------------------
+// From the Club a drifting ball can snag on the creekbed, at a point fixed by its id: s* = s0 + hash(id) x (end - s0),
+// so server and client agree. 1 in SNAG.RANGE range balls; every gold ('it's heavy') and glow ('it sinks and glows').
+// SNAG.ON = 0 turns it off (the seam test's old fingerprint).
+export const SNAG = { ON: 1, RANGE: CREEK_DIVE.SNAG_RANGE };
+export function snags(id, kind) {
+  if (!SNAG.ON) return false;
+  if (kind === 'gold' || kind === 'glow') return true;
+  return (kind ?? 'range') === 'range' && hash01(id, 11) * SNAG.RANGE < 1;
+}
+// Where along the branch it snags (null: it rides to the end).
+export function snagS(id, kind, branch, s0) {
+  if (!snags(id, kind) || !BRANCHES[branch]) return null;
+  const end = END_S[branch]();
+  return s0 >= end ? null : s0 + hash01(id, 12) * (end - s0);
+}
+// The snag's resting spot: on the bed (CREEK_DIVE.BED), a little off the centreline (inside the channel).
+export function snagSpot(id, branch, s) {
+  const p = creekPoint(branch, s), off = (hash01(id, 13) * 2 - 1) * (HW - 0.5);
+  return { x: p.x - p.dz * off, z: p.z + p.dx * off, y: CREEK_DIVE.BED + R };
+}
+// Running creek water (off the bridges, the Club and up): where you can duck under.
+export const inCreekWater = (x, z, world) => surfaceAt(x, z, world) === 'water';
+// In the channel at all, bridges included: a diver floats under the Plank, the Cart Bridge and the Stones.
+export const inCreekChannel = (x, z, world) => wetAt(world) && !inPondArea(x, z) && nearCreek(x, z) && creekProject(x, z).d < HW;
+// The dive current at (x, z): { vx, vz } along the flow at CREEK_DIVE.CURRENT, { 0, 0 } out of the water and at the
+// Grate's net (the out-branch holds you there). The in-branch runs on into the pond (crew.mjs hands you over).
+export function creekCurrent(x, z, world) {
+  if (!inCreekChannel(x, z, world)) return { vx: 0, vz: 0, branch: null, s: 0 };
+  const q = creekProject(x, z);
+  if (q.branch === 'out' && q.s >= END_S.out() - 0.5) return { vx: 0, vz: 0, branch: q.branch, s: q.s };
+  const p = creekPoint(q.branch, q.s);
+  return { vx: p.dx * CREEK_DIVE.CURRENT, vz: p.dz * CREEK_DIVE.CURRENT, branch: q.branch, s: q.s };
 }
 
 // ---- callouts ------------------------------------------------------------------------------------------------------

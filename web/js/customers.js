@@ -24,7 +24,7 @@
 //
 // Time is one monotonic server clock in seconds (`now`); it never pauses.
 
-import { MATS } from './sim.js';
+import { MATS, UPPER_BAYS } from './sim.js';
 import { BASKET_POINT } from './layout.js';
 
 export const CUST = {
@@ -43,6 +43,38 @@ export const CUST = {
   GAP: 8,                 // default mean seconds per ball, used to time the next arrival
   PLAY_DX: 0.6,           // default offset of a golfer's feet left of the mat centre (people.js p.ball.x)
 };
+
+// ---- council round 10 #3: the Upper Deck's six middle bays (Tiered on) -----------------------------------------
+// Six more "mats" above lower mats 2-7 (x -10..10), indices 10..15 in crew.mats. Their customers hit from y 3.1 at the
+// deck's front, behind the low rail (z 2.6: the ball passes under the rail's bar). No mud, no basket (the bar sells
+// them a bucket at the top of the stairs), no lead. They come up the stairs from x -27.5 and leave the same way.
+// Activation goes from the middle out (solo: the two centre bays), so a small crew's drinkers stand over the return.
+export const UPPER = {
+  FROM: MATS.length,                     // crew.mats index of the first upper bay
+  X: [-10, -6, -2, 2, 6, 10],
+  Y: 3.1,                                // the tee (the deck's top is y 3)
+  Z: 2.6,                                // feet and ball, behind the low rail at z 2.1
+  FLOOR: 3,
+  ORDER: [2, 3, 1, 4, 0, 5],             // which bays open first
+  STAIRS_X: -27.5,
+};
+export const UPPER_MATS = UPPER.X.map((x, k) => ({ i: UPPER.FROM + k, x, upper: true }));
+export const isUpper = mat => (typeof mat === 'object' ? mat.i ?? mat.mat : mat) >= UPPER.FROM;
+// The upper bays open (seat indices 0..5, ascending) for n bays in play.
+export const upperOpen = n => UPPER.ORDER.slice(0, Math.max(0, Math.min(UPPER_BAYS, n | 0))).sort((a, b) => a - b);
+// A customer's shot from an upper bay: launch()'s numbers from the deck (same three RNG draws), the spray widened by
+// the seat's mugs (council round 10 §2: aim spread x (1 + 0.15 x mugs)).
+export function upperLaunch(mat, rng, mugs = 0) {
+  const speed = 16 + rng() * 22, loft = 0.25 + rng() * 0.35, aim = (rng() - 0.5) * 0.35 * (1 + 0.15 * Math.max(0, mugs));
+  const h = speed * Math.cos(loft);
+  return { x: mat.x, y: UPPER.Y, z: UPPER.Z, vx: Math.sin(aim) * h, vy: speed * Math.sin(loft), vz: -Math.cos(aim) * h };
+}
+// Which crew.mats index a customer ball just left from (its spawn x, y, z), or -1: the client's swing cue.
+export function matOfShot(x, y, z) {
+  if (Math.abs(z - PLAY_Z) < 0.2 && y < 1) return MATS.findIndex(m => Math.abs(m.x - x) < 0.3);
+  if (Math.abs(z - UPPER.Z) < 0.2 && Math.abs(y - UPPER.Y) < 0.2) { const k = UPPER.X.findIndex(v => Math.abs(v - x) < 0.3); return k < 0 ? -1 : UPPER.FROM + k; }
+  return -1;
+}
 
 export const bucketFor = venue => (venue ?? 0) >= 1 ? CUST.BUCKET_CLUB : CUST.BUCKET;
 
@@ -68,10 +100,39 @@ function polyAt(pts, d) {
 }
 // people.js faces root -z at rotation 0: forward = (-sin yaw, -cos yaw)
 const heading = (hx, hz) => Math.atan2(-hx, -hz);
-const matX = mat => MATS[typeof mat === 'object' ? mat.i ?? mat.mat : mat].x;
+const matIdx = mat => typeof mat === 'object' ? mat.i ?? mat.mat : mat;
+const matX = mat => { const i = matIdx(mat); return i >= UPPER.FROM ? UPPER.X[i - UPPER.FROM] : MATS[i].x; };
+// 3D legs for the upper bays: [x, y, z] points; y rides the stairs (x -25 -> -20 climbs 0 -> 3).
+const poly3Len = pts => { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1], pts[i][2] - pts[i - 1][2]); return L; };
+function poly3At(pts, d) {
+  let r = Math.max(0, d);
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], L = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    if (r <= L || i === pts.length - 1) {
+      const u = L > 0 ? Math.min(1, r / L) : 1, hl = Math.hypot(b[0] - a[0], b[2] - a[2]);
+      return { x: a[0] + (b[0] - a[0]) * u, y: a[1] + (b[1] - a[1]) * u, z: a[2] + (b[2] - a[2]) * u, hx: hl ? (b[0] - a[0]) / hl : 0, hz: hl ? (b[2] - a[2]) / hl : 1 };
+    }
+    r -= L;
+  }
+}
+const UP_BACK_Z = 7.5, UP_DECK_Z = 4;     // behind the deck's back wall (z 6.1); the stairs and the deck's walkway
+const upTop = () => [-20, UPPER.FLOOR, UP_DECK_Z];
+const upFoot = () => [[GATE.x, 0, GATE.z], [GATE.x, 0, UP_BACK_Z], [UPPER.STAIRS_X, 0, UP_BACK_Z], [UPPER.STAIRS_X, 0, UP_DECK_Z], [-25, 0, UP_DECK_Z], upTop()];
+export function upperArriveRoute(mat, dx = CUST.PLAY_DX) {
+  const sx = matX(mat) - dx;
+  const A = upFoot(), B = [upTop(), [sx, UPPER.FLOOR, UP_DECK_Z], [sx, UPPER.FLOOR, UPPER.Z]];
+  const lenA = poly3Len(A), lenB = poly3Len(B), toApproach = poly3Len(B.slice(0, 2));
+  return { A, B, sx, tA: lenA / CUST.WALK, tG: CUST.GRAB, tB: lenB / CUST.WALK, tHold: lenA / CUST.WALK + CUST.GRAB + toApproach / CUST.WALK, upper: true };
+}
+export function upperLeaveRoute(mat, dx = CUST.PLAY_DX) {
+  const sx = matX(mat) - dx;
+  const P = [[sx, UPPER.FLOOR, UPPER.Z], [sx, UPPER.FLOOR, UP_DECK_Z], ...upFoot().reverse(), [EXIT_POINT.x, 0, EXIT_POINT.z]];
+  return { P, dur: poly3Len(P) / CUST.WALK, sx, upper: true };
+}
 
 // Gate -> the basket, then basket -> mat. Returns the two legs and their timings.
 export function arriveRoute(mat, dx = CUST.PLAY_DX) {
+  if (isUpper(mat)) return upperArriveRoute(mat, dx);
   const sx = matX(mat) - dx;
   const A = [[GATE.x, GATE.z], ...ENTRANCE_PATH.slice(5)];
   const B = [[STAND_POINT.x, STAND_POINT.z], [22.5, APPROACH_Z], [sx, APPROACH_Z], [sx, PLAY_Z]];
@@ -83,6 +144,7 @@ export const arriveDur = (mat, dx) => { const r = arriveRoute(mat, dx); return r
 // Mat -> back to the walkway -> path -> out through the gate.
 // basket: they never got a bucket (owner playtest 3 §3.3), so they walk back out from the basket.
 export function leaveRoute(mat, dx = CUST.PLAY_DX, basket = false) {
+  if (isUpper(mat)) return upperLeaveRoute(mat, dx);
   const sx = matX(mat) - dx;
   const P = basket ? [[STAND_POINT.x, STAND_POINT.z], [18, 5.5], [-3, 5.5], [GATE.x, GATE.z], [EXIT_POINT.x, EXIT_POINT.z]]
     : [[sx, PLAY_Z], [sx, APPROACH_Z], [-3, 5.5], [GATE.x, GATE.z], [EXIT_POINT.x, EXIT_POINT.z]];
@@ -97,6 +159,7 @@ export const leaveDur = (mat, dx) => leaveRoute(mat, dx).dur;
 //   carry: holding the bucket (on the ground beside the feet during set/play)
 //   done: the walk-out is finished, so the figure can be removed
 export function custPos(c, t, opt = {}) {
+  if (isUpper(c.mat)) return upperPos(c, t, opt);
   const dx = opt.dx ?? CUST.PLAY_DX, u = Math.max(0, t - c.t0);
   const sx = matX(c.mat) - dx;
   const at = (x, z, extra) => ({ x, z, yaw: 0, speed: 0, act: 'wait', carry: false, done: false, ...extra });
@@ -118,7 +181,32 @@ export function custPos(c, t, opt = {}) {
     const p = polyAt(r.P, d), done = u >= r.dur;
     return at(p.x, p.z, { yaw: heading(p.hx, p.hz), speed: done ? 0 : CUST.WALK, act: 'walk', carry: !c.basket, done });
   }
+  if (c.st === 'fell') return at(sx, APPROACH_Z, { done: true });
   return at(sx, APPROACH_Z);
+}
+
+// The upper bays' version: the same states, with a y on every position (the stairs, and the deck at y 3).
+// 'fell' (council round 10 #3): the drunkest fell off the deck; views/deck.js draws the fall, the crowd drops the figure.
+function upperPos(c, t, opt = {}) {
+  const dx = opt.dx ?? CUST.PLAY_DX, u = Math.max(0, t - c.t0), sx = matX(c.mat) - dx;
+  const at = (x, y, z, extra) => ({ x, y, z, yaw: 0, speed: 0, act: 'wait', carry: false, done: false, ...extra });
+  if (c.st === 'arrive') {
+    const r = upperArriveRoute(c.mat, dx);
+    const uu = c.hold ? Math.min(u, r.tHold) : Math.min(u, r.tA + r.tG + r.tB);
+    if (uu < r.tA) { const p = poly3At(r.A, uu * CUST.WALK); return at(p.x, p.y, p.z, { yaw: heading(p.hx, p.hz), speed: CUST.WALK, act: 'walk' }); }
+    const top = upTop();
+    if (uu < r.tA + r.tG) return at(top[0], top[1], top[2], { yaw: heading(1, 0), act: 'grab', carry: uu - r.tA > r.tG * 0.5 });   // at the bar
+    const p = poly3At(r.B, (uu - r.tA - r.tG) * CUST.WALK);
+    const end = uu >= r.tA + r.tG + r.tB || (c.hold && uu >= r.tHold);
+    return at(p.x, p.y, p.z, { yaw: end ? 0 : heading(p.hx, p.hz), speed: end ? 0 : CUST.WALK, act: end ? 'wait' : 'walk', carry: true });
+  }
+  if (c.st === 'playing') return at(sx, UPPER.FLOOR, UPPER.Z, { act: u < CUST.SETUP ? 'set' : 'play', carry: true });
+  if (c.st === 'wait' || c.st === 'sulk') return at(sx, UPPER.FLOOR, UP_DECK_Z, { act: c.st, carry: true });
+  if (c.st === 'leave') {
+    const r = upperLeaveRoute(c.mat, dx), p = poly3At(r.P, Math.min(u, r.dur) * CUST.WALK), done = u >= r.dur;
+    return at(p.x, p.y, p.z, { yaw: heading(p.hx, p.hz), speed: done ? 0 : CUST.WALK, act: 'walk', carry: true, done });
+  }
+  return at(sx, UPPER.FLOOR, UPPER.Z, { done: c.st === 'fell' });
 }
 
 // ---- the per-mat state machine -----------------------------------------------------
@@ -156,11 +244,11 @@ function seat(mat, now, balls, ev, venue) {
 // Opening bell: every open mat is already taken by an early bird (no walk, partial
 // bucket so refills stagger); the rest are empty. Returns events.
 // mud: (i) => this mat's mud 0..1. An early bird never takes a mat at >= REFUSE_MUD: they wait behind it.
-export function openShift(mats, { now = 0, rng = Math.random, venue = 0, nOpen = mats.length, nextCust, mud } = {}) {
+export function openShift(mats, { now = 0, rng = Math.random, venue = 0, nOpen = mats.length, nextCust, mud, isOpen } = {}) {
   const ev = [], ctx = { nextCust };
   for (const mat of mats) {
     Object.assign(mat, newMat(mat.i), { clock: now });
-    if (mat.i >= nOpen) continue;
+    if (isOpen ? !isOpen(mat.i) : mat.i >= nOpen) continue;   // isOpen: the upper bays (council round 10 #3)
     mat.cust = nextId(ctx); mat.look = newLook(rng);
     if ((mud?.(mat.i) ?? 0) >= CUST.REFUSE_MUD) {
       mat.st = 'wait'; mat.t0 = now;
@@ -194,7 +282,7 @@ export function stepMat(mat, dt, ctx = {}) {
     }
   } else if (mat.st === 'sulk') {
     if (now >= mat.t0 + CUST.SULK) toLeave(mat, now, 'refused', ev);
-  } else if (mat.st === 'leave') {
+  } else if (mat.st === 'leave' || mat.st === 'fell') {
     if (now >= mat.t0 + CUST.LEAVE_HOLD) { mat.st = 'empty'; mat.cust = 0; }
   }
 
@@ -225,7 +313,7 @@ export function stepMat(mat, dt, ctx = {}) {
   }
 
   // arrived: take the mat if it is free, else wait at the walkway
-  if (mat.inc && now >= mat.inc.t0 + arr && (mat.st === 'empty' || mat.st === 'leave') && now >= mat.noBefore) {
+  if (mat.inc && now >= mat.inc.t0 + arr && (mat.st === 'empty' || mat.st === 'leave' || mat.st === 'fell') && now >= mat.noBefore) {
     mat.cust = mat.inc.cust; mat.look = mat.inc.look; mat.inc = null;
     if (mud >= CUST.REFUSE_MUD) {
       mat.st = 'wait'; mat.t0 = now; mat.balls = 0; mat.fin = 0;
@@ -239,7 +327,7 @@ export function stepMat(mat, dt, ctx = {}) {
 function canCall(mat, now, gap) {
   const arr = arriveDur(mat.i);
   if (now + arr < mat.noBefore) return false;
-  const free = mat.st === 'empty' || mat.st === 'leave' || mat.st === 'sulk';
+  const free = mat.st === 'empty' || mat.st === 'leave' || mat.st === 'sulk' || mat.st === 'fell';
   return free || (mat.st === 'playing' && mat.balls * gap + CUST.FINISH <= arr + 1);
 }
 
@@ -264,6 +352,18 @@ export function pickMat(mats, i, ctx = {}) {
   let r = rng() * cands.reduce((a, c) => a + c[1], 0);
   for (const [m, w] of cands) if ((r -= w) < 0) return m;
   return cands.at(-1)[0];
+}
+
+// Council round 10 #3: the deck's drunkest fell off the rail. The customer is gone at once (no walk out: views/deck.js
+// plays the fall), the bucket with them; nobody new takes the bay for `secs` (the replacement climbs the stairs).
+export function fellOff(mat, now, secs = 20) {
+  if (!mat) return [];
+  const ev = [];
+  if (mat.st === 'playing' || mat.st === 'wait' || mat.st === 'sulk') ev.push({ t: 'leave', mat: mat.i, cust: mat.cust, why: 'fell' });
+  if (mat.st !== 'empty') { mat.st = 'fell'; mat.t0 = now; }
+  mat.balls = 0; mat.fin = 0;
+  mat.noBefore = Math.max(mat.noBefore, now + secs - arriveDur(mat.i));
+  return ev;
 }
 
 // What goes in the snapshot for one mat.

@@ -3,11 +3,15 @@
 // for any Rat underneath, and Gary's kitchen stop fails. Active at Tiered and every later venue; the rules are pure
 // (web/js/deck.js).
 import { DECK, newDeck, stepDeck, applyServe, afterIncident, paysTab, tabFor, fillOrder, fineFor, landingSpot, hitByFall } from '../../web/js/deck.js';
+import { UPPER, fellOff } from '../../web/js/customers.js';
+
+// Council round 10 #3: the drinkers are the upper bays' customers; only the bays in play order and drink.
+const seatsOf = crew => { const s = crew.upperSeats?.(); return s?.length ? s : undefined; };
 
 const int = (v, lo, hi, d) => Number.isFinite(Number(v)) && v != null ? Math.max(lo, Math.min(hi, Math.floor(Number(v)))) : d;
 
 function incident(crew, st, p) {
-  const seat = afterIncident(st.deck), spot = landingSpot(seat);
+  const seat = afterIncident(st.deck, seatsOf(crew)), spot = landingSpot(seat);
   const k = st.falls = (st.falls ?? 0) + 1;                                     // round 8 #5: the k-th fall today costs more
   const fine = Math.abs(crew.payCash(-fineFor(crew.valueNow().bv, k)));       // never below $0: the change is what was really taken
   crew.stats.incidents = (crew.stats.incidents ?? 0) + 1;
@@ -17,6 +21,13 @@ function incident(crew, st, p) {
   if (crew.gary && (crew.gary.phase === 'warn' || crew.gary.phase === 'drive')) st.garyFail = true;
   crew.events.push({ t: 'deckFall', seat, x: spot.x, z: spot.z, by: p?.id ?? null, fine, k });
   for (const o of [...crew.players.values(), ...crew.helpers]) if (hitByFall(o, spot)) crew.knockDown(o, 'customer');
+  // Round 10 #3: the faller was that bay's customer; the bay stays empty until the replacement has climbed the stairs.
+  const now = crew.custT ?? 0;
+  if (crew.mats) fellOff(crew.mats[UPPER.FROM + seat], now, DECK.REPLACE_SECS);
+  // Round 10 #4: the world pauses with the Deck Cam. For LOOK_SECS Rats on foot can't be hit (crew.mjs reads lookUntil),
+  // and every customer's next swing waits LOOK_SECS (they turn to look).
+  crew.lookUntil = now + DECK.LOOK_SECS;
+  for (const m of crew.mats ?? []) m.next = Math.max(0, m.next ?? 0) + DECK.LOOK_SECS;
   crew.pa('deck', { once: true, big: true });
   crew.dirty = true;
 }
@@ -32,7 +43,7 @@ export default {
   // Council round 6 #6: the loungers order. Only while the shift clock runs; an unfilled order lapses quietly.
   tick(crew, st, dt) {
     if (!crew.working()) return;
-    const r = stepDeck(st.deck, dt);
+    const r = stepDeck(st.deck, dt, seatsOf(crew));
     if (r.order) { crew.events.push({ t: 'deckOrder', seat: st.deck.order.seat, ...(st.deck.order.round ? { round: true } : {}) }); crew.dirty = true; }
     if (r.expired || r.sobered) crew.dirty = true;
   },
@@ -45,15 +56,19 @@ export default {
       const tab = crew.payCash(tabFor(crew.valueNow().bv, filled), p.id);
       if (filled) crew.stats.deckOrders = (crew.stats.deckOrders ?? 0) + 1;
       if (filled?.round) crew.stats.deckRounds = (crew.stats.deckRounds ?? 0) + 1;
-      if (tab) crew.events.push({ t: 'deckTab', by: p.id, n: tab, ...(filled ? { order: true, seat: filled.seat } : {}), ...(filled?.round ? { round: true } : {}) });
+      const r = applyServe(st.deck, item, quality, filled, seatsOf(crew));
+      // Round 10 #3: the event names the seat the mug flies to (the beer line, views/deck.js), so the tab floats there.
+      if (tab) crew.events.push({ t: 'deckTab', by: p.id, n: tab, seat: r.seat, ...(filled ? { order: true } : {}), ...(filled?.round ? { round: true } : {}) });
+      if (r.incident) incident(crew, st, p);
+      return;
     }
-    if (applyServe(st.deck, item, quality, filled).incident) incident(crew, st, p);
+    if (applyServe(st.deck, item, quality, filled, seatsOf(crew)).incident) incident(crew, st, p);
   },
 
   inspect(crew, st, stopId) { if (stopId === 'kitchen' && st.garyFail) return false; },   // somebody fell off on his watch
 
   awards: () => [['Last Orders', 'lastOrders']],
-  snapshot: (crew, st) => ({ drinks: st.deck.drinks, last: st.last, today: st.today,
+  snapshot: (crew, st) => ({ drinks: st.deck.drinks, mugs: st.deck.mugs, last: st.last, today: st.today,
     order: st.deck.order ? { seat: st.deck.order.seat, left: Math.max(0, Math.round(st.deck.order.left * 10) / 10), ...(st.deck.order.round ? { round: true } : {}) } : null }),
   toSave: (crew, st) => ({ last: st.last }),
 };

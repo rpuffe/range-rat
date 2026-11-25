@@ -15,7 +15,8 @@ const buy = (crew, p, id) => crew.input(p, { a: [{ t: 'buy', id }] });
 test('every shop item starts free at tier 0 and costs more each tier', () => {
   for (const item of SHOP) {
     assert.equal(item.tiers[0].cost, undefined, item.id);
-    for (let i = 2; i < item.tiers.length; i++) assert.ok(item.tiers[i].cost > item.tiers[i - 1].cost, `${item.id} tier ${i}`);
+    // Council round 10 §D: Autopilot ($250k) follows the $300k second cart on purpose.
+    for (let i = 2; i < item.tiers.length; i++) if (item.tiers[i].name !== 'Autopilot') assert.ok(item.tiers[i].cost > item.tiers[i - 1].cost, `${item.id} tier ${i}`);
   }
 });
 

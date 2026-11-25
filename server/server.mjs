@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { Crew, newCode, validCode } from './crew.mjs';
 import { newStore } from './store.mjs';
 import { SIM } from '../web/js/sim.js';
+import { migrateV4 } from '../web/js/goals.js';   // council round 10 #1: DEV_STAMPS 3+ hands a fresh crew a done card
 
 const PORT = Number(process.env.PORT || 8080);
 const WEB = fileURLToPath(new URL('../web/', import.meta.url));
@@ -32,7 +33,7 @@ const DEV_START_CASH = Number(process.env.DEV_START_CASH) || 0;       // local s
 const DEV_START_DAY = Number(process.env.DEV_START_DAY) || 0;         // local testing only: new crews start on this day
 const DEV_VENUE = Number(process.env.DEV_VENUE) || 0;                 // local testing only: start at this venue
 const DEV_OUTSTANDING = Number(process.env.DEV_OUTSTANDING) || 0;     // local testing only: Balls Outstanding
-const DEV_STAMPS = Number(process.env.DEV_STAMPS) || 0;               // local testing only: review stamps
+const DEV_STAMPS = Number(process.env.DEV_STAMPS) || 0;               // local testing only: good days (3+: the goal card done but the fee)
 
 const store = newStore(process.env.STORAGE_BUCKET);
 const crews = new Map();         // code -> { crew, subs: Set<{p, res}>, savedAt, saving }
@@ -152,7 +153,7 @@ async function api(req, res, url) {
     const c = { crew: new Crew(code, DEV_START_DAY || DEV_VENUE || DEV_OUTSTANDING ? { day: DEV_START_DAY || 1, venue: DEV_VENUE, venueDay: DEV_VENUE ? 1 : 0, ...(DEV_OUTSTANDING ? { outstanding: DEV_OUTSTANDING } : {}) } : null, { shiftSecs: SHIFT_SECS }), subs: new Set(), savedAt: Date.now() };
     crews.set(code, c);
     c.crew.cash = DEV_START_CASH;
-    if (DEV_STAMPS) c.crew.stamps = DEV_STAMPS;
+    if (DEV_STAMPS) { c.crew.reviews = DEV_STAMPS; c.crew.goals = migrateV4({ venue: c.crew.venue, stamps: DEV_STAMPS }); }
     const p = c.crew.join(body.name);
     saveCrew(c);   // so the code can be rejoined even before the first shift ends
     return send(res, 200, { code, p: p.id, k: p.token });

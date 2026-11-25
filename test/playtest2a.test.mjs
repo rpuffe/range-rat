@@ -7,7 +7,8 @@ import { Crew } from '../server/crew.mjs';
 import { shortfall, RALLY_LINES, RALLY_RECHECK } from '../web/js/rally.js';
 import { garyCountdown } from '../web/js/huddlerules.js';
 import { nudgeSatisfied, dealFor } from '../web/js/nudge.js';
-import { promoPanelHtml, feeShort } from '../web/js/promopanel.js';
+import { promoPanelHtml } from '../web/js/promopanel.js';
+import { printCard, rowsOf } from '../web/js/goals.js';
 import { LAST_CALL } from '../web/js/sim.js';
 
 const val = (upkeep, extra = {}) => ({ bv: upkeep, rate: 1, curb: 1, pond: null, fries: null, ...extra });
@@ -147,12 +148,14 @@ test('hosing a fixture clean credits the Rat in the ledger', () => {
   assert.equal(a.shift.hosed, 1);
 });
 
-test('stamps complete but cash short: "Fee: $X short"', () => {
-  const promo = { next: 'Range Club', fee: 5500, stamps: 3, need: 3, ready: false, signed: [] };
-  assert.equal(feeShort(promo, 4605), 'Fee: $895 short');
-  const h = promoPanelHtml(promo, { cash: 4605 });
+// Council round 10 #1: the card replaced the stamps; with only the fee left the panel still says by how much.
+test('every goal but the fee done: "Fee: $X short"', () => {
+  const promo = { next: 'Range Club', fee: 5500, ready: false, signed: [], done: 4, of: 5 };
+  const card = printCard(0, 4); Object.assign(card.n, { bank: 2000, huddle: 1, reviews: 2 });
+  const goals = { venue: 0, rows: rowsOf(card, { up: { washer: 1 }, cash: 4605, fee: 5500 }), reward: 100 };
+  const h = promoPanelHtml(promo, { goals, cash: 4605 });
   assert.match(h, /Fee: \$895 short/);
-  assert.doesNotMatch(h, /Earn 3 review stamps/);
-  assert.doesNotMatch(promoPanelHtml({ ...promo, stamps: 2 }, { cash: 100 }), /short/);
-  assert.ok(feeShort(promo, 4605).split(' ').length <= 8);
+  assert.doesNotMatch(h, /review stamps/);
+  const open = { venue: 0, rows: rowsOf(printCard(0, 4), { cash: 100, fee: 5500 }), reward: 100 };
+  assert.doesNotMatch(promoPanelHtml(promo, { goals: open, cash: 100 }), /short/);
 });

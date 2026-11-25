@@ -24,7 +24,7 @@ export const MOWER = {
 };
 export const MOWER_DRIVE_SECS = (MOWER.X1 - MOWER.X0) / MOWER.SPEED;   // 32
 
-const rake = b => b && !b.sunk && !b.drift && !b.drifting && !b.treasure && b.kind !== 'one' && b.kind !== 'treasure';
+const rake = b => b && !b.sunk && !b.creek && !b.drift && !b.drifting && !b.treasure && b.kind !== 'one' && b.kind !== 'treasure';
 const balls_ = balls => (balls instanceof Map ? [...balls.values()] : balls ? [...balls] : []);
 
 // Should MOW-E start now? venueDay is 1-based days spent at this venue. Once a shift.

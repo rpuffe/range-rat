@@ -237,3 +237,39 @@ test('stepMat without ctx.now accumulates dt', () => {
   assert.equal(m.clock, 100);
   assert.equal(m.st, 'playing');
 });
+
+// ---- Council round 10 #3: the upper bays ---------------------------------------------------------------------------
+test('round 10 #3: upper bays seat 2 / 4 / 6 (from the middle out); they climb the stairs and stand on the deck', async () => {
+  const { UPPER, upperOpen, isUpper, upperLaunch, matOfShot, fellOff } = await import('../web/js/customers.js');
+  const { activeUpper } = await import('../web/js/sim.js');
+  assert.deepEqual([1, 2, 3, 4].map(n => upperOpen(activeUpper(n))), [[2, 3], [1, 2, 3, 4], [0, 1, 2, 3, 4, 5], [0, 1, 2, 3, 4, 5]]);
+  const i = UPPER.FROM + 2;
+  assert.ok(isUpper(i) && !isUpper(9));
+  const c = { mat: i, st: 'arrive', t0: 0 }, dur = arriveDur(i);
+  const a = custPos(c, 0); assert.deepEqual([a.x, a.y, a.z], [GATE.x, 0, GATE.z]);
+  let prev = a, maxY = 0;
+  for (let t = 0.05; t < dur; t += 0.05) {
+    const p = custPos(c, t);
+    assert.ok(Math.hypot(p.x - prev.x, p.y - prev.y, p.z - prev.z) <= CUST.WALK * 0.05 + 1e-6, 'continuous at ' + t);
+    if (p.x > -19) assert.ok(p.y === 0 || p.y === 3 || p.z === GATE.z || p.x <= -3, 'on the ground or the deck');
+    maxY = Math.max(maxY, p.y); prev = p;
+  }
+  const end = custPos({ mat: i, st: 'playing', t0: 0 }, 5);
+  assert.deepEqual([end.y, end.z], [3, UPPER.Z]); assert.ok(Math.abs(end.x - (UPPER.X[2] - CUST.PLAY_DX)) < 1e-9);
+  assert.equal(maxY, 3);
+  assert.equal(custPos({ mat: i, st: 'leave', t0: 0 }, leaveDur(i) + 1).done, true);
+  // a shot: same three draws as launch(), spray x (1 + 0.15 x mugs)
+  const r1 = mulberry32(5), r2 = mulberry32(5);
+  const s0 = upperLaunch({ x: 2 }, r1, 0), s4 = upperLaunch({ x: 2 }, r2, 4);
+  assert.equal(r1(), r2()); assert.equal(s0.vy, s4.vy);
+  assert.ok(Math.abs(Math.atan2(s4.vx, -s4.vz) / Math.atan2(s0.vx, -s0.vz) - 1.6) < 1e-9);
+  assert.equal(matOfShot(s0.x, s0.y, s0.z), UPPER.FROM + 3); assert.equal(matOfShot(-18, 0.1, -0.4), 0);
+  // the fall: gone at once, nobody for ~20 s
+  const m = newMat(i); m.st = 'playing'; m.cust = 7; m.balls = 9;
+  assert.deepEqual(fellOff(m, 100, 20).map(e => e.why), ['fell']);
+  assert.equal(m.st, 'fell'); assert.equal(custPos({ mat: i, st: 'fell', t0: 100 }, 100).done, true);
+  const ev = run(m, 100.25, 160, ctxOf({ venue: 2 }));
+  const arr = ev.find(e => e.t === 'arrive'), start = ev.find(e => e.t === 'start');
+  assert.ok(arr && start, 'a replacement comes');
+  assert.ok(m.t0 >= 119.5, 'not before 20 s: ' + m.t0);
+});

@@ -15,7 +15,8 @@ import { garyParked, garyPlate, chatBit, CHAT_END, CHAT_FEED, SEAL_LINE } from '
 import { SIM, MATS, advanceBall, atStand, clampToField, SHOP, nextPrice, shopShows, tierLock, shopDay, priceScale, perks,
   CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB,
   VENUE_RULES, GARY, BANK } from './sim.js';
-import { createBallReturn } from './ballreturn.js';   // owner layout: the pipe from the return to the bank, the basket
+import { createBallReturn, createFieldReturns } from './ballreturn.js';   // owner layout: the pipe from the return to the bank, the basket
+import { atFieldReturn } from './layout.js';   // council round 10 §C: the field ball returns
 import { detailFor } from './detail.js';
 import { stationsShown } from './stations.js';
 import * as NET from './net.js';
@@ -33,13 +34,14 @@ import { menuFor, GARY_LINE } from './menu.js';
 import { setupRound2 } from './round2.js';
 import { garyCountdown } from './huddlerules.js';   // round 6 #5: the Board's GARY 3 · 2 · 1
 import { createScuba } from './scuba.js';
-import { diveTiers, eyeY, bedAt, TREASURE_BY_ID, atTube, hasTube, PUMP } from './dive.js';
+import { diveTiers, eyeY, bedAt, TREASURE_BY_ID, atTube, hasTube, PUMP, CREEK_DIVE, waterLook } from './dive.js';
 let r2 = null;           // round-2 features, set up at the end of this file
 let views = null;        // round-4 venue views (views/index.js), set up at the end of this file
 import { buildPerson, animatePerson, personAddress, SWING_IMPACT, SWING_SECS } from './people.js';
 import { createCrowd } from './crowd.js';
 import { createTerrain } from './terrain.js';
 import { wadeFactor, stepDrift, cartSpeedAt, MAP } from './map.js';
+import { applyCurrent } from './creekdive.js';   // council round 10 #5: builder 3's creek rules (the server ducks you under)
 import { createViews } from './views/index.js';
 import { createPerf } from './perf.js';
 import { createPace } from './pace.js'; const pace = createPace({ search: location.search, storage: (() => { try { return sessionStorage; } catch { return null; } })(), clipboard: navigator.clipboard }); pace.bind(document.getElementById('pace-copy'));   // ?pace: the pace log
@@ -51,6 +53,10 @@ import { bvLine, ceilingOf, priceOf, popupLine, reportRow, sealRow, gainText } f
 import { atFill } from './basket.js';   // owner playtest 3 §3.3: the bucket basket (builder 2)
 import { nudgeLine, nudgeTarget, GARY_STALLED, garyExtra } from './nudge.js';    // council round 6 #10 / round 7 #4: day 2, Gary's dealt stops, day 3
 import { createSay } from './say.js';                     // council round 7 #3: the one centre-text queue
+import { DECKCAM, CUT_LABEL, cutPlan, skips, cutAt } from './deckcam.js';   // council round 10 #4: the Deck Cam
+import { AUTO } from './autopilot.js';                     // council round 10 §D: Ⓨ held at an autopilot cart
+import { DISPATCH } from './county.js';                    // council round 10 §D: Ⓨ held on foot at the County
+import { cardHtml, LAST_CARD } from './goals.js';         // council round 10 #1: the pause menu's Goals panel
 import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';   // sign facings (test/signs.test.mjs; ?signs checks the meshes)
 import { createDusk } from './duskview.js';                // end of the day: the overhead walk-off between the stamp and the report
 import { actPick } from './actpick.js';                    // playthrough 4 C1: Ball No. 1 before a full pocket
@@ -103,12 +109,13 @@ for (const m of MATS) {
     new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false }));
   num.position.set(m.x, 0.045, 0.62); num.renderOrder = 1; scene.add(tagSign(num, `mat.${m.i + 1}`, { x: 0, y: 1, z: 0 }));
 }
+import { matOfShot } from './customers.js';   // round 10 #3 (builder 2): the swing cue for the upper bays
 const crowd = createCrowd({ scene, people: { buildPerson, animatePerson, SWING_IMPACT, SWING_SECS } });
 // A ball leaving a mat: that mat's golfer swings (catch the swing just before impact).
-function customerSwing(x, z) {
-  if (Math.abs(z + 0.4) > 0.2) return;
-  const m = MATS.find(m => Math.abs(m.x - x) < 0.3);
-  if (m) crowd.onMatShot(m.i);
+// Council round 10 #3: the upper bays too (customers.js matOfShot reads the spawn point).
+function customerSwing(x, y, z) {
+  const i = matOfShot(x, y, z);
+  if (i >= 0) crowd.onMatShot(i);
 }
 
 // The ball return (owner layout; it was the bucket stand): the bin by the mats where picked balls turn into cash.
@@ -134,6 +141,18 @@ const confetti = sharedConfetti(scene);
 const board = createBoard(scene, { x: BANK.x, z: BANK.z + 1.2, onCross: d => { if (d === 'up') SFX.cash(1); } });   // round 6 #3: the target ding
 // The pipe from the return to the silo (through the washer once it's bought), and the customers' basket.
 const ballReturn = createBallReturn(scene, { pool: detailFor(perf.profile).pipeBalls });
+const fieldReturns = createFieldReturns(scene);   // council round 10 §C: the red boxes out in the field (+1 draw call)
+// Council round 10 §D: the drone dispatch zone, a thin ring on the ground while it lasts (1 draw call, hidden otherwise).
+const dispatchRing = (() => {
+  const m = new THREE.Mesh(new THREE.RingGeometry(DISPATCH.R - 0.35, DISPATCH.R, 64).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x7fe3ff, transparent: true, opacity: 0.55, depthWrite: false }));
+  m.position.y = 0.06; m.visible = false; m.renderOrder = 2; scene.add(m);
+  return {
+    show(e) { m.position.x = e.x; m.position.z = e.z; m.visible = true; },
+    sync(z) { m.visible = !!z; if (z) { m.position.x = z.x; m.position.z = z.z; m.material.opacity = 0.25 + 0.3 * Math.min(1, z.left / 5); } },
+  };
+})();
+const atFieldRet = p => !driving() && !p.diving && atFieldReturn(p, crew.up?.returns ?? 0);
 
 // Mud on the fixtures customers see (Curb Appeal): the road sign, the stand, the mats.
 // Each fixture's material browns as its mud rises; the wand cleans it.
@@ -173,7 +192,8 @@ scene.traverse(o => {   // the customer mats were built above; find them by posi
 function paintFixtures(fx) {
   for (const [id, mud] of Object.entries(fx ?? {})) {
     const fm = fixtureMats[id];
-    if (fm && !fm.mat.userData.mudOverlay) fm.mat.color.copy(fm.base).lerp(MUD, Math.min(1, mud) * 0.85);   // props.js draws the mats' mud
+    // props.js draws the mats' mud; the sign and the return wear its decals (council round 10 §B), so only a light tint
+    if (fm && !fm.mat.userData.mudOverlay) fm.mat.color.copy(fm.base).lerp(MUD, Math.min(1, mud) * (fm.mat.userData.mudDecal ? 0.3 : 0.85));
   }
 }
 
@@ -560,8 +580,12 @@ function onMsg(m) {
 function onEvent(e) {
   r2?.onEvent(e);
   views?.onEvent(e);
+  if (e.t === 'deckFall') onDeckFall(e);   // council round 10 #4: the Deck Cam (views/deck.js plays the fall)
+  if (e.t === 'tube' && e.at) fieldReturns.thunk();   // council round 10 §C: a pocket went in a field return
+  if (e.t === 'auto') { if (e.by === me.id) toast(e.mode === 'harvest' ? 'Autopilot: harvesting.' : 'Autopilot: lapping the Track.', 2); else feed(`${nameOf(e.by)} set the cart to ${e.mode}`); }
+  if (e.t === 'dispatch') { if (e.by === me.id) { toast('Drones, here!', 2); } else feed(`${nameOf(e.by)}: "Drones, here!"`); dispatchRing.show(e); }
   switch (e.t) {
-    case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, kind: e.kind, curve: e.curve ?? 0 }); customerSwing(e.x, e.z); break;
+    case 'spawn': addBall({ id: e.id, x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, kind: e.kind, curve: e.curve ?? 0 }); customerSwing(e.x, e.y, e.z); break;
     case 'sink': {
       let b = balls.get(e.id);
       if (!b) { addBall({ id: e.id, x: e.x, y: bedAt(e.x, e.z), z: e.z, vx: 0, vy: 0, vz: 0, rest: true, kind: e.kind }); b = balls.get(e.id); }
@@ -599,7 +623,12 @@ function onEvent(e) {
     case 'rest': { const b = balls.get(e.id); if (b) { b.x = e.x; b.z = e.z; b.y = SIM.BALL_R; b.vx = b.vy = b.vz = 0; b.rest = true; b.drifting = false; b.drift = null; } break; }
     case 'drift': {   // the server's word on a ball floating down the creek
       const b = balls.get(e.id);
-      if (b) Object.assign(b, { drifting: true, rest: false, vx: 0, vy: 0, vz: 0, y: SIM.BALL_R, drift: { branch: e.branch, s0: e.s0, v: e.v, s: Math.max(e.s0, b.drift?.s ?? e.s0) } });
+      if (b) Object.assign(b, { drifting: true, rest: false, vx: 0, vy: 0, vz: 0, y: SIM.BALL_R, drift: { branch: e.branch, s0: e.s0, v: e.v, s: Math.max(e.s0, b.drift?.s ?? e.s0), ...(e.snag != null ? { snag: e.snag } : {}) } });
+      break;
+    }
+    case 'snag': {   // council round 10 #5: on the creekbed, divers only (the glint shows it)
+      const b = balls.get(e.id);
+      if (b) Object.assign(b, { x: e.x, y: e.y, z: e.z, vx: 0, vy: 0, vz: 0, rest: true, drifting: false, creek: true });
       break;
     }
     case 'mower':
@@ -766,12 +795,13 @@ let my = perks();                   // what the crew's upgrades add up to
 let gp = gearPerks(0);              // what my own carrying gear adds up to
 function applySnapshot(s) {
   crew = s;
+  if (paused) pauseGoals();   // council round 10 #1: the Goals panel stays live while paused
   my = perks(s.up);
   if (s.mats) crowd.sync(s.mats, s.ct);
   const mine = s.players.find(p => p.id === me.id);
   if (mine && !me.placed) { me.x = mine.x; me.z = mine.z; me.yaw = mine.yaw; me.pitch = 0; me.placed = true; }   // clocked in at the yard
   me.gear = mine?.gear ?? 0; if (!!mine?.wand && !me.wand) wandAt = performance.now(); me.wand = !!mine?.wand;   // the wand's full prompt runs 3 s from here
-  me.diving = !!mine?.diving; me.dive = mine?.dive ?? 0; me.air = mine?.air ?? diveTiers(me.dive).air; me.bag = mine?.bag ?? 0; me.treasure = mine?.treasure ?? null;
+  me.diving = !!mine?.diving; me.creek = !!mine?.creek; me.dive = mine?.dive ?? 0; me.air = mine?.air ?? diveTiers(me.dive).air; me.bag = mine?.bag ?? 0; me.treasure = mine?.treasure ?? null;
   { // the Lost & Found case and the treasure glinting in the Deep End
     const lf = s.pond?.lostFound ?? [], lk = lf.join(',');
     if (lk !== lostFoundKey) { lostFoundKey = lk; scuba.setFound(lf); }
@@ -794,6 +824,8 @@ function applySnapshot(s) {
     // Owner playtest 3 §1.1/§6.4 (builder 1): the price, the bar's ceiling and target share, the pips, the Seal, the banner.
     price: priceOf(v, s.seal ?? v.seal ?? 1), seal: s.seal ?? v.seal ?? 1, ceiling: ceilingOf(v), q: s.quota?.q ?? null, venue: s.venue ?? 0,
     fixtures: s.fixtures, nMats: s.nMats, garyToday: s.phase === 'shift' && !!s.garyToday && !s.gary,
+    // Council round 10 (builder 1): the goal strip (goals.js strip), the FED chip and its ring.
+    goals: s.goals?.strip ?? null, fed: v.fed ?? 1, fedLeft: s.fedRing ?? 0,
     gary: s.gary?.phase === 'warn' ? `GARY FROM REGIONAL · 0:${String(Math.ceil(s.gary.t)).padStart(2, '0')}` : s.gary?.phase === 'drive' ? garyCountdown(s.gary) ?? 'GARY IS INSPECTING' : mowerBoard(s.mower) });
   // Owner playtest 3 §6: he's on show through his warning too (parked at the gate, where you can chat to him), and
   // on the once-ever drive-by (s.garyIntro).
@@ -916,7 +948,33 @@ const playing = () => link && crew.phase !== 'lobby' && !paused && !menuOpen();
 
 // A free cart within reach (the server boards the nearest one).
 const nearCart = () => crewCarts().some((c, i) => !c.driver && cartViews[i] && Math.hypot(cartViews[i].pose.x - me.x, cartViews[i].pose.z - me.z) < CART.BOARD_REACH);
-const canSwing = () => crew.phase === 'shift' && atBay(me) && me.pocket > 0 && !driving() && !me.wand;   // owner playtest 3 §7.1: no swinging a pressure washer
+const canSwing = () => crew.phase === 'shift' && atBay(me) && me.pocket > 0 && !driving() && !me.wand;
+// Council round 10 §D: Ⓨ / F held. At an undriven cart with Autopilot owned, a tap still climbs in and a 0.6 s hold
+// switches it lap <-> harvest. On foot at the County with drones and no cart near, a 0.6 s hold is "Drones, here!".
+let yHold = null;   // { kind: 'auto' | 'dispatch', t }
+const autoOwned = () => !!my.autopilot && (crew.venue ?? 0) >= 3;
+const dronesOwned = () => !!crew.mods?.county?.drones?.length && crew.phase === 'shift';
+const nearAutoMode = () => {   // the mode of the undriven cart in reach ('lap' | 'harvest'), or null
+  const i = crewCarts().findIndex((c, k) => !c.driver && cartViews[k] && Math.hypot(cartViews[k].pose.x - me.x, cartViews[k].pose.z - me.z) < CART.BOARD_REACH);
+  return i < 0 ? null : crew.mods?.stadium?.auto?.[i] ?? 'lap';
+};
+function cartPress() {
+  if (!playing() || me.down > 0) return;
+  if (!driving() && nearCart() && autoOwned()) { yHold = { kind: 'auto', t: 0 }; return; }
+  if (!driving() && !nearCart() && dronesOwned() && !me.diving) { yHold = { kind: 'dispatch', t: 0 }; return; }
+  interact('cart');
+}
+function cartRelease() {
+  const h = yHold; yHold = null;
+  if (h?.kind === 'auto' && h.t < AUTO.HOLD_SECS) interact('cart');   // a tap: climb in
+}
+function cartHoldTick(dt) {
+  if (!yHold) return;
+  if (!playing() || me.down > 0 || driving()) { yHold = null; return; }
+  if ((yHold.t += dt) < (yHold.kind === 'auto' ? AUTO.HOLD_SECS : DISPATCH.HOLD_SECS)) return;
+  link.act({ t: yHold.kind === 'auto' ? 'auto' : 'dispatch' });
+  yHold = null;
+}   // owner playtest 3 §7.1: no swinging a pressure washer
 
 // Separate buttons, so no action ever has to guess:
 //   use    (left click / Space / Ⓐ): pick up a ball, or hold at a crew bay to swing
@@ -933,11 +991,14 @@ function interact(only = null) {
   if (me.diving) { if (me.bag > 0) link.act({ t: 'send' }); return; }                      // clip the bag to the line
   if (dockOpen(me) && (crew.pond?.line ?? 0) > 0) { r2?.haulBegin(); return; }            // hold to haul the bag up
   if (crew.pond?.unlocked && hasTube(crew.up) && atTube(me) && (carrying() > 0 || me.treasure)) { link.act({ t: 'feed' }); return; }
+  if (atFieldRet(me) && (carrying() > 0 || me.treasure)) { link.act({ t: 'feed' }); return; }   // council round 10 §C: send them home
   if (atStand(me) && (carrying() > 0 || me.one || me.treasure)) { link.act({ t: 'deposit' }); return; }   // Ball No. 1 rides outside the pocket
   if (me.wand || nearStation()) link.act({ t: 'wand' });
 }
 // The pond is drained (and its dock closed) until the Club turns the water on.
 const wetPond = p => !!crew.pond?.unlocked && inPond(p), dockOpen = p => !!crew.pond?.unlocked && onDock(p);
+// Council round 10 #5: diving in Dimple Creek (from the Club; the server ducks you under after 2 s in the water).
+const creekDiving = p => !!p.diving && !!p.creek;   // the snapshot's players[].creek (crew.mjs creekStep)
 const nearStation = () => Math.hypot(me.x - WASH.STATION.x, me.z - WASH.STATION.z) < WASH.GRAB;
 function act() {
   if (!playing() || me.down > 0 || driving()) return;
@@ -1166,7 +1227,6 @@ function showPhase() {
       <p>In the bank <b>${money(report.bank)}</b></p>
       ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${report.quota.hit ? 'QUOTA HIT' : report.quota.idle ? 'QUOTA MISSED: nothing was banked' : 'QUOTA MISSED'} <b${!report.quota.hit && (report.quota.need != null ? report.quota.clean >= report.quota.need : report.quota.bv >= report.quota.target) ? ' class="pass"' : ''}>${report.quota.need != null ? reportRow(report.quota) : `BV ${money(report.quota.bv >= 100 ? Math.round(report.quota.bv) : report.quota.bv)} / ${money(report.quota.target >= 100 ? Math.round(report.quota.target) : report.quota.target)}`}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
       ${report.quota?.gauge != null ? `<p${report.quota.gaugeOk ? '' : ' class="stamp miss"'}>${crew.venue === 3 ? 'Crowd (last 2 min)' : 'Venue gauge at the bell'} <b>${Math.round(report.quota.gauge * 100)}% · ${report.quota.gaugeOk ? 'held' : report.quota.why ?? 'under 50%'}</b></p>` : ''}
-      ${report.quota ? `<p>Review stamps <b>${report.quota.stamps} · ${report.quota.title}</b></p>` : ''}
       ${report.sealCash > 0 ? `<p>${sealRow(report.sealCash).replace(': ', ': <b>')}</b></p>` : ''}
       ${report.tomorrow ? `<p class="dim">${report.tomorrow}</p>` : ''}`;
   }
@@ -1200,16 +1260,17 @@ addEventListener('keydown', e => {
   lastInput = 'mouse';   // keyboard and mouse are one device here
   if (typing()) return;
   if (kitchen.isOpen) { if (kitchen.handleKey('down', e)) e.preventDefault(); if (!kitchen.isOpen && crew.phase === 'shift') lockMouse(); return; }
+  if (deckCam.on && !e.repeat) { deckCamEnd(); e.preventDefault(); return; }   // council round 10 #4: any key skips the Deck Cam
   SFX.unlock();
   keys.add(e.code);
   if (e.code === 'Space' && !e.repeat) pressAct();
   if (e.code === 'KeyE' && !e.repeat) interact('bucket');
-  if (e.code === 'KeyF' && !e.repeat) interact('cart');
+  if (e.code === 'KeyF' && !e.repeat) cartPress();   // council round 10 §D: a tap boards, a hold drives the automation
   if (e.code === 'Escape' && link) { if (storeOpen) toggleStore(false); else pause(!paused); }
   if (e.code === 'Tab' && link) { e.preventDefault(); toggleStore(); }
   if (e.code === 'KeyC' && !e.repeat && link && !r2?.cctvOn) r2?.toggleCCTV();   // Corporate CCTV (from the Club)
 });
-addEventListener('keyup', e => { if (kitchen.isOpen) { kitchen.handleKey('up', e); return; } keys.delete(e.code); if (e.code === 'Space') releaseAct(); if (e.code === 'KeyE') releaseBucket(); });
+addEventListener('keyup', e => { if (kitchen.isOpen) { kitchen.handleKey('up', e); return; } keys.delete(e.code); if (e.code === 'Space') releaseAct(); if (e.code === 'KeyE') releaseBucket(); if (e.code === 'KeyF') cartRelease(); });
 addEventListener('blur', () => keys.clear());
 addEventListener('pointerdown', () => SFX.unlock());
 // Pointer lock can be refused (embedded views, no user gesture): swallow that
@@ -1227,6 +1288,7 @@ addEventListener('pointerdown', e => { if (kitchen.isOpen) kitchen.handlePointer
 addEventListener('pointermove', e => { if (kitchen.isOpen) kitchen.handlePointer('move', e); else if (swing.enabled) swing.pointerMove(e); });
 addEventListener('pointerup', e => { if (kitchen.isOpen) kitchen.handlePointer('up', e); else if (swing.enabled) swing.pointerUp(e); });
 canvas.addEventListener('mousedown', e => {
+  if (deckCam.on) { deckCamEnd(); return; }   // council round 10 #4: a click skips the Deck Cam
   if (e.button !== 0 || !playing()) return;
   if (document.pointerLockElement !== canvas) lockMouse();
   pressAct();
@@ -1267,10 +1329,22 @@ const hinter = SET.createHinter();
 // First-time hints are TIP items: the lowest kind, shown only after 2 s of quiet, dropped after 60 s in the queue.
 let beersPoured = 0;
 function showHint(msg) { say('TIP', msg); }
+// The pause menu's Goals panel (council round 10 #1; builder 1's goals.js card): what the crew needs, as the report shows it.
+let pauseGoalsKey = '';
+function pauseGoals() {
+  const root = $('pause'), rows = crew.goals?.rows ?? [];
+  let el = root?.querySelector('.pause-goals');
+  if (!root || !rows.length) { el?.remove(); pauseGoalsKey = ''; return; }
+  if (!el) { el = document.createElement('div'); el.className = 'sheet promo pause-goals'; const row = root.querySelector('.row'); if (row) row.before(el); else root.append(el); }
+  const v = crew.venue ?? 0, title = v >= LAST_CARD ? 'The Last Bucket' : `The goal card: ${VENUE_RULES[v + 1]?.name ?? 'the next range'}`;
+  const key = JSON.stringify([title, rows, crew.goals.reward]);
+  if (key !== pauseGoalsKey) { pauseGoalsKey = key; el.innerHTML = '<h3>' + esc(title) + '</h3>' + cardHtml(rows, { rewardNow: crew.goals.reward ?? 0, esc }); }
+}
 function pause(on) {
   if (!link) return;
   if (!on) $('settings').classList.add('hidden');
   paused = on;
+  if (on) pauseGoals();
   $('pause').classList.toggle('hidden', !on);
   if (on) { releaseMouse(); focusFirst($('pause')); } else if (crew.phase === 'shift') relockMouse();
 }
@@ -1331,12 +1405,14 @@ function pollPad(dt) {
     return [0, 0];
   }
   if (pad.pressed.some(Boolean)) SFX.unlock();
+  if (deckCamPad(pad)) { rtSpray = false; return [0, 0]; }   // council round 10 #4: the cut eats the pad (and a press skips it)
   if (pad.pressed[BTN.A]) pressAct(true);
   if (pad.pressed[BTN.B]) { r2?.unlatch(); views?.unlatch(); }
   if (pad.released[BTN.A]) releaseAct(true);
   if (pad.released[BTN.X]) releaseBucket();
   if (pad.pressed[BTN.X]) interact('bucket');
-  if (pad.pressed[BTN.Y]) interact('cart');
+  if (pad.pressed[BTN.Y]) cartPress();
+  if (pad.released[BTN.Y]) cartRelease();
   if (pad.pressed[BTN.MENU]) pause(true);
   if (pad.pressed[BTN.UP]) toggleStore(true);
   if (pad.pressed[BTN.DOWN] && !r2?.cctvOn) r2?.toggleCCTV();
@@ -1452,7 +1528,7 @@ function hud(dt = 0) {
   // One line: BV · target · gear (the KPIs live on the Board, council round 3).
   $('value').classList.toggle('hidden', !!crew.todo);
   $('storehint').classList.toggle('hidden', !!crew.todo && crew.todo.find(t => !t.done)?.id !== 'buy');
-  // Owner playtest 3 §1.2 (builder 1): "$2.62 a ball · 62% clean · need 60%" (bvtext.js bvLine), then PROMOTION READY / LAST CALL.
+  // Owner playtest 3 §1.2 (builder 1): "$2.62 a ball · 62% clean · need 60%" (bvtext.js bvLine), then CARD DONE (round 10) / LAST CALL.
   const r2line = r2 ? r2.hudLine() : '';
   $('value').textContent = v ? `${bvLine({ value: v, quota: crew.quota, venue: crew.venue ?? 0, endless: !!crew.endless, pace: crew.pace, seal: crew.seal ?? v.seal ?? 1 })}${r2line ? ' · ' + r2line : ''}${crew.lastCall ? ' · LAST CALL' : ''}` : '';
   const n = carrying(), cap = gp.pocket, pad = document.body.classList.contains('pad');
@@ -1481,6 +1557,7 @@ function hud(dt = 0) {
     : dockOpen(me) && (crew.pond?.line ?? 0) > 0 ? `Hold ${ibtn}  Haul up the bag (${crew.pond.line})`
     : dockOpen(me) && crew.players.some(p => p.diving && p.id !== me.id) ? pad ? `Tap ${btn}, then circle either stick to pump air to your diver` : `Hold ${btn} and circle the mouse to pump air to your diver`
     : crew.pond?.unlocked && hasTube(crew.up) && atTube(me) && (carrying() > 0 || me.treasure) ? `${ibtn}  Feed the tube${crew.pond.tube ? ` (${crew.pond.tube} in flight)` : ''}`
+    : atFieldRet(me) && (carrying() > 0 || me.treasure) ? `${ibtn}  Send them home`   // council round 10 §C (3 words)
     : dockOpen(me) ? 'Walk into the pond to dive for sunk balls'
     : atShed(me) && crew.fries?.open ? `${btn}: kitchen · fries ${crew.fries.stock}/${crew.fries.max}`
     : atShed(me) && (crew.up?.shed ?? 0) >= 1 ? 'The snack shed is boarded up'   // owner notes: no shed in the world until it opens (stations.js)
@@ -1490,6 +1567,7 @@ function hud(dt = 0) {
       : performance.now() - wandAt < 3000 ? `Hold ${btn} to spray · look down to rinse your boots · ${ibtn} put it back` : `${btn} spray`
     : nearStation() ? `${ibtn}  Grab the pressure washer${crewCarts().some(c => (c.mud ?? 0) > 0.05) ? crewCarts().length > 1 ? ' (a cart is muddy)' : ' (the cart is muddy)' : ''}`
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up${nearCart() ? `   ·   ${cbtn}  Drive the cart` : ''}`
+    : nearCart() && autoOwned() ? `${cbtn}  Drive · hold ${cbtn}: ${nearAutoMode() === 'harvest' ? 'lap the Track' : 'harvest'}`   // council round 10 §D
     : nearCart() ? `${cbtn}  Drive the cart`
     : atBay(me) && crew.phase === 'shift' ? (me.pocket > 0 ? `${pad ? 'Pull back, push through' : 'Flick'} to swing · ${(crew.venue ?? 0) >= 2 ? 'land it in a green' : 'hit the cart'} (${me.pocket})` : 'Bring balls to hit them')
     : n < cap && !gp.scoop && nearestBall() ? `${btn}  Pick up`
@@ -1572,6 +1650,75 @@ let last = performance.now(), fall = 0;
 const skyAt = new THREE.Vector3(), sprayJit = new THREE.Vector3(), cartRel = new THREE.Vector3();   // reused every frame (no GC hitches)
 let ambOn = false, ambT = 0;
 let stamina = sprintSecs(0), restT = 0, sprinting = false, padSprint = false;
+// ---------------------------------------------------------------- the Deck Cam (council round 10 #4)
+// On a deckFall each client cuts its own camera to a fixed shot of the fall (deckcam.js: 2.6 s, 1.8 s for the shift's
+// later falls), letterboxed, "DECK CAM · Ⓑ skip" at the bottom-left edge (edge text, never centre). It is the main
+// camera, moved after everything else placed it; the next frame puts it back exactly. Movement input is ignored while
+// it runs; any key, mouse button or pad button, or a stick pushed past 0.5, skips it. The once-ever PA card (and any
+// memo) waits for the cut (say.js hold). views/deck.js reads ctx.deckCam.on to slow the drop and calls
+// ctx.deckCam.bonk() on the BONK, which cuts back. No new draw calls: two DOM bars and a label.
+const deckCam = { on: false, t: 0, secs: 0, from: null, at: null, wait: null, bonked: false, armed: false, el: null,
+  bonk() { if (deckCam.on) deckCam.bonked = true; } };
+function deckCamDom() {
+  if (deckCam.el) return deckCam.el;
+  const st = document.createElement('style');
+  st.textContent = `#deckcam { position: fixed; inset: 0; pointer-events: none; z-index: 55; display: none; }
+#deckcam.on { display: block; }
+#deckcam i { position: absolute; left: 0; right: 0; height: ${DECKCAM.BARS * 100}%; background: #000; }
+#deckcam i.top { top: 0; } #deckcam i.bot { bottom: 0; }
+#deckcam span { position: absolute; left: max(16px, 2vw); bottom: calc(${DECKCAM.BARS * 100}% + 0.6em); color: #fbf6e8;
+  font: 700 clamp(0.8em, 2vh, 1.1em) "Courier New", ui-monospace, monospace; letter-spacing: 0.08em; text-shadow: 0 1px 3px #000; }
+#deckcam span::before { content: "● "; color: #e53935; }`;
+  document.head.append(st);
+  const el = document.createElement('div');
+  el.id = 'deckcam'; el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = '<i class="top"></i><i class="bot"></i><span></span>';
+  document.body.append(el);
+  return (deckCam.el = el);
+}
+function deckCamStart(p) {
+  Object.assign(deckCam, { on: true, t: 0, secs: p.secs, from: p.from, at: p.at, bonked: false, armed: false, wait: null });
+  sayer.hold(p.secs + 3);   // the PA card waits for the cut, as the memo waits for the PA (released when it ends; this is a cap)
+  const el = deckCamDom();
+  el.querySelector('span').textContent = document.body.classList.contains('pad') ? CUT_LABEL.pad : CUT_LABEL.kb;
+  el.classList.add('on');
+}
+function deckCamEnd() {
+  if (!deckCam.on) return;
+  deckCam.on = false;
+  deckCam.el?.classList.remove('on');
+  sayer.hold(0);   // skipped or done: the PA card goes now
+}
+function onDeckFall(e) {
+  const p = cutPlan(e, { driving: driving(), diving: !!me.diving, lift: !!views?.capturing?.(), kitchen: kitchen.isOpen,
+    menu: !kitchen.isOpen && menuOpen(), down: me.down, replays: SET.get().deckReplays !== false });
+  if (!p) return;
+  if (p.wait) { deckCam.wait = { ...p, until: performance.now() / 1000 + p.until }; sayer.hold(p.until + p.secs); return; }   // the cook
+  deckCamStart(p);
+}
+// Once a frame, after the camera is placed (and before the walk-off, which never overlaps a shift's fall).
+function deckCamTick(dt) {
+  if (deckCam.wait) {
+    const w = deckCam.wait;
+    if (performance.now() / 1000 > w.until) deckCam.wait = null;
+    else if (!kitchen.isOpen) { deckCam.wait = null; if (playing() && me.down <= 0 && !driving()) deckCamStart(w); else sayer.hold(0); }
+  }
+  if (!deckCam.on) return;
+  deckCam.t += dt;
+  if (!cutAt(deckCam.t, deckCam.secs, deckCam.bonked).on || me.down > 0 || driving() || !playing()) { deckCamEnd(); return; }
+  camera.position.set(deckCam.from.x, deckCam.from.y, deckCam.from.z);
+  camera.lookAt(deckCam.at.x, deckCam.at.y, deckCam.at.z);
+}
+// A pad during the cut: a fresh press or a stick pushed past 0.5 (a stick already held when it started must come
+// back first, so a Rat who was walking still sees it) skips. Returns true while the cut eats the pad.
+function deckCamPad(p) {
+  if (!deckCam.on) return false;
+  const sticks = [p.lx, p.ly, p.rx, p.ry];
+  if (!deckCam.armed) deckCam.armed = sticks.every(v => Math.abs(v) <= DECKCAM.STICK);
+  if (skips({ buttons: p.pressed, sticks: deckCam.armed ? sticks : [] })) deckCamEnd();
+  return true;
+}
+
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   const [px, py] = pollPad(dt);
@@ -1579,7 +1726,7 @@ function frame(now) {
   const drivingNow = driving();
   if (drivingNow && playing()) driveCart(dt, px, py, pad?.lt ?? 0, pad?.rt ?? 0);
   else if (engine) engine.set(0);
-  if (!drivingNow && playing() && me.down <= 0 && !r2?.capturing() && !views?.capturing()) {
+  if (!drivingNow && playing() && me.down <= 0 && !r2?.capturing() && !views?.capturing() && !deckCam.on) {   // the Deck Cam: you stand still
     let fx = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0) + px;
     let fz = (keys.has('KeyS') ? 1 : 0) - (keys.has('KeyW') ? 1 : 0) + py;
     const m = Math.hypot(fx, fz); if (m > 1) { fx /= m; fz /= m; }
@@ -1592,13 +1739,17 @@ function frame(now) {
     if (wantSprint && stamina > 0) { stamina = Math.max(0, stamina - dt); restT = 0; if (!stamina) padSprint = false; }
     else if ((restT += dt) > SPRINT.REGEN_DELAY) stamina = Math.min(maxStam, stamina + dt * maxStam / 3);
     sprinting = wantSprint && stamina > 0;
-    const speed = my.walk * (sprinting ? SPRINT.SPEED : 1) * (wetPond(me) ? diveTiers(me.dive).swim : views?.speedMul(me) ?? wadeFactor(me.x, me.z, world()));
+    const speed = my.walk * (sprinting ? SPRINT.SPEED : 1) * (wetPond(me) || creekDiving(me) ? diveTiers(me.dive).swim : views?.speedMul(me) ?? wadeFactor(me.x, me.z, world()));
     me.x += (fx * cy + fz * sy) * speed * dt;
     me.z += (-fx * sy + fz * cy) * speed * dt;
     if (m > 0.05) { const drum = myGear.getObjectByName('drum'); if (drum) drum.rotation.x -= m * my.walk * dt / 0.28; }
     if (!views?.clamp(me)) clampToField(me, world());
     me.yaw += ((keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)) * 2.2 * dt;
     me.pitch = Math.max(-1.4, Math.min(1.2, me.pitch + ((keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0)) * 1.5 * dt));
+  }
+  // Council round 10 #5: under in the creek, the current carries you downstream (0.8 m/s; the server does the same).
+  if (!drivingNow && playing() && me.down <= 0 && creekDiving(me)) {
+    applyCurrent(me, dt, world());
   }
   if (link && me.placed) link.move(me.x, me.z, me.yaw, drivingNow ? myPose() : null);
   if (crew.phase === 'shift') crew.shiftT += dt;        // smooth between server ticks
@@ -1611,7 +1762,7 @@ function frame(now) {
   // My own gear: hand-held things hang below the view, the picker rolls ahead.
   myGear.position.set(me.x, 0, me.z);
   myGear.rotation.set(0, me.yaw, 0);
-  myGear.visible = fpGear.visible = me.down <= 0 && !drivingNow && !r2?.cctvOn && !r2?.revealing && !me.diving;
+  myGear.visible = fpGear.visible = me.down <= 0 && !drivingNow && !r2?.cctvOn && !r2?.revealing && !me.diving && !deckCam.on;
   if (!sprayHiss && me.wand) sprayHiss = SFX.sprayLoop?.() ?? null;
   updateSpray(dt, now);
 
@@ -1669,8 +1820,9 @@ function frame(now) {
     camera.position.set(P.x - fx * 7, 3.6, P.z - fz * 7);
     camera.lookAt(P.x + fx * 6, 0.8, P.z + fz * 6);
   } else {
-    const under = wetPond(me) && !drivingNow;
-    camera.position.set(me.x, under ? eyeY(me.x, me.z) : EYE - fall * (EYE - 0.25), me.z);   // eyeY follows the bed down into the Deep End
+    const creek = !drivingNow && creekDiving(me), under = (wetPond(me) && !drivingNow) || creek;
+    // eyeY follows the bed down into the Deep End; in the creek the eye sits BED + 0.55 (council round 10 #5)
+    camera.position.set(me.x, creek ? CREEK_DIVE.BED + CREEK_DIVE.EYE : under ? eyeY(me.x, me.z) : EYE - fall * (EYE - 0.25), me.z);
     if (under !== !!scene.userData.under) {    // murky green, a flashlight, the surface overhead
       scene.userData.under = under;
       // Owner (Xbox): after leaving the pond everything stayed faded. The fog's distances were set for the
@@ -1679,21 +1831,24 @@ function frame(now) {
       else { scene.fog.near = surfaceFog.near || 120; scene.fog.far = surfaceFog.far || 900; scene.fog.color.copy(surfaceFog.color); }
       document.body.classList.toggle('underwater', under);
       diveLight.intensity = under ? 60 : 0;
-      scuba.setUnder(under);
+      scuba.setUnder(under);   // a creek dive (council round 10 #5) takes this same path, so its fog is restored on surfacing too
     }
-    if (under) { scene.fog.near = 0.5; scene.fog.far = 9; scene.fog.color.set(0x1f4a3a); }
+    // The creek runs clear teal (waterLook(1)) against the murky pond; the same 9 m fog keeps the frame cheap.
+    if (under) { scene.fog.near = 0.5; scene.fog.far = creek ? CREEK_DIVE.FOG_FAR : 9; scene.fog.color.set(creek ? waterLook(1).fog : 0x1f4a3a); }
     { const tilt = SET.get().reduceMotion ? 0.3 : 1; camera.rotation.set(me.pitch + fall * 1.1 * tilt, me.yaw, fall * 0.6 * tilt, 'YXZ'); }
   }
 
   if (scuba.group.visible) {
     const tier = diveTiers(me.dive);
-    scuba.tick(dt, now / 1000, { air01: (me.air ?? tier.air) / tier.air, pumping: crew.players?.some(p => p.pumping),
+    scuba.tick(dt, now / 1000, { creek: creekDiving(me), air01: (me.air ?? tier.air) / tier.air, pumping: crew.players?.some(p => p.pumping),
       pumpRate: r2?.pumpRate?.() ?? 0.6, clarity: crew.pond?.clarity ?? 1, glintR: tier.glintR, light: tier.light, balls });   // balls: the torch glints (round 6 #9)
   }
   views?.tick(dt, sceneT);  // round-4 venue views, after the camera is placed
   views?.aim(aimInput());   // round 6 #4: the landing ring at a crew bay
   views?.camera(camera, dt);
   r2?.tick(dt, now);       // after the camera: CCTV and the venue reveal drive it when active
+  deckCamTick(dt);         // council round 10 #4: the Deck Cam moves the main camera while it runs
+  cartHoldTick(dt);        // council round 10 §D: Ⓨ held at an autopilot cart, or for the drones
   dusk.tick(dt);           // the end-of-day walk-off: last word on the camera while it runs
   hinter.tick(dt, { playing: !!playing() && !menuOpen() && tipsAllowed(crew, me.id),   // tips.js (playthrough 4 A15: a carried-over day's finished checklist no longer blocks them)
     // (owner notes: venue/pad/show used to sit inside the comment above, so every hint was marked seen and never shown)
@@ -1737,7 +1892,7 @@ function frame(now) {
     garyView.bubble.sprite.visible = !!ch || garyView.bubbleEnd > 0;
   }
   if (link) hud(dt);
-  ballReturn.update(stationsShown(crew).washer); ballReturn.basket(crew.basket ?? 0, crew.filling?.length ?? 0); ballReturn.tick(dt);   // §3.3: the basket's heap   // the pipe runs through the washer once it's in the world
+  ballReturn.update(stationsShown(crew).washer); ballReturn.basket(crew.basket ?? 0, crew.filling?.length ?? 0); ballReturn.tick(dt); fieldReturns.update(crew.up?.returns ?? 0); fieldReturns.tick(dt); dispatchRing.sync(crew.mods?.county?.zone);   // §3.3: the basket's heap   // the pipe runs through the washer once it's in the world
   props.tick(dt, sceneT, crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);   // station details (props.js)
   perf.tick(now);
   renderer.render(scene, camera);
@@ -1759,6 +1914,7 @@ views = createViews({
   crew: () => crew, balls: () => balls, pad: () => pad, act: msg => link?.act(msg),
   playing: () => !!playing(), driving: () => !!driving(),
   dusking: () => !!dusk.state?.cam,   // playthrough 4 C5: the end-of-day overhead camera is up (the Orbital view hides the Lift tower)
+  deckCam,                   // council round 10 #4: views/deck.js slows the drop while deckCam.on and calls deckCam.bonk() on the BONK
 });
 perf.attach({ sun: sky.sun, crowd, scuba, ballMesh, venueRate: setHeavyRate, toast: m => toast(m, 3) });
 // Station details and the cheap graphics pass (props.js), scaled by the perf profile.
@@ -1769,6 +1925,6 @@ SET.set({});   // re-apply saved settings now the PA exists
 requestAnimationFrame(frame);
 
 // Dev hook: /?debug exposes live state for poking at from the console.
-if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats, todoArrow, say: sayer, ballReturn };
+if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats, todoArrow, say: sayer, ballReturn, deckCam, onDeckFall, pauseGoals };
 // ?signs: draw each sign's facing and log any mesh whose world normal disagrees with signs.js (loaded only then).
 if (new URLSearchParams(location.search).has('signs')) import('./signsdebug.js').then(m => m.installSignDebug({ scene, venue: () => crew ? (crew.endless ? 6 : crew.venue ?? 0) : 0 }));

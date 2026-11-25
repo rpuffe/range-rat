@@ -7,7 +7,10 @@ import { MAP } from './map.js';
 // Bay Utilization: the venue's fourth gauge. Balls resting in cups block the sensors; 30 in the cups is an empty dial
 // (council round 6 #2: was 40, which left an idle crew a free pass on the gauge stamp).
 export const CUP_FULL = 30;
-export const bayUtil = cupBalls => Math.max(0, Math.min(1, 1 - Math.max(0, cupBalls || 0) / CUP_FULL));
+// Council round 10 #3: the upper bays add supply, so the dial grows 2 a bay in play: 42 at 4P (6 bays), 38 at 2P, 34 solo.
+export const CUP_PER_UPPER = 2;
+export const cupFull = (upper = 0) => CUP_FULL + CUP_PER_UPPER * Math.max(0, upper | 0);
+export const bayUtil = (cupBalls, full = CUP_FULL) => Math.max(0, Math.min(1, 1 - Math.max(0, cupBalls || 0) / full));
 
 // The bowl a resting point lies inside (r, not the cup), or null. The rule is flat: no heightfield.
 // `pad` widens every bowl by that many metres: crew balls use TARGET.LIP (council round 6, #4), customers 0.

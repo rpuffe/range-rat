@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SIM, POND, KIND_PHYS, MATS, launch, mulberry32, advanceBall } from '../web/js/sim.js';
+import { SIM, POND, KIND_PHYS, MATS, launch, mulberry32, advanceBall, CREEK_DIVE } from '../web/js/sim.js';
 import {
   MAP, surfaceAt, creekProject, creekPoint, creekLength, cartBlocked, wadeFactor, onBridge, keepInField,
   netClamp, obstacleBounce, ballFeatures, landBall, groundContact, startDrift, stepDrift, driftAt, driftSecs, driftEvent,
   sinkSpot, restSpot, nearestLandmark, landmarksFor, inPondArea,
+  SNAG, snags, snagS, snagSpot, inCreekWater, inCreekChannel, creekCurrent,
 } from '../web/js/map.js';
 
 const DRY = { venue: 0 }, WET = { venue: 1 }, LATE = { venue: 3 };
@@ -140,7 +141,8 @@ test('wet: a ball landing in the water drifts down the inflow to the Delta and s
   assert.ok(Math.abs(driftSecs('in', 0) - creekLength('in') / 1.5) < 1e-9);
 });
 
-test('wet: outflow balls rest in a pile at the Grate, inside the net', () => {
+test('wet: outflow balls rest in a pile at the Grate, inside the net', (t) => {
+  SNAG.ON = 0; t.after(() => { SNAG.ON = 1; });   // council round 10 #5: no snags here (the riders that reach the Grate)
   const ids = [];
   for (let id = 1; id <= 30; id++) {
     const p = creekPoint('out', 36 + (id % 7));   // downstream of the Cart Bridge, upstream of the Stones
@@ -290,4 +292,47 @@ test('keepInField and the callout names', () => {
   assert.equal(nearestLandmark(0, -185, DRY).name, 'the Back Net');
   assert.ok(!landmarksFor(DRY).some(l => l.id === 'delta') && landmarksFor(WET).some(l => l.id === 'delta'));
   assert.equal(nearestLandmark(0, 0, DRY), null);
+});
+
+// ---- council round 10 #5: snags --------------------------------------------------------------------------------------
+test('snags: 1 in 3 range balls, every gold and glow; the point is deterministic and inside the branch', () => {
+  let range = 0;
+  for (let id = 1; id <= 3000; id++) if (snags(id, 'range')) range++;
+  assert.ok(range > 900 && range < 1100, `about a third of range balls snag (${range})`);
+  for (let id = 1; id <= 200; id++) { assert.equal(snags(id, 'gold'), true); assert.equal(snags(id, 'glow'), true); assert.equal(snags(id, 'lead'), false); }
+  for (const branch of ['in', 'out']) for (let id = 1; id <= 200; id++) {
+    const s0 = 3 + (id % 20);
+    const s = snagS(id, 'gold', branch, s0);
+    assert.equal(s, snagS(id, 'gold', branch, s0), 'deterministic');
+    assert.ok(s >= s0 && s <= creekLength(branch), 'downstream of where it landed, inside the branch');
+    const q = snagSpot(id, branch, s);
+    assert.ok(creekProject(q.x, q.z).d < MAP.CREEK.HW, 'inside the channel');
+    assert.equal(q.y, CREEK_DIVE.BED + SIM.BALL_R);
+  }
+  SNAG.ON = 0; assert.equal(snags(1, 'gold'), false); SNAG.ON = 1;
+});
+
+test('a snagging ball stops on the bed as b.creek, never sunk; the event and driftAt agree', () => {
+  let id = 1; while (!snags(id, 'range')) id++;
+  const p = creekPoint('in', 4);
+  const b = { id, x: p.x, y: SIM.BALL_R, z: p.z, vx: 0, vy: 0, vz: 0, kind: 'range' };
+  const d = startDrift(b, WET);
+  assert.ok(d.snag != null && driftEvent(b).snag != null);
+  let out = null, t = 0;
+  while (!out && t < 80) { out = stepDrift(b, 0.05); t += 0.05; }
+  assert.equal(out, 'snag');
+  assert.equal(b.creek, true); assert.equal(b.rest, true); assert.ok(!b.sunk);
+  assert.equal(driftAt({ ...d, s: undefined }, 999).end, 'snag');
+});
+
+test('the dive current: 0.8 m/s downstream in creek water, nothing on land or the Muni, held at the Grate', () => {
+  const p = creekPoint('out', 20), c = creekCurrent(p.x, p.z, WET);
+  assert.ok(Math.abs(Math.hypot(c.vx, c.vz) - CREEK_DIVE.CURRENT) < 1e-9);
+  assert.ok(c.vx * p.dx + c.vz * p.dz > 0, 'downstream');
+  assert.equal(inCreekWater(p.x, p.z, DRY), false);
+  assert.deepEqual([creekCurrent(p.x, p.z, DRY).vx, creekCurrent(0, 0, WET).vx], [0, 0]);
+  const br = creekPoint('out', 30);   // under the Cart Bridge: you float under it
+  assert.equal(inCreekWater(br.x, br.z, WET), false); assert.ok(creekCurrent(br.x, br.z, WET).vx > 0);
+  const g = creekPoint('out', creekLength('out') - 0.3);
+  assert.equal(creekCurrent(g.x, g.z, WET).vx, 0);
 });

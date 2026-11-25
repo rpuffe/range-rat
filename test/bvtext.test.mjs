@@ -33,7 +33,7 @@ test('the bar is (Upkeep - 1) / (ceiling - 1): clean at the Muni, the gauges fro
   assert.equal(ceilingOf({ pond: null, fries: null }), 1.5);
   assert.equal(ceilingOf({ pond: 0, fries: 0.4 }), 2.5, 'an empty pond still counts as a gauge');
   assert.equal(ceilingOf({ pond: 1, fries: 1, kpi: 0 }), 3);
-  assert.equal(barWord(0), 'CLEAN'); assert.equal(barWord(1), 'UPKEEP');
+  assert.equal(barWord(0), 'CLEAN'); assert.equal(barWord(1), 'CLEAN', 'council round 10: "clean" everywhere');
   assert.equal(whyLine(0), 'Clean grounds pay up to +50%');
   assert.equal(whyLine(3), 'Each gauge pays up to +50%');
   for (const v of [0, 1]) assert.ok(wordCount(whyLine(v)) <= 6);
@@ -50,7 +50,7 @@ test('bvLine: the Muni, the Club and endless', () => {
   assert.equal(bvLine({ value: { bv: 2.62, hustle: 1, upkeep: 1.31, pond: null, fries: null }, quota: { q: 0.3 }, venue: 0 }),
     '$2.62 a ball · 62% clean · need 60%');
   assert.equal(bvLine({ value: { bv: 30, hustle: 1, upkeep: 1.72, pond: 1, fries: 1 }, quota: { q: 0.6 }, venue: 1 }),
-    '$30 a ball · 48% upkeep · need 40%');
+    '$30 a ball · 48% clean · need 40%');
   assert.equal(bvLine({ value: { bv: 19240, hustle: 1, upkeep: 2, pond: 1, fries: 1, kpi: 1 }, endless: true, pace: { cash: 3_100_000 } }),
     '$19,240 a ball · today $3.1M');
   assert.equal(bvLine({ value: { bv: 1.25, hustle: 1, upkeep: 1, pond: null, fries: null }, venue: 0 }), '$1.25 a ball · 0% clean', 'day 1: no need');
@@ -62,13 +62,13 @@ test('bvLine: the Muni, the Club and endless', () => {
 test('the memo, the hint and the report rows', () => {
   assert.equal(memoLine(60, 0), 'Today: 60% clean by the bell.');
   assert.equal(memoLine(60, 0, true), 'Gary visits today. 60% clean by the bell.');
-  assert.equal(memoLine(40, 1), 'Today: 40% upkeep by the bell.');
+  assert.equal(memoLine(40, 1), 'Today: 40% clean by the bell.');
   for (const s of [memoLine(60, 0), memoLine(60, 0, true), memoLine(40, 1, true)]) assert.ok(wordCount(s) <= 8, s);
   assert.equal(HINTS.bv.kb, 'A ball pays more the cleaner it is.');
   assert.equal(HINTS.bv.pad, HINTS.bv.kb);
   assert.ok(wordCount(HINTS.bv.kb) <= 8);
   assert.equal(reportRow({ clean: 64, need: 60, venue: 0 }), 'Clean 64% · needed 60%');
-  assert.equal(reportRow({ clean: 41, need: 40, venue: 1 }), 'Upkeep 41% · needed 40%');
+  assert.equal(reportRow({ clean: 41, need: 40, venue: 1 }), 'Clean 41% · needed 40%');
   assert.equal(sealRow(1240), "Gary's Seal: +$1,240");
   assert.deepEqual(reviewPcts(1.2999, 0.3, 1.5, false), { clean: 59, need: 60 }, 'a miss never prints 60% · needed 60%');
   assert.deepEqual(reviewPcts(1.2975, 0.3, 1.5, true), { clean: 60, need: 60 }, 'a hit never prints 59%');

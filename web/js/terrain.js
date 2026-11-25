@@ -12,6 +12,7 @@
 import * as THREE_NS from 'three';
 import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';
 import { MAP, creekPoint, creekLength, inPondArea } from './map.js';
+import { CREEK_DIVE } from './dive.js';
 
 const TAU = Math.PI * 2;
 const seeded = seed => () => {
@@ -152,7 +153,42 @@ export function createTerrain({ scene, THREE = THREE_NS } = {}) {
   if (!flowTex) waterMat.color.set(0x4f9fc0);
   const water = new THREE.Mesh(ribbon(HW, 0.05, () => new THREE.Color(1, 1, 1)), waterMat);
   water.name = 'creek-water'; water.frustumCulled = false;
+  waterMat.side = THREE.DoubleSide;   // council round 10 #5: seen from below by a creek diver
   wet.add(water);
+  // Council round 10 #5: the creek's trench, for divers. A bed strip at CREEK_DIVE.BED plus two walls from the grass
+  // down to it, one geometry, ONE mesh (+1 draw call). From above the ground plane hides it; from below (back-face
+  // culled) the walls, the bed and the DoubleSide water enclose the view. The bed takes the flow texture, scrolled.
+  {
+    const pos = [], uv = [], col = [], idx = [], BED = CREEK_DIVE.BED;
+    const quad = (a, b, c, d, ca, cb) => {   // a-b along the top/near edge, c-d the far edge, s-ordered
+      const i = pos.length / 3;
+      for (const [p, u, cc] of [[a, 0, ca], [b, 0, ca], [c, 1, cb], [d, 1, cb]]) { pos.push(p[0], p[1], p[2]); uv.push(u, p[3] / 4); col.push(cc.r, cc.g, cc.b); }
+      idx.push(i, i + 2, i + 1, i + 1, i + 2, i + 3);
+    };
+    const bedC = new THREE.Color(0x6a9a8c), wallTop = new THREE.Color(0x5a4a30), wallBot = new THREE.Color(0x40503f);
+    for (const branch of ['in', 'out']) {
+      const len = creekLength(branch); let prev = null;
+      for (let s = 0; s <= len + 1e-6; s += Math.min(2, Math.max(0.05, len - s) || 2)) {
+        const p = creekPoint(branch, s), w = HW - 0.02;
+        const L = [p.x - p.dz * w, p.z + p.dx * w], Rr = [p.x + p.dz * w, p.z - p.dx * w];
+        const cur = { L, R: Rr, s, pond: inPondArea(p.x, p.z) };
+        if (prev && !cur.pond && !prev.pond) {
+          quad([prev.L[0], BED, prev.L[1], prev.s], [cur.L[0], BED, cur.L[1], cur.s], [prev.R[0], BED, prev.R[1], prev.s], [cur.R[0], BED, cur.R[1], cur.s], bedC, bedC);
+          for (const k of ['L', 'R']) quad([prev[k][0], 0.0, prev[k][1], prev.s], [cur[k][0], 0.0, cur[k][1], cur.s], [prev[k][0], BED, prev[k][1], prev.s], [cur[k][0], BED, cur[k][1], cur.s], wallTop, wallBot);
+        }
+        prev = cur;
+        if (s >= len) break;
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setIndex(idx); g.computeVertexNormals();
+    const trench = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true, map: flowTex, side: THREE.DoubleSide }));
+    trench.name = 'creek-trench'; trench.frustumCulled = false;
+    wet.add(trench);
+  }
   // foam where the inflow meets the pond: a pale ring on the Delta, the diver's pile
   {
     const ring = new THREE.Mesh(new THREE.RingGeometry(MAP.DELTA.r - 0.25, MAP.DELTA.r, 28).rotateX(-Math.PI / 2),
@@ -298,8 +334,10 @@ export function createTerrain({ scene, THREE = THREE_NS } = {}) {
       pen.position.set(f.x + 0.035, 0, f.z); pen.userData.ph = R(0, TAU); pen.name = `flag-${f.id}`;
       root.add(pen); flagMeshes.push(pen);
     }
-    const m = b.build(); m.name = 'flag-poles'; root.add(m);
+    const m = b.build(); m.name = 'flag-poles'; root.add(m); flagMeshes.poles = m;
   }
+  // Council round 10 #6: Tiered's pin stands at the green's centre, so the landmark flag hides (the discs stay).
+  const setFlags = on => { for (const p of flagMeshes) p.visible = !!on; if (flagMeshes.poles) flagMeshes.poles.visible = !!on; };
 
   // ---- the Grate: a headwall and bars across the outflow's end, on a concrete apron (the cart's pile) -------------------
   {
@@ -329,5 +367,5 @@ export function createTerrain({ scene, THREE = THREE_NS } = {}) {
   }
   setVenue(0);
 
-  return { setVenue, tick, landmarkLabels, root, meshes: [root], get venue() { return venue; }, groups: { dry, wet } };
+  return { setVenue, tick, landmarkLabels, setFlags, root, meshes: [root], get venue() { return venue; }, groups: { dry, wet } };
 }

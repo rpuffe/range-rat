@@ -25,7 +25,7 @@ export function wordCount(text) {
 
 // now(): seconds. warn(text, n): called once per over-long text (dev only; the adapter decides).
 export function createSayModel({ now = () => Date.now() / 1000, warn = null } = {}) {
-  let queue = [], visible = null, lastHide = -Infinity, seq = 0, lock = 'open', dropped = 0;
+  let queue = [], visible = null, lastHide = -Infinity, seq = 0, lock = 'open', dropped = 0, holdUntil = -Infinity;
   const warned = new Set();
 
   function hide(t) { visible = null; lastHide = t; }
@@ -71,7 +71,7 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
     if (visible || t < lastHide + SAY.GAP) return visible;
     let best = null;
     for (const i of queue) {
-      if (lock !== 'open' && HELD.has(i.kind)) continue;
+      if ((lock !== 'open' || t < holdUntil) && HELD.has(i.kind)) continue;   // the bell lock, or a hold (the Deck Cam)
       if (i.kind === 'TIP' && t - lastHide < SAY.TIP_QUIET) continue;
       if (t - i.at < (SAY.SETTLE[i.kind] ?? 0)) continue;
       if (!best || RANK[i.kind] < RANK[best.kind] || (RANK[i.kind] === RANK[best.kind] && i.seq < best.seq)) best = i;
@@ -102,6 +102,10 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
     report() { if (lock === 'bell') lock = 'report'; },
     // The report closed (the next morning, the lobby): everything flows.
     open() { lock = 'open'; },
+    // Council round 10 #4: the Deck Cam's cut. For `secs` a queued PA card or memo waits (as the memo waits for the PA);
+    // hold(0) lets them go at once (the cut was skipped). Whatever already shows keeps its slot.
+    hold(secs) { holdUntil = secs > 0 ? now() + secs : -Infinity; },
+    get held() { return now() < holdUntil; },
     clear() { dropped += queue.length; queue = []; if (visible) hide(now()); },
     // Playthrough 4 C6: a keyed line that stopped being true leaves (queued or showing).
     forget(key) { drop(i => i.key === key); if (visible && visible.key === key) hide(now()); },
@@ -110,13 +114,23 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
 
 // The DOM adapter: #toast for ALERT and TOAST, #hint for TIP, #memo for MEMO; PA and STAMP bring their own show/hide
 // in data (the PA card, the board's stamp). It ticks on a real-time interval: a background tab pauses rAF.
-export function createSay({ $ = id => document.getElementById(id), dev = false, onChange = null } = {}) {
+// now / tick: injectable for tests (a fake clock, no interval).
+export function createSay({ $ = id => document.getElementById(id), dev = false, onChange = null, now = () => performance.now() / 1000, tick = 100 } = {}) {
   const model = createSayModel({
-    now: () => performance.now() / 1000,
+    now,
     warn: dev ? (text, n) => console.warn(`say: ${n} words (max ${SAY.MAX_WORDS}): ${text}`) : null,
   });
   let shown = null, shownV = -1;
+  // Main session, council round 10: what is physically up (an item's card can outlive its turn if a render threw
+  // mid-swap). Before anything shows, everything else that is up comes down: a MEMO never shares the screen with
+  // a PA card, or the reverse.
+  const up = new Set();
   function render(item, on) {
+    if (on) for (const o of [...up]) if (o !== item) render(o, false);
+    if (on) up.add(item); else up.delete(item);
+    try { draw(item, on); } catch (err) { console.error('say: render', err); }
+  }
+  function draw(item, on) {
     const d = item.data ?? {};
     if (item.kind === 'PA' || item.kind === 'STAMP') { (on ? d.show : d.hide)?.(item); return; }
     if (item.kind === 'MEMO') {
@@ -142,7 +156,7 @@ export function createSay({ $ = id => document.getElementById(id), dev = false, 
     shown = v; shownV = v?.v ?? -1;
     onChange?.(v);
   }
-  const iv = setInterval(sync, 100);
+  const iv = tick ? setInterval(sync, tick) : null;
   // One sync after the current task, never mid-message: a memo, a phase change and a PA from one server tick all
   // queue first, so priority (not arrival order) decides what shows.
   let soon = false;
@@ -150,11 +164,13 @@ export function createSay({ $ = id => document.getElementById(id), dev = false, 
   const wrap = f => (...a) => { const r = f(...a); later(); return r; };
   return {
     say: wrap(model.say),
-    bell: wrap(model.bell), report: wrap(model.report), open: wrap(model.open), clear: wrap(model.clear), forget: wrap(model.forget),
+    bell: wrap(model.bell), report: wrap(model.report), open: wrap(model.open), clear: wrap(model.clear), forget: wrap(model.forget), hold: wrap(model.hold),
+    get held() { return model.held; },
+    get up() { return [...up]; },
     busy: model.busy,
     get dropped() { return model.dropped; },
     get visible() { return model.visible; },
-    sync, stop: () => clearInterval(iv),
+    sync, stop: () => iv && clearInterval(iv),
     model,
   };
 }

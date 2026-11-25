@@ -97,11 +97,12 @@ export function mudField(size = MUD.TEX, seed = 7) {
 }
 
 // Where my spray lands on mat-local (u, v) (0..1 across the mat), moving along (du, dv) (any length):
-// add an elongated streak to the clean memory. Returns true if anything changed.
-export function paintClean(mem, size, u, v, du, dv, amount = 0.25) {
+// add an elongated streak to the clean memory. Returns true if anything changed. `reach` scales the streak (a
+// surface whose memory spans more than a mat's 1.6 m passes < 1, so the jet stays the same size in metres).
+export function paintClean(mem, size, u, v, du, dv, amount = 0.25, reach = 1) {
   if (!(u >= -0.1 && u <= 1.1 && v >= -0.1 && v <= 1.1)) return false;
   const len = Math.hypot(du, dv) || 1, ax = du / len, ay = dv / len;
-  const cx = u * size, cy = v * size, along = size * 0.22, across = size * 0.07, R = Math.ceil(along) + 1;
+  const cx = u * size, cy = v * size, along = size * 0.22 * reach, across = size * 0.07 * reach, R = Math.ceil(along) + 1;
   let changed = false;
   for (let y = Math.max(0, Math.floor(cy - R)); y <= Math.min(size - 1, Math.ceil(cy + R)); y++) {
     for (let x = Math.max(0, Math.floor(cx - R)); x <= Math.min(size - 1, Math.ceil(cx + R)); x++) {
@@ -129,3 +130,27 @@ export function matAt(px, pz, mats, mz = 0, size = MUD.SIZE) {
 
 // Did this mat just come clean? (the sparkle): it was over the line and now it isn't.
 export const cameClean = (before, now) => before > MUD.CLEAN && now <= MUD.CLEAN;
+
+// ---- council round 10 §B: dirt you can see on the sign and the ball return ----------------------------------
+// The mats' overlay on any w x h m quad (the sign's faces; the return's front, hopper lip and pipe). mudSurface
+// gives the quad's local (u, v) (0..1, v up) its spot in the shared field at the mats' texel size, so a sign's
+// splotches are mat-sized, and `seed` shifts each surface to its own patch of the field (the two sign faces differ).
+// A standing surface is muddier low down (the splash off the ground): its thresholds drop by SURF.LOW * (1 - v), so
+// the bottom edge washes last. Never below CLEAN + EDGE, so at the server's CLEAN line every surface is spotless.
+export const SURF = { LOW: 0.18 };
+const frac = v => v - Math.floor(v);
+export function mudSurface(w, h, seed = 0) {
+  const su = w / MUD.SIZE, sv = h / MUD.SIZE, ou = frac(seed * 0.618034), ov = frac(seed * 0.414214);
+  return { w, h, su, sv, ou, ov, reach: 1 / Math.max(su, sv), uv: (u, v) => [ou + u * su, ov + v * sv] };
+}
+export const surfaceThreshold = (noise, mem = 0, v = 1) => Math.max(MUD.CLEAN + MUD.EDGE, cleanThreshold(noise, mem) - SURF.LOW * (1 - clamp01(v)));
+// The shader in props.js (surface decals) mirrors this line.
+export const surfaceAlpha = (density, noise, mem, mud, v) => {
+  const c = surfaceThreshold(noise, mem, v);
+  return mudSpread(density, mud) * smoothstep(c - MUD.EDGE, c + MUD.EDGE, mud);
+};
+// Sample a field ({ size, density, noise }) at field (u, v) (wrapping, nearest texel).
+export function fieldAt(F, u, v) {
+  const n = F.size, x = ((Math.floor(u * n) % n) + n) % n, y = ((Math.floor(v * n) % n) + n) % n, i = y * n + x;
+  return { density: F.density[i], noise: F.noise[i] };
+}

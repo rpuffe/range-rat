@@ -1,10 +1,10 @@
 // First-time tips for new things (owner notes, 2026-11-24): the context settings.js's hinter needs to decide
 // them, and a soft pointer at the thing a tip names (main.js reuses the day-1 yellow arrow for it).
 // Pure: no three, no DOM (test/tips.test.mjs).
-import { FIXTURES, WASH, WASHER_HANDLES, FRIES, POND } from './sim.js';
+import { FIXTURES, WASH, WASHER_HANDLES, FRIES, POND, BAYS } from './sim.js';
 import { TUBE } from './dive.js';
 import { LIFT } from './orbit.js';
-import { MAP } from './map.js';
+import { MAP, creekProject } from './map.js';
 
 export const TIP = {
   NEAR_MAT: 7,        // m: a muddy mat this close to me is "near you"
@@ -30,7 +30,11 @@ export function tipCtx(crew, me) {
     if (mud > worst) worst = mud;
     if (me && Math.hypot(m.x - me.x, m.z - me.z) <= TIP.NEAR_MAT && mud > near) near = mud;
   }
-  return { up: crew?.up ?? null, myDive: me?.dive ?? 0, matMudNear: near, matMudMax: worst };
+  // Council round 10 #5: near the running creek (the Club and up), for its first-time tip.
+  const creekNear = !!me && (crew?.venue ?? 0) >= 1 && creekProject(me.x, me.z).d < MAP.CREEK.HW + 4;
+  // Council round 10 #6: standing at a crew bay (the 'on the green' tip, Muni and Club).
+  const atBay = !!me && BAYS.some(b => Math.hypot(me.x - b.x, me.z - b.z) < 1.4);
+  return { up: crew?.up ?? null, myDive: me?.dive ?? 0, matMudNear: near, matMudMax: worst, ...(creekNear ? { creekNear } : {}), ...(atBay ? { atBay } : {}) };
 }
 
 // The muddiest mat (for the pointer), or null.

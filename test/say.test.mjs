@@ -138,3 +138,55 @@ test('every item shows at least 1.2 s; dev warns once on a line over 8 words', (
   assert.equal(i.secs, SAY.MIN_SHOW);
   assert.deepEqual(warned, [9]);
 });
+
+// Main session, council round 10: on a fresh save a debut memo and a PA card could share the screen. The DOM adapter
+// now keeps what is physically up and takes everything else down before anything shows.
+import { createSay } from '../web/js/say.js';
+function fakeDom() {
+  const els = {};
+  const el = id => (els[id] ??= { id, textContent: '', cls: new Set(id === 'memo' ? ['hidden'] : []), classList: { toggle(c, on) { on ? this.o.cls.add(c) : this.o.cls.delete(c); }, contains(c) { return this.o.cls.has(c); } } });
+  const $ = id => { const e = el(id); e.classList.o = e; return e; };
+  return { $, memoUp: () => !el('memo').cls.has('hidden') };
+}
+test('the adapter: a memo and a PA card are never up together (debut memo + debut PA, any order, a hold)', () => {
+  let t = 0;
+  const dom = fakeDom();
+  let card = null;   // the PA card's caption while it is on
+  const pa = (text, secs) => ({ secs, data: { show: () => { card = text; }, hide: () => { if (card === text) card = null; } } });
+  const s = createSay({ $: dom.$, now: () => t, tick: 0 });
+  const both = [];
+  const run = to => { for (; t < to; t = Math.round((t + 0.05) * 1000) / 1000) { s.sync(); if (card && dom.memoUp()) both.push(t); } };
+  s.say('MEMO', 'NEW: the gold ball.', { secs: 5 });
+  s.say('PA', 'A gold ball. It belongs to Corporate.', pa('gold', 6));
+  run(3);
+  assert.equal(card, 'gold', 'the PA outranks the memo from the same tick');
+  s.say('MEMO', 'NEW: the square ball.', { secs: 5 });
+  s.say('PA', 'A square ball. It does not roll.', pa('square', 4));
+  run(30);
+  assert.deepEqual(both, []);
+  assert.equal(card, null); assert.equal(dom.memoUp(), false);
+  // A PA card that is still up (its hide was lost) comes down before a memo shows.
+  s.say('PA', 'stuck', { secs: 2, data: { show: () => { card = 'stuck'; }, hide: () => {} } });
+  run(31);
+  assert.equal(card, 'stuck');
+  s.say('MEMO', 'Today: 1,123 to go.', { secs: 3 });
+  s.up.forEach(i => { if (i.kind === 'PA') i.data.hide = () => { card = null; }; });
+  run(40);
+  assert.deepEqual(both, []);
+  s.stop();
+});
+
+test('hold (the Deck Cam): a queued PA card and memo wait for the cut; hold(0) lets them go', () => {
+  let t = 0;
+  const m = createSayModel({ now: () => t });
+  m.hold(2.6);
+  m.say('PA', 'A guest fell. Beer is not a ladder.', { secs: 4 });
+  m.say('TOAST', 'Bought!');
+  assert.equal(m.update()?.kind, 'TOAST', 'feedback still shows');
+  t = 2.0; m.update(); assert.ok(m.held);
+  assert.notEqual(m.visible?.kind, 'PA');
+  t = 2.55; m.update(); t = 3.0; assert.equal(m.update()?.kind, 'PA', 'the card after the cut (and the toast and the gap)');
+  const m2 = createSayModel({ now: () => t });
+  m2.hold(2.6); m2.say('MEMO', 'x'); t += 1; m2.update(); assert.equal(m2.visible, null);
+  m2.hold(0); assert.equal(m2.update()?.kind, 'MEMO', 'skipped: it goes at once');
+});

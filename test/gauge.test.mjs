@@ -68,7 +68,7 @@ test('at the Muni and the Club there is no gauge: the quota entry has no gauge f
     const crew = bell(venue, null);
     const q = crew.report.quota;
     assert.ok(q, `venue ${venue} has a review`);
-    assert.deepEqual(Object.keys(q).sort(), ['bonus', 'bv', 'clean', 'hit', 'need', 'stamps', 'target', 'title', 'venue']);   // owner playtest 3 §1.2: the bar's %
+    assert.deepEqual(Object.keys(q).sort(), ['bonus', 'bv', 'clean', 'hit', 'need', 'reviews', 'target', 'title', 'venue']);   // owner playtest 3 §1.2: the bar's %
   }
 });
 

@@ -94,6 +94,9 @@ test('tips: each fires on its condition, once (the hinter keeps the seen list)',
   assert.equal(nextHint({ ...base, up: { pond: 1 } }), 'tube');
   assert.equal(nextHint({ ...base, up: { gutters: 1 } }), 'gutters');
   assert.equal(nextHint({ ...base, up: {}, venue: 5 }), 'lift');
+  assert.equal(nextHint({ ...base, up: {}, venue: 1, creekNear: true }), 'creek', 'council round 10 #5: the creek is divable at the Club');
+  assert.equal(nextHint({ ...base, up: {}, venue: 1 }), null, 'only near the creek');
+  assert.equal(nextHint({ ...base, up: {}, venue: 0, creekNear: true }), null, 'the Muni creek is dry');
   assert.equal(nextHint({ ...base, up: {}, myDive: 1 }), 'dive', 'dive gear bought');
   assert.equal(nextHint({ ...base, up: {}, matMudNear: 0.4 }), null);
   assert.equal(nextHint({ ...base, up: {}, matMudNear: 0.6 }), 'mud', 'a muddy mat near you');

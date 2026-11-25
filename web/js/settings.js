@@ -6,7 +6,7 @@
 export const KEY = 'rangerat.settings.v1';
 export const HINTS_KEY = 'rangerat.hints.v1';
 
-export const DEFAULTS = Object.freeze({ master: 1, sfx: 1, ambience: 1, pa: 1, paMode: 'voice', look: 1, invertY: false, graphics: 'auto', textSize: 100, reduceMotion: false });
+export const DEFAULTS = Object.freeze({ master: 1, sfx: 1, ambience: 1, pa: 1, paMode: 'voice', look: 1, invertY: false, graphics: 'auto', textSize: 100, reduceMotion: false, deckReplays: true });   // deckReplays: council round 10 #4, the Deck Cam
 export const TEXT_SIZES = [100, 125, 150];   // percent; scales the whole UI (everything is in em)
 export const LIMITS = Object.freeze({ master: [0, 1], sfx: [0, 1], ambience: [0, 1], pa: [0, 1], look: [0.25, 3] });
 export const PA_MODES = ['voice', 'captions'];
@@ -28,6 +28,7 @@ export function sanitize(raw) {
   const ts = num(r.textSize, 0, 1000, NaN);
   out.textSize = Number.isFinite(ts) ? TEXT_SIZES.reduce((a, b) => (Math.abs(b - ts) < Math.abs(a - ts) ? b : a)) : DEFAULTS.textSize;
   out.reduceMotion = r.reduceMotion === true;
+  out.deckReplays = r.deckReplays !== false;
   return out;
 }
 
@@ -81,6 +82,8 @@ export const HINTS = Object.freeze({
   lift: { kb: 'The Lift: E on the platform rides up.', pad: 'The Lift: Ⓧ on the platform rides up.' },
   bv: { kb: 'A ball pays more the cleaner it is.', pad: 'A ball pays more the cleaner it is.' },   // owner playtest 3 §1.2
   deck: { kb: 'Fill their orders. Rounds count double.', pad: 'Fill their orders. Rounds count double.' },   // council round 7 #8
+  creek: { kb: 'The creek is divable now. Float downstream.', pad: 'The creek is divable now. Float downstream.' },   // council round 10 #5
+  green: { kb: 'Land a crew ball on a green: Hustle.', pad: 'Land a crew ball on a green: Hustle.' },   // council round 10 #6 (builder 2)
 });
 // Context-driven hints (council round 4, §4.2): fires when its condition holds, once ever.
 // ctx: { day, playSecs, venue, signMud, pocketFull, washerCash, onDock, beers, deckOrder }, plus tips.js tipCtx:
@@ -97,11 +100,13 @@ export const HINT_WHEN = Object.freeze({
   gutters: c => (c.up?.gutters ?? 0) >= 1,
   lift: c => (c.venue ?? 0) >= 5,
   deck: c => (c.venue ?? 0) >= 2 && ((c.beers ?? 0) > 0 || !!c.deckOrder),   // the first order (or the first beer)
+  creek: c => (c.venue ?? 0) >= 1 && !!c.creekNear,   // council round 10 #5: near the Club's running creek
+  green: c => (c.venue ?? 0) < 2 && !!c.atBay,          // council round 10 #6: at a crew bay at the Muni or the Club
   bv: c => (c.day ?? 1) >= 2 && (c.playSecs ?? 0) >= 8,   // the BV line appears on day 2: say what it is once
 });
 // Play-seconds before each hint is due; CCTV also needs the crew at venue 1+.
 export const HINT_AFTER = Object.freeze({ shop: 10, sprint: 30, cctv: 6 });
-export const HINT_ORDER = ['bv', 'wand', 'mud', 'bank', 'crank', 'shed', 'cart', 'dive', 'tube', 'gutters', 'lift', 'deck'];   // context hints, first due wins
+export const HINT_ORDER = ['bv', 'wand', 'mud', 'bank', 'crank', 'shed', 'cart', 'dive', 'tube', 'gutters', 'lift', 'deck', 'creek', 'green'];   // context hints, first due wins
 export const HINT_GAP = 12;   // seconds between hints
 export const SHOP_HINT_CASH = 20;
 // Playthrough 4 A16: the onboarding tips belong to the Muni's first two days (a Club crew already knows them).
@@ -194,6 +199,7 @@ export function render(root, { onBack } = {}) {
     <div class="srow"><span>Graphics</span><button type="button" class="quiet" data-toggle="graphics"></button><output></output></div>
     <div class="srow"><span>Text size</span><button type="button" class="quiet" data-toggle="textSize"></button><output></output></div>
     <div class="srow"><span>Reduce motion</span><button type="button" class="quiet" data-toggle="reduceMotion"></button><output></output></div>
+    <div class="srow"><span>Deck replays</span><button type="button" class="quiet" data-toggle="deckReplays"></button><output></output></div>
   </div>
   <div class="row"><button type="button" id="settings-back">Back</button></div>
   <p class="keys"><span class="kb">Esc</span><span class="gp">Ⓑ</span> to go back. Settings are kept in this browser.</p>`;
@@ -204,6 +210,7 @@ export function render(root, { onBack } = {}) {
     root.querySelector('[data-toggle="graphics"]').textContent = { auto: 'Auto', high: 'High', low: 'Low (smoother)' }[c.graphics];
     root.querySelector('[data-toggle="textSize"]').textContent = c.textSize + '%';
     root.querySelector('[data-toggle="reduceMotion"]').textContent = c.reduceMotion ? 'On' : 'Off';
+    root.querySelector('[data-toggle="deckReplays"]').textContent = c.deckReplays ? 'On' : 'Off';
   };
   paint();
   root.querySelectorAll('input[data-set]').forEach(inp => inp.addEventListener('input', () => {
@@ -215,6 +222,7 @@ export function render(root, { onBack } = {}) {
   root.querySelector('[data-toggle="graphics"]').addEventListener('click', () => { set({ graphics: GRAPHICS[(GRAPHICS.indexOf(get().graphics) + 1) % GRAPHICS.length] }); paint(); });
   root.querySelector('[data-toggle="textSize"]').addEventListener('click', () => { set({ textSize: TEXT_SIZES[(TEXT_SIZES.indexOf(get().textSize) + 1) % TEXT_SIZES.length] }); paint(); });
   root.querySelector('[data-toggle="reduceMotion"]').addEventListener('click', () => { set({ reduceMotion: !get().reduceMotion }); paint(); });
+  root.querySelector('[data-toggle="deckReplays"]').addEventListener('click', () => { set({ deckReplays: !get().deckReplays }); paint(); });
   root.querySelector('#settings-back').addEventListener('click', () => onBack?.());
   root.onkeydown = e => { if (e.code === 'Escape') { e.stopPropagation(); e.preventDefault(); onBack?.(); } };
 }

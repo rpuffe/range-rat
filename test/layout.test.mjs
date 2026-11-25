@@ -57,3 +57,38 @@ test('Gary still pulls up behind the Board; the huddle ring is round the return 
   assert.ok(d(stop, BANK) < 5, 'his stand stop is at the bank');
   assert.ok(d(stop, SIM.STAND) > GARY.HUDDLE_R, 'he parks outside the ring, so nobody in it is in his way');
 });
+
+// Council round 10 §C: the Field return (10, -62) and the Back return (-6, -128).
+import { FIELD_RETURNS, FIELD_RETURN, fieldReturns, atFieldReturn, nearestReturn } from '../web/js/layout.js';
+import { MAP, creekProject, trackDist } from '../web/js/map.js';
+import { MOWER } from '../web/js/mowe.js';
+import { POND } from '../web/js/sim.js';
+
+test('the field returns clear the bowls, the pond, the creek, the Track and every MOW-E lane', () => {
+  assert.deepEqual(FIELD_RETURNS.map(r => [r.id, r.x, r.z, r.tier]), [['field', 10, -62, 1], ['back', -6, -128, 2]]);
+  for (const r of FIELD_RETURNS) {
+    for (const b of MAP.BOWLS) assert.ok(d(r, b) > b.r + 2, `${r.id} clears Bowl ${b.id} (${d(r, b).toFixed(1)} m)`);
+    assert.ok(d(r, POND) > POND.r + 10, `${r.id} clears the pond`);
+    assert.ok(creekProject(r.x, r.z).d > MAP.CREEK.HW + 5, `${r.id} clears the creek`);
+    assert.ok(trackDist(r.x, r.z) > MAP.TRACK.w / 2 + 3, `${r.id} clears the Track`);
+    for (const z of MOWER.LANES) assert.ok(Math.abs(r.z - z) > 2 + 2, `${r.id} clears MOW-E's lane at z ${z}`);
+    for (const t of MAP.BOXES ?? []) assert.ok(d(r, t) > 4, `${r.id} clears ${t.id}`);
+  }
+  assert.ok(Math.abs(d(FIELD_RETURNS[0], MAP.BOWLS[0]) - 19.8) < 0.1 && Math.abs(d(FIELD_RETURNS[0], MAP.BOWLS[1]) - 21) < 0.3, 'the numbers in §C');
+});
+
+test('fieldReturns / atFieldReturn / nearestReturn follow the row tier', () => {
+  assert.deepEqual(fieldReturns(0), []);
+  assert.deepEqual(fieldReturns(1).map(r => r.id), ['field']);
+  assert.deepEqual(fieldReturns(2).map(r => r.id), ['field', 'back']);
+  const at = { x: 10.5, z: -61 };
+  assert.equal(atFieldReturn(at, 0), null, 'not bought: no return there');
+  assert.equal(atFieldReturn(at, 1)?.id, 'field');
+  assert.equal(atFieldReturn({ x: 10 + FIELD_RETURN.REACH + 0.1, z: -62 }, 2), null);
+  assert.equal(atFieldReturn({ x: -6, z: -127 }, 1), null, 'the Back return is tier 2');
+  assert.equal(atFieldReturn({ x: -6, z: -127 }, 2)?.id, 'back');
+  assert.equal(nearestReturn(0, -100, 0).id, 'main');
+  assert.equal(nearestReturn(0, -100, 1).id, 'field');
+  assert.equal(nearestReturn(0, -120, 2).id, 'back');
+  assert.equal(nearestReturn(SIM.STAND.x, SIM.STAND.z - 3, 2).id, 'main');
+});
