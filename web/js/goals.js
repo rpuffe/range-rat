@@ -145,7 +145,7 @@ export function rowsOf(card, live = {}, today = []) {
     let have = 0, need = 1, done = card.done.includes(g.id);
     switch (d.kind) {
       case 'fee': need = live.fee ?? 0; have = Math.min(need, Math.max(0, live.cash ?? 0)); done = need > 0 && (live.cash ?? 0) >= need; break;
-      case 'sky': done = !!live.sky; have = done ? 1 : 0; break;
+      case 'sky': done = !!live.sky; have = done ? 1 : 0; break;   // its words: skyText (what the gate still waits on)
       case 'buy': done = done || (live.up?.[d.row] ?? 0) >= d.tier; have = done ? 1 : 0; break;
       case 'once': done = done || (card.n[g.id] ?? 0) >= 1; have = done ? 1 : 0; break;
       case 'riders': need = card.need[g.id] ?? card.crew ?? 1; have = Math.min(need, card.who?.length ?? 0); done = done || have >= need; break;
@@ -153,8 +153,18 @@ export function rowsOf(card, live = {}, today = []) {
         if (Number.isFinite(live.cap?.[g.id])) need = Math.max(0, Math.min(need, Math.floor(live.cap[g.id])));
         have = Math.min(need, card.n[g.id] ?? 0); done = done || have >= need;
     }
-    return { id: g.id, kind: d.kind, text: d.text(need, live.fee), have, need, done, reward: !!d.reward, fresh: done && today.includes(g.id) };
+    const text = d.kind === 'sky' && !done ? skyText(live) : d.text(need, live.fee);
+    return { id: g.id, kind: d.kind, text, have, need, done, reward: !!d.reward, fresh: done && today.includes(g.id) };
   });
+}
+// Owner playtest (round 12): "the sky never cleared". The row read a bare "Clear the sky" while the gate waited on
+// Balls Outstanding (only debris brought down counts) and then on the debris overhead. Say which, with the number.
+// live.skyOut: Balls Outstanding; live.skyUp: debris still to bring down before Ball No. 1 can fall (orbit.js skyToClear).
+export function skyText(live = {}) {
+  const out = Math.max(0, (live.skyOut ?? 0) - 1), up = Math.max(0, live.skyUp ?? 0);
+  if (out > 0) return `Clear the sky · ${commas(out)} balls still in orbit`;
+  if (up > 0) return `Clear the sky · ${commas(up)} more debris down`;
+  return 'Clear the sky';
 }
 export const cardDone = rows => rows.length > 0 && rows.every(r => r.done);
 export const doneCount = rows => rows.filter(r => r.done).length;

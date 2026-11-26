@@ -26,7 +26,7 @@ for (let i = 0; i < N; i++) { const p = crew.join('Rat' + i); crew.connect(p); r
 const DT = 0.1;
 const FM = +(process.env.FOOTMUL ?? 1), CM = +(process.env.CARTMUL ?? 1);
 const FOOT = [0.12, 0.25, 0.5, 0.9].map(x => x * FM), CARTR = [0, 3, 4.5, 4.5].map(x => x * CM);
-const PRIO = [['cart', 3], ['cart', 4], ['wand', 3], ['dive', 3], ['amen', 3], ['drones', 1], ['tether', 1], ['drones', 2], ['owner', 1], ['owner', 2], ['owner', 3]];
+const PRIO = [['build', 3], ['filler', 2], ['cart', 3], ['cart', 4], ['wand', 3], ['dive', 3], ['amen', 3], ['drones', 1], ['tether', 1], ['drones', 2], ['owner', 1], ['owner', 2], ['owner', 3]];
 const SKIP = new Set((process.env.SKIP ?? '').split(',').filter(Boolean));
 const log = [], out = s => { log.push(s); if (V) console.log(s); };
 let sessionSecs = 0;

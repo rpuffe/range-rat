@@ -44,7 +44,7 @@ function findGreenShot() {
 
 // ---- shop ----
 function wishlist() {
-  const L = [['gear',1], ['washer',1], ['shoes',1], ['wand',1], ['ads',1], ['helpers',1], ['gear',2], ['washer',2], ['returns',1], ['helpers',2], ['cart',1], ['hardhat',1], ['ads',2], ['wand',2], ['shoes',2], ['gear',3], ['helpers',3], ['cart',2], ['ads',3], ['shoes',3], ['helpers',4]];
+  const L = [['gear',1], ['washer',1], ['filler',1], ['build',1], ['shoes',1], ['wand',1], ['ads',1], ['helpers',1], ['gear',2], ['washer',2], ['returns',1], ['build',2], ['helpers',2], ['cart',1], ['hardhat',1], ['ads',2], ['wand',2], ['shoes',2], ['gear',3], ['helpers',3], ['cart',2], ['ads',3], ['shoes',3], ['helpers',4]];
   if (N <= 3 && !F.has('nobays')) L.splice(2, 0, ['bays',1]);
   return L;
 }

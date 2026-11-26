@@ -23,6 +23,10 @@ export const ORBIT = {
   TOP: MAP.LIFT.TOP,   // m: 120
   BAG_W: 3,            // KIND_W.debris (mirrored; test/orbit.test.mjs pins it)
   PUMP_REACH: 3.4,     // m from the car: "at the Lift" (round 8 #4: the crank is gone; the reach stays for atLift)
+  // Round 12 (owner: "the sky never cleared"): the 1,958 are already up there. One piece of that backlog drifts into
+  // reach every DRIFT_EVERY s, whatever the customers do, so a crew short of buckets (no filler, few bays) isn't stuck
+  // for 7-9 shifts waiting on orbit shots. Not during the Last Bucket (the sky mustn't refill), not in endless.
+  DRIFT_EVERY: 12,
   SKY_CLEAR: 15,       // council round 7 #5: Ball No. 1 falls only through a sky this clear (gauge >= 0.50)
 };
 // The sky gate's banner (the Board and the Last Bucket line): how many pieces still stand between Ball No. 1 and home.

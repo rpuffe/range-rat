@@ -19,7 +19,7 @@ import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor, cartSpeedA
 import { VenueHooks, MODULES } from './venues/index.mjs';
 import { halfLapPose } from '../web/js/autopilot.js';   // playthrough 5 C6
 import { debrisLeft } from './venues/orbit.mjs';
-import { ORBIT, debrisBalls } from '../web/js/orbit.js';
+import { ORBIT, debrisBalls, skyToClear } from '../web/js/orbit.js';
 import { isStray } from '../web/js/county.js';
 import { shortfall, shortfalls, clubDuskJobs, dealJobs, gaugeOk as gaugeHolds, GAUGE_MISS, RALLY_LINES, RALLY_MARGIN, RALLY_RECHECK, RALLY_PICK, rallyAt, RALLY_AT, UPKEEP_MARGIN } from '../web/js/rally.js';
 import { GARY_INTRO, introDue, newIntro, stepIntro, garyNext, garyMorning, stepChat, pingStall, commendFor } from '../web/js/garyvisit.js';   // owner playtest 3 §6
@@ -45,7 +45,7 @@ import { diveTiers, MAX_DIVE_LEVEL, PUMP, pumpGain, airStep, newLine, canSend, s
   cleanLostFound, rollTreasure, treasureSpot, treasureSpotFor, CREEK_DIVE, finderFee, TREASURE_BY_ID, TREASURE } from '../web/js/dive.js';
 // Council round 10 #1: the venue goal card replaces the review stamps (web/js/goals.js, pure).
 import { printCard, printOver, cleanCard, migrateV4, rowsOf, cardDone, doneCount, strip, headline, rewardFor, tomorrowLine,
-  onCard, RISE_REVIEWS, hasCard, LAST_CARD } from '../web/js/goals.js';
+  onCard, RISE_REVIEWS, hasCard, LAST_CARD, moreText } from '../web/js/goals.js';
 // Round 11 (builder "today"): Corporate's Today, the endless contracts and cosmetics, the night recap and awards.
 import { todayFor, todayMemo, todayChip, todayName, todayReport, todayKind, todayShot, ballMul, mudMul, basketCap, orderBoost,
   juniorDay, hash32, contractsFor, contractMet, newlyUnlocked, canWear, cleanLooks, swingMul } from '../web/js/today.js';
@@ -596,7 +596,8 @@ export class Crew {
       let bags = 0; for (const r of this.mods.state('orbit')?.riders?.values() ?? []) bags += r.bag?.length ?? 0;
       cap = { debris: (this.goals.n.debris ?? 0) + this.skyDebris() + bags };
     }
-    return rowsOf(this.goals, { up: this.up, cash: this.cash, fee: this.promoFee() ?? 0, sky, ...(cap ? { cap } : {}) }, this.goalsToday);
+    const skyLive = this.venue === LAST_CARD ? { skyOut: this.outstanding, skyUp: skyToClear(this.skyDebris()) } : {};   // round 12: the sky row's words
+    return rowsOf(this.goals, { up: this.up, cash: this.cash, fee: this.promoFee() ?? 0, sky, ...skyLive, ...(cap ? { cap } : {}) }, this.goalsToday);
   }
   goalOpen(id) { return !!this.goals && onCard(this.goals.venue, id) && !this.goalRows().find(r => r.id === id)?.done; }
   // One call at each counting site: n more of goal `id` (only if it's on this venue's card and still open).
@@ -1828,6 +1829,9 @@ export class Crew {
   }
 
   skyDebris() { return debrisLeft(this.mods.state('orbit')); }
+  // Round 12 (owner: "the sky never cleared"): the sky is clear enough but a card step is still open. The banner names it
+  // ("buy the tether winch") instead of reading CLEAR THE SKY · 0 UP with nothing left to do.
+  skyStep() { const r = this.goalRows().find(o => !o.done && o.kind !== 'sky'); return r ? moreText(r) : null; }
   // Council round 10 #1: and while the Orbital card's other steps (the Lift, the debris, the tether) are open.
   skyBlocked() { return this.venue === 5 && !this.endless && (this.skyDebris() > ORBIT.SKY_CLEAR || this.lastStepsOpen()); }
   lastStepsOpen() { return !!this.goals && this.goals.venue === LAST_CARD && this.goalRows().some(r => !r.done && r.kind !== 'sky'); }
@@ -2343,7 +2347,7 @@ export class Crew {
       // Playthrough 5: "Card done · clock out" — null unless the card is done mid-shift; n of `of` Rats are holding it.
       clockOut: this.canClockOut() ? { n: this.clockOut?.size ?? 0, of: this.onlineCount() } : null,
       lastBucket: this.lastBucket && { phase: this.lastBucket.phase, by: this.lastBucket.by ?? null,
-        ...(this.lastBucket.phase === 'sky' ? { debris: this.skyDebris() } : {}),
+        ...(this.lastBucket.phase === 'sky' ? { debris: this.skyDebris(), step: this.skyStep() } : {}),
         ...(this.lastBucket.phase === 'huddle' ? { sweep: +this.lastBucket.sweep.toFixed(2), slots: this.lastBucket.slots ?? [], in: this.lastBucket.in ?? [], held: this.lastBucket.held ?? [] } : {}) },
       washer: this.perks.washer ? { n: this.hopper.n, credit: this.hopper.credit, auto: this.perks.washAuto,
         L: cr.L && now - cr.L.at < 400 ? cr.L.id : null, R: cr.R && now - cr.R.at < 400 ? cr.R.id : null, rateL: rateOf('L'), rateR: rateOf('R') } : null,

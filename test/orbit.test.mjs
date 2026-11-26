@@ -33,7 +33,7 @@ const at = (p, lx, lz) => { p.x = LIFT.x + lx; p.z = LIFT.z + lz; };
 
 test('the constants are the doc\'s, the module is valid and registered, and debris weighs 3', () => {
   assert.deepEqual({ ...ORBIT, TOP: 0 }, { SHOT: 0.10, VY: 70, LEAVE_Y: 150, CAP: 60, RIDE: 5, R: 11, GRAB: 2.2, GRAB_SLACK: 0.3, TETHER_EVERY: 8,
-    KPI_AT: 30, SWIM_MUL: 1.2, EYE0: 1.7, TOP: 0, BAG_W: 3, PUMP_REACH: 3.4, SKY_CLEAR: 15 });
+    KPI_AT: 30, SWIM_MUL: 1.2, EYE0: 1.7, TOP: 0, BAG_W: 3, PUMP_REACH: 3.4, DRIFT_EVERY: 12, SKY_CLEAR: 15 });
   assert.equal(ORBIT.TOP, 120);
   assert.equal(KIND_W.debris, ORBIT.BAG_W);
   assert.deepEqual(LIFT, { x: MAP.LIFT.x, z: MAP.LIFT.z });
@@ -214,11 +214,11 @@ test('round 8 #4: four Rats can ride at once', () => {
 test('the tether winch clears 1 debris every 8 s and banks it', () => {
   const none = room({ up: { shed: 1 } });
   for (const m of none.crew.mats) m.next = 1e9;   // round 11: 10% of shots go up; no customers here
-  none.st.debris = new Set([1, 2, 3]); none.run(17);
+  none.st.debris = new Set([1, 2, 3]); none.st.driftAcc = -1e9;   // round 12: no backlog drift in this test none.run(17);
   assert.equal(none.st.debris.size, 3, 'no winch, no clearing');
   const { crew, run, st } = room({ up: { shed: 1, tether: 1 } });
   for (const m of crew.mats) m.next = 1e9;
-  st.debris = new Set([1, 2, 3, 4, 5]);
+  st.debris = new Set([1, 2, 3, 4, 5]); st.driftAcc = -1e9;
   const cash = crew.cash;
   run(7.5); assert.equal(st.debris.size, 5);
   run(1);   assert.equal(st.debris.size, 4);

@@ -450,7 +450,8 @@ function ratStep(p, i, dt) {
 }
 
 // ---- shopping ----------------------------------------------------------------------------------------------------
-const PRIO = [['bucket', 1], ['shed', 2], ['returns', 2], ['washer', 3], ['shed', 3], ['dive', 1], ['pond', 1], ['amen', 1], ['dive', 2], ['pond', 2], ['gutters', 1], ['wand', 3], ['dive', 3]];
+const PRIO = [['bucket', 1], ['filler', 2], ['build', 3], ['shed', 2],   // round 12: the round-11 rows (presets had none)
+  ['returns', 2], ['washer', 3], ['shed', 3], ['dive', 1], ['pond', 1], ['amen', 1], ['dive', 2], ['pond', 2], ['gutters', 1], ['wand', 3], ['dive', 3]];
 const buys = [];
 function tryBuy(reserve) {
   for (const [id, max] of PRIO) {

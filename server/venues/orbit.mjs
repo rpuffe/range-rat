@@ -21,7 +21,7 @@ export default {
   init(crew, saved) {
     const debris = new Set(cleanIds(saved?.d));
     const next = Math.max(Number.isInteger(saved?.n) ? saved.n : 0, debris.size ? Math.max(...debris) + 1 : 0);
-    return { debris, next, riders: new Map(), tetherAcc: 0, kpi: debrisKpi(debris.size) };
+    return { debris, next, riders: new Map(), tetherAcc: 0, driftAcc: 0, kpi: debrisKpi(debris.size) };
   },
   startShift(crew, st) { st.riders.clear(); st.tetherAcc = 0; },
 
@@ -61,6 +61,11 @@ export default {
         r.t += dt; pin(p);
         if (r.t >= ORBIT.RIDE) land(crew, st, p, r);
       }
+    }
+    // 2b. Round 12: the backlog drifts into reach (ORBIT.DRIFT_EVERY), only while there are balls left to count down.
+    if (crew.working() && !crew.endless && !(crew.lastBucket && crew.lastBucket.phase !== 'done') && crew.outstanding > 1) {
+      st.driftAcc = (st.driftAcc ?? 0) + dt;
+      while (st.driftAcc >= ORBIT.DRIFT_EVERY) { st.driftAcc -= ORBIT.DRIFT_EVERY; if (st.debris.size < ORBIT.CAP) leave(crew, st, false); }
     }
     // 3. The tether winch: one piece every 8 s, banked at weight 3.
     if (crew.working() && hasTether(crew.up)) {
@@ -140,10 +145,10 @@ export const debrisLeft = st => st?.debris?.size ?? 0;
 function pin(p) { p.x = LIFT.x; p.z = LIFT.z; }
 
 // A shot left the atmosphere: it gets the next id, unless the sky is full (then it just leaves).
-function leave(crew, st) {
+function leave(crew, st, shot = true) {
   if (st.debris.size < ORBIT.CAP) { st.debris.add(st.next); st.next++; }
   st.kpi = debrisKpi(st.debris.size);
-  crew.stats.orbited = (crew.stats.orbited ?? 0) + 1;
+  if (shot) crew.stats.orbited = (crew.stats.orbited ?? 0) + 1;
   crew.events.push({ t: 'orbit', n: st.debris.size });
 }
 

@@ -2,7 +2,7 @@
 // Last Bucket banner line, and the Board's GARY 3 · 2 · 1. No three, no DOM: unit-tested in test/huddle.test.mjs.
 // The server owns the truth (crew.mjs stepHuddle); this only draws it.
 
-import { skyBanner } from './orbit.js';
+import { skyBanner, skyToClear } from './orbit.js';
 import { SIM } from './sim.js';
 
 export const HUDDLE = {
@@ -53,7 +53,8 @@ export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = SIM.STAND) {   //
   const lb = c?.lastBucket;
   if (!lb || lb.phase === 'done' || c.phase !== 'shift') return '';
   const on = (c.players ?? []).filter(p => p.online);
-  if (lb.phase === 'sky') return skyBanner(lb.debris);            // round 7 #5: the sky gate (debris overhead)
+  if (lb.phase === 'sky') return skyToClear(lb.debris) > 0 || !lb.step ? skyBanner(lb.debris)   // round 7 #5: the sky gate (debris overhead)
+    : `SKY CLEAR · NOW ${esc(lb.step).toUpperCase()}`;           // round 12: the sky is clear, a card step isn't (owner: "never cleared")
   // Playthrough 5 C10: solo it is just HOLD SPACE ("TOGETHER · 0/1" read oddly with nobody to hold with).
   if (lb.phase === 'huddle') return (lb.slots ?? []).length <= 1 ? `HOLD ${glyph}` : `HOLD ${glyph} TOGETHER · <b>${(lb.held ?? []).length} / ${(lb.slots ?? []).length}</b>`;
   const carrier = on.find(p => p.one);
