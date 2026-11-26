@@ -106,7 +106,7 @@ TEX.preload({ renderer, onProgress: p => {
 } });
 
 const lambert = color => new THREE.MeshLambertMaterial({ color });
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), TEX.mat('grass', 0x5f8f3a, { world: 1.6, mode: 'top' }));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), TEX.mat('grass', 0x5f8f3a, { world: 2.4, mode: 'top', macro: 0.35 }));
 ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; ground.name = 'ground';
 scene.add(ground);
 
@@ -126,7 +126,7 @@ scene.add(ground);
   g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3 * 2), 2));   // world uv replaces it
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
-  const s = new THREE.Mesh(g, TEX.mat('mow', 0xffffff, { world: 1.6, mode: 'top', vertexColors: true }));
+  const s = new THREE.Mesh(g, TEX.mat('mow', 0xffffff, { world: 2.4, mode: 'top', macro: 0.3, vertexColors: true }));
   s.position.y = 0.005; s.receiveShadow = true; s.name = 'mow-stripes';
   scene.add(s);
 }

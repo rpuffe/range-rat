@@ -89,7 +89,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
 
   // ---------- 7. Ground variation ----------
   {
-    const rough = TEX.mat('grass', 0x6d9440, { world: 1.6, mode: 'top', ...decalOpts(2) });
+    const rough = TEX.mat('grass', 0x6d9440, { world: 2.4, mode: 'top', macro: 0.35, ...decalOpts(2) });
     inst(flatPlane(), rough, [
       { p: [-207.5, 0.01, 0], s: [285, 1, 700] },
       { p: [207.5, 0.01, 0], s: [285, 1, 700] },
@@ -109,7 +109,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       greens.push({ p: [x, 0.02, z], s: [r * 0.45, 1, r * 0.45], c: 0x7db85c });
       flagSpots.push({ x, z, ph: R(0, 6) });
     }
-    inst(flatCircle(28), TEX.mat('mow', 0xffffff, { world: 1.2, mode: 'top', ...decalOpts(4) }), greens);
+    inst(flatCircle(28), TEX.mat('mow', 0xffffff, { world: 2, mode: 'top', macro: 0.3, ...decalOpts(4) }), greens);
     flags.items = []; flags.mesh = null;   // the flags themselves are terrain.js's (Dimple Creek)
     const tufts = [];
     for (let i = 0; i < (lowDetail ? 14 : 28); i++) {
@@ -117,7 +117,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       if (Math.hypot(x + 12, z + 78) < 12 || creekProject(x, z).d < MAP.CREEK.HW + 1.5) continue;   // not in the pond or the creek
       tufts.push({ p: [x, 0.017, z], s: [R(0.5, 1.2), 1, R(0.4, 0.9)], ry: R(0, 3) });
     }
-    inst(flatCircle(10), TEX.mat('grass', 0x4e7c2e, { world: 1.2, mode: 'top', ...decalOpts(4) }), tufts);
+    inst(flatCircle(10), TEX.mat('grass', 0x4e7c2e, { world: 2, mode: 'top', macro: 0.3, ...decalOpts(4) }), tufts);
   }
 
   // ---------- 1. Range boundaries ----------

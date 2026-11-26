@@ -79,3 +79,20 @@ test('main.js: the mow stripes are one mesh, the bar fills, Start waits for the 
   assert.doesNotMatch(bar, /tabindex/, 'the bar never takes pad focus');
   assert.match(html, /#loadbar\.done \{ opacity: 0; \}/, 'it fades but keeps its space (nothing moves under a focused button)');
 });
+
+test('the ground is calm (owner: "a little too busy and a bit hard to see"): soft variation, no texel speckle', () => {
+  // std: overall contrast; step: mean change between neighbouring texels, the grain that shimmers when minified
+  // on the Low tier (anisotropy 2). The first pass was grass std 0.150 / step 0.087, turf 0.113 / 0.068.
+  for (const [id, maxStd, maxStep] of [['grass', 0.07, 0.006], ['mow', 0.07, 0.006], ['turf', 0.07, 0.025]]) {
+    const j = generate(SPEC_BY_ID[id]), d = j.data, w = j.w;
+    let a = 0, b = 0, n = 0, step = 0;
+    for (let y = 0; y < j.h; y++) for (let x = 1; x < w; x++) {
+      const v = d[(y * w + x) * 4 + 1]; a += v; b += v * v; n++; step += Math.abs(v - d[(y * w + x - 1) * 4 + 1]);
+    }
+    const m = a / n, std = Math.sqrt(b / n - m * m) / 255;
+    assert.ok(std < maxStd, `${id}: contrast ${std.toFixed(3)} (max ${maxStd})`);
+    assert.ok(step / n / 255 < maxStep, `${id}: grain ${(step / n / 255).toFixed(4)} (max ${maxStep})`);
+  }
+  const m = src('main.js');
+  assert.match(m, /TEX\.mat\('grass', 0x5f8f3a, \{ world: 2\.4, mode: 'top', macro: 0\.35 \}\)/, 'big soft tiles, a gentle macro');
+});

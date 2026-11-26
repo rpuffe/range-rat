@@ -64,9 +64,10 @@ export function variant(id, rx = 1, ry = 1) {
 // mode 'top' (ground-ish planes: x/z only) or 'box'. One shader variant per mode (customProgramCacheKey).
 // 'top' also multiplies in a second, 7× larger sample of the same texture (one more fetch), so ground tiles a metre or
 // two across for crisp blades without the repeat showing: the big sample breaks the grid up into ~10 m patches.
-function worldUv(m, metres, mode, id) {
+// macro: how strongly (0..1). Grass keeps it low: soft variation, nothing blotchy (owner: "too busy").
+function worldUv(m, metres, mode, id, macro = 0.7) {
   const prev = m.onBeforeCompile, key = m.customProgramCacheKey?.call(m) ?? '';
-  const U = { uWuv: { value: 1 / metres }, uMacroInv: { value: 1 / SPEC_BY_ID[id].mean } };
+  const U = { uWuv: { value: 1 / metres }, uMacroInv: { value: 1 / SPEC_BY_ID[id].mean }, uMacro: { value: macro } };
   m.onBeforeCompile = (sh, r) => {
     prev?.call(m, sh, r);
     Object.assign(sh.uniforms, U);
@@ -81,10 +82,10 @@ function worldUv(m, metres, mode, id) {
   vec2 wuv = ${mode === 'top' ? 'rw.xz' : '(rn.y >= max(rn.x, rn.z)) ? rw.xz : (rn.x > rn.z ? rw.zy : rw.xy)'};
   vMapUv = (mapTransform * vec3(wuv * uWuv, 1.0)).xy; }
 #endif`);
-    if (mode === 'top') sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uMacroInv;')
+    if (mode === 'top') sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uMacroInv; uniform float uMacro;')
       .replace('#include <map_fragment>', `#include <map_fragment>
 #ifdef USE_MAP
-  diffuseColor.rgb *= mix(1.0, texture2D(map, vMapUv * 0.137 + vec2(0.31, 0.71)).g * uMacroInv, 0.8);
+  diffuseColor.rgb *= mix(1.0, texture2D(map, vMapUv * 0.137 + vec2(0.31, 0.71)).g * uMacroInv, uMacro);
 #endif`);
   };
   m.customProgramCacheKey = () => key + '|rr-wuv-' + mode;
@@ -95,20 +96,20 @@ function worldUv(m, metres, mode, id) {
 export const lift = id => SPEC_BY_ID[id] ? 1 / SPEC_BY_ID[id].mean : 1;
 
 // Put texture `id` on a material: the map, the colour lifted so the average brightness stays put, world uv if asked.
-export function textured(m, id, { world = 0, mode = 'box', repeat = null } = {}) {
+export function textured(m, id, { world = 0, mode = 'box', repeat = null, macro } = {}) {
   if (!m || m.userData.rrTex || OFF) return m;
   m.map = repeat ? variant(id, repeat[0], repeat[1]) : map(id);
   m.color?.multiplyScalar(1 / SPEC_BY_ID[id].mean);
-  if (world) worldUv(m, world, mode, id);
+  if (world) worldUv(m, world, mode, id, macro);
   m.userData.rrTex = id; m.userData.rrLift = 1 / SPEC_BY_ID[id].mean;   // for code that re-sets the colour
   m.needsUpdate = true;
   return m;
 }
 // A shared textured Lambert, cached by (texture, colour, options).
-export function mat(id, color, { world = 0, mode = 'box', repeat = null, ...extra } = {}) {
-  const key = `${id}|${color}|${world}|${mode}|${repeat}|${JSON.stringify(extra)}`;
+export function mat(id, color, { world = 0, mode = 'box', repeat = null, macro, ...extra } = {}) {
+  const key = `${id}|${color}|${world}|${mode}|${repeat}|${macro}|${JSON.stringify(extra)}`;
   let m = matCache.get(key);
-  if (!m) { m = textured(new THREE.MeshLambertMaterial({ color, ...extra }), id, { world, mode, repeat }); matCache.set(key, m); }
+  if (!m) { m = textured(new THREE.MeshLambertMaterial({ color, ...extra }), id, { world, mode, repeat, macro }); matCache.set(key, m); }
   return m;
 }
 

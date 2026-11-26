@@ -37,30 +37,31 @@ const clamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
 const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
 
 // ---- the generators: (u, v, out) writes linear rgb 0..1 into out ------------------------------------------------
-// Grass: clumps, blades streaked along one axis (mow: along u, the lanes' direction), a speckle, dry flecks.
+// Grass: calm on purpose (owner, after the first pass: "a little too busy and a bit hard to see"). The ground is the
+// backdrop the balls, mats and Rats sit on, so: broad soft tonal patches carry the look; clumps and blades are a
+// whisper; no per-texel speckle and no bright flecks (those were the shimmer on the Low tier, anisotropy 2).
+// The mow lanes (along 'u') get a gentle soft sheen along the lane instead of blades.
 function grass(seed, along) {
   return (u, v, o) => {
-    const patch = fbm(u, v, 4, 4, 3, seed);                                  // broad tonal patches (a metre or so)
-    const clump = fbm(u, v, 16, 16, 2, seed + 13);                           // clumps (~30 cm)
-    const L = along === 'u' ? 96 : 176, S = 256;                              // blades: mow lanes lie ~3:1, rough ~1.5:1
-    const blade = along === 'u' ? vnoise(u * L, v * S, L, S, seed + 7) : vnoise(u * S, v * L, S, L, seed + 7);
-    const fine = hash2(Math.floor(u * 512), Math.floor(v * 512), seed + 3);
-    // (fbm sits near 0.5, std ~0.1: these gains make each layer read once lit and sRGB-encoded)
-    let l = 0.8 + (patch - 0.5) * 0.6 + (clump - 0.5) * 0.5 + (blade - 0.5) * 0.45 + (fine - 0.5) * 0.22;
-    const dry = smooth(0.62, 0.8, patch) * 0.6 + (fine > 0.985 ? 0.5 : 0);   // straw-coloured bits in the light patches
-    o[0] = l * (1 + 0.07 * dry); o[1] = l; o[2] = l * (1 - 0.12 * dry);
+    const patch = fbm(u, v, 3, 3, 3, seed);                                  // broad, soft (the tile is 2.4 m)
+    const clump = fbm(u, v, 12, 12, 2, seed + 13);                           // clumps (~20 cm), faint
+    const sheen = along === 'u' ? vnoise(u * 6, v * 48, 6, 48, seed + 7)     // mow: long soft streaks along the lane
+      : vnoise(u * 48, v * 32, 48, 32, seed + 7);                            // rough: soft, nearly round blade tufts
+    const l = 0.86 + (patch - 0.5) * 0.36 + (clump - 0.5) * 0.12 + (sheen - 0.5) * (along === 'u' ? 0.1 : 0.06);
+    const warm = smooth(0.55, 0.75, patch) * 0.5;                            // light patches a touch warmer (dry), dark ones lusher
+    o[0] = l * (1 + 0.05 * warm); o[1] = l; o[2] = l * (1 - 0.08 * warm);
   };
 }
 // Artificial turf on the hitting mats: a grid of fibre tufts, row seams, a scuffed hitting zone in the middle.
 function turf(seed) {
   return (u, v, o) => {
-    const N = 64, cx = u * N, cy = v * N, ix = Math.floor(cx), iy = Math.floor(cy);
+    const N = 32, cx = u * N, cy = v * N, ix = Math.floor(cx), iy = Math.floor(cy);   // 8 px tufts: no Low-tier shimmer
     const dx = cx - ix - 0.5, dy = cy - iy - 0.5, r = Math.sqrt(dx * dx + dy * dy);
     const tuft = 1 - smooth(0.18, 0.5, r);                                    // a bright tuft centre, darker backing
     const t = hash2(ix, iy, seed);
-    const seam = (iy % 16 === 0) ? 0.93 : 1;                                  // the turf's stitched rows
+    const seam = (iy % 8 === 0) ? 0.96 : 1;                                   // the turf's stitched rows, faint
     const wear = smooth(0.3, 0.05, Math.hypot(u - 0.5, (v - 0.55) * 1.4));   // the tee spot, rubbed flat and pale
-    const l = (0.66 + 0.34 * tuft * (0.6 + 0.4 * t)) * seam + wear * 0.12 + (fbm(u, v, 4, 4, 2, seed + 9) - 0.5) * 0.3;
+    const l = (0.8 + 0.12 * tuft * (0.6 + 0.4 * t)) * seam + wear * 0.08 + (fbm(u, v, 3, 3, 2, seed + 9) - 0.5) * 0.14;   // calm: the mat reads as one surface
     o[0] = l; o[1] = l * 1.02; o[2] = l * 0.98;
   };
 }
@@ -130,9 +131,9 @@ function sign(seed) {
 // ---- the set -----------------------------------------------------------------------------------------------------
 // id, size, generator, MEAN (the design-average brightness textures.js compensates for), gpu (false: canvas use only).
 export const TEX_SPECS = Object.freeze([
-  { id: 'grass', size: 512, mean: 0.78, gpu: true, make: () => grass(1962, 'v') },
-  { id: 'mow', size: 512, mean: 0.8, gpu: true, make: () => grass(4417, 'u') },
-  { id: 'turf', size: 256, mean: 0.78, gpu: true, make: () => turf(77) },
+  { id: 'grass', size: 512, mean: 0.87, gpu: true, make: () => grass(1962, 'v') },
+  { id: 'mow', size: 512, mean: 0.88, gpu: true, make: () => grass(4417, 'u') },
+  { id: 'turf', size: 256, mean: 0.86, gpu: true, make: () => turf(77) },
   { id: 'dirt', size: 256, mean: 0.86, gpu: true, make: () => dirt(305) },
   { id: 'wood', size: 256, mean: 0.77, gpu: true, make: () => wood(1188) },
   { id: 'metal', size: 256, mean: 0.87, gpu: true, make: () => metal(612) },
