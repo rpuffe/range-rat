@@ -71,7 +71,7 @@ test('the banner: one line, "HOLD Ⓐ TOGETHER · 3 / 4" once the carrier is at 
   // Before the stand: the old line, with names escaped (the banner is innerHTML).
   const walking = lastBucketLine({ ...c, lastBucket: { phase: 'carried' } }, 'a');
   assert.equal(walking, 'BALL NO. 1 · HOME · <b>1/2</b> · WAITING: &#60;BO&#62;');   // council round 11 8.3: one name plus a count
-  assert.equal(lastBucketLine({ ...c, players: [], lastBucket: { phase: 'down' } }, 'a'), 'BALL NO. 1 IS DOWN · follow the beam');
+  assert.equal(lastBucketLine({ ...c, players: [], lastBucket: { phase: 'down' } }, 'a'), 'BALL NO. 1 DOWN · follow the gold beam');
   assert.equal(lastBucketLine({ ...c, lastBucket: { phase: 'done' } }, 'a'), '');
   assert.equal(lastBucketLine({ ...c, phase: 'report' }, 'a'), '');
 });

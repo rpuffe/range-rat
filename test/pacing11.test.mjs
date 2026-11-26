@@ -96,7 +96,7 @@ test('expert #1: the Stadium and the County need 2 good days; laps 12 and strays
   assert.equal(reviewsNeed(3), 2); assert.equal(reviewsNeed(4), 2);
   assert.equal(reviewsNeed(1), 3); assert.equal(reviewsNeed(2), 3); assert.equal(reviewsNeed(0), 2);
   assert.equal(GOALS.laps.n, 12); assert.equal(GOALS.strays.n, 85); assert.equal(GOALS.bank.n, 2000);
-  assert.ok(CARDS[3].some(g => g.id === 'laps'));
+  assert.ok(CARDS[3].some(g => g.id === 'requests') && !CARDS[3].some(g => g.id === 'laps'));   // council round 12 #2b: requests on the card, laps off
 });
 
 test('expert #5.3: the ✦ reward grows with the venue and the crew', () => {
@@ -150,7 +150,7 @@ function oneShort(n = 2) {
   const c = crewAt(save, n);
   c.crew.startShift();
   const g = c.crew.goals;
-  g.n.laps = 99; g.n.pings = 99; g.n.reviews = 1; c.crew.goalScan();
+  g.n.requests = 99; g.n.pings = 99; g.n.reviews = 1; c.crew.goalScan();
   return c;
 }
 

@@ -542,10 +542,12 @@ export function moweEngine() {
 // 112 BPM in the harvest, 128 in the hunt, 144 at the plug (the bass drops out: hats and a heartbeat kick). Gain 0.03 on
 // the SFX bus (so the PA ducks it, audiomix). stop(fade): dead on a win, a 1.5 s fade on a loss. A look-ahead
 // scheduler on a 50 ms timer (it keeps time with no rAF, so a background tab doesn't stutter it).
-export const BOSS_LOOP = Object.freeze({ BPM: { harvest: 112, hunt: 128, plug: 144 }, BASS: [110, 130.81, 164.81, 196], GAIN: 0.03, AHEAD: 0.2 });
-export const bossTempo = phase => BOSS_LOOP.BPM[phase] ?? BOSS_LOOP.BPM.harvest;
+// Round 12 (builder 1): 'warn' is the build-up's low drone (no hats, no bass line); the plug's heartbeat speeds up with the
+// pull bar (PULL_BPM more at a full bar).
+export const BOSS_LOOP = Object.freeze({ BPM: { warn: 96, harvest: 112, hunt: 128, plug: 144 }, BASS: [110, 130.81, 164.81, 196], GAIN: 0.03, AHEAD: 0.2, PULL_BPM: 56 });
+export const bossTempo = (phase, pull = 0) => (BOSS_LOOP.BPM[phase] ?? BOSS_LOOP.BPM.harvest) + (phase === 'plug' ? BOSS_LOOP.PULL_BPM * Math.max(0, Math.min(1, pull)) : 0);
 export function bossLoop() {
-  let phase = 'harvest', step = 0, next = 0, timer = null, bus = null, stopped = false;
+  let phase = 'harvest', step = 0, next = 0, timer = null, bus = null, stopped = false, pull = 0;
   function ensure() {
     const c = live();
     if (!c) return null;
@@ -554,9 +556,10 @@ export function bossLoop() {
   }
   function schedule() {
     const c = ensure(); if (!c || stopped) return;
-    const eighth = 60 / bossTempo(phase) / 2;
+    const eighth = 60 / bossTempo(phase, pull) / 2;
     while (next < c.currentTime + BOSS_LOOP.AHEAD) {
       const t = next - c.currentTime, bar = Math.floor(step / 8) % 4, beat = step % 8;
+      if (phase === 'warn') { if (beat === 0) tone(c, { freq: 55, endFreq: 52, type: 'sawtooth', t, dur: eighth * 8, vol: 0.12, attack: eighth * 2, dest: bus }); next += eighth; step++; continue; }
       burst(c, { t, dur: 0.035, vol: beat % 2 ? 0.05 : 0.08, type: 'highpass', f: 7000, q: 0.7, dest: bus });
       if (phase !== 'plug') tone(c, { freq: BOSS_LOOP.BASS[bar] * (beat === 3 || beat === 7 ? 2 : 1), type: 'square', t, dur: eighth * 0.8, vol: 0.2, dest: bus });
       else if (beat === 0 || beat === 1) tone(c, { freq: 60, endFreq: 38, t, dur: 0.16, vol: 0.5, dest: bus });   // the heartbeat: lub-dub
@@ -564,6 +567,7 @@ export function bossLoop() {
     }
   }
   return {
+    pull(k) { pull = Number(k) || 0; },
     set(p) {
       if (stopped) return;
       phase = BOSS_LOOP.BPM[p] ? p : phase;
@@ -583,4 +587,47 @@ export function gurgle() {
   if (!c) return;
   burst(c, { dur: 1.4, vol: 0.12, type: 'bandpass', f: 180, fEnd: 90, q: 6, attack: 0.15 });
   [0.5, 0.85, 1.25].forEach((t, i) => tone(c, { freq: 420 + i * 90, endFreq: 900 + i * 120, t, dur: 0.09, vol: 0.08 }));
+}
+
+// ---- council round 12 (builder 1) ----
+// The plug's rope creak: a resonant noise scrape that rises in pitch with the pull bar (k 0..1); a yank is louder.
+export function creak(k = 0, yank = false) {
+  const c = live();
+  if (!c) return;
+  const f = 260 + 520 * Math.max(0, Math.min(1, k));
+  burst(c, { dur: yank ? 0.32 : 0.2, vol: yank ? 0.16 : 0.08, type: 'bandpass', f, fEnd: f * 1.35, q: 9, attack: 0.03 });
+  tone(c, { freq: f / 2, endFreq: f / 1.7, type: 'sawtooth', dur: yank ? 0.25 : 0.16, vol: yank ? 0.05 : 0.025 });
+}
+// The whistle at the MOW-E post: two notes, up.
+export function whistle() {
+  const c = live();
+  if (!c) return;
+  tone(c, { freq: 1568, endFreq: 1760, dur: 0.16, vol: 0.12 });
+  tone(c, { freq: 1760, endFreq: 2350, t: 0.2, dur: 0.3, vol: 0.12 });
+}
+// Your nozzle cools after your hit: a hiss and a sputter.
+export function sputter() {
+  const c = live();
+  if (!c) return;
+  burst(c, { dur: 0.5, vol: 0.09, type: 'highpass', f: 3500, attack: 0.01 });
+  [0.08, 0.2, 0.34].forEach(t => burst(c, { t, dur: 0.04, vol: 0.08, type: 'bandpass', f: 900, q: 2 }));
+}
+// For builder 2 (the Seventh-Inning Stretch): a ballpark organ riff, the charge (G C E G · E G).
+export const ORGAN_RIFF = Object.freeze([[392, 0, 0.14], [523.25, 0.16, 0.14], [659.25, 0.32, 0.14], [783.99, 0.48, 0.26], [659.25, 0.8, 0.12], [783.99, 0.94, 0.5]]);
+export function organ() {
+  const c = live();
+  if (!c) return;
+  for (const [f, t, d] of ORGAN_RIFF) for (const [m, v] of [[1, 0.09], [2, 0.04], [3, 0.025]]) tone(c, { freq: f * m, t, dur: d, vol: v, type: 'sine', attack: 0.01 });
+}
+// For builder 2 (the first souvenir request of a shift): a crowd chant, "LET'S GO, RANG-ERS" — three swelling crowd
+// shouts (band-passed noise, a vowel each) and two claps. CHANT: [time s, vowel formant Hz, length s].
+export const CHANT = Object.freeze([[0, 700, 0.22], [0.28, 900, 0.22], [0.62, 600, 0.18], [0.84, 750, 0.18], [1.06, 500, 0.32]]);
+export function chant() {
+  const c = live();
+  if (!c) return;
+  for (const [t, f, d] of CHANT) {
+    burst(c, { t, dur: d, vol: 0.14, type: 'bandpass', f, fEnd: f * 0.9, q: 3, attack: 0.04 });
+    burst(c, { t, dur: d, vol: 0.06, type: 'bandpass', f: f * 2.6, q: 4, attack: 0.04 });
+  }
+  for (const t of [1.5, 1.75]) burst(c, { t, dur: 0.05, vol: 0.18, type: 'bandpass', f: 1800, q: 1.2 });
 }

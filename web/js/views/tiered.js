@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { MAP } from '../map.js';
 import { TARGET, hasGutters, savedLine } from '../tiered.js';
+import { targetBeamsHidden } from '../huddlerules.js';   // council round 12 #3a (builder 3): the gold beam is the only beam
 import { flagNormal, cupWarn } from '../aim.js';   // round 10 #6: the landing marker moved to views/greens.js (every venue)
 
 const FLAG = { red: 0xff3b5c, yellow: 0xffe14a, blue: 0x4aa8ff };
@@ -80,6 +81,7 @@ export default {
       // Round 10 #6: one flag per green. The pin IS the landmark flag from Tiered on, so terrain.js hides its own.
       show(on) { root.visible = on; ctx.terrain?.setFlags?.(!on); },
       onSnapshot(s, mine) {
+        pillars.visible = !targetBeamsHidden(s);   // council round 12 #3a: while Ball No. 1 is down or carried
         const own = hasGutters(ctx.crew()?.up);
         saved = mine?.saved ?? null;
         bowls.forEach((w, i) => {

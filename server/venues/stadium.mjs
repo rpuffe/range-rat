@@ -3,7 +3,8 @@
 import { onTrack, cartSpeedAt } from '../../web/js/map.js';
 import { CROWD, gateAt, newLap, stepLap, stepSentiment, bump, pingDelta, newWindow, pushSample, windowMean,
   CROWD_LINE, crowdDecay, BOO, SOUV, atRail, souvCrowd, booOut,
-  REQ, SECTIONS, reqDue, reqSection, inSection, souvPay, reqCrowd, reqMiss } from '../../web/js/stadium.js';
+  REQ, SECTIONS, reqDue, reqSection, inSection, souvPay, reqCrowd, reqMiss,
+  autoCeil, bumpAuto, ROBOT_LINE, STRETCH, stretchDue, reqPaused, stretchSections, stretchPay, stretchCrowd, reqRot } from '../../web/js/stadium.js';
 import { AUTO, newAuto, stepAutopilot, nextMode } from '../../web/js/autopilot.js';
 import { bossLive } from '../../web/js/mowe.js';   // council round 11 §2.7: MOW-E 2.0, the encore (builder 1)
 
@@ -17,7 +18,8 @@ import { SIM, CART, WASH, KIND_W, underReels } from '../../web/js/sim.js';
 const fresh = () => { const lapBy = [newLap(), newLap()]; return { s: CROWD.START, laps: 0, knocks: 0, lapBy, lap: lapBy[0], t: 0, lastKnock: null, lastPing: null, win: newWindow(), acc: 0,
   auto: [], autoLaps: 0,   // council round 10 §D: each cart's autopilot (autopilot.js), and its half-credit laps
   hands: {}, booT: 0, boos: 0, souv: 0, sv: false,
-  req: null, reqN: 0, reqLast: null, reqHit: 0, reqMissed: 0, bossHits: 0, bossWon: false }; };   // council round 11 #5: the lit section ({ i, sec, left }), how many so far, the last start   // round 11: souvenirs in hands ({ [player id]: { n, relay } }), the boo clock
+  req: null, reqN: 0, reqLast: null, reqHit: 0, reqMissed: 0, bossHits: 0, bossWon: false,
+  rot: 0, stretch: null, stretchDone: false, stretchHit: 0, stretchMissed: 0, robotSaid: false }; };   // council round 12 #2: the request order's rotation, the Stretch ({ secs: [i], left }), the robot's first drop   // council round 11 #5: the lit section ({ i, sec, left }), how many so far, the last start   // round 11: souvenirs in hands ({ [player id]: { n, relay } }), the boo clock
 
 // Council round 10 §D: the cart row's tier 4. An undriven cart drives itself during the shift (it laps, or harvests
 // after someone holds Ⓨ at it); c.auto is its mode while it does ('lap' | 'harvest', null when driven or parked), which
@@ -69,6 +71,7 @@ function souvenirs(crew, st) {
     if (!p || p.online <= 0) { delete st.hands[id]; continue; }
     if (p.down > 0) continue;
     if (atRail(p.x, p.z)) {                                           // delivered: the crowd, and the pay
+      if (crew.working() && st.stretch) { stretchDeliver(crew, st, p, h); continue; }   // council round 12 #2c: one section a souvenir; the rest stay in hand
       delete st.hands[id];
       if (!crew.working()) continue;
       const lit = !!st.req && inSection(SECTIONS[st.req.i], p.x, p.z);   // council round 11 #5: the lit section pays x3
@@ -78,7 +81,7 @@ function souvenirs(crew, st) {
       crew.bank(h.n, p.id, null, souvPay(h.n, h.relay, lit), null, { souv: h.n, ...(lit ? { req: true } : h.relay ? { relay: true } : {}) });
       crew.stats.souvCash = Math.round(((crew.stats.souvCash ?? 0) + crew.stats.cash - c0) * 100) / 100;   // the report (and the bot): what the job paid
       crew.events.push({ t: 'crowd', kind: 'souv', by: p.id, name: p.name, n: h.n, ...(lit ? { req: st.req.sec } : h.relay ? { relay: true } : {}) });
-      if (lit) { st.req = null; st.reqHit++; crew.stats.reqHit = (crew.stats.reqHit ?? 0) + 1; }
+      if (lit) { st.req = null; st.reqHit++; crew.stats.reqHit = (crew.stats.reqHit ?? 0) + 1; crew.goalTick?.('requests'); }   // council round 12 #2b
       crew.dirty = true;
       continue;
     }
@@ -100,15 +103,57 @@ function requests(crew, st, dt) {
     if ((st.req.left -= dt) > 0) return;
     const sec = st.req.sec; st.req = null; st.reqMissed++;
     st.s = bump(st.s, -reqMiss(n));
-    crew.events.push({ t: 'crowd', kind: 'reqmiss', sec });
+    crew.events.push({ t: 'crowd', kind: 'reqmiss', sec, ceil: Math.round(autoCeil(st.reqMissed) * 100) / 100 });
+    if (!st.robotSaid) { st.robotSaid = true; crew.events.push({ t: 'crowd', kind: 'robot', text: ROBOT_LINE }); }   // council round 12 #2a: feed only
     crew.dirty = true;
     return;
   }
-  if (!reqDue({ t: st.t, left: crew.shiftSecs - crew.shiftT, last: st.reqLast, n })) return;
-  const sec = reqSection(st.reqN++);
+  const left = crew.shiftSecs - crew.shiftT;
+  if (st.stretch || (!st.stretchDone && reqPaused(left)) || !reqDue({ t: st.t, left, last: st.reqLast, n })) return;   // council round 12 #2c: nothing lit overlaps the Stretch
+  const sec = reqSection(st.reqN++ + st.rot);   // council round 12 #2e: rotated per shift
   st.req = { i: sec.i, sec: sec.name, left: REQ.SECS }; st.reqLast = st.t;
   crew.events.push({ t: 'crowd', kind: 'req', sec: sec.name, i: sec.i, secs: REQ.SECS });
   crew.dirty = true;
+}
+// ---- council round 12 #2c: the Seventh-Inning Stretch. Once a shift at T-3:30, 2-3 sections light at once for 25 s. ----
+function stretch(crew, st, dt) {
+  if (st.stretch) {
+    if ((st.stretch.left -= dt) > 0) return;
+    const missed = st.stretch.secs.map(i => SECTIONS[i].name);
+    st.stretchMissed += missed.length;
+    if (missed.length) st.s = bump(st.s, -STRETCH.MISS * missed.length);   // no boo: it's a party
+    crew.events.push({ t: 'crowd', kind: 'stretchend', missed: missed.join(''), hit: st.stretchHit });
+    st.stretch = null; crew.dirty = true;
+    return;
+  }
+  const busy = !!st.req || bossLive(crew.mower?.kind === 'boss' ? crew.mower : null);
+  if (!stretchDue({ left: crew.shiftSecs - crew.shiftT, done: st.stretchDone, busy })) return;
+  st.stretchDone = true;
+  const secs = stretchSections(crew.day, crew.venueDay, crew.onlineCount());
+  st.stretch = { secs, left: STRETCH.SECS };
+  crew.events.push({ t: 'crowd', kind: 'stretch', secs: secs.map(i => SECTIONS[i].name).join(''), i: [...secs], n: secs.length, left: STRETCH.SECS });
+  crew.dirty = true;
+}
+// During the Stretch, at the rail: in a lit section, ONE souvenir from the bundle answers it (x5, +0.15) and the rest stay
+// in your hands for the next section along (lead's call, round 14); outside one, nothing is delivered until it's over.
+// True when a section was answered.
+function stretchDeliver(crew, st, p, h) {
+  if (!st.stretch) return false;
+  const k = st.stretch.secs.findIndex(i => inSection(SECTIONS[i], p.x, p.z));
+  if (k < 0) return false;
+  const sec = SECTIONS[st.stretch.secs[k]];
+  st.stretch.secs.splice(k, 1);
+  if (--h.n <= 0) delete st.hands[p.id];
+  st.s = bump(st.s, stretchCrowd(1)); st.souv += 1; st.stretchHit++;
+  crew.stats.souvenirs = (crew.stats.souvenirs ?? 0) + 1;
+  crew.stats.reqHit = (crew.stats.reqHit ?? 0) + 1;
+  const c0 = crew.stats.cash;
+  crew.bank(1, p.id, null, stretchPay(1), null, { souv: 1, req: true });
+  crew.stats.souvCash = Math.round(((crew.stats.souvCash ?? 0) + crew.stats.cash - c0) * 100) / 100;
+  crew.events.push({ t: 'crowd', kind: 'souv', by: p.id, name: p.name, n: 1, req: sec.name, stretch: true, ...(h.n > 0 ? { left: h.n } : {}) });
+  crew.goalTick?.('requests');
+  crew.dirty = true;
+  return true;
 }
 // A knocked-down Rat's souvenirs go everywhere (still souvenirs).
 function dropHands(crew, st, p) {
@@ -127,7 +172,7 @@ export default {
   venue: 3,
   init: () => fresh(),
   // Playthrough 5 C9: each cart's autopilot mode (harvest) carries over the night.
-  startShift(crew, st) { const modes = (st.auto ?? []).map(a => a?.mode); Object.assign(st, fresh()); modes.forEach((m, i) => { if (m) st.auto[i] = newAuto(m); }); },
+  startShift(crew, st) { const modes = (st.auto ?? []).map(a => a?.mode); Object.assign(st, fresh()); modes.forEach((m, i) => { if (m) st.auto[i] = newAuto(m); }); st.rot = reqRot(crew.day, crew.venueDay); },
   tick(crew, st, dt) {
     if (!crew.working()) return;
     st.t += dt;
@@ -138,8 +183,9 @@ export default {
       st.bossHits = h;
       if (boss.phase === 'tamed' && !st.bossWon) { st.bossWon = true; st.s = BOSS_CROWD.WIN; }
     }
-    if (!bossLive(boss)) st.s = stepSentiment(st.s, dt, crowdDecay(crew.onlineCount()));   // round 11 (expert #6): the drain grows with the crew
-    if (crew.venue === 3) { boo(crew, st, dt); souvenirs(crew, st); if (!crew.endless) requests(crew, st, dt); }
+    const home = crew.venue === 3 && !crew.endless;                   // council round 12 #2f: the crowd stops at the Stadium
+    if (home && !bossLive(boss)) st.s = stepSentiment(st.s, dt, crowdDecay(crew.onlineCount()));   // round 11 (expert #6): the drain grows with the crew
+    if (crew.venue === 3) { boo(crew, st, dt); souvenirs(crew, st); if (!crew.endless) { requests(crew, st, dt); stretch(crew, st, dt); } }
     st.acc += dt;
     while (st.acc >= 1 - 1e-9) { st.acc -= 1; pushSample(st.win, st.s); }
     const carts = crew.carts ?? (crew.cart ? [crew.cart] : []);
@@ -151,7 +197,7 @@ export default {
       if (c.auto) {                                                   // council round 10 §D: on autopilot
         const a = autopilot(crew, st, c, i, dt);
         if (a.mode === 'lap' && stepLap(lap, gateAt(c.x, c.z), st.t)) {   // half credit: +0.03, and it counts as half a lap
-          st.autoLaps++; st.s = bump(st.s, AUTO.LAP_CROWD);
+          st.autoLaps++; st.s = bumpAuto(st.s, AUTO.LAP_CROWD, autoCeil(st.reqMissed));   // council round 12 #2a: the robot's ceiling
           crew.events.push({ t: 'crowd', kind: 'lap', by: null, auto: true, cart: i, laps: st.laps });
         } else if (a.mode !== 'lap') Object.assign(lap, newLap());
         return;
@@ -165,7 +211,8 @@ export default {
   },
   ping(crew, st, b, { prize, cart }) {
     // Council round 10 §D: a ping on an autopilot cart is the Stadium show: +0.08 wherever it is (and every prize works).
-    st.s = bump(st.s, cart && !cart.driver && cart.auto ? CROWD.PING + (prize === 'jackpot' ? CROWD.JACKPOT : 0) : pingDelta(!!cart && onTrack(cart.x, cart.z), prize));
+    if (cart && !cart.driver && cart.auto) st.s = bumpAuto(st.s, CROWD.PING + (prize === 'jackpot' ? CROWD.JACKPOT : 0), autoCeil(st.reqMissed));   // council round 12 #2a
+    else st.s = bump(st.s, pingDelta(!!cart && onTrack(cart.x, cart.z), prize));
     st.lastPing = crew.players.get(b.by)?.name ?? null;
     crew.events.push({ t: 'crowd', kind: 'ping', by: b.by, name: st.lastPing });
   },
@@ -219,5 +266,7 @@ export default {
     ...(crew.warned && !crew.lastCall() ? { w: 1 } : {}),
     ...(Object.keys(st.hands ?? {}).length ? { hands: Object.fromEntries(Object.entries(st.hands).map(([id, h]) => [id, h.relay ? -h.n : h.n])) } : {}),   // round 11: n (negative: relayed)
     ...(st.sv ? { sv: 1 } : {}), ...(st.boos ? { boos: st.boos } : {}),
-    ...(st.req ? { req: { i: st.req.i, sec: st.req.sec, left: Math.round(st.req.left * 10) / 10 } } : {}) }),   // council round 11 #5 (board.js: reqLine)
+    ...(st.req ? { req: { i: st.req.i, sec: st.req.sec, left: Math.round(st.req.left * 10) / 10 } } : {}),
+    ...(st.stretch ? { stretch: { i: [...st.stretch.secs], secs: st.stretch.secs.map(i => SECTIONS[i].name).join(''), t: Math.round(st.stretch.left * 10) / 10 } } : {}),   // council round 12 #2c (bvtext.js kpiNoteOf)
+    ...(crew.perks?.autopilot && crew.venue === 3 ? { ceil: Math.round(autoCeil(st.reqMissed) * 100) / 100 } : {}) }),   // council round 11 #5 (board.js: reqLine)
 };

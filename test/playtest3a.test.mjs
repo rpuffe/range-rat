@@ -168,5 +168,5 @@ test('#10: the gold debut memo is 8 words; the day-5 line with stamps and fee in
     return crew.report.tomorrow;
   };
   assert.equal(run({ day: 5, stamps: 3, cash: 1e6 }), 'Tomorrow: sign at the bell for the Club.');
-  assert.equal(run({ day: 5, stamps: 3, cash: 0, garyDay: 99 }), 'Tomorrow: one goal left for the Club.', 'round 10 #1: the card counts what is left (the fee)');
+  assert.match(run({ day: 5, stamps: 3, cash: 0, garyDay: 99 }), /^Tomorrow: \$[0-9,]+ more to sign for the Club\.$/, 'round 10 #1: the card counts what is left (the fee); council round 12 #7d: and names it');
 });

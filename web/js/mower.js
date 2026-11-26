@@ -9,10 +9,13 @@
 //   InstancedMesh of ticks, a gold sweep for the pull), a shed door that rattles, and the sink. Smoke puffs use the
 //   shared confetti pool, tinted. At most +3 draw calls while a boss is live (the stripes show in the build-up, the scan
 //   line in the hunt, the ring at the plug: never together).
+// Council round 12 (builder 1) adds: the boss morning's stripes (an 'update' snapshot), the amber shed-side edge pulses in
+// the warn, the grille glow by the fullest meter, your crosshair meter ring (DOM), the plug ring's yank jerk and creak,
+// the pond chevron, and the MOW-E post by the return (one small mesh group; the whistle).
 // It also plays the boss's sound (sfx.js moweEngine, bossLoop, the beeps, the cough, the gurgle), the red screen-edge
 // pulse when it hunts you, and the MOW-E TAMED stamp (a say.js STAMP item's show / hide).
 import * as THREE from 'three';
-import { MOWER, BOSS, BOSS_LINES } from './mowe.js';
+import { MOWER, BOSS, BOSS_LINES, WHISTLE } from './mowe.js';
 import * as SFX from './sfx.js';
 
 const SMOKE = 0x8a8a8a, BLACK = 0x3a3a3a;   // smoke: the confetti pool's paper, tinted (a few, rising)
@@ -129,11 +132,66 @@ export function createMower({ scene, confetti = null }) {
     return edge;
   };
 
+  // Round 12 #5a: the warn's amber edge, on the side of the screen facing the shed (DOM, no draw call).
+  let amber = null, amberSide = '';
+  const amberEl = () => {
+    if (amber || typeof document === 'undefined') return amber;
+    amber = document.createElement('div'); amber.id = 'mowe-amber';
+    amber.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:30;opacity:0';
+    document.body.appendChild(amber);
+    return amber;
+  };
+  const AMBER = { left: 'linear-gradient(to right,rgba(255,170,30,.85),rgba(255,170,30,0) 22%)', right: 'linear-gradient(to left,rgba(255,170,30,.85),rgba(255,170,30,0) 22%)',
+    top: 'linear-gradient(to bottom,rgba(255,170,30,.85),rgba(255,170,30,0) 22%)', bottom: 'linear-gradient(to top,rgba(255,170,30,.85),rgba(255,170,30,0) 22%)' };
+  // Which screen edge faces (x, z) from a Rat at p (p.yaw: forward is (-sin, -cos)); a: the bearing off its nose (+: left).
+  const sideOf = (p, x, z) => { let a = Math.atan2(-(x - p.x), -(z - p.z)) - (p.yaw ?? 0); a = Math.atan2(Math.sin(a), Math.cos(a)); return { a, side: Math.abs(a) < Math.PI / 4 ? 'top' : Math.abs(a) > Math.PI * 3 / 4 ? 'bottom' : a > 0 ? 'left' : 'right' }; };
+  // Round 12 #5b: the pond chevron (2 s, after the stamp), pointing at MOW-E on the way to the pond.
+  let chev = null, chevT = 0, tamedAt = -1;
+  const chevEl = () => {
+    if (chev || typeof document === 'undefined') return chev;
+    chev = document.createElement('div'); chev.id = 'mowe-chevron'; chev.textContent = '➤';
+    chev.style.cssText = 'position:fixed;left:50%;top:50%;z-index:31;pointer-events:none;opacity:0;font:900 64px/1 system-ui,sans-serif;color:#ffc34d;text-shadow:0 0 8px rgba(0,0,0,.7);transition:opacity .2s';
+    document.body.appendChild(chev);
+    return chev;
+  };
+  // Round 12 #1a: your meter ring round the crosshair (an SVG circle; grey and emptying while your nozzle cools).
+  let ringEl = null, ringArc = null, ringShown = false, ringK = -1, ringGrey = null, meterFill = 0;
+  const RING_C = 2 * Math.PI * 15;
+  const meterEl = () => {
+    if (ringEl || typeof document === 'undefined') return ringEl;
+    const NS = 'http://www.w3.org/2000/svg';
+    ringEl = document.createElementNS(NS, 'svg'); ringEl.id = 'mowe-meter'; ringEl.setAttribute('viewBox', '0 0 36 36');
+    ringEl.style.cssText = 'position:fixed;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;pointer-events:none;z-index:29;opacity:0;transform:rotate(-90deg);transition:opacity .15s';
+    const bg = document.createElementNS(NS, 'circle'); bg.setAttribute('cx', '18'); bg.setAttribute('cy', '18'); bg.setAttribute('r', '15'); bg.setAttribute('fill', 'none'); bg.setAttribute('stroke', 'rgba(0,0,0,.35)'); bg.setAttribute('stroke-width', '3');
+    ringArc = document.createElementNS(NS, 'circle'); ringArc.setAttribute('cx', '18'); ringArc.setAttribute('cy', '18'); ringArc.setAttribute('r', '15'); ringArc.setAttribute('fill', 'none'); ringArc.setAttribute('stroke-width', '3');
+    ringArc.setAttribute('stroke-dasharray', String(RING_C)); ringArc.setAttribute('stroke-dashoffset', String(RING_C));
+    ringEl.append(bg, ringArc); document.body.appendChild(ringEl);
+    return ringEl;
+  };
+  // The MOW-E post by the return (round 12 #5d): a white post, an FHI-blue plate and a little whistle. Shown on pet days.
+  const post = new THREE.Group(); post.position.set(WHISTLE.POST.x, 0, WHISTLE.POST.z); post.visible = false; scene.add(post);
+  add(post, new THREE.BoxGeometry(0.14, 1.3, 0.14), white, 0, 0.65, 0);
+  const plate = add(post, new THREE.BoxGeometry(0.62, 0.34, 0.05), blue, 0, 1.38, 0);
+  add(plate, new THREE.BoxGeometry(0.4, 0.07, 0.06), white, 0, 0.03, 0);
+  add(post, new THREE.CylinderGeometry(0.05, 0.05, 0.22, 8).rotateZ(Math.PI / 2), mat(0xc9ccd2), 0.12, 1.0, 0.08);
+
   // Sound.
   let engine = null, loop = null, beepT = 0;
   const stopSound = (fade = false) => { engine?.stop(); engine = null; if (loop) { loop.stop(fade); loop = null; } };
 
-  let snap = null, tgt = { x: 0, z: 0, yaw: 0 }, spin = 0, meId = null, hunted = false, smokeT = 0;
+  let snap = null, tgt = { x: 0, z: 0, yaw: 0 }, spin = 0, meId = null, hunted = false, smokeT = 0, jerkT = 0, creakT = 0, postOn = false;
+  // Your meter ring: drawn from the snapshot's meters[me] ([fill, cooling s]), eased between snapshots.
+  function meterTick(dt, me) {
+    const mine = snap?.kind === 'boss' && (snap.phase === 'harvest' || snap.phase === 'hunt') && me?.wand ? snap.meters?.[meId] ?? [0, 0] : null;
+    if (!mine) { if (ringShown && ringEl) { ringEl.style.opacity = '0'; ringShown = false; } return; }
+    if (!meterEl()) return;
+    if (!ringShown) { ringEl.style.opacity = '1'; ringShown = true; }
+    const grey = mine[1] > 0, goal = grey ? mine[1] / BOSS.COOL_ME : mine[0];
+    meterFill += (goal - meterFill) * Math.min(1, dt * 12);
+    const k = Math.round(meterFill * 100);
+    if (k !== ringK) { ringK = k; ringArc.setAttribute('stroke-dashoffset', (RING_C * (1 - k / 100)).toFixed(1)); }
+    if (grey !== ringGrey) { ringGrey = grey; ringArc.setAttribute('stroke', grey ? '#9a9a9a' : '#ffd24a'); }
+  }
   let scanTarget = () => null;
   const cur = { x: 0, z: 0, yaw: 0 };
   const isBoss = () => snap?.kind === 'boss';
@@ -149,12 +207,14 @@ export function createMower({ scene, confetti = null }) {
     // The server's mower snapshot (mowe.js moweSnap) or null/undefined; me: your player id (the hunt's edge pulse).
     update(s, me = null) {
       const was = snap; snap = s || null; meId = me;
-      if (!snap) {
-        root.visible = false; decal.visible = false; hazLanes.visible = false; scan.visible = false; ring.visible = false; door.visible = false;
+      const upd = snap?.kind === 'update';   // round 12 #5a: the boss morning before the warn: only the near lanes' stripes
+      if (!snap || upd) {
+        root.visible = false; decal.visible = false; hazLanes.visible = upd; scan.visible = false; ring.visible = false; door.visible = false;
         for (const c of cones) c.visible = false;
         if (edge) edge.style.opacity = '0';
+        if (amber) amber.style.opacity = '0';
         hunted = false;
-        if (was) stopSound(true);
+        if (was && was.kind !== 'update') stopSound(true);
         return;
       }
       const boss = isBoss(), tame = snap.kind === 'tame';
@@ -167,6 +227,8 @@ export function createMower({ scene, confetti = null }) {
       bag.visible = grille.visible = boss;
       for (const l of lamps) l.visible = boss;
       hazLanes.visible = boss && snap.phase === 'warn';
+      if (amber && !(boss && snap.phase === 'warn')) amber.style.opacity = '0';
+      if (boss && snap.phase === 'tamed' && was?.phase !== 'tamed') tamedAt = 0;   // the chevron's clock
       door.visible = boss && (snap.phase === 'warn' || (snap.phase === 'fled' && snap.out === 'gone'));
       ring.visible = boss && snap.phase === 'plug' && !!snap.ring;
       if (ring.visible) { ring.position.set(snap.ring.x, 0.07, snap.ring.z); ringFill(Math.round((snap.plug ?? 0) * T)); }
@@ -178,7 +240,8 @@ export function createMower({ scene, confetti = null }) {
       if (!was || was.kind !== snap.kind) { cur.x = tgt.x; cur.z = tgt.z; cur.yaw = tgt.yaw; }
       // sound: the boss loop through the fight (it stops dead on a win and fades on a loss), the engine while it runs
       const fighting = boss && (snap.phase === 'harvest' || snap.phase === 'hunt' || snap.phase === 'plug');
-      if (fighting) { loop ??= SFX.bossLoop(); loop.set(snap.phase); }
+      const droning = boss && snap.phase === 'warn';   // round 12 #5a: the loop's low drone under the warn's beeps
+      if (fighting || droning) { loop ??= SFX.bossLoop(); loop.set(snap.phase); if (snap.phase === 'plug') loop.pull?.(snap.plug ?? 0); }
       else if (loop) { loop.stop(!(boss && snap.phase === 'tamed')); loop = null; }
       const engineOn = root.visible && (boss ? snap.out !== 'sink' : true);
       if (engineOn) engine ??= SFX.moweEngine();
@@ -186,12 +249,14 @@ export function createMower({ scene, confetti = null }) {
     },
     // Server events the view reacts to (main.js passes them on): hits, shoves, the plug, the pond.
     event(e) {
-      if (e.t === 'moweHit') { smoke(14); engine?.cough(); }
+      if (e.t === 'moweHit') { smoke(14); engine?.cough(); if (e.by === meId) SFX.sputter?.(); }   // round 12: your nozzle cools (a hiss)
       else if (e.t === 'moweShove') { SFX.horn('mower'); setTimeout(() => SFX.horn('mower'), 260); setTimeout(() => SFX.horn('mower'), 520); }
       else if (e.t === 'mower' && e.phase === 'plug') { smoke(18, BLACK, 4); engine?.choke(); }
       else if (e.t === 'mower' && e.phase === 'tamed') engine?.unplug();
       else if (e.t === 'mower' && e.phase === 'pond') SFX.gurgle();
       else if (e.t === 'moweTarget' && e.id != null && e.id === meId) SFX.horn('mower');   // a beep: it's after you
+      else if (e.t === 'moweYank') { jerkT = 0.18; SFX.creak?.(e.plug ?? 0, true); }   // round 12 #1c: the lurch
+      else if (e.t === 'moweWhistle') SFX.whistle?.();
     },
     // The MOW-E TAMED stamp (say.js STAMP): the bell's stamp's look, its own element (board.js is another builder's).
     stamp(on) {
@@ -210,10 +275,17 @@ export function createMower({ scene, confetti = null }) {
         { transform: 'translate(-50%,-50%) rotate(-8deg) scale(1)', opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.2,.8,.3,1)' });
     },
     get hunted() { return hunted; },
+    // Round 12 #5d: the MOW-E post shows on a pet day (crew snapshot moweWhistle > 0).
+    setPost(on) { postOn = !!on; },
+    // Is my nozzle cooling (the spray sputters grey)?
+    cooling() { return snap?.kind === 'boss' && (snap.meters?.[meId]?.[1] ?? 0) > 0; },
     // Where the scan line points: fn(id) → { x, z } of that Rat (main.js knows where everyone is).
     setTargets(fn) { scanTarget = fn; },
     tick(dt, t = 0, ear = null) {
+      meterTick(dt, ear);
+      if (post.visible !== postOn) post.visible = postOn;
       if (!snap) return;
+      if (snap.kind === 'update') { hazMat.opacity = 0.18 + 0.14 * (0.5 + 0.5 * Math.sin(t * 2)); return; }   // round 12 #5a: a slow pulse all morning
       const boss = isBoss();
       const k = Math.min(1, dt * 8);
       cur.x += (tgt.x - cur.x) * k; cur.z += (tgt.z - cur.z) * k;
@@ -233,7 +305,30 @@ export function createMower({ scene, confetti = null }) {
       if (boss) {
         const s = 0.4 + 0.8 * Math.min(1, (snap.eaten ?? 0) / BOSS.CATCHER);
         bag.scale.set(0.8 + 0.2 * s, s, s);
-        grilleMat.emissiveIntensity = choked ? 0 : snap.stall && snap.open ? 0.8 + 0.7 * Math.abs(Math.sin(t * 9)) : snap.open ? 0.9 : 0.05;
+        // Round 12 #1a: the glow follows the fullest meter on it (a hit coming pulses); dark in the 1 s after a hit.
+        const full = snap.full ?? 0;
+        grilleMat.emissiveIntensity = choked || !snap.open ? 0.05 : 0.35 + 1.0 * full + (full > 0.75 ? 0.5 * Math.abs(Math.sin(t * 14)) : 0) + (snap.stall ? 0.3 * Math.abs(Math.sin(t * 9)) : 0);
+        // Round 12 #5a: three amber pulses, 2 s apart, on the screen edge facing the shed (the warn's first 6 s).
+        if (snap.phase === 'warn' && ear && amberEl()) {
+          const age = BOSS.WARN - (snap.t ?? 0), ph = age % 2, on = age < 6 && ph < 0.9;
+          const sd = sideOf(ear, BOSS.SHED.x, BOSS.SHED.z).side;
+          if (sd !== amberSide) { amberSide = sd; amber.style.background = AMBER[sd]; }
+          amber.style.opacity = on ? (Math.sin(ph / 0.9 * Math.PI) * 0.95).toFixed(2) : '0';
+        }
+        // Round 12 #5b: the chevron, 2 s from the stamp's end, pointing at it on its way to the pond.
+        if (tamedAt >= 0) {
+          tamedAt += dt;
+          const on = tamedAt >= 3 && tamedAt < 5 && !!ear && chevEl();
+          if (on) {
+            const { a } = sideOf(ear, cur.x, cur.z), sx = -Math.sin(a), sy = -Math.cos(a), r = 0.36 * Math.min(innerWidth, innerHeight);
+            chev.style.transform = `translate(-50%,-50%) translate(${(sx * r).toFixed(0)}px,${(sy * r).toFixed(0)}px) rotate(${(Math.atan2(sy, sx) * 180 / Math.PI).toFixed(0)}deg)`;
+            chev.style.opacity = '1';
+          } else if (chev) chev.style.opacity = '0';
+          if (tamedAt >= 5) tamedAt = -1;
+        }
+        // Round 12 #1c: the plug's creak rises with the bar while anyone holds; the ring jerks on a yank.
+        if (snap.phase === 'plug' && (snap.holders ?? 0) > 0 && (creakT -= dt) <= 0) { creakT = 0.55; SFX.creak?.(snap.plug ?? 0, false); }
+        if (ring.visible && jerkT > 0) { jerkT = Math.max(0, jerkT - dt); ring.position.x = (snap.ring?.x ?? ring.position.x) + Math.sin(t * 90) * 0.12 * jerkT / 0.18; }
         if (hazLanes.visible) hazMat.opacity = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(t * 8));
         if (door.visible) door.rotation.x = snap.phase === 'warn' ? Math.sin(t * 38) * 0.05 * (1 + (1 - (snap.t ?? 0) / BOSS.WARN) * 2) : 0;
         if (scan.visible) {

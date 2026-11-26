@@ -107,8 +107,8 @@ test('the hazard tip re-arms once after a hazard DENIED (HINTS.hazard.again)', (
 });
 
 // ---- #5 souvenir requests -------------------------------------------------------------------------------------------
-test('requests: one at a time, from 0:30 to T-60, every 45/60/75/90 s by crew size, 30 s each', () => {
-  assert.deepEqual([4, 3, 2, 1].map(reqEvery), [45, 60, 75, 90]);
+test('requests: one at a time, from 0:30 to T-60, every 38/45/55/65 s by crew size, 30 s each', () => {
+  assert.deepEqual([4, 3, 2, 1].map(reqEvery), [38, 45, 55, 65]);   // council round 12 #2: a call a minute round the Stretch's pause
   assert.equal(REQ.SECS, 30);
   assert.equal(reqDue({ t: 29, left: 300, n: 4 }), false);
   assert.equal(reqDue({ t: 30, left: 300, n: 4 }), true);
@@ -207,4 +207,113 @@ test('MOW-E 2.0 at the Stadium (§2.7): no drain while the boss is live, +0.08 a
   assert.ok(Math.abs(st.s - 0.66) < 1e-6, `two hits: ${st.s}`);
   crew.mower.phase = 'tamed'; run(0.1);
   assert.ok(st.s > 0.99, 'a win fills the crowd');
+});
+
+// ---- council round 12 #7 (builder 2): Inspection Hour, spray chains, the tip, the card -------------------------------
+import { INSPECT, inspectSecs, inspectDue, inspectPatch, zoningInspected, inspectAlert, CHAIN, sweepStep, zoningWith, INSPECT_MEMO } from '../web/js/county.js';
+import { WASH } from '../web/js/sim.js';
+import { tomorrowLine, rowsOf, printCard } from '../web/js/goals.js';
+import { kpiNoteOf } from '../web/js/bvtext.js';
+
+const hazAt = (crew, x, z) => { const b = rest(crew, x, z); b.kind = 'hazard'; b.hands = true; b.hazAt = crew.custT ?? 0; return b; };
+
+test('round 12 #7a: the inspector rules: once at T-3:30, 60 s (75 solo), the busiest patch, noted hazards count twice', () => {
+  assert.equal(inspectSecs(1), 75); assert.equal(inspectSecs(4), 60);
+  assert.equal(inspectDue({ left: 211 }), false); assert.equal(inspectDue({ left: 210 }), true); assert.equal(inspectDue({ left: 200, done: true }), false);
+  const p = inspectPatch([{ x: 0, z: -20 }, { x: 40, z: -20 }, { x: 42, z: -22 }, { x: 44, z: -18 }]);
+  assert.equal(p.x, 40); assert.equal(p.r, INSPECT.R);
+  assert.deepEqual(inspectPatch([]), { x: INSPECT.CENTRE.x, z: INSPECT.CENTRE.z, r: INSPECT.R });
+  assert.equal(zoningInspected(0, 2, 2, 0), zoningWith(0, 4), 'a noted hazard counts double');
+  assert.ok(Math.abs(zoningInspected(0, 0, 0, -0.05) - 0.95) < 1e-9);
+  assert.ok(wordCount(inspectAlert) <= 8 && wordCount(INSPECT_MEMO) <= 8);
+  assert.equal(kpiNoteOf({ county: { inspect: { where: '4 HAZARDS', t: 44.2 } } }), 'INSPECTION · 4 HAZARDS · 0:45');
+});
+
+test('round 12 #7a: County crew: he comes at T-3:30 to the busiest patch; bagged there ×3 and +0.04; left there, noted -0.05 and double', () => {
+  const { crew, rats: [a, b], run } = crewAt(4, [county], 2, {}, 420);
+  const st = crew.mods.state('county');
+  const S = WASH.STATION;
+  const far = hazAt(crew, S.x - 40, S.z - 20);
+  const cl = [hazAt(crew, S.x, S.z - 30), hazAt(crew, S.x + 2, S.z - 31), hazAt(crew, S.x - 2, S.z - 29)];
+  crew.shiftT = crew.shiftSecs - 211; drain(crew); run(1.5);
+  const ev = drain(crew).find(e => e.t === 'inspect' && e.phase === 'start');
+  assert.ok(ev, 'he came');
+  assert.ok(Math.hypot(ev.x - S.x, ev.z - (S.z - 30)) < 3, 'the busiest patch');
+  assert.equal(ev.n, 3);
+  assert.equal(crew.snapshot().mods.county.inspect.where, '3 HAZARDS');
+  // bag one in his patch: ×3 pay, +0.04 Zoning
+  for (const h of cl) h.wetUntil = crew.custT + 99;
+  const k0 = st.kpi, c0 = crew.stats.hazCash ?? 0;
+  b.x = cl[0].x; b.z = cl[0].z; assert.ok(crew.pickup(b, cl[0].id));
+  assert.ok((crew.stats.hazCash - c0) > 0);
+  const paid3 = crew.stats.hazCash - c0;
+  assert.ok(st.kpi > k0 + 1 / 12 + 0.03, `+1/12 for the hazard and +0.04: ${k0} -> ${st.kpi}`);
+  // bag the far one (outside): plain pay
+  far.wetUntil = crew.custT + 99; const c1 = crew.stats.hazCash;
+  b.x = far.x; b.z = far.z; assert.ok(crew.pickup(b, far.id));
+  assert.ok(Math.abs(paid3 / (crew.stats.hazCash - c1) - INSPECT.PAY) < 0.15, `x3 in the patch (BV drifts a little): ${paid3} vs ${crew.stats.hazCash - c1}`);
+  // leave two in it: he notes them as he leaves
+  for (const h of cl) h.wetUntil = 0;
+  run(INSPECT.SECS + 1);
+  const done = drain(crew).find(e => e.t === 'inspect' && e.phase === 'done');
+  assert.equal(done.noted, 2); assert.equal(done.clean, false);
+  assert.ok(st.noted.has(cl[1].id) && st.noted.has(cl[2].id));
+  run(1);
+  assert.ok(Math.abs(st.kpi - zoningInspected(st.strays, 2, 2, INSPECT.BONUS - 2 * INSPECT.NOTED)) < 1e-9, `kpi ${st.kpi}`);
+  assert.equal(crew.snapshot().mods.county.inspect, undefined);
+  run(60);
+  assert.equal(drain(crew).filter(e => e.t === 'inspect').length, 0, 'once a shift');
+  // lead's call (round 14): from the cleanup to the bell the noted hazards are filed (they don't count): never a wall
+  crew.shiftT = crew.shiftSecs - 59; run(1);
+  assert.ok(crew.closing());
+  assert.ok(Math.abs(st.kpi - zoningInspected(st.strays, st.haz - 2, 0, INSPECT.BONUS)) < 1e-9, `at the bell: ${st.kpi}`);
+});
+
+test('round 12 #7b: a spray wets every hazard within 3 m; 3 bagged within 6 s is a CLEAN SWEEP (×2 on the third)', () => {
+  const times = [];
+  assert.equal(sweepStep(times, 0), false); assert.equal(sweepStep(times, 2), false); assert.equal(sweepStep(times, 5.9), true);
+  assert.equal(times.length, 0, 'it resets');
+  assert.equal(sweepStep(times, 10), false); assert.equal(sweepStep(times, 17), false); assert.equal(sweepStep(times, 18), false, '6 s window');
+  const { crew, rats: [a, b] } = crewAt(4, [county], 2);
+  const S = WASH.STATION;
+  const h = [hazAt(crew, S.x, S.z - 30), hazAt(crew, S.x + 2.5, S.z - 30), hazAt(crew, S.x - 1, S.z - 32), hazAt(crew, S.x + 6, S.z - 30)];
+  a.x = S.x; a.z = S.z; assert.ok(crew.toggleWand(a));
+  a.x = h[0].x + 4; a.z = h[0].z;
+  for (let i = 0; i < 6; i++) { a.washAt = crew.now() - 500; crew.wash(a, 0.5, 'h:' + h[0].id); }
+  const now = crew.custT;
+  assert.ok(h[0].wetUntil > now && h[1].wetUntil > now && h[2].wetUntil > now, 'the chain: within 3 m');
+  assert.ok(!(h[3].wetUntil > now), '6 m away stays dry');
+  drain(crew);
+  const c0 = crew.stats.hazCash ?? 0, pays = [];
+  for (const x of h.slice(0, 3)) { const c = crew.stats.hazCash ?? 0; b.x = x.x; b.z = x.z; assert.ok(crew.pickup(b, x.id)); pays.push(crew.stats.hazCash - c); }
+  assert.ok(Math.abs(pays[2] / pays[0] - CHAIN.PAY) < 0.15, `x2 on the third: ${pays}`);
+  assert.ok(drain(crew).some(e => e.t === 'hazbag' && e.sweep), 'CLEAN SWEEP');
+  assert.equal(crew.stats.sweeps, 1);
+  assert.ok(crew.stats.hazCash > c0);
+});
+
+test('round 12 #7c/#7d: the hazard tip names the button; the card names the one goal left in 8 words', () => {
+  assert.match(HINTS.hazard.pad, /\bRT\b/); assert.match(HINTS.hazard.kb, /\bClick\b/);
+  assert.ok(wordCount(HINTS.hazard.pad) <= 8 && wordCount(HINTS.hazard.kb) <= 8);
+  for (const v of [0, 1, 2, 3, 4]) for (const n of [1, 4]) {
+    const card = printCard(v, n);
+    const rows = rowsOf(card, { fee: 6_600_000, cash: 1_000 });
+    for (const open of rows) {
+      const one = rows.map(r => ({ ...r, done: r !== open }));
+      const line = tomorrowLine(one, v);
+      assert.ok(wordCount(line) <= 8, line);
+      assert.ok(!/one goal left/.test(line) || open.kind === 'fee', `names it: ${line}`);
+    }
+  }
+  const c4 = rowsOf(printCard(4, 4), { fee: 1, cash: 9 });
+  assert.equal(tomorrowLine(c4.map(r => ({ ...r, done: r.id !== 'reviews', have: r.id === 'reviews' ? 1 : r.have })), 4), 'Tomorrow: one more good day for the Orbital.');
+  assert.equal(tomorrowLine(c4.map(r => ({ ...r, done: r.id !== 'strays', have: r.id === 'strays' ? 45 : r.have })), 4), 'Tomorrow: 40 more strays for the Orbital.');
+  assert.equal(tomorrowLine(c4.map(r => ({ ...r, done: r.id === 'fee' })), 4), 'Tomorrow: four goals left for the Orbital.', 'more than one: the count');
+});
+
+test('round 12 9.16: the Orbital with every step done names Ball No. 1 (strip and tomorrow), never undefined', async () => {
+  const { strip } = await import('../web/js/goals.js');
+  const rows = rowsOf(printCard(5, 4), { sky: true, up: { tether: 1 } }).map(r => ({ ...r, done: true }));
+  assert.equal(strip(rows, 5).next, 'NEXT: FIND BALL NO. 1');
+  assert.equal(tomorrowLine(rows, 5), 'Tomorrow: find Ball No. 1.');
 });

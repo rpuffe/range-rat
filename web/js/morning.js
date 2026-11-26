@@ -18,6 +18,15 @@ export const MORNING = {
   CROWD: 0.6,     // the Stadium's live crowd under this: short ("cold"); done at it
 };
 
+// Council round 12, 9.4 (C #10): the checklist (and the nudge slot) flickered up between two centre texts. It stays
+// down while a centre text shows or waits (say.js's queue, the story card's next beat), and for QUIET s after the last.
+// st: { lastBusy } (the caller's, starts at -Infinity). Returns true when the slot may show now.
+export const CHECK = { QUIET: 1.0 };
+export function checkGate(st, { busy = false, waiting = false, t = 0 } = {}) {
+  if (busy || waiting) { st.lastBusy = t; return false; }
+  return t - (st.lastBusy ?? -Infinity) >= CHECK.QUIET;
+}
+
 // Every line is ≤ 7 words (§8). The sign, return and mats reuse the rally's and the day-3 lines.
 export const MORNING_TEXT = {
   basket: 'Fill the bucket basket!',

@@ -100,12 +100,12 @@ export function createRecap({ link, crew, report, me }) {
       html += `<div class="sheet"><h3>Tomorrow's contract</h3>` + c.offers.map((o, i) =>
         `<button type="button" class="offer quiet${(c.pick ?? 0) === i ? ' on' : ''}" id="contract-${i}"><span class="stars">${starText(o.stars)}</span> ${esc(todayName(o.mod) ?? MODS[o.mod?.id]?.name ?? '')} · ${esc(goalText(o.goal))}${(c.pick ?? 0) === i ? ' ✓' : ''}</button>`).join('') + '</div>';
     }
-    // The stars and the locker (every 10 stars a cosmetic; each Rat picks their own hat and vest, the crew one paint).
+    // The stars and the locker (council round 12 #6d: a cosmetic at 3 stars, then every 5; each Rat picks their own hat and vest, the crew one paint).
     const stars = c.stars ?? 0;
     if (c.endless || stars > 0) {
       const nx = nextLook(stars);
       html += `<div class="sheet"><h3><span class="stars">★ ${stars}</span> lifetime stars</h3>${nx ? `<p class="note">Next: ${esc(nx.name)} at ${nx.stars} ★</p>` : ''}`;
-      const owned = unlockedLooks(stars);
+      const owned = unlockedLooks(stars, (c.site13 ?? 0) > 0);   // council round 12 #8: the Site 13 jacket
       if (owned.length) {
         const mine = c.players?.find(p => p.id === me.id)?.look ?? {};
         const btn = (part, label, cur) => owned.some(o => o.part === part)
@@ -136,7 +136,7 @@ export function createRecap({ link, crew, report, me }) {
     for (const part of ['hat', 'vest', 'cart']) {
       $('look-' + part)?.addEventListener('click', () => {
         const cc = crew(), cur = part === 'cart' ? cc.cartPaint : cc.players?.find(p => p.id === me.id)?.look?.[part];
-        link()?.act({ t: 'look', part, id: cycleLook(cur, part, cc.stars ?? 0) });
+        link()?.act({ t: 'look', part, id: cycleLook(cur, part, cc.stars ?? 0, (cc.site13 ?? 0) > 0) });
       });
     }
     $('recap-stop')?.addEventListener('click', () => showNight(report()?.night));

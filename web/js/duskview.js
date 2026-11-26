@@ -89,6 +89,9 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
     return { walkers: out, hidden };
   }
 
+  // Council round 12, 9.9 (builder 4): one count for 'left'. The label reads the server's number (the snapshot's
+  // `left` while closing, the report's at the walk-off); the client's own filter (outThere) only when there is none.
+  const countLeft = n => (Number.isFinite(n) ? n : leftOut(balls));
   function makeLabel() {
     label = label ?? el('position:fixed;left:50%;top:11%;transform:translateX(-50%);padding:0.45em 1.1em;border-radius:1em;'
       + 'background:rgba(20,16,32,0.72);color:#ffe7a8;font:600 1.35em system-ui,sans-serif;letter-spacing:0.02em;pointer-events:none;'
@@ -99,7 +102,7 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
   function live(dt) {
     const c = crew(), on = c?.phase === 'shift' && !!c.closing && !cardUp();
     if (!on) { if (liveOn) { liveOn = false; if (label) label.style.opacity = '0'; } liveT = 0; return; }
-    if (!liveOn || (liveT -= dt) <= 0) { liveT = 0.5; makeLabel().textContent = leftLine(leftOut(balls)); }
+    if (!liveOn || (liveT -= dt) <= 0) { liveT = 0.5; makeLabel().textContent = leftLine(countLeft(c?.left)); }
     if (!liveOn) { liveOn = true; label.style.opacity = '1'; }
   }
 
@@ -110,7 +113,7 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
     run.budget = budget;
     Object.assign(run, gather(plan));
     buildGlow(budget); fillGlow(); run.fillT = 0.5;
-    run.count = leftOut(balls);
+    run.count = countLeft(run.left);
     root.visible = true;
     makeLabel().textContent = leftLine(run.count);
     if (!plan.cam) veil = veil ?? el('position:fixed;inset:0;background:#120d24;pointer-events:none;z-index:29;opacity:0');
@@ -163,7 +166,7 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
       }
       animatePerson(w.p, dt, go ? { mode: 'walk', speed: DUSK.WALK_SPEED } : { mode: 'idle' });
     }
-    if ((run.fillT -= dt) <= 0) { run.fillT = 0.5; fillGlow(); run.count = leftOut(balls); if (label) label.textContent = leftLine(run.count); }
+    if ((run.fillT -= dt) <= 0) { run.fillT = 0.5; fillGlow(); run.count = countLeft(run.left); if (label) label.textContent = leftLine(run.count); }
     const b = run.budget, pulse = b.pulse ? 1 + 0.22 * Math.sin(run.t * 4.2) : 1;
     glow.material.opacity = 0.9 * s.glow;
     glow.material.size = b.size * pulse * (plan.cam ? 1 : 0.3);
@@ -181,12 +184,12 @@ export function createDusk({ scene, camera, me, others, balls, crew, buildPerson
 
   return {
     // Arm the beat for when the stamp's hold ends (`at`, performance.now ms). Returns when the card may open, or null.
-    queue({ at = 0, ending = false, rejoin = false, onDone = null } = {}) {
+    queue({ at = 0, ending = false, rejoin = false, onDone = null, left = null } = {}) {   // round 12, 9.9: left = the report's count
       this.stop();
       const plan = duskPlan({ ending, rejoin, reduceMotion: !!settings?.()?.reduceMotion });
       if (!plan.run) return null;
       const end = holdEnd(performance.now(), at, plan);
-      run = { plan, at: Math.max(performance.now(), at), t: -1, onDone, finished: false, walkers: [], hidden: [] };
+      run = { plan, at: Math.max(performance.now(), at), t: -1, onDone, finished: false, walkers: [], hidden: [], left };
       // rAF stalls in a hidden tab: the card must still open on time.
       run.safety = setTimeout(() => { if (run && !run.finished) { if (run.t < 0) begin(); skip(); } }, end - performance.now() + 400);
       return end;

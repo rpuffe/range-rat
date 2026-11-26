@@ -146,6 +146,7 @@ export default {
 
       onSnapshot(s, m) {
         snap = m ?? null;
+        if (s?.firstOwnerDay && !cameo.standing && !cameo.riding) cameo.stand(returnSpot(SIM.STAND));   // council round 12 #3d: a rejoin
         sky = s?.phase === 'shift' && s?.lastBucket?.phase === 'sky' ? s.lastBucket.debris ?? ids.length : null;
         ids = m?.d ?? [];
         const r = m?.r?.[me.id];
@@ -229,7 +230,7 @@ export default {
           cameoRats.length = 0;
           cameoRats.push(me);
           for (const p of ps) if (p.id !== me.id && p.online) cameoRats.push(p);
-          cameo.tick(dt, { lift: cameoLift, rats: cameoRats });
+          cameo.tick(dt, { lift: cameoLift, rats: cameoRats, camera: ctx.camera });   // council round 12 9.5: the bubble clamp
         }
         if (ctx.venues) ctx.venues.carY = carY;
         // Playthrough 4 C5: the tower and its lights would cut across the end-of-day overhead; they step aside under it.

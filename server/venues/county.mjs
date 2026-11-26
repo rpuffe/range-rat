@@ -2,7 +2,8 @@
 // Council round 4, section 3.3. Pure rules live in web/js/county.js; the look is web/js/views/county.js.
 import { SIM, KIND_W, WASH, QUOTA_KPI } from '../../web/js/sim.js';
 import { SLICE, ZONING, DRONES, DISPATCH, strayCount, zoning, droneCount, droneTarget, droneStep, newZone, zoneLive,
-  HAZ, VAN, hazChance, inHazZone, hazardCount, zoningWith, vanTow, vanPick, hazDealDue, hazPair, zoningLabel } from '../../web/js/county.js';
+  HAZ, VAN, hazChance, inHazZone, hazardCount, zoningWith, vanTow, vanPick, hazDealDue, hazPair, zoningLabel,
+  INSPECT, INSPECT_MEMO, inspectSecs, inspectDue, inPatch, inspectPatch, zoningInspected, inspectWhere, CHAIN, sweepStep } from '../../web/js/county.js';
 import { RALLY_LINES } from '../../web/js/rally.js';
 import { nearestReturn } from '../../web/js/layout.js';
 import { tubeFeed } from '../../web/js/dive.js';
@@ -94,16 +95,21 @@ function hazSpray(crew, st, p, a) {
   if (b.spray + 1e-9 >= HAZ.SPRAY) {
     b.spray = 0; b.wetUntil = now + HAZ.WET; b.sprayBy = p.id;
     crew.events.push({ t: 'hazwet', id: b.id, by: p.id, secs: HAZ.WET });
+    for (const o of crew.balls.values()) {                     // council round 12 #7b: the spray wets every hazard within CHAIN.R
+      if (o === b || o.kind !== 'hazard' || o.sunk || o.wetUntil > now || Math.hypot(o.x - b.x, o.z - b.z) > CHAIN.R) continue;
+      o.spray = 0; o.wetUntil = now + HAZ.WET; o.sprayBy = p.id;
+      crew.events.push({ t: 'hazwet', id: o.id, by: p.id, secs: HAZ.WET, chain: b.id });
+    }
     crew.dirty = true;
   }
   return true;
 }
 
 // A hazard nobody bagged in HAZ.LIFE s is written off: a range ball again (not while it's wet).
-function expire(crew) {
+function expire(crew, st) {
   const now = clock(crew);
   for (const b of crew.balls.values()) {
-    if (b.kind !== 'hazard' || b.wetUntil > now || now - (b.hazAt ?? now) < HAZ.LIFE) continue;
+    if (b.kind !== 'hazard' || b.wetUntil > now || now - (b.hazAt ?? now) < HAZ.LIFE || st?.noted?.has(b.id)) continue;   // round 12 #7a: on his clipboard for good
     b.kind = 'range'; b.hands = false; b.spray = 0;
     crew.events.push({ t: 'hazgone', id: b.id });
   }
@@ -139,6 +145,52 @@ function hazDeal(crew, st, dt) {
   crew.events.push({ t: 'rally', needs: Object.fromEntries(ids.map(id => [id, RALLY_LINES.hazards])), haz: st.haz });
 }
 
+// ---- council round 12 #7a: Inspection Hour --------------------------------------------------------------------------
+// Zoning: strays, hazards (the noted ones twice), and the inspection's bonuses and notes.
+function notedOut(crew, st) {
+  if (!st.noted?.size) return 0;
+  let n = 0;
+  for (const id of st.noted) { const b = crew.balls.get(id); if (b && b.kind === 'hazard' && !b.sunk) n++; else st.noted.delete(id); }
+  return n;
+}
+// A noted hazard costs -INSPECT.NOTED while it's still out (bag it after he's gone and that comes back); the bonuses stay.
+// Lead's call (round 14): the sting is within the shift only. From the cleanup (T-1:00) to the bell the noted hazards are
+// on his clipboard, not your Zoning (they don't count at all), so a crew that ignores hazards takes a DENIED or two but is
+// never walled. (Counting them once still left a 4P ignorer at 6 / 7 / 12 shifts: design/round14-venues.md.)
+const gaugeOf = (crew, st) => {
+  if (crew.venue !== 4) return zoningWith(st.strays, st.haz);
+  const n = notedOut(crew, st);
+  if (crew.closing?.() || !crew.working()) return zoningInspected(st.strays, Math.max(0, st.haz - n), 0, st.zAdj ?? 0);
+  return zoningInspected(st.strays, st.haz, n, (st.zAdj ?? 0) - INSPECT.NOTED * n);
+};
+const inPatchHaz = (crew, ins) => { let n = 0; for (const b of crew.balls.values()) if (b.kind === 'hazard' && !b.sunk && inPatch(ins, b.x, b.z)) n++; return n; };
+function inspection(crew, st, dt) {
+  if (st.ins) {
+    st.ins.n = inPatchHaz(crew, st.ins);
+    if ((st.ins.left -= dt) > 0) return;
+    const ins = st.ins; st.ins = null;
+    const noted = [];
+    for (const b of crew.balls.values()) if (b.kind === 'hazard' && !b.sunk && inPatch(ins, b.x, b.z)) { st.noted.add(b.id); noted.push(b.id); }
+    st.insNoted = noted.length;
+    crew.stats.inspNoted = (crew.stats.inspNoted ?? 0) + noted.length;
+    if (!noted.length) crew.stats.inspClean = (crew.stats.inspClean ?? 0) + 1;
+    if (!noted.length && ins.bagged > 0) crew.memoNote = INSPECT_MEMO;   // tomorrow's memo flavour (builder 4's memoNote slot): "The inspector was impressed."
+    crew.events.push({ t: 'inspect', phase: 'done', noted: noted.length, bagged: ins.bagged, clean: !noted.length });
+    st.kpi = gaugeOf(crew, st); crew.dirty = true;
+    return;
+  }
+  if (!inspectDue({ left: crew.shiftSecs - crew.shiftT, done: st.insDone })) return;
+  st.insDone = true;
+  const hz = [];
+  for (const b of crew.balls.values()) if (b.kind === 'hazard' && !b.sunk) hz.push(b);
+  const p = inspectPatch(hz);
+  const secs = inspectSecs(crew.onlineCount());
+  st.ins = { x: p.x, z: p.z, r: p.r, left: secs, secs, bagged: 0, n: 0 };
+  st.ins.n = inPatchHaz(crew, st.ins);
+  crew.events.push({ t: 'inspect', phase: 'start', x: +p.x.toFixed(1), z: +p.z.toFixed(1), r: p.r, secs, n: st.ins.n });
+  crew.dirty = true;
+}
+
 export default {
   id: 'county',
   venue: 4,
@@ -147,6 +199,7 @@ export default {
 
   startShift(crew, st) {
     st.z = 0; st.strays = 0; st.kpi = 1; st.zone = null; st.haz = 0; st.hz = false; st.vanT = 0; st.vans = 0; st.towed = 0; st.bagged = 0; st.van = null; st.dealT = Infinity; st.dealLC = false; st.deals = 0;
+    st.ins = null; st.insDone = false; st.insNoted = 0; st.noted = new Set(); st.zAdj = 0; st.sweep = {}; st.sweeps = 0;   // council round 12 #7a/#7b
     for (const d of st.drones) { d.x = SIM.STAND.x; d.z = SIM.STAND.z + 1.5; d.y = DRONES.ALT; d.pocket = 0; d.pocketW = 0; d.target = null; }
   },
 
@@ -157,12 +210,12 @@ export default {
       st.z = 0;
       st.strays = strayCount(crew.balls.values());
       // Round 11 (expert #6): at the County itself, every hazard lying out counts against Zoning too.
-      if (crew.venue === 4 && !crew.closing?.()) expire(crew);   // the cleanup doesn't write them off: bag them before the bell
+      if (crew.venue === 4 && !crew.closing?.()) expire(crew, st);   // the cleanup doesn't write them off: bag them before the bell
       st.haz = crew.venue === 4 ? hazardCount(crew.balls.values()) : 0;
-      st.kpi = zoningWith(st.strays, st.haz);
+      st.kpi = gaugeOf(crew, st);
     }
     if (crew.venue === 4) van(crew, st, dt);
-    if (crew.venue === 4 && !crew.endless && crew.working()) hazDeal(crew, st, dt);   // council round 11 #2 (the cleanup too: hazards count at the bell)
+    if (crew.venue === 4 && !crew.endless && crew.working()) { hazDeal(crew, st, dt); inspection(crew, st, dt); }   // council round 11 #2 (the cleanup too: hazards count at the bell); round 12 #7a
   },
 
   // Round 11 (expert #9): a County customer ball that rests inside the hose's reach turns hazard with HAZ.CHANCE.
@@ -189,11 +242,15 @@ export default {
     crew.balls.delete(b.id); crew.stats.picked++;
     st.bagged++; crew.stats.bagged = (crew.stats.bagged ?? 0) + 1;
     const team = b.sprayBy && b.sprayBy !== p.id;
-    crew.events.push({ t: 'gone', id: b.id, by: p.id }, { t: 'hazbag', id: b.id, by: p.id, name: p.name, ...(team ? { team: b.sprayBy } : {}) });
+    const insp = !!st.ins && inPatch(st.ins, b.x, b.z);              // council round 12 #7a: ×3 and +0.04 in his patch
+    const sweep = sweepStep(st.sweep[p.id] ??= [], clock(crew));      // council round 12 #7b: 3 in 6 s, ×2 on the third
+    if (insp) { st.ins.bagged++; st.zAdj = (st.zAdj ?? 0) + INSPECT.BONUS; }
+    if (sweep) { st.sweeps = (st.sweeps ?? 0) + 1; crew.stats.sweeps = (crew.stats.sweeps ?? 0) + 1; }
+    crew.events.push({ t: 'gone', id: b.id, by: p.id }, { t: 'hazbag', id: b.id, by: p.id, name: p.name, ...(team ? { team: b.sprayBy } : {}), ...(insp ? { insp: true } : {}), ...(sweep ? { sweep: true } : {}) });
     const c0 = crew.stats.cash;
-    crew.bank(1, p.id, null, HAZ.W, null, { haz: 1 });
+    crew.bank(1, p.id, null, HAZ.W * (insp ? INSPECT.PAY : 1) * (sweep ? CHAIN.PAY : 1), null, { haz: 1 });
     crew.stats.hazCash = Math.round(((crew.stats.hazCash ?? 0) + crew.stats.cash - c0) * 100) / 100;
-    st.haz = Math.max(0, st.haz - 1); st.kpi = zoningWith(st.strays, st.haz);
+    st.haz = Math.max(0, st.haz - 1); st.kpi = gaugeOf(crew, st);
     crew.dirty = true;
     return true;
   },
@@ -216,6 +273,7 @@ export default {
     ...(st.zone ? { zone: { x: r2(st.zone.x), z: r2(st.zone.z), r: st.zone.r, left: r2(st.zone.until - (st.t ?? 0)) } } : {}),
     drones: st.drones.map(d => ({ id: d.id, x: r2(d.x), y: r2(d.y), z: r2(d.z), yaw: r2(d.yaw), n: d.pocket })),
     ...(crew.venue === 4 ? { label: zoningLabel(st.kpi, st.haz) } : {}),   // council round 11 #2: the Board's Zoning line (board.js, builder 4)
+    ...(st.ins ? { inspect: { x: r2(st.ins.x), z: r2(st.ins.z), r: st.ins.r, t: r2(st.ins.left), secs: st.ins.secs, n: st.ins.n, where: inspectWhere(st.ins.n) } } : {}),   // council round 12 #7a (bvtext.js kpiNoteOf)
     ...(st.hz ? { hz: 1, haz: st.haz, wet: wetIds(crew) } : {}), ...(st.van ? { van: r2(VAN.SECS - st.van.left) } : {}), ...(st.vans ? { vans: st.vans, towed: st.towed } : {}),
   }),
 };

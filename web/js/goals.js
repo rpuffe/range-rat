@@ -41,6 +41,8 @@ const G = {
   gutters: { kind: 'buy', row: 'gutters', tier: 1, reward: true, text: () => 'Buy the ball-return gutters', short: () => 'The gutters' },
   // Round 11: with the Stadium's reviews at 2×, 20 laps (one driver laps ~6–7 a shift) held the venue to 3–4 shifts: 12.
   laps: { kind: 'count', n: 12, reward: true, text: n => `Drive ${n} laps of the Ping Track`, more: n => `${n} more lap${n === 1 ? '' : 's'}`, short: n => `${n} laps` },
+  // Council round 12 #2b: the Stadium's signature job on the card (any souvenir into a lit section, the Stretch's too); laps came off.
+  requests: { kind: 'count', n: 6, reward: true, text: n => `Answer ${n} souvenir requests`, more: n => `${n} more request${n === 1 ? '' : 's'}`, short: n => `${n} requests` },
   pings: { kind: 'count', n: 12, reward: true, text: n => `Ping the cart ${n} times`, more: n => `${n} more ping${n === 1 ? '' : 's'}`, short: n => `${n} pings` },
   cart2: { kind: 'buy', row: 'cart', tier: 3, reward: true, text: () => 'Buy the second cart', short: () => 'The second cart' },
   // Round 11: the County's reviews at 2× too: 150 strays took the bot's Yards walker 3 shifts (with this round's County,
@@ -63,7 +65,7 @@ export const CARDS = [
   [{ id: 'bank' }, { id: 'washer' }, { id: 'huddle' }, { id: 'reviews', n: 2 }, { id: 'fee' }],        // the Muni
   [{ id: 'fed' }, { id: 'treasures' }, { id: 'seal' }, { id: 'reviews', n: 3 }, { id: 'fee' }],    // the Club
   [{ id: 'targets' }, { id: 'orders' }, { id: 'gutters' }, { id: 'reviews', n: 3 }, { id: 'fee' }],    // Tiered
-  [{ id: 'laps' }, { id: 'pings' }, { id: 'cart2' }, { id: 'reviews', n: 2 }, { id: 'fee' }],          // the Stadium
+  [{ id: 'requests' }, { id: 'pings' }, { id: 'cart2' }, { id: 'reviews', n: 2 }, { id: 'fee' }],      // the Stadium (council round 12 #2b: requests, not laps)
   [{ id: 'strays' }, { id: 'drones' }, { id: 'pass' }, { id: 'reviews', n: 2 }, { id: 'fee' }],        // the County
   [{ id: 'lift' }, { id: 'debris' }, { id: 'tether' }, { id: 'sky' }],                                 // the Orbital: the Last Bucket
 ];
@@ -213,7 +215,7 @@ export function strip(rows, venue) {
   const k = doneCount(rows), n = rows.length, nx = nextGoal(rows);
   const winch = venue === LAST_CARD && rows.find(r => r.kind === 'sky')?.done ? rows.find(r => r.id === 'tether' && !r.done && r.price != null) : null;
   return { pips: rows.map(r => r.done), label: venue === LAST_CARD ? `THE LAST BUCKET ${k} OF ${n}` : `${k} OF ${n} GOALS`,
-    next: winch ? winchLine(winch.price, winch.cash) : nx ? 'NEXT: ' + moreText(nx).toUpperCase() : venue === LAST_CARD ? 'BALL NO. 1 IS COMING' : 'CARD DONE · SIGN AT THE BELL' };
+    next: winch ? winchLine(winch.price, winch.cash) : nx ? 'NEXT: ' + moreText(nx).toUpperCase() : venue === LAST_CARD ? 'NEXT: FIND BALL NO. 1' : 'CARD DONE · SIGN AT THE BELL' };
 }
 
 // The report's headline: "3 of 5 done · 2 to go", or "Card done! Sign for Tiered."
@@ -230,8 +232,14 @@ const WORDS = ['no', 'one', 'two', 'three', 'four', 'five'];
 export function tomorrowLine(rows, venue) {
   if (!rows?.length) return null;
   const open = rows.length - doneCount(rows);
-  if (venue === LAST_CARD) return open ? `Tomorrow: ${WORDS[open]} step${open === 1 ? '' : 's'} to the Last Bucket.` : null;
+  if (venue === LAST_CARD) return open ? `Tomorrow: ${WORDS[open]} step${open === 1 ? '' : 's'} to the Last Bucket.` : 'Tomorrow: find Ball No. 1.';   // council round 12 9.16: day 2 of the Orbital names what's left
   const to = venueShort(venue + 1);
+  if (open === 1) {                       // council round 12 #7d (B #5): name the one goal left, if it fits in 8 words
+    const r = rows.find(x => !x.done);
+    const what = r.kind === 'fee' ? `${money(Math.ceil(Math.max(0, r.need - r.have)))} more to sign` : moreText(r);
+    const fits = l => l.split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length <= 8;
+    for (const line of [`Tomorrow: ${what} for ${to}.`, `Tomorrow: ${what}.`]) if (fits(line)) return line;   // too long with the venue: just the goal
+  }
   return open ? `Tomorrow: ${WORDS[open]} goal${open === 1 ? '' : 's'} left for ${to}.` : `Tomorrow: sign at the bell for ${to}.`;
 }
 // The morning deal's line (≤ 8 words): "Goal: 12 more hot dogs."

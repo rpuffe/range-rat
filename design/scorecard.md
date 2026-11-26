@@ -201,3 +201,28 @@ story beat, the PA and the NEW memos (30–50 s of centre text). Meaningful feat
 "barely exists") and the late jobs (souvenirs ignorable; County hazards decide promotion but the bell blames
 strays). Best line in the game: the note inside Ball No. 1. Owner calls this round: MOW-E becomes a boss moment;
 grass calmer (done, 84f3fad).
+
+## Round 7 (2026-11-26, build e44e93e: council round 11 built) · late-game loop
+
+Stretches this round: **A** = the MOW-E boss (Club day 3 + the Stadium encore); **B** = the Stadium and the County;
+**C** = the Orbital → the Last Bucket → endless. (Not the usual A/B/C split: compare the average, not the columns.)
+
+| Metric | A | B | C | **Avg** | R6 | Δ vs R6 |
+|---|---|---|---|---|---|---|
+| Fun | 7 | 6.5 | 7 | **6.8** | 7.0 | −0.2 |
+| Clarity | 7.5 | 6.5 | 6 | **6.7** | 6.8 | −0.1 |
+| Text load | 8 | 7.5 | 6.5 | **7.3** | 6.2 | +1.1 |
+| Pacing | 6.5 | 6.5 | 7 | **6.7** | 6.7 | 0 |
+| Co-op | 6 | 7 | 6 | **6.3** | 6.8 | −0.5 |
+| Meaningful features | 6.5 | 6.5 | 6 | **6.3** | 6.2 | +0.1 |
+| Look & feel | 6.5 | 6.5 | 7.5 | **6.8** | 7.3 | −0.5 |
+| Polish | 6 | 6.5 | 6.5 | **6.3** | 6.7 | −0.4 |
+| One more shift | 7 | 7 | 5.5 | **6.5** | 6.7 | −0.2 |
+| Decision density | 5.5 | 5.5 | 5 | **5.3** | 5.7 | −0.4 |
+| **Overall** | **6.5** | **6.5** | **6.5** | **6.5** | 6.8 | −0.3 |
+
+**Read:** Text load hit the council's target (7.3, +1.1): one memo a morning works. The rest dipped because this
+loop judged only the late game, harder: the boss is a cooldown timer at 4P (hosers wait on the vent; the plug is
+over in 1 s), its payoff happens off-screen; the Stadium crowd only bites at 4P; Ball No. 1's "beam" doesn't exist;
+endless contracts are invisible and the 3★ ones unwinnable; the Stadium deck canopy (the black slab) covers the
+top third of the view. Decision density (5.3) is the weakest number: the late game still runs itself between beats.

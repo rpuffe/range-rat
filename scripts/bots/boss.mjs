@@ -7,6 +7,8 @@
 // Rats walk at real speed (sprint on stamina), hose with crew.wash(p, secs, 'mower'), drive with crew.input (the
 // server's own clamps and run-over), hold the plug with p.holding. Before and after the fight every Rat picks up and
 // banks balls, so the payout's share of the shift's income is honest.
+// Council round 12: the per-Rat meters (spray that counts, a cooled nozzle), the plug drag, every Rat hits, SOFA=1 (a sofa crew's
+// field), WHISTLE=90 (the pet's whistle at T-90). Payout counts the fountain at its ×2 (the bounty's per-weight price).
 // usage: node scripts/bots/boss.mjs POLICY [seed] [club|stadium] [days]    (POLICY 'all': the §2.8 table at seeds 7/11/23)
 //        env V=1 verbose (a line per fight event).  START_FILE: a save to start from instead (snap.mjs).
 const REPO = new URL('../../', import.meta.url).href;
@@ -20,6 +22,12 @@ const V = process.env.V === '1';
 // Human-ish hands: a Rat notices the build-up REACT s after it starts, and holds the crosshair on the grille AIM_ON of
 // every AIM_CYCLE s (a pad on a sofa, on a moving target). PERFECT=1 turns both off (the upper bound).
 const PERFECT = process.env.PERFECT === '1', REACT = PERFECT ? 0 : 4, AIM_CYCLE = 2.5, AIM_ON = PERFECT ? 2.5 : 1.5;
+// Council round 12: a Rat notices its own ring go grey REACT_COOL s into a cool and stops spraying until it's back.
+// WHISTLE=n: on a pet day, Rat0 walks to the MOW-E post and whistles at T-n s (the council's T-90).
+// SOFA=1: before the fight each Rat picks up only half the time (a sofa crew swings, chats, shops), so the field holds
+// balls the way a human crew's does (the bot crew otherwise vacuums the near lanes: ~1 resting ball near at the burst).
+const SOFA = process.env.SOFA === '1';
+const REACT_COOL = PERFECT ? 0 : 1, WHISTLE = process.env.WHISTLE ? +process.env.WHISTLE || 90 : 0;
 const preset = name => { const j = JSON.parse(readFileSync(new URL(`server/presets/${name}.json`, REPO), 'utf8')); return j.save ?? j; };
 
 // The Club day-3 snap: the Club's first-morning preset, two days on (venue day 2 played, so the next morning is day 3).
@@ -51,12 +59,12 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
   const fights = [];
   let F = null;
 
-  function walkTo(p, g, dt, sprint = false) {
+  function walkTo(p, g, dt, sprint = false, cap = Infinity) {
     if (p.down > 0) return false;
     const dx = g.x - p.x, dz = g.z - p.z, d = Math.hypot(dx, dz);
     const run = sprint && p.stam > 0.2;
     p.stam = Math.max(0, Math.min(sprintMax, p.stam + (run ? -dt : dt * 0.6)));
-    const sp = crew.perks.walk * (run ? S.SPRINT.SPEED : 1);
+    const sp = Math.min(cap, crew.perks.walk * (run ? S.SPRINT.SPEED : 1));
     const step = Math.min(d, sp * dt);
     if (d > 1e-6) { p.x += dx / d * step; p.z += dz / d * step; p.yaw = Math.atan2(-dx, -dz); }
     S.clampToField(p, W());
@@ -108,6 +116,14 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
     if (walkTo(p, WSTN, dt, true)) crew.toggleWand(p);
     return false;
   }
+  // Round 12: every spray on the grille goes through here, so the tally sees what counted (filled a meter or hit).
+  function spray(p, m, dt) {
+    const cl = MW.coolLeft(m, p.id);
+    if (cl > 0 && cl < MW.BOSS.COOL_ME - REACT_COOL) return;   // the ring is grey (and the Rat has noticed): wait it out
+    const before = m.meter[p.id] ?? 0, hits = m.hits;
+    crew.wash(p, dt, 'mower');
+    if (F) { F.sprayT += dt; if (cl > 0) F.coolT += dt; else if (m.hits > hits || (m.meter[p.id] ?? 0) > before) F.countT += dt; }
+  }
   function hose(p, m, dt) {   // stay in its rear arc, inside reach, and spray
     const f = fwd(m), reach = (crew.perks.washReach ?? 7) - 1;
     const back = m.stall > 0 || m.stagger > 0 ? 2.5 : 4;
@@ -116,7 +132,7 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
     const d = Math.hypot(m.x - p.x, m.z - p.z);
     if (!(MW.behind(m, p) && d <= reach)) walkTo(p, g, dt, Math.hypot(g.x - p.x, g.z - p.z) > 6);
     else if (Math.hypot(g.x - p.x, g.z - p.z) > 1) walkTo(p, g, dt);
-    if (p.wand && aimOn(p) && MW.behind(m, p) && Math.hypot(m.x - p.x, m.z - p.z) <= reach + 1) crew.wash(p, dt, 'mower');
+    if (p.wand && aimOn(p) && MW.behind(m, p) && Math.hypot(m.x - p.x, m.z - p.z) <= reach + 1) spray(p, m, dt);
   }
   function dodge(p, m, dt, toward = null) {   // the hunted Rat: lead it at the cart, or sidestep it
     const dx = p.x - m.x, dz = p.z - m.z, d = Math.hypot(dx, dz) || 1;
@@ -130,7 +146,7 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
     if (d < 7 && ahead > 0.3) {   // it's coming: sprint sideways
       const sx = -f.z, sz = f.x, s = sx * dx + sz * dz >= 0 ? 1 : -1;
       walkTo(p, { x: p.x + sx * s * 4, z: p.z + sz * s * 4 }, dt, true);
-    } else if (p.wand && aimOn(p) && MW.behind(m, p) && d <= (crew.perks.washReach ?? 7)) crew.wash(p, dt, 'mower');
+    } else if (p.wand && aimOn(p) && MW.behind(m, p) && d <= (crew.perks.washReach ?? 7)) spray(p, m, dt);
     else if (d > 6) walkTo(p, { x: m.x - f.x * 4, z: m.z - f.z * 4 }, dt);
   }
   function fightStep(p, m, dt, i) {
@@ -140,7 +156,8 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
     if (m.phase === 'warn' && m.t > MW.BOSS.WARN - REACT) return false;   // not noticed yet
     if (m.phase === 'plug') {   // everyone piles in
       if (myCart(p)) crew.leaveCart(p);
-      if (walkTo(p, m.ring, dt, true) || MW.inRing(m, p)) p.holding = true;
+      if (p.holding && MW.inRing(m, p)) walkTo(p, m.ring, dt, false, MW.BOSS.HOLD_WALK);   // walk it backwards with the crew (2 m/s)
+      else if (walkTo(p, m.ring, dt, true) || MW.inRing(m, p)) p.holding = true;
       return true;
     }
     p.holding = false;
@@ -193,24 +210,31 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
       rats.forEach((p, i) => {
         p.seenAt = t * 1000;
         if (m && fightStep(p, m, DT, i)) return;
+        if (WHISTLE && i === 0 && crew.whistleState() === 1 && crew.shiftT >= crew.shiftSecs - WHISTLE - 30) {   // walk to the post, whistle at T-n
+          if (myCart(p)) crew.leaveCart(p);
+          if ((walkTo(p, MW.WHISTLE.POST, DT, true) || MW.atPost(p)) && crew.shiftT >= crew.shiftSecs - WHISTLE) { crew.input(p, { a: [{ t: 'whistle' }] }); D.whistleAt = Math.round(crew.shiftSecs - crew.shiftT); }
+          return;
+        }
         if (myCart(p)) crew.leaveCart(p);
         if (p.wand && !(m && MW.bossLive(m))) crew.toggleWand(p);
+        if (SOFA && !(m && m.phase !== 'warn' && MW.bossLive(m)) && ((t + i * 0.7) % 4) < 2) return;
         pickJob(p, DT);
       });
       crew.tick(DT);
-      if (process.env.DBG && m && MW.bossLive(m) && Math.round(t * 20) % 20 === 0) { const c = crew.carts[0]; console.log(`DBG t${crew.shiftT.toFixed(0)} ${m.phase} boss(${m.x.toFixed(1)},${m.z.toFixed(1)}) yaw${m.yaw.toFixed(2)} stall${m.stall.toFixed(1)} vent${m.vent.toFixed(1)} tgt${m.target ?? '-'} cart(${c.x.toFixed(1)},${c.z.toFixed(1)}) drv${c.driver ? 'Y' : 'n'} cool${((m.cool[c.i] ?? 0) - m.clock).toFixed(1)} rats ` + rats.map(p => `${p.role[0]}(${p.x.toFixed(0)},${p.z.toFixed(0)})${p.wand ? 'w' : ''}${p.down > 0 ? 'X' : ''}`).join(' ')); }
+      if (F && m && MW.bossFighting(m)) for (const p of rats) if (p.wand && !(p.down > 0)) F.hoseT += DT;   // a hoser's fight time (the cooled-spray share)
+      if (process.env.DBG && m && MW.bossLive(m) && Math.round(t * 20) % 20 === 0) { const c = crew.carts[0]; console.log(`DBG t${crew.shiftT.toFixed(0)} ${m.phase} boss(${m.x.toFixed(1)},${m.z.toFixed(1)}) yaw${m.yaw.toFixed(2)} stall${m.stall.toFixed(1)} full${Math.max(0, ...Object.values(m.meter)).toFixed(2)} tgt${m.target ?? '-'} cart(${c.x.toFixed(1)},${c.z.toFixed(1)}) drv${c.driver ? 'Y' : 'n'} cool${((m.cool[c.i] ?? 0) - m.clock).toFixed(1)} rats ` + rats.map(p => `${p.role[0]}(${p.x.toFixed(0)},${p.z.toFixed(0)})${p.wand ? 'w' : ''}${p.down > 0 ? 'X' : ''}`).join(' ')); }
       for (const e of crew.events) {
         if (e.t === 'mower' && e.boss) {
-          if (e.phase === 'warn') F = { day: crew.day, encore: !!e.encore, n: rats.length, hp: e.hp, at: crew.shiftT, burst: null, hunt: null, plug: null, end: null, kd: 0, hits: 0, stalls: 0, honks: 0, pay: 0, bounty: 0, eaten: 0, result: null, reboots: 0 };
+          if (e.phase === 'warn') F = { day: crew.day, encore: !!e.encore, n: rats.length, hp: e.hp, at: crew.shiftT, burst: null, hunt: null, plug: null, end: null, kd: 0, hits: 0, stalls: 0, honks: 0, pay: 0, bounty: 0, eaten: 0, result: null, reboots: 0, sprayT: 0, coolT: 0, countT: 0, hoseT: 0, by: {}, drag: 0 };
           if (!F) continue;
           if (e.phase === 'harvest') { F.burst = crew.shiftT; const rest = [...crew.balls.values()].filter(b => b.rest && !b.sunk); F.field = { all: rest.length, near: rest.filter(b => b.z > -42 && b.z < -8 && b.x > -40 && b.x < 60).length }; }
-          if (e.phase === 'hunt') { F.hunt ??= crew.shiftT; if (e.reboot) F.reboots++; }
+          if (e.phase === 'hunt') { F.hunt ??= crew.shiftT; F.ateHarvest ??= crew.mower?.eaten ?? 0; if (e.reboot) F.reboots++; }
           if (e.phase === 'plug') F.plug = crew.shiftT;
-          if (e.phase === 'tamed') { F.result = 'win'; F.end = crew.shiftT; F.eaten = e.eaten; F.bounty = e.bounty; F.payN = e.n; }
+          if (e.phase === 'tamed') { F.result = 'win'; F.end = crew.shiftT; F.eaten = e.eaten; F.eatenW = e.eatenW ?? e.eaten; F.bounty = e.bounty; F.payN = e.n; F.plugLen = F.plug != null ? +(F.end - F.plug).toFixed(1) : null; const bm = crew.mower; if (bm?.ring0 && bm.burstAt) F.drag = +Math.hypot(bm.burstAt.x - bm.ring0.x, bm.burstAt.z - bm.ring0.z).toFixed(1); }
           if (e.phase === 'fled') { F.result = 'loss'; F.end = crew.shiftT; F.eaten = e.kept; F.final = !!e.final; }
           if (verbose) console.log(`  t${crew.shiftT.toFixed(1)} ${e.phase}${e.reboot ? ' (reboot)' : ''}`);
         }
-        if (F && e.t === 'moweHit') { F.hits++; if (verbose) console.log(`  t${crew.shiftT.toFixed(1)} HIT by ${e.by} hp ${e.hp}`); }
+        if (F && e.t === 'moweHit') { F.hits++; F.by[e.by] = (F.by[e.by] ?? 0) + 1; if (verbose) console.log(`  t${crew.shiftT.toFixed(1)} HIT by ${e.by} hp ${e.hp}`); }
         if (F && e.t === 'knock' && e.by === 'mower') { F.kd++; if (verbose) console.log(`  t${crew.shiftT.toFixed(1)} knocked ${e.id}`); }
         if (F && e.t === 'honk' && e.boss) F.stalls++;
         if (F && e.t === 'cash' && e.mowe && e.kind === 'mowe') F.pay += e.cash + (e.credit ?? 0);
@@ -224,8 +248,10 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
     D.st = { ...crew.moweSt };
     if (F && F.day === D.day) {
       F.len = F.end != null && F.burst != null ? Math.round(F.end - F.burst) : null;
-      // the payout: the catcher (eaten ×2, banked) + the bounty + the five gold balls (×10 each, valued at the bounty's per-ball price)
-      F.payout = F.result === 'win' ? Math.round(F.pay + F.bounty * (1 + Math.min(MW.BOSS.GOLD, F.n) * S.KIND_W.gold / MW.BOSS.BOUNTY)) : 0;
+      // the payout: the bounty + the gold balls (×10 each) + the fountain (eaten ×2 as MOW-E balls), valued at the bounty's per-weight price
+      F.payout = F.result === 'win' ? Math.round(F.bounty * (1 + (Math.min(MW.BOSS.GOLD, F.n) * S.KIND_W.gold + MW.BOSS.PAYX * (F.eatenW ?? 0)) / MW.BOSS.BOUNTY)) : 0;
+      F.everyRat = Object.keys(F.by).length >= F.n;
+      F.coolPct = F.hoseT > 0 ? +(F.coolT / F.hoseT).toFixed(3) : 0; F.countPct = F.sprayT > 0 ? +(F.countT / F.sprayT).toFixed(3) : 0;
       F.share = +(F.payout / Math.max(1, D.income)).toFixed(3);
       D.fight = F;
     }
@@ -243,7 +269,7 @@ if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}` || proc
     for (const d of res) console.log(JSON.stringify(d));
   } else {
     const SEEDS = [7, 11, 23];
-    const fmt = f => f ? `${f.result}${f.len != null ? ' ' + f.len + 's' : ''} hp${f.hp} ate${f.eaten} kd${f.kd} hits${f.hits} stalls${f.stalls} share${(f.share * 100).toFixed(1)}%${f.reboots ? ' reboots' + f.reboots : ''}` : 'no fight';
+    const fmt = f => f ? `${f.result}${f.len != null ? ' ' + f.len + 's' : ''} hp${f.hp} ate${f.eaten} kd${f.kd} hits${f.hits} rats${Object.keys(f.by).length}/${f.n} stalls${f.stalls} plug${f.plugLen ?? '-'}s drag${f.drag}m cool${(f.coolPct * 100).toFixed(0)}% counts${(f.countPct * 100).toFixed(0)}% share${(f.share * 100).toFixed(1)}%${f.reboots ? ' reboots' + f.reboots : ''}` : 'no fight';
     for (const pol of ['4p-roles', '4p-swarm', '3p', '2p', '1p-cart', '1p-chase']) {
       for (const sd of SEEDS) { const [d] = runBoss({ policy: pol, seed: sd }); console.log(`club   ${pol.padEnd(9)} seed ${sd}: ${fmt(d.fight)} · income $${d.income}`); }
     }

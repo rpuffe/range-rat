@@ -38,6 +38,7 @@ export function paintSign(x, w, h, venue) {
 }
 
 const lambert = (color, extra) => new THREE.MeshLambertMaterial({ color, ...extra });
+export const DECK_CUT = 0.35;   // council round 12, 4a: the Tiered deck floor's opacity while the camera is under it
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 
 function textPlane(text, w, h, bg, fg, px, flip) {
@@ -80,7 +81,8 @@ export function createVenues(scene) {
   const builders = {
     club() {
       const g = grp('club');
-      const green = lambert(0x1d6b3a), white = lambert(0xf4f1e8), dark = lambert(0x3a2f26);
+      // Council round 12, 4a: the awning's underside is in the sun's shade; a little emissive keeps it green, not black.
+      const green = lambert(0x1d6b3a, { emissive: 0x123a22 }), white = lambert(0xf4f1e8), dark = lambert(0x3a2f26);
       // awning over the mat line: roof on 6 posts (back row, behind the mats)
       g.add(box(47, 0.25, 3.2, green, 0, 3.1, 0));
       g.add(box(47, 0.5, 0.12, white, 0, 2.85, -1.55));            // front valance
@@ -131,8 +133,19 @@ export function createVenues(scene) {
       // The stairs climb from x -25 to the deck's left end at -20. The deck loungers stand at its rail (z 2.4).
       const g = grp('tiered');
       const conc = lambert(0x8d8f96), dark = lambert(0x23252d);
-      g.add(box(40, 0.3, 4, TEX.mat('wood', 0xa98157, { world: 1.6 }), 0, 2.85, 4));   // floor slab x -20..20, z 2..6, top y 3: decking
-      g.add(box(40, 3.2, 0.3, dark, 0, 4.6, 6.1));                 // back wall
+      // Council round 12, 4a (builder 4): the black slab. The underside read as a void (black-on-black under a top-lit
+      // deck), so the decking glows a warm wood (emissive, one material, no new draw call) and the back wall is a mid
+      // grey. And a cutaway: while the camera is under the deck the floor fades to 35 % (DECK_CUT), set in the floor's
+      // own onBeforeRender, so it needs no hook in main.js and costs nothing per frame beyond two compares.
+      const deckMat = TEX.mat('wood', 0xa98157, { world: 1.6, emissive: 0x2a2218, transparent: true });
+      const floor = box(40, 0.3, 4, deckMat, 0, 2.85, 4);         // floor slab x -20..20, z 2..6, top y 3: decking
+      floor.onBeforeRender = (_r, _s, cam) => {
+        const p = cam.position, under = p.y < 2.75 && p.x > -20.5 && p.x < 20.5 && p.z > 1.5 && p.z < 6.5;
+        const o = under ? DECK_CUT : 1;
+        if (deckMat.opacity !== o) { deckMat.opacity = o; deckMat.depthWrite = o >= 1; }
+      };
+      g.add(floor);
+      g.add(box(40, 3.2, 0.3, lambert(0x8a8e98, { emissive: 0x2a2c32 }), 0, 4.6, 6.1));    // back wall (was 0x23252d: the black slab's other half; its +z face is in the sun's shade)
       const legs = []; for (let i = 0; i <= 10; i++) legs.push([-19.6 + i * 3.92, 1.35, 3.9, 0.35, 2.7, 0.35]);
       g.add(boxes(legs, conc, true));
       // 10 bay openings: pillars between bays on the deck front, rail across the top
@@ -179,7 +192,7 @@ export function createVenues(scene) {
         live.crowd.push({ im, base, side: side < 0 ? 'left' : 'right', stand: sg, m: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1.2, 1), p: new THREE.Vector3() });
       }
       // jumbotron frame behind the bank (sim.js BANK 26,6; board at z 7.2)
-      const fr = lambert(0x2a2d33), j = new THREE.Group();
+      const fr = lambert(0x7d838e, { emissive: 0x1c1f24 }), j = new THREE.Group();   // council round 12, 4a: was 0x2a2d33 (A's black bar through the reveal shot)
       for (const dx of [-5.4, 5.4]) j.add(box(0.4, 16, 0.4, fr, dx, 8, 0));
       j.add(box(11.2, 0.4, 0.6, fr, 0, 16, 0)); j.add(box(11.2, 0.4, 0.6, fr, 0, 9.6, 0));
       j.add(box(0.3, 6.4, 0.5, fr, 0, 12.8, 0));
@@ -231,7 +244,7 @@ export function createVenues(scene) {
       const x = c.getContext('2d'); x.fillStyle = '#fff'; x.beginPath(); x.arc(32, 32, 28, 0, 6.3); x.fill();
       x.fillStyle = '#c9ccd2'; for (const [a, b] of [[22, 24], [38, 22], [30, 38], [44, 36], [20, 40]]) { x.beginPath(); x.arc(a, b, 3, 0, 6.3); x.fill(); }
       const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-      const sm = new THREE.SpriteMaterial({ map: tex, fog: false });
+      const sm = new THREE.SpriteMaterial({ map: tex, fog: false, transparent: true, depthWrite: false });   // council round 12, 4b: no alpha drew black squares round the balls
       const spots = [[-30, 70, -40], [20, 90, -90], [-60, 110, 10], [50, 80, -20], [0, 130, -60], [75, 100, 30]];
       for (const [px, py, pz] of spots) { const s = new THREE.Sprite(sm); s.scale.set(3, 3, 1); s.position.set(px, py, pz); g.add(s); live.debris.push({ s, y0: py, ph: px }); }
     },

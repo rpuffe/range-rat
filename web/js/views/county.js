@@ -3,8 +3,9 @@
 // server/venues/county.mjs; the numbers are web/js/county.js.
 import * as THREE from 'three';
 import { MAP } from '../map.js';
-import { DRONES, VAN, vanToast } from '../county.js';
+import { DRONES, VAN, vanToast, inspectAlert } from '../county.js';
 import { armAgain } from '../settings.js';
+import { buildPerson, animatePerson } from '../people.js';   // council round 12 #7a: the FHI inspector
 
 const Y = MAP.YARDS;
 const mat = (color, o = {}) => new THREE.MeshLambertMaterial({ color, ...o });
@@ -72,6 +73,26 @@ function zoningVan() {
   return g;
 }
 
+// Council round 12 #7a: the FHI inspector (a people.js figure in a grey suit, sunglasses, a clipboard) and his patch (a
+// chalk-white ring on the grass). Built once, hidden when he's not on site.
+function inspector() {
+  const p = buildPerson({ seed: 'fhi-inspector', shirt: 0x5b6470, pants: 0x3a4048, hat: false });
+  p.root.traverse(o => { if (o.isMesh) o.castShadow = false; });
+  const dark = new THREE.MeshBasicMaterial({ color: 0x111317 });
+  const glasses = box(0.2, 0.05, 0.03, dark, 0, 0.12, 0.11);
+  p.parts.head?.add(glasses);
+  const board = box(0.24, 0.32, 0.03, mat(0xa77b45), -0.12, 0.02, 0.2);
+  board.add(box(0.2, 0.24, 0.005, mat(0xf4f1ea), 0, -0.01, 0.02));
+  (p.parts.torso?.isObject3D ? p.parts.torso : p.root).add(board);   // held at the chest (armR is a { up, fo } pair, not a node)
+  p.root.visible = false;
+  return p;
+}
+const ringMesh = () => {
+  const m = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.05; m.renderOrder = 2; m.visible = false;
+  return m;
+};
+
 export default {
   id: 'county',
   venue: 4,
@@ -109,6 +130,9 @@ export default {
     // Round 11: hazards (the wet ones repaint as 'hazwet' client-side), the van, the first-time lines.
     const van = zoningVan(); root.add(van);
     let vanAt = null, wet = new Set(), hz = false, vanSaid = false;
+    const fhi = inspector(); root.add(fhi.root);              // council round 12 #7a
+    const patch = ringMesh(); root.add(patch);
+    let ins = null, insTh = 0;
     const setKind = (id, k) => { const b = ctx.balls?.()?.get(id); if (b && b.kind !== k) b.kind = k; };
 
     const stand = ctx.venues?.stands?.right ?? null;
@@ -134,6 +158,8 @@ export default {
         for (const [id, e] of drones) if (!seen.has(id)) { root.remove(e.g); drones.delete(id); }
         // Round 11: the wet list, the van's progress down the kerb.
         hz = !!mine?.hz; vanAt = mine?.van ?? null;
+        ins = s?.phase === 'shift' ? mine?.inspect ?? null : null;   // council round 12 #7a: { x, z, r, t, n }
+        if (ins) { patch.position.x = ins.x; patch.position.z = ins.z; patch.scale.set(ins.r, ins.r, 1); }
         if (s?.phase !== 'shift') vanSaid = false;
         const now = new Set(mine?.wet ?? []);
         for (const id of wet) if (!now.has(id)) setKind(id, 'hazard');
@@ -145,10 +171,15 @@ export default {
         else if (e.t === 'quota' && e.venue === 4 && !e.hit && e.cause === 'haz') armAgain('hazard');   // council round 11 #2: the tip comes back tomorrow
         else if (e.t === 'hazard') setKind(e.id, 'hazard');
         else if (e.t === 'hazwet') setKind(e.id, 'hazwet');
+        else if (e.t === 'inspect') {                              // council round 12 #7a: the one centre ALERT, then the feed
+          if (e.phase === 'start') { ctx.say?.('ALERT', inspectAlert, { key: 'inspect' }); ctx.SFX?.horn?.('gary'); ctx.feed?.(`FHI inspector on site: ${e.n ?? 0} hazards in his patch.`, '#ffd36b'); }
+          else ctx.feed?.(e.clean ? 'The inspector left impressed. Zoning approves.' : `The inspector noted ${e.noted} hazard${e.noted === 1 ? '' : 's'}. They count double.`, e.clean ? '#9be88a' : undefined);
+        }
         else if (e.t === 'hazgone') setKind(e.id, 'range');
         else if (e.t === 'hazbag') {
           const who = e.by === ctx.me?.id ? 'You' : ctx.nameOf?.(e.by) ?? 'A Rat';
-          ctx.feed?.(`${who} bagged a hazard${e.team ? ' (team job)' : ''}. Zoning approves.`);
+          if (e.sweep) { ctx.feed?.(`CLEAN SWEEP! ${who}: three in six seconds. Double!`, '#9be88a'); ctx.SFX?.bell?.(1047); }   // council round 12 #7b
+          else ctx.feed?.(`${who} bagged a hazard${e.team ? ' (team job)' : ''}${e.insp ? '. Inspected: triple!' : '. Zoning approves.'}`);
           if (e.by === ctx.me?.id) ctx.SFX?.glint?.();
         } else if (e.t === 'van') {
           if (!vanSaid) { vanSaid = true; ctx.toast?.(vanToast(e.n), 3); }   // council round 11 #2: the first tow says why
@@ -168,6 +199,14 @@ export default {
           e.basket.visible = true;
           e.basket.scale.y = 1 + Math.min(1, (e.n || 0) / DRONES.POCKET);   // the basket fills
           for (const r of e.rotors) r.rotation.y = spin * (e.n ? 60 : 45);
+        }
+        fhi.root.visible = patch.visible = root.visible && !!ins;   // council round 12 #7a: he walks a slow loop round his patch
+        if (fhi.root.visible) {
+          insTh += dt * 1.1 / Math.max(2, ins.r * 0.6);
+          const rr = ins.r * 0.6, x = ins.x + Math.cos(insTh) * rr, z = ins.z + Math.sin(insTh) * rr;
+          fhi.root.position.set(x, 0, z); fhi.root.rotation.y = Math.atan2(-Math.sin(insTh), Math.cos(insTh));
+          animatePerson(fhi, dt, { mode: 'walk', speed: 1.1 });
+          patch.material.opacity = 0.45 + 0.3 * (0.5 + 0.5 * Math.sin(t * 4));
         }
         van.visible = root.visible && vanAt != null;                 // down the kerb, top to bottom, over VAN.SECS
         if (van.visible) { const u = Math.min(1, vanAt / VAN.SECS); van.position.set(MAP.KERB_X - 3, 0, 5 + (Y.zMin - 5) * u); van.rotation.y = 0; }

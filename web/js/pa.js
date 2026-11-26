@@ -23,7 +23,7 @@ export const PA_LINES = {
   cart: { line: 'Corporate has issued you a vehicle. Corporate has not issued you a license.', caption: 'You have a cart. Not a license.' },
   jackpot: { line: 'A jackpot has occurred. Please do not get used to this.', caption: 'A jackpot. Do not get used to it.' },
   record: { line: 'A record shift. Congratulations. This is now the baseline.', caption: 'A record shift. Now the baseline.' },
-  club: { line: 'Congratulations on your promotion to the Range Club. Your duties and parking are unchanged.', caption: 'Promoted to the Range Club. Parking unchanged.' },
+  club: { line: 'Promoted. Range Club. Parking unchanged.', caption: 'Promoted to the Range Club. Parking unchanged.' },   // council round 12, 9.7: one sentence (Club day 1 ran 24.8 s)
   cctv: { line: "For your safety, Corporate has installed cameras. For Corporate's safety, they were always there.", caption: 'Cameras installed. They were always there.' },
   deck: { line: 'A guest has left the Upper Deck by the fastest available route. Corporate reminds you that beer is not a ladder.', caption: 'A guest fell. Beer is not a ladder.' },
   tiered: { line: 'Corporate has discovered the word experiential. Please be experiential.', caption: 'Please be experiential.' },
@@ -39,7 +39,7 @@ export const PA_LINES = {
   statue: { line: 'Corporate has commissioned a statue. Of you. Reluctantly.', caption: 'A statue. Of you. Reluctantly.' },   // round 7 #9: the Owner's third project
 };
 
-const MIN_SHOW_MS = 4000;
+export const MIN_SHOW_MS = 3400;   // council round 12, 9.7: was 4000 (Club day 1 ran 24.8 s against 22)
 const REPEAT_GUARD_MS = 10000;
 const CHIME_MS = 700;      // the chime before the voice
 const CSS_ID = 'pa-style';
@@ -223,7 +223,10 @@ export function createPA({ root, audio, enqueue = null } = {}) {
 
   // The card and the voice for one line. The centre-text queue (say.js) decides when: it calls show() when the
   // line's turn comes and hide() when its time is up or the bell's stamp preempts it. No queue of its own here.
-  function show(item) {
+  // Council round 12, 4c (say.js): `s` is the queue's item. s.preempted: the story card took the centre, so only the
+  // card goes (the voice carries on); s.resumed: the caption comes back after the card, with no chime and no voice again.
+  function show(item, s = null) {
+    if (s?.resumed && playing?.item === item) { if (build()) { textEl.textContent = '“' + item.caption + '”'; card.classList.add('on'); } return; }
     if (playing) end();
     if (build()) {
       textEl.textContent = '“' + item.caption + '”';
@@ -235,8 +238,9 @@ export function createPA({ root, audio, enqueue = null } = {}) {
     if (lead) playing.speakTimer = setTimeout(() => speak(item.line), lead);
     else speak(item.line);
   }
-  function end(item) {
+  function end(item, s = null) {
     if (item && playing?.item !== item) return;
+    if (s?.preempted) { if (card) card.classList.remove('on'); return; }   // round 12, 4c: the card only
     if (playing) clearTimeout(playing.speakTimer);
     playing = null;
     if (card) card.classList.remove('on');
@@ -253,7 +257,7 @@ export function createPA({ root, audio, enqueue = null } = {}) {
     if (last != null && now - last < REPEAT_GUARD_MS) return false;
     lastPlayed.set(id, now);
     const item = { id, line: entry.line, caption: entry.caption };
-    if (enqueue) enqueue({ id, caption: item.caption, secs: secsFor(item.line), show: () => show(item), hide: () => end(item) });
+    if (enqueue) enqueue({ id, caption: item.caption, secs: secsFor(item.line), show: s => show(item, s), hide: s => end(item, s) });
     else show(item);   // no queue (tests, tools): play now
     return true;
   }

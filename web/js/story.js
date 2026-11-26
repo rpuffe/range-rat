@@ -78,7 +78,7 @@ export const BEATS = Object.freeze([
     M('Site 13 sells tickets to its jumbotron.'),
   ] },
   { id: 'mid:3', trigger: { kind: 'mid', venue: 3 }, cards: [
-    G('Off the record? That was a good lap.'),
+    G('Saw that lap. Don’t tell Regional.'),   // council round 12 9.13: one "off the record", not two
     M('Dimples now has a mascot. It is Dimples.'),
   ] },
   // ---- the County (4): FHI acquires Site 13; Gary says it ----------------------------------------------------------
@@ -105,7 +105,7 @@ export const BEATS = Object.freeze([
   ] },
   // ---- the note: at the bank, in the huddle, before the $∞ finale (council round 11 #4) ---------------------------
   { id: 'note', trigger: { kind: 'note', venue: 6 }, delay: NOTE.DELAY, cards: [
-    C('“Whoever finds this: the range is yours.”', 'INSIDE BALL No. 1 · 1958', { style: 'note', grace: NOTE.GRACE, min: NOTE.MIN, secs: NOTE.SECS }),
+    C('“Whoever finds this: the range is yours.”', 'INSIDE BALL No. 1 · 1958', { style: 'note', pos: 'high', grace: NOTE.GRACE, min: NOTE.MIN, secs: NOTE.SECS }),
   ] },
   // ---- the epilogue: the first Under New Management morning (its clock holds while it plays) --------------------
   { id: 'epilogue', trigger: { kind: 'epilogue', venue: 6 }, cards: [
@@ -141,7 +141,8 @@ export const coldDue = ({ day, venue, endless = false, test = false }) => !endle
 // (the memo already carries Today's line: one text at a time), is not a reveal morning, and is not the Last Bucket's
 // morning. A crew promoted before such a morning comes skips that venue's mid beat (the promotion beats stand alone).
 export function midDue({ venue, venueDay, endless = false, promoDay = false, today = null, reveal = false, lastBucket = false, boss = false }) {
-  if (endless || reveal || promoDay || today || lastBucket || boss ||   // council round 11: the MOW-E boss owns its day
+  // Council round 12 9.13: the Stadium's encore (MOW-E 2.0) lets its mid beat play: it ends ~20 s in, the warn is at 111 s.
+  if (endless || reveal || promoDay || today || lastBucket || (boss && venue !== 3) ||   // council round 11: the MOW-E boss owns its day
       !(venueDay >= STORY.MID_FROM)) return null;
   return beatFor('mid', venue)?.id ?? null;
 }
@@ -156,7 +157,9 @@ export const GARY_BYE = Object.freeze(['Noted. Everything is noted.', 'Not bad. 
   'Good crew. Better than mine was.', 'You’d have liked 1987.', 'Keep the sky clear, Rats.']);
 const clampV = v => Math.max(0, Math.min(5, Math.floor(Number(v) || 0)));
 export const garyHello = venue => GARY_HELLO[clampV(venue)];
-export const garyBye = venue => GARY_BYE[clampV(venue)];
+// Council round 12 9.15: his next Club sign-off after the crew beat MOW-E, once (the caller passes the flag and clears it).
+export const GARY_BYE_MOWE = 'Saw the mower. Off the record: nice.';
+export const garyBye = (venue, moweWon = false) => (moweWon && clampV(venue) === 1 ? GARY_BYE_MOWE : GARY_BYE[clampV(venue)]);
 
 // ---- the card sequence (the client's overlay model; pure, injectable clock) ------------------------------------------
 // A beat plays one card at a time: press() advances (after the grace), skip() ends the beat, tick() auto-advances

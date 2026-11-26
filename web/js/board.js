@@ -18,6 +18,8 @@
 //     council round 11 (builder 4) adds: kpiNote (bvtext kpiNoteOf: '7 HAZARDS', 'SECTION C WANTS A BALL · 0:18'), shown
 //     on the venue gauge's label row
 //   b.overlay(fn | null)                   // council round 11: fn(ctx, W, H, t) paints over the Board at 20 Hz (t = s since set)
+//   council round 12 (builder 4): state.contract ({ text, state: live|met|lost }, bvtext contractLineOf) and
+//     state.rival ('SITE 13 $41.8M (est.)', bvtext rivalLineOf) on the endless panel; b.shout(text, secs); b.flash(up)
 import * as THREE from 'three';
 import { BOARD_YAW } from './signs.js';
 import { BELL, crossing, gaugeRed, gaugePass, stampFor } from './closingbell.js';
@@ -108,6 +110,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
   let key = '';
   let flipT = 0, flipAcc = 0;
   let overlayFn = null, overlayT = 0, overlayAcc = 0;   // council round 11: board.overlay (the Stadium newsreel)
+  let shoutText = '', shoutT = 0;                        // council round 12: board.shout (the jumbotron's LEGEND line)
   let prevPrice = null;
   const prev = { bv: '', quota: '', banner: '' };
   const flipping = { bv: false, quota: false, banner: false };
@@ -133,13 +136,24 @@ export function createBoard(scene, { x, z, onCross = null }) {
     const rec = Math.max(pace.record, 0.0001), dollars = v => '$' + commas(v);
     g.fillStyle = '#1d2129'; g.fillRect(24, 296, W - 48, 140);
     g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`;
-    g.fillText('TODAY', 44, 316);
-    g.fillStyle = '#f5e6b8'; g.font = `700 64px ${MONO}`; g.fillText(dollars(pace.cash), 40, 360);
+    const ct = s?.contract?.text ? s.contract : null, rv = s?.rival ? String(s.rival) : '';
+    // Council round 12 (item 6c): with a contract line in the middle, the lifetime stars ride beside TODAY.
+    g.fillText(ct && s?.stars != null ? 'TODAY · ★' + s.stars : 'TODAY', 44, 316);
+    // Item 8: Site 13's live number under ours ("SITE 13 $41.8M (est.)"): the total shrinks a little to make room.
+    g.fillStyle = '#f5e6b8'; g.font = `700 ${rv ? 54 : 64}px ${MONO}`; g.fillText(dollars(pace.cash), 40, rv ? 350 : 360);
+    if (rv) { g.fillStyle = '#e39a9a'; g.font = `700 19px ${SANS}`; g.fillText(rv, 44, 384); }
     g.textAlign = 'right'; g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`;
     // Council round 8 #3: the bar races yesterday (pace.vs); the all-time BEST moves to a small line under it.
     const vsYday = pace.vs === 'yesterday';
     g.fillText(vsYday ? 'YESTERDAY' : 'RECORD', W - 44, 316);
-    if (s?.stars != null) { g.textAlign = 'center'; g.fillStyle = '#ffcf5a'; g.fillText('★ ' + s.stars + ' STARS', W / 2, 316); g.textAlign = 'right'; g.fillStyle = '#7d8594'; }   // round 11: the endless contracts' lifetime stars
+    if (ct) {                                   // item 6c: "★★☆ AT MOST 2 KNOCKDOWNS · 1 SO FAR"; gold when met, struck when lost
+      g.textAlign = 'center';
+      const cpx = fit(ct.text, p => `700 ${p}px ${SANS}`, 520, 22);
+      g.font = `700 ${cpx}px ${SANS}`; g.fillStyle = ct.state === 'met' ? '#ffcf5a' : ct.state === 'lost' ? '#6b7180' : '#f5e6b8';
+      g.fillText(ct.text, W / 2, 316);
+      if (ct.state === 'lost') { const tw = g.measureText(ct.text).width; g.fillRect(W / 2 - tw / 2 - 4, 315, tw + 8, 3); }
+      g.textAlign = 'right'; g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`;
+    } else if (s?.stars != null) { g.textAlign = 'center'; g.fillStyle = '#ffcf5a'; g.fillText('★ ' + s.stars + ' STARS', W / 2, 316); g.textAlign = 'right'; g.fillStyle = '#7d8594'; }   // round 11: the endless contracts' lifetime stars
     g.fillStyle = '#e06a5a'; g.font = `700 34px ${MONO}`; g.fillText(dollars(pace.record), W - 44, vsYday ? 350 : 356);
     if (vsYday && pace.best > 0) { g.fillStyle = '#7d8594'; g.font = `600 17px ${SANS}`; g.fillText('BEST ' + dollars(pace.best), W - 44, 377); }
     const bx = 44, bw = W - 88, by = 396, bh = 28;
@@ -341,6 +355,13 @@ export function createBoard(scene, { x, z, onCross = null }) {
       g.restore();
     }
     if (overlayFn) { g.save(); try { overlayFn(g, W, H, overlayT); } catch (err) { console.warn('board overlay', err); overlayFn = null; } g.restore(); }
+    if (shoutT > 0 && shoutText) {             // council round 12 (2d): "<NAME> · LEGEND · SECTION C", a gold band over the middle
+      g.fillStyle = 'rgba(10,12,16,0.92)'; g.fillRect(0, 150, W, 170);
+      g.fillStyle = '#e8b04a'; g.fillRect(0, 150, W, 6); g.fillRect(0, 314, W, 6);
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffcf5a';
+      const spx = fit(shoutText, p => `800 ${p}px ${SANS}`, W - 80, 72);
+      g.font = `800 ${spx}px ${SANS}`; g.fillText(shoutText, W / 2, 236);
+    }
     tex.needsUpdate = true;
   }
   // Round 11 (builder "today"): the TODAY chip, a pill right of EACH BALL PAYS ("TODAY · WINDY"). It sits clear of
@@ -460,6 +481,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
       state.fed > 1 + 1e-9 ? state.fed.toFixed(2) + ':' + Math.round(clamp01(state.fedLeft ?? 1) * 10) : '',
       state.today ?? '', state.stars ?? '',   // round 11: the TODAY chip, the endless stars
       state.kpiNote ?? '',                   // council round 11: the gauge's live note
+      state.contract ? state.contract.text + ':' + state.contract.state : '', state.rival ?? '',   // council round 12: 6c, 8
     ].join('|');
     if (k === key) return;
     key = k;
@@ -483,6 +505,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
       flash.t = Math.max(0, flash.t - dt); flash.acc = (flash.acc ?? 0) + dt;
       if (flipT <= 0 && (flash.acc >= FLIP_STEP || flash.t === 0)) { flash.acc = 0; draw(); }
     }
+    if (shoutT > 0 && (shoutT -= dt) <= 0) { shoutT = 0; shoutText = ''; if (s) draw(); }
     if (stampT > 0 && (stampT -= dt) <= 0) {
       stampT = 0; stampNow = null; draw();
       if (stampEl) stampEl.style.opacity = '0';
@@ -561,5 +584,15 @@ export function createBoard(scene, { x, z, onCross = null }) {
     overlayFn = typeof fn === 'function' ? fn : null; overlayT = 0; overlayAcc = 0;
     if (s) draw();
   }
-  return { update, floatText, tick, stamp, attach, frameColor, overlay, dims: { BW, BH, BOTTOM } };
+  // Council round 12 (builder 4's hand-off hooks):
+  //   shout(text, secs = 3): a gold band across the Board's middle (item 2d: "<NAME> · LEGEND · SECTION C"); a new one
+  //     replaces the old; shout('') clears. It sits over the newsreel overlay, under nothing. Builder 2 calls it from
+  //     views/stadium.js as ctx.board.shout(...).
+  //   flash(up = true): the crossing flash once (item 8: "Passed Site 13." flashes the Board once, builder 3).
+  function shout(text, secs = 3) {
+    shoutText = String(text ?? '').toUpperCase(); shoutT = shoutText ? Math.max(0.5, secs) : 0;
+    if (s) draw();
+  }
+  function flashOnce(up = true) { flash.t = BELL.FLASH_SECS; flash.up = !!up; if (s) draw(); }
+  return { update, floatText, tick, stamp, attach, frameColor, overlay, shout, flash: flashOnce, dims: { BW, BH, BOTTOM } };
 }

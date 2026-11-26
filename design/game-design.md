@@ -1215,3 +1215,66 @@ The full record is `design/round13-mowe.md`; the rules are `web/js/mowe.js` (pur
   pond. **Loss** (the 100 s cap, or the bell): the eaten balls are gone, the feed says so, "Employee of the Month".
 - **The pet:** from the next day, two passes a shift (25 %, 60 %): the richest old lane, gathered and banked at the
   nearest owned return; it stops short of Rats and beeps. The Board: `MOW-E · BRINGING 24 HOME`.
+
+## Council round 12 (builder 4): the look, one centre text, the gauges named, the fixes pack
+
+- **The Tiered deck is no black slab.** The decking glows a warm wood (`emissive 0x2a2218`), its back wall is a mid grey
+  and the jumbotron frame is steel, not near-black. While the camera is under the deck the floor fades to 35 %
+  (`DECK_CUT`, the floor's own `onBeforeRender`: no new draw call). From the Stadium on (and in endless) the crew clocks
+  in on a late row, x 22.5 + 1.3 per Rat at z 4 (`sim.js clockInSpot`), so the deck's corner sits outside the view of a
+  Rat facing the field. The Muni, the Club and Tiered keep the old row.
+- **One centre text, everywhere.** say.js's story turn: a PA card with more than 2 s to go is snapped off when a story
+  card takes the turn, and its caption comes back after the card (no chime, no voice again); a shorter one, or a PA line
+  already queued, goes first. While the card holds the turn nothing but the bell's stamp can show, in the model and in
+  the DOM. `sayer.paIdle` / `sayer.whenPaIdle(cap = 2)` is the "PA idle" signal for the end card. The Stadium's reveal
+  plays no PA (the newsreel card says it); the Club's reveal PA is one short line.
+- **The venues name their gauge.** The Stadium memo reads "Today: 35% clean. Crowd over half.", the County's "Zoning
+  over half."; the HUD strip ends "· crowd 82%" / "· Zoning 62%", red under 50 %.
+- **The memo's one-morning lines** (`sim.js MEMO_LINES`, `memoSecond`): news (Site 13's week) > the endless contract
+  ("Contract: at most 2 knockdowns.") > Today > NEW > MOW-E (the boss morning: "MOW-E is downloading an update.") > a
+  note (the inspector) > the flavour. Every flavour is ≤ 8 words.
+- **The Board** draws the endless contract line, Site 13's live number, the Stretch and Inspection Hour countdowns, and
+  a gold LEGEND band (`board.shout`).
+- **Fixes:** the checklist waits 1 s after the last centre text and while anything waits; Gary's bubble stays under
+  70 % of the screen's height; the dusk count reads the server's `left`; the endless preset is a true first endless
+  morning (`endlessFresh` now survives a save); the Orbital memo says 1,958 once; `textload.mjs` counts overlaps over
+  the whole shift on boss, Stadium and County days.
+
+## Council round 12 (builder 3): the ending on camera, contracts you can win, Site 13
+
+- **Ball No. 1's gold beam** (`huddlerules.js` `oneBeam`): 25 m on the ball while it's down, a 4 m pillar over its
+  carrier; the Target Greens' pillars hide meanwhile. Banner: "BALL NO. 1 DOWN · follow the gold beam".
+- **The hush frames the crack**: from the bank to the note's end, Rats within 15 m ease to look at the hopper lip (1 m
+  back, 0.3 m up), carried gear hidden; the crack sits at y 1.9, ×2.2, open toward each Rat; the note card draws high.
+- **Reveal shots**: the Orbital promo ends on Gary riding the Lift (×1.3, ≥ 50 px); the first Owners' morning ends on
+  Gary beside **the glass case** (`views/glasscase.js`, `caserules.js`): the two halves, a plaque "BALL No. 1 ·
+  1958–2026 · FOUND BY", the crew, and the newest four Owners' record days. Saved as `glassCase`.
+- **Contracts** (`today.js`): one count for "left" (`ballsLeft`); tiers 1★ ×0.85 / 6 knockdowns / Spotless, 2★ ×1.0 /
+  2 knockdowns / ×2 Hustle, 3★ ×1.1 / none flattened / ×3 Hustle by T−2:00 (×2 without the Owner's Hustle). Live on
+  the Board (`state`, `so`), "Contract lost." in the feed. Cosmetics at 3, 8, 13, … stars.
+- **Site 13** (`owner.js`): from the Owners' day 2, a live "(est.)" number on yesterday's curve aiming at 1.00 × the
+  last 3 days' mean ±6 % (1.04 from week 2); 4 of 7 acquires them (memo, their sign, the Site 13 jacket). The report's
+  headline is the race; yesterday is a row. Measured: 51 % of days beaten.
+
+## Council round 12 (builder 2): the Stadium and the County ask something every minute
+
+- **The crowd needs you at every size.** The autopilot's laps, and pings on an autopilot cart, lift the crowd only to
+  0.60. Every missed request lowers that ceiling by 0.04 for the shift ("The crowd's bored of the robot.", feed only).
+  Requests come every 65 / 55 / 45 / 38 s (1P→4P), in a per-shift order (`hash32`, no RNG). Each lit section has a
+  20 m gold beam. The crowd's drain stops after the Stadium.
+- **The Stadium card** is `[requests, pings, cart2, reviews 2, fee]`: "Answer 6 souvenir requests" at 4P, scaled by
+  the crew, with Stretch sections counting.
+- **The Seventh-Inning Stretch.** At T−3:30, 3 adjacent sections on one side light at once for 25 s (2 at 1–2P).
+  Each takes one souvenir from your bundle (the rest stay in hand), so one runner can walk the rail and light them all.
+  Each pays ×5 and +0.15; a miss is −0.03, with no boo. Requests pause round it, and a live boss delays it
+  (never past T−2:00). The stand stands up, the jumbotron counts it down, and there's one ALERT.
+- **An answered request** puts `NAME · LEGEND · SECTION C` on the jumbotron and the Board for 3 s.
+- **Inspection Hour.** At T−3:30 an FHI inspector walks a 15 m patch round the busiest hazards for 60 s (75 s solo).
+  - In his patch a bag pays ×3 and +0.04 Zoning.
+  - A hazard still there when he leaves is noted: −0.05 Zoning while it's out, it counts double, and it never expires. From the
+    cleanup to the bell the noted ones are on his clipboard and don't count, so ignoring hazards is never a wall.
+  - The Board reads `INSPECTION · 4 HAZARDS · 0:45`, with one ALERT.
+  - A clean inspection sets tomorrow's memo flavour.
+- **Spray chains.** A spray wets every hazard within 3 m; 3 bags in 6 s by one Rat is a CLEAN SWEEP (×2 on the third).
+- **Words.** The hazard tip names the button (RT / Click). With one goal left, the tomorrow line names it ("Tomorrow:
+  one more good day for the Orbital."). The finished Orbital card reads "NEXT: FIND BALL NO. 1".

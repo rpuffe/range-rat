@@ -1,6 +1,7 @@
 // The Stadium's pure rules (council round 4, §3.2): the Ping Track's lap gates and Crowd Sentiment.
 // No THREE, no DOM, no sim.js import: the server module, the view and the tests share it.
 import { MAP, onTrack } from './map.js';
+import { hash32 } from './today.js';   // council round 12 #2: the Stretch's sections and the request order (no RNG draw)
 
 export const CROWD = {
   START: 0.5,            // sentiment each morning
@@ -103,7 +104,9 @@ export function booOut(mat, now, empty = BOO.EMPTY) {
 // best). It goes out unanswered: -MISS (solo -MISS_SOLO), a boo, a feed line. No centre text: the Board says it.
 // Six sections of LEN m: A B C down the left rail (x < 0), D E F down the right, in ORDER (no RNG: the seam's draws
 // stay as they were).
-export const REQ = { FROM: 30, TO: 60, EVERY: [90, 75, 60, 45], SECS: 30, CROWD: 0.15, PAY: 3, MISS: 0.06, MISS_SOLO: 0.03, LEN: 16, ORDER: [2, 4, 0, 5, 1, 3] };
+// Council round 12 #2: EVERY [90, 75, 60, 45] -> [65, 55, 45, 38], so the Stretch's 65 s pause still leaves a call a minute
+// solo and 1.5 at 4P (design/round14-venues.md).
+export const REQ = { FROM: 30, TO: 60, EVERY: [65, 55, 45, 38], SECS: 30, CROWD: 0.15, PAY: 3, MISS: 0.06, MISS_SOLO: 0.03, LEN: 16, ORDER: [2, 4, 0, 5, 1, 3] };
 const SEC_Z = [-30, -70, -110];   // each side's three section centres along the rail (SOUV.RAIL_Z0..RAIL_Z1)
 export const SECTIONS = Object.freeze([0, 1, 2, 3, 4, 5].map(i => Object.freeze({
   i, name: 'ABCDEF'[i], side: i < 3 ? -1 : 1, z0: SEC_Z[i % 3] - REQ.LEN / 2, z1: SEC_Z[i % 3] + REQ.LEN / 2, zc: SEC_Z[i % 3] })));
@@ -127,3 +130,43 @@ export const reqLine = req => {
 };
 // The carry prompt (C #11: ≤ 8 words): "Souvenirs ×2 → crowd rail", or the lit section.
 export const carryLine = (n, req = null) => `Souvenir${n === 1 ? '' : 's'} ×${n} → ${req ? `Section ${req.sec}, lit!` : 'crowd rail'}`;
+
+// ---- council round 12 #2: the crowd needs you at every size; the Seventh-Inning Stretch ------------------------------
+// 2a. The autopilot's laps (and pings on an autopilot cart) lift the live crowd only up to AUTO_CEIL; every missed request
+// lowers that ceiling by CEIL_MISS for the rest of the shift ("The crowd's bored of the robot."). Rats lift it to 1.0.
+export const AUTO_CEIL = 0.60, CEIL_MISS = 0.04;
+export const autoCeil = (missed = 0) => Math.max(0, AUTO_CEIL - CEIL_MISS * Math.max(0, missed | 0));
+// A robot bump: never past the ceiling, and never pulls a crowd that's already over it back down.
+export const bumpAuto = (s, d, ceil) => (s >= ceil ? s : Math.min(ceil, clamp01(s + d)));
+export const ROBOT_LINE = "The crowd's bored of the robot.";
+
+// 2c. The Seventh-Inning Stretch: once a shift at T-3:30 (AT s left), N sections light together for SECS s; each pays
+// ×PAY and +CROWD; each one missed costs -MISS (no boo: it's a party). Normal requests don't start from REQ.SECS before
+// it until PAUSE s after it (nothing lit overlaps it). Sections: hash32(day, venueDay, 's'). Lead's call (round 14): they
+// sit on the SAME side, adjacent, and a delivery answers one section per souvenir carried, so one runner with a bundle
+// walks the rail and lights them all up (stadium.mjs stretchDeliver).
+// A live boss fight (MOW-E 2.0's encore) or a lit request holds it back until it's over, but never past LATEST s left.
+export const STRETCH = { AT: 210, SECS: 25, PAY: 5, CROWD: 0.15, MISS: 0.03, PAUSE: 5, LATEST: 120, N: [2, 2, 3, 3] };
+export const stretchN = n => STRETCH.N[Math.max(1, Math.min(4, n | 0 || 1)) - 1];
+export const stretchDue = ({ left, done = false, busy = false }) => !done && !busy && left <= STRETCH.AT && left > STRETCH.LATEST;
+export const reqPaused = left => left <= STRETCH.AT + REQ.SECS && left > STRETCH.AT - STRETCH.SECS - STRETCH.PAUSE;
+// The Stretch's sections (indices into SECTIONS, sorted): k adjacent sections on one side, from a hash (no RNG draw).
+export function stretchSections(day, vday, n = 4) {
+  const k = stretchN(n), h = hash32(day | 0, vday | 0, 's');
+  const side = h & 1 ? 3 : 0, start = k >= 3 ? 0 : (h >>> 3) % (4 - k);   // 3 of 3, or a pair: AB / BC (DE / EF)
+  return Array.from({ length: k }, (_, j) => side + start + j);
+}
+export const stretchPay = n => n * SOUV.W * STRETCH.PAY;
+export const stretchCrowd = n => STRETCH.CROWD + Math.max(0, (n | 0) - 1) * SOUV.CROWD;
+const clockOf = t => { const s = Math.max(0, Math.ceil(t ?? 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+// The jumbotron and the Board (bvtext.js kpiNoteOf): "SEVENTH-INNING STRETCH · A C F · 0:25".
+export const stretchLine = sx => (sx ? `SEVENTH-INNING STRETCH · ${[...(sx.secs ?? '')].join(' ')} · ${clockOf(sx.t ?? sx.left)}` : null);
+export const stretchAlert = k => `Seventh-inning stretch! ${k <= 2 ? 'Two' : 'Three'} sections want balls!`;   // 7 words, the one centre ALERT
+
+// 2d. The answered request, on the jumbotron for LEGEND_SECS: "PIP · LEGEND · SECTION C".
+export const LEGEND_SECS = 3;
+export const legendLine = (name, sec) => `${String(name ?? 'A RAT').toUpperCase()} · LEGEND · SECTION ${sec}`;
+
+// 2e. Requests in an order you can't learn: REQ.ORDER rotated per shift by hash32(day, venueDay, 'r') (no RNG draw).
+export const reqRot = (day, vday) => hash32(day | 0, vday | 0, 'r') % REQ.ORDER.length;
+export const reqSectionAt = (k, rot = 0) => reqSection((k | 0) + (rot | 0));

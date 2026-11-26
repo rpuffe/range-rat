@@ -60,9 +60,20 @@ export function bvLine({ value, quota = null, venue = 0, endless = false, pace =
 }
 
 // The morning memo (≤ 8 words): "Today: 60% clean by the bell." / "Gary visits today. 60% clean by the bell."
+// Council round 12, 7e (builder 4): the Stadium and the County name their gauge: "Today: 35% clean. Crowd over half."
+export const GAUGE_WORD = { 3: 'Crowd', 4: 'Zoning' };
 export function memoLine(targetPctV, venue = 0, gary = false) {
+  const gw = GAUGE_WORD[venue];
+  if (gw) return gary ? `Gary visits. ${targetPctV}% clean. ${gw} over half.` : `Today: ${targetPctV}% clean. ${gw} over half.`;
   const goal = `${targetPctV}% ${barWord(venue).toLowerCase()} by the bell.`;
   return gary ? `Gary visits today. ${goal}` : `Today: ${goal}`;
+}
+// 7e: the HUD strip's gauge, after bvLine: " · crowd 82%" / " · Zoning 62%", red under the pass line (50 %).
+// Null away from the Stadium and the County, or before the gauge exists. Pure: main.js draws it in #value-gauge.
+export function gaugeChip(venue, kpi, endless = false) {
+  const gw = GAUGE_WORD[venue];
+  if (!gw || endless || kpi == null || !Number.isFinite(kpi)) return null;
+  return { text: ` · ${venue === 3 ? gw.toLowerCase() : gw} ${pct(kpi)}%`, red: kpi < 0.5 - 1e-9 };
 }
 
 // The report's row: "Clean 64% · needed 60%" (Muni), "Upkeep 41% · needed 40%" (Club and up).
@@ -155,7 +166,7 @@ export const targetStamp = q => (q?.hit ? 'DAILY TARGET HIT' : q?.idle ? 'DAILY 
 
 // Council round 11 8.8 (builder 4): a landed piece of debris (the EVA's bag, the winch) floats what it brings home.
 export const debrisHomeText = (n, perPiece = 10) => `+${commas0(Math.max(0, n | 0) * perPiece)} balls home`;
-const commas0 = n => String(Math.round(n)).replace(/B(?=(d{3})+(?!d))/g, ',');
+const commas0 = n => String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');   // round 12: the escapes were lost ("+1000 balls home")
 
 // Council round 11, 8.1 (builder 4): the jumbotron flip. A field's split-flap restarts only when its text's *skeleton*
 // changes (digits replaced by '#'), so countdowns and BV ticks redraw in place with no scramble. The price never flips
@@ -168,7 +179,34 @@ export function shouldFlip(prevText, nextText, prevNum = null, nextNum = null) {
 }
 // Council round 11 (items 2, 5 → 8.1): the venue gauge's live note. The County's `mods.county.label` ("7 HAZARDS")
 // and the Stadium's request (`mods.stadium.req`: a string, { label }, or { sec, t }) → "SECTION C WANTS A BALL · 0:18".
+// Council round 12 (builder 4, hand-off hooks for builder 3): the endless Board's contract and Site 13 lines.
+// The snapshot's `contract` (today.js contract) may carry, from builder 3's settle code:
+//   so: a number or a short string for "· 1 SO FAR" (omitted: no tail), state: 'live' | 'met' | 'lost'.
+// `goalTextFn`/`starTextFn` are today.js goalText/starText (passed in so bvtext stays free of today.js).
+// → { text: '★★☆ AT MOST 2 KNOCKDOWNS · 1 SO FAR', state }; met → '★★☆ MET' (gold); lost → struck through (board.js).
+export function contractLineOf(c, goalTextFn, starTextFn) {
+  if (!c?.goal || typeof goalTextFn !== 'function') return null;
+  const stars = typeof starTextFn === 'function' ? starTextFn(c.stars) : '★'.repeat(c.stars | 0);
+  const state = c.state === 'met' || c.state === 'lost' ? c.state : c.met ? 'met' : c.lost ? 'lost' : 'live';
+  if (state === 'met') return { text: `${stars} MET`, state };
+  const so = c.so == null || c.so === '' ? '' : ` · ${typeof c.so === 'number' ? commas0(c.so) + ' SO FAR' : String(c.so).toUpperCase()}`;
+  return { text: `${stars} ${String(goalTextFn(c.goal)).toUpperCase()}${so}`, state };
+}
+// Item 8: the snapshot's `rival` ({ cash, est = true }) → "SITE 13 $41.8M (est.)". Null without one.
+export function rivalLineOf(r) {
+  if (!r || !Number.isFinite(r.cash)) return null;
+  return `SITE 13 ${shortMoney(r.cash)}${r.est === false ? '' : ' (est.)'}`;
+}
+
+// Council round 12 (builder 4, hand-off hooks for builder 2): the peaks outrank the everyday note.
+//   mods.stadium.stretch = { secs: ['A','C','F'] or 'ACF', t: seconds left } → "SEVENTH-INNING STRETCH · A C F · 0:25"
+//   mods.county.inspect  = { yard: 2, t: seconds left }                      → "INSPECTION · YARD 2 · 0:45"
+const clockOf = t => { t = Math.max(0, Math.ceil(Number(t) || 0)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
 export function kpiNoteOf(mods) {
+  const sx = mods?.stadium?.stretch;
+  if (sx) return `SEVENTH-INNING STRETCH · ${[...(Array.isArray(sx.secs) ? sx.secs : String(sx.secs ?? ''))].join(' ')} · ${clockOf(sx.t ?? sx.left)}`;
+  const ins = mods?.county?.inspect;
+  if (ins) return `INSPECTION · ${ins.where ?? 'YARD ' + ins.yard} · ${clockOf(ins.t ?? ins.left)}`;   // b2: hazards lie short of the kerb, so his patch has a count, not a Yard
   const c = mods?.county?.label; if (c) return String(c);
   const r = mods?.stadium?.req; if (!r) return null;
   if (typeof r === 'string') return r;

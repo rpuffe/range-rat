@@ -86,7 +86,7 @@ export const HINTS = Object.freeze({
   green: { kb: 'Land a crew ball on a green: Hustle.', pad: 'Land a crew ball on a green: Hustle.' },   // council round 10 #6 (builder 2)
   drones: { kb: 'Drones! Hold F on foot: "Drones, here!"', pad: 'Drones! Hold Ⓨ on foot: "Drones, here!"' },   // playthrough 5 C4
   souvenir: { kb: 'Pink souvenir balls: carry them to the crowd rail.', pad: 'Pink souvenir balls: carry them to the crowd rail.' },   // round 11 (expert #9)
-  hazard: { kb: 'Green hazard ball: spray it, then bag it.', pad: 'Green hazard ball: spray it, then bag it.', again: true },   // round 11 (expert #9); council round 11 #2: re-arms after a hazard DENIED
+  hazard: { kb: 'Green hazard: hold Click to spray, then bag.', pad: 'Green hazard: hold RT to spray, then bag.', again: true },   // council round 12 #7c: the tip names the button (padbind.js: RT with the wand)   // round 11 (expert #9); council round 11 #2: re-arms after a hazard DENIED
   bays: { kb: 'New bays built. More golfers, more mud.', pad: 'New bays built. More golfers, more mud.' },                 // round 11 (owner): Build more bays
 });
 // Context-driven hints (council round 4, §4.2): fires when its condition holds, once ever.

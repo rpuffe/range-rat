@@ -44,6 +44,7 @@
   #pocket { letter-spacing: 0.2em; }
   #value { position: absolute; top: calc(max(16px, env(safe-area-inset-top)) + 1.9em); left: 16px; font-size: 0.85em;
     color: var(--dim); text-shadow: 0 0.06em 0.25em #000a; }
+  #value-gauge.red { color: #ff6b5a; font-weight: 700; }   /* council round 12, 7e: the venue gauge under the pass line */
   #crewline { position: absolute; top: calc(max(16px, env(safe-area-inset-top)) + 2.2em); right: 16px; text-align: right; text-shadow: 0 0.06em 0.25em #000a; }
   #todo { position: absolute; top: calc(max(16px, env(safe-area-inset-top)) + 3.4em); left: 16px; font-size: 0.85em; max-width: min(28em, 60vw);
     background: rgba(20, 16, 32, 0.6); padding: 0.45em 0.8em; border-radius: 0.4em; color: #fff8ec; display: flex; flex-direction: column; gap: 0.15em; }
@@ -198,7 +199,7 @@
 
 <div id="hud" class="hidden">
   <div class="top"><span id="cash">$0</span><span id="pocket"></span><span id="clock"></span></div>
-  <div id="value"></div>
+  <div id="value"><span id="value-main"></span><span id="value-gauge"></span></div>
   <div id="todo" aria-live="polite"></div>
   <div id="crewline"><span class="test-tag">TEST CREW</span> <small>Crew</small> <span id="code"></span><ul id="roster"></ul></div>
   <div id="crosshair"></div>

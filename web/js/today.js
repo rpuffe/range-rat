@@ -154,19 +154,27 @@ export const juniorDay = (t, matI = 0) => t?.id === 'junior' && matI % 2 === 0;
 export const skyK = (t, k) => (t?.id === 'night' ? Math.max(k, TODAY.NIGHT_SKY) : k);
 export const floodsOn = (t, lastCall) => !!lastCall || t?.id === 'night';
 
-// ---- endless contracts (#10b) ---------------------------------------------------------------------------------
+// ---- endless contracts (#10b; council round 12 #6) ------------------------------------------------------------
 // Each endless morning offers three contracts: a modifier and a goal, one of each star count (1, 2, 3). The crew
 // picks one at the overnight report (any Rat; the last pick stands; nobody picking takes the first). A contract met
-// at the bell adds its stars to the crew's lifetime count; every 10 stars unlocks a cosmetic.
-export const CONTRACT = { OFFERS: 3, PER_UNLOCK: 10 };
-// Goals by stars: cash against yesterday (× f), knockdowns at most n, balls left at the bell at most n.
-const GOALS_BY_STARS = {
-  1: [{ k: 'cash', f: 0.85 }, { k: 'upright', n: 6 }, { k: 'spotless', n: 40 }],
-  2: [{ k: 'cash', f: 1.0 }, { k: 'upright', n: 2 }, { k: 'spotless', n: 12 }],
-  3: [{ k: 'cash', f: 1.15 }, { k: 'upright', n: 0 }, { k: 'spotless', n: 0 }],
+// at the bell adds its stars to the crew's lifetime count; a cosmetic every PER_UNLOCK stars, the first at FIRST.
+// Council round 12 #6: goals you can meet and see. The tiers were set from a bot's bell numbers (design/round14-ending.md):
+//   balls left at the bell (crew.mjs ballsLeft, the one count) is 0 at P75, P40 and P10 for an attentive crew, so the
+//   "left" goal is the 1★'s "Spotless at the bell" only (in a higher tier it would be free); the Hustle goals give the
+//   ping game a reason to exist in endless (×3 needs the Owner's Hustle; a crew without it is asked for ×2 by T−3:00).
+export const CONTRACT = { OFFERS: 3, PER_UNLOCK: 5, FIRST: 3, HUSTLE_BY: 120 };
+export const LEFT_AT_BELL = { P75: 0, P40: 0, P10: 0 };   // measured (12 endless shifts × 1P/4P × 3 seeds): all zero
+// Goals by stars: cash against yesterday (× f), knockdowns at most n, balls left at the bell at most n, the Hustle
+// reaching ×n (by: seconds before the bell it must be reached by; none: any time).
+export const GOALS_BY_STARS = {
+  1: [{ k: 'cash', f: 0.85 }, { k: 'upright', n: 6 }, { k: 'spotless', n: LEFT_AT_BELL.P75 }],
+  2: [{ k: 'cash', f: 1.0 }, { k: 'upright', n: 2 }, { k: 'hustle', n: 2 }],
+  3: [{ k: 'cash', f: 1.1 }, { k: 'upright', n: 0 }, { k: 'hustle', n: 3, by: CONTRACT.HUSTLE_BY }],
 };
-// ctx: { key, day, yesterday (cash), nMats }. Returns [{ mod, goal: { k, n }, stars }] × 3, stars 1, 2, 3.
-export function contractsFor({ key = 0, day = 1, yesterday = 0, nMats = 10 } = {}) {
+const GOAL_KINDS = ['cash', 'upright', 'spotless', 'hustle'];
+// ctx: { key, day, yesterday (cash), nMats, hustleCap (the Hustle cap tomorrow: 3 with the Owner's Hustle, else 2) }.
+// Returns [{ mod, goal: { k, n, by? }, stars }] × 3, stars 1, 2, 3.
+export function contractsFor({ key = 0, day = 1, yesterday = 0, nMats = 10, hustleCap = 2 } = {}) {
   const pool = todayPool(5, true), out = [], used = new Set();
   for (let s = 1; s <= CONTRACT.OFFERS; s++) {
     let i = hash32(key, day, 'c', s) % pool.length;
@@ -174,58 +182,89 @@ export function contractsFor({ key = 0, day = 1, yesterday = 0, nMats = 10 } = {
     used.add(pool[i]);
     const opts = GOALS_BY_STARS[s].filter(g => g.k !== 'cash' || yesterday > 0);
     const g = opts[hash32(key, day, 'g', s) % opts.length];
-    const goal = g.k === 'cash' ? { k: 'cash', n: Math.max(1, Math.round(yesterday * g.f)) } : { k: g.k, n: g.n };
+    const goal = g.k === 'cash' ? { k: 'cash', n: Math.max(1, Math.round(yesterday * g.f)) }
+      : g.k === 'hustle' ? { k: 'hustle', n: Math.min(g.n, Math.max(2, hustleCap)), ...(g.by ? { by: g.by } : {}) }
+        : { k: g.k, n: g.n };
     out.push({ mod: dealMod(pool[i], key, day, nMats), goal, stars: s });
   }
   return out;
 }
+const clockText = s => `T−${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 export function goalText(goal) {
   if (!goal) return '';
   if (goal.k === 'cash') return 'Bank $' + Math.round(goal.n).toLocaleString('en-US');
   if (goal.k === 'upright') return goal.n === 0 ? 'Nobody knocked flat' : `At most ${goal.n} knockdowns`;
   if (goal.k === 'spotless') return goal.n === 0 ? 'Spotless at the bell' : `At most ${goal.n} balls left out`;
+  if (goal.k === 'hustle') return goal.by ? `Hit ×${goal.n} Hustle by ${clockText(goal.by)}` : `Reach ×${goal.n} Hustle`;
   return '';
 }
 export const starText = n => '★'.repeat(Math.max(0, n | 0)) + '☆'.repeat(Math.max(0, 3 - (n | 0)));
-// stats: { cash, knockdowns, left } at the bell.
+// stats: { cash, knockdowns, left, hustleAt (shiftT the Hustle first reached the goal's ×n, or null), secs (shiftSecs) }
+// at the bell.
 export function contractMet(c, stats = {}) {
   const g = c?.goal;
   if (!g) return false;
   if (g.k === 'cash') return (stats.cash ?? 0) >= g.n;
   if (g.k === 'upright') return (stats.knockdowns ?? Infinity) <= g.n;
   if (g.k === 'spotless') return (stats.left ?? Infinity) <= g.n;
+  if (g.k === 'hustle') return stats.hustleAt != null && (!g.by || stats.hustleAt <= (stats.secs ?? Infinity) - g.by + 1e-9);
   return false;
 }
+// The contract during the shift (council round 12 #6c, the Board's line): { state: 'live' | 'met' | 'lost', so }.
+// `so` is the "· 1 SO FAR" tail (bvtext contractLineOf: a number reads "N SO FAR", a string as it is).
+// s: { cash, knockdowns, left, mult, hustleAt, shiftT, secs }. Met only where it can't be undone (cash banked, the
+// Hustle reached in time); lost only where it can't come back (one knockdown too many, the Hustle's clock passed).
+export function contractLive(c, s = {}) {
+  const g = c?.goal;
+  if (!g) return null;
+  switch (g.k) {
+    case 'cash': return (s.cash ?? 0) >= g.n ? { state: 'met' } : { state: 'live', so: shortCash(s.cash) + ' SO FAR' };
+    case 'upright': return (s.knockdowns ?? 0) > g.n ? { state: 'lost' } : { state: 'live', so: s.knockdowns ?? 0 };
+    case 'spotless': return { state: 'live', so: `${Math.max(0, s.left ?? 0) | 0} OUT NOW` };
+    case 'hustle':
+      if (contractMet(c, s)) return { state: 'met' };
+      if (g.by && (s.shiftT ?? 0) > (s.secs ?? Infinity) - g.by) return { state: 'lost' };
+      return { state: 'live', so: `×${(Math.round((s.mult ?? 1) * 100) / 100)} NOW` };
+    default: return { state: 'live' };
+  }
+}
+const shortCash = v => { const a = Math.max(0, +v || 0); return a >= 1e6 ? '$' + (Math.round(a / 1e5) / 10) + 'M' : a >= 1e4 ? '$' + Math.round(a / 1e3) + 'K' : '$' + Math.round(a); };
 // A saved/wired contract, or null.
 export function cleanContract(c) {
-  if (!c || !MODS[c.mod?.id] || !c.goal || !['cash', 'upright', 'spotless'].includes(c.goal.k)) return null;
+  if (!c || !MODS[c.mod?.id] || !c.goal || !GOAL_KINDS.includes(c.goal.k)) return null;
   const stars = Math.max(1, Math.min(3, Math.floor(Number(c.stars) || 1)));
   const mod = { id: c.mod.id };
   if (c.mod.id === 'celeb') mod.bay = Math.max(0, Math.min(9, Math.floor(Number(c.mod.bay) || 0)));
   if (c.mod.id === 'windy') mod.wind = Number(c.mod.wind) < 0 ? -1 : 1;
-  return { mod, goal: { k: c.goal.k, n: Math.max(0, Number(c.goal.n) || 0) }, stars };
+  const goal = { k: c.goal.k, n: Math.max(0, Number(c.goal.n) || 0) };
+  if (goal.k === 'hustle') { goal.n = Math.max(1, Math.min(3, goal.n)); const by = Number(c.goal.by); if (by > 0) goal.by = Math.min(420, by); }
+  return { mod, goal, stars };
 }
 
-// ---- cosmetics: cheap recolours, one every 10 stars -----------------------------------------------------------
-export const COSMETICS = [
-  { id: 'hat-teal', part: 'hat', name: 'Teal cap', hex: 0x2bb3a3, stars: 10 },
-  { id: 'cart-gold', part: 'cart', name: 'Gold cart paint', hex: 0xd4a017, stars: 20 },
-  { id: 'vest-pink', part: 'vest', name: 'Pink vest', hex: 0xff6fae, stars: 30 },
-  { id: 'hat-black', part: 'hat', name: 'Black cap', hex: 0x22252b, stars: 40 },
-  { id: 'cart-red', part: 'cart', name: 'Fire-engine cart paint', hex: 0xc8281e, stars: 50 },
-  { id: 'vest-navy', part: 'vest', name: 'Navy vest', hex: 0x1f3a6b, stars: 60 },
-  { id: 'hat-gold', part: 'hat', name: 'Gold cap', hex: 0xe8b04a, stars: 70 },
-  { id: 'cart-midnight', part: 'cart', name: 'Midnight cart paint', hex: 0x1b1f3a, stars: 80 },
-  { id: 'vest-lime', part: 'vest', name: 'Lime vest', hex: 0x9ad83a, stars: 90 },
-  { id: 'hat-white', part: 'hat', name: 'Tour-white cap', hex: 0xf4f1e8, stars: 100 },
+// ---- cosmetics: cheap recolours, one every PER_UNLOCK stars from FIRST (council round 12 #6d: 3, 8, 13, …) ---------
+// Plus the Site 13 jacket (council round 12 #8): won by beating Site 13 for a week, not by stars (`rival: true`).
+const LOOKS = [
+  { id: 'hat-teal', part: 'hat', name: 'Teal cap', hex: 0x2bb3a3 },
+  { id: 'cart-gold', part: 'cart', name: 'Gold cart paint', hex: 0xd4a017 },
+  { id: 'vest-pink', part: 'vest', name: 'Pink vest', hex: 0xff6fae },
+  { id: 'hat-black', part: 'hat', name: 'Black cap', hex: 0x22252b },
+  { id: 'cart-red', part: 'cart', name: 'Fire-engine cart paint', hex: 0xc8281e },
+  { id: 'vest-navy', part: 'vest', name: 'Navy vest', hex: 0x1f3a6b },
+  { id: 'hat-gold', part: 'hat', name: 'Gold cap', hex: 0xe8b04a },
+  { id: 'cart-midnight', part: 'cart', name: 'Midnight cart paint', hex: 0x1b1f3a },
+  { id: 'vest-lime', part: 'vest', name: 'Lime vest', hex: 0x9ad83a },
+  { id: 'hat-white', part: 'hat', name: 'Tour-white cap', hex: 0xf4f1e8 },
 ];
-export const COSMETIC_BY_ID = Object.fromEntries(COSMETICS.map(c => [c.id, c]));
-export const unlockedLooks = stars => COSMETICS.filter(c => (stars | 0) >= c.stars);
+export const COSMETICS = LOOKS.map((c, i) => ({ ...c, stars: CONTRACT.FIRST + CONTRACT.PER_UNLOCK * i }));
+export const RIVAL_LOOK = { id: 'vest-site13', part: 'vest', name: 'Site 13 jacket', hex: 0x5b6b7a, rival: true };
+export const COSMETIC_BY_ID = Object.fromEntries([...COSMETICS, RIVAL_LOOK].map(c => [c.id, c]));
+// `rival`: the crew has acquired Site 13 at least once (records.rival.acquired > 0).
+export const unlockedLooks = (stars, rival = false) => [...COSMETICS.filter(c => (stars | 0) >= c.stars), ...(rival ? [RIVAL_LOOK] : [])];
 export const nextLook = stars => COSMETICS.find(c => (stars | 0) < c.stars) ?? null;
 // The cosmetic newly unlocked going from `was` to `now` stars (the last one, if several), or null.
 export const newlyUnlocked = (was, now) => COSMETICS.filter(c => (was | 0) < c.stars && (now | 0) >= c.stars).at(-1) ?? null;
 // May this crew wear it? (null clears the part.)
-export const canWear = (id, part, stars) => id == null || (COSMETIC_BY_ID[id]?.part === part && (stars | 0) >= COSMETIC_BY_ID[id].stars);
+export const canWear = (id, part, stars, rival = false) => id == null || (COSMETIC_BY_ID[id]?.part === part && (COSMETIC_BY_ID[id].rival ? !!rival : (stars | 0) >= COSMETIC_BY_ID[id].stars));
 // Looks by Rat name, cleaned: { name: { hat?, vest? } }.
 export function cleanLooks(l) {
   const out = {};
@@ -239,8 +278,8 @@ export function cleanLooks(l) {
   return out;
 }
 // The next option for a part, cycling none → each unlocked → none (the overnight locker's one button per part).
-export function cycleLook(cur, part, stars) {
-  const opts = [null, ...unlockedLooks(stars).filter(c => c.part === part).map(c => c.id)];
+export function cycleLook(cur, part, stars, rival = false) {
+  const opts = [null, ...unlockedLooks(stars, rival).filter(c => c.part === part).map(c => c.id)];
   const i = opts.indexOf(cur ?? null);
   return opts[(i + 1) % opts.length];
 }

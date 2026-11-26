@@ -40,6 +40,7 @@ const CSS = `
 #story-card.photo .st-photo { display: block; }
 #story-card.note { top: 18%; width: min(calc(100vw - 32px), 34em); background: radial-gradient(ellipse at 50% 30%, #2c2440, #15111f 75%); color: #fff3d6;
   border: 1px solid #ffb34766; box-shadow: 0 0 2.5em #ffb34744, 0 0.4em 1.5em #000a; padding: 1.1em 1.6em 0.8em; }
+#story-card.high { top: 3%; }   /* council round 12 #3b: the note in the upper third; the crack stays mid-frame */
 #story-card.note .st-icon { color: #ffd878; text-shadow: 0 0 0.5em #ffb347; }
 #story-card.note .st-head { text-align: center; border-color: #ffb34799; color: #ffcf7a; letter-spacing: 0.2em; }
 #story-card.note .st-text { text-align: center; font-size: clamp(1.25em, 3.4vh, 1.9em); font-weight: 500; line-height: 1.35; }
@@ -104,7 +105,7 @@ export function createStoryCard({ sayer, keys = () => ({ next: 'Space', skip: 'E
     shown = c; shownBeat = beat;
     if (!c) { el?.classList.remove('on'); onChange?.(null); return; }
     if (!build()) return;
-    el.className = 'on ' + c.who.toLowerCase() + (c.style ? ' ' + c.style : '') + (c.photo && photoG ? ' photo' : '');
+    el.className = 'on ' + c.who.toLowerCase() + (c.style ? ' ' + c.style : '') + (c.photo && photoG ? ' photo' : '') + (c.pos === 'high' ? ' high' : '');   // council round 12 #3b
     icon(c.style === 'note' ? 'NOTE' : c.who);
     headEl.textContent = c.head ?? WHO[c.who] ?? '';
     textEl.textContent = c.who === 'GARY' ? '“' + c.line + '”' : c.line;

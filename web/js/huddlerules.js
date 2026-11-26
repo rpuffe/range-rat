@@ -68,8 +68,34 @@ export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = SIM.STAND) {   //
     const who = !missing.length ? '' : missing[0].id === meId ? 'YOU' : esc(cutName(missing[0].name));
     return `BALL NO. 1 · HOME · <b>${on.length - missing.length}/${on.length}</b>${who ? ` · WAITING: ${who}${missing.length > 1 ? ' +' + (missing.length - 1) : ''}` : ''}`;
   }
-  return lb.phase === 'down' ? 'BALL NO. 1 IS DOWN · follow the beam' : '';
+  return lb.phase === 'down' ? ONE_DOWN_LINE : '';
 }
+// Council round 12 #3a: the banner points at the gold beam (C #1: "the beam" read as the Target Greens' beams).
+// 8 words, each segment ≤ 28 characters.
+export const ONE_DOWN_LINE = 'BALL NO. 1 DOWN · follow the gold beam';
+
+// ---- council round 12 #3a: Ball No. 1's gold beam ------------------------------------------------------------------
+// One more instance of main.js's gold-ball beacon (no new draw call): 25 m tall on the ball while it's down (the beacon
+// is 9 m: y ×2.8), twice as wide, pulsing ±12 % at 0.5 Hz; a 4 m pillar over the carrier's head while it's carried
+// (and in the huddle), so the crew can see who has it. While either shows, the Target Greens' beams are hidden.
+export const ONE_BEAM = Object.freeze({ SY: 2.8, SR: 2, PULSE: 0.12, HZ: 0.5, CARRY_SY: 4 / 9, CARRY_Y: 2.0 });
+// Where the beam stands, written into `out` ({ x, z, carried: id | null }) and returned; null when there's none.
+// c: the snapshot; balls: the client's balls (an iterable of { kind, x, z }). No allocation: it runs every frame.
+export function oneBeam(c, balls, out = { x: 0, z: 0, carried: null }) {
+  const ph = c?.phase === 'shift' ? c.lastBucket?.phase : null;
+  if (ph === 'down') {
+    for (const b of balls ?? []) if (b.kind === 'one') { out.x = b.x; out.z = b.z; out.carried = null; return out; }
+    return null;
+  }
+  if (ph === 'carried' || ph === 'huddle') {
+    for (const p of c.players ?? []) if (p.one) { out.x = p.x; out.z = p.z; out.carried = p.id; return out; }
+  }
+  return null;
+}
+// The beam's radius scale at t seconds: the pulse while it's down; 1 for the carried pillar.
+export const oneBeamScale = (carried, t) => (carried ? 1 : ONE_BEAM.SR * (1 + ONE_BEAM.PULSE * Math.sin(2 * Math.PI * ONE_BEAM.HZ * t)));
+// While Ball No. 1 is down or carried, the Target Greens' beams go (views/tiered.js): they're the ones players followed.
+export const targetBeamsHidden = c => c?.phase === 'shift' && ['down', 'carried', 'huddle'].includes(c?.lastBucket?.phase);
 
 // The Board while Gary drives his last leg to the stand: GARY 3, GARY 3 · 2, GARY 3 · 2 · 1. null otherwise.
 // Playtest round 2 #2: when the server sends { eta, span } (seconds to the stand, and that eta when he left the mats),

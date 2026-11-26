@@ -16,6 +16,9 @@ export const SAY = {
   MAX_WORDS: 8,
   STORY_MEMO: 5,     // council round 11 #3: a story morning's memo shows 5 s, not 7
   FADE_MAX: 0.3,     // council round 11 8.6: the next card waits for the outgoing one's fade (transitionend), at most this long
+  // Council round 12, 4c (builder 4): a story card waits for a PA card that ends within PA_WAIT; a longer one is snapped
+  // off (its caption comes back, without the chime or the voice again, when the card ends). whenPaIdle's default cap.
+  PA_WAIT: 2,
 };
 const LOW = new Set(['ALERT', 'TOAST', 'TIP']);     // dropped by the stamp and the bell lock
 const HELD = new Set(['PA', 'MEMO']);               // held by the bell lock until the report closes
@@ -31,7 +34,7 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
   // Round 12: the story card's turn (storycard.js). 'off'; 'want' (only a PA may still show: the queue drains to it);
   // 'on' (the card owns the centre: nothing shows but the bell's stamp, which preempts as ever).
   let gate = 'off';
-  const paBlocks = t => queue.some(i => i.kind === 'PA' && lock === 'open' && t >= holdUntil);
+  const paBlocks = t => queue.some(i => i.kind === 'PA' && !i.resumed && lock === 'open' && t >= holdUntil);   // round 12: a snapped-off caption waits for the card
   function tryGrant(t) {
     if (gate === 'want' && !visible && t >= lastHide + SAY.GAP && !paBlocks(t)) gate = 'on';
     return gate === 'on';
@@ -39,6 +42,15 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
   const warned = new Set();
 
   function hide(t) { visible = null; lastHide = t; }
+  // Council round 12, 4c: the PA card (or a memo) gives the centre to the story card. It goes back to the front of the
+  // queue with the time it had left, flagged `resumed` (pa.js shows the caption again without replaying the audio).
+  function yieldToCard(t) {
+    const v = visible; if (!v || v.kind === 'STAMP') return;
+    v.preempted = true;
+    if (HELD.has(v.kind)) queue.unshift({ ...v, secs: Math.max(SAY.MIN_SHOW, v.until - t), at: t, seq: -1 - seq++, preempted: false, resumed: v.kind === 'PA' || v.resumed, v: 0 });
+    else dropped++;
+    visible = null; lastHide = t - SAY.GAP;   // the card may take the turn at once
+  }
   function drop(pred) { const keep = queue.filter(i => !pred(i)); dropped += queue.length - keep.length; queue = keep; }
 
   // kind: one of KINDS. opts: { secs, key, data }. Returns the item, or null when it was dropped.
@@ -78,11 +90,12 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
     const t = now();
     if (visible && t >= visible.until) hide(t);
     drop(i => SAY.TTL[i.kind] != null && t - i.at > SAY.TTL[i.kind]);
+    if (gate === 'on' && visible && visible.kind !== 'STAMP') yieldToCard(t);   // round 12, 4c: never under a story card
     if (gate === 'want') tryGrant(t);
     if (gate === 'on' || visible || t < lastHide + SAY.GAP) return visible;
     let best = null;
     for (const i of queue) {
-      if (gate === 'want' && i.kind !== 'PA') continue;   // round 12: a story card waits only for the PA lines
+      if (gate === 'want' && (i.kind !== 'PA' || i.resumed)) continue;   // round 12: a story card waits only for the PA lines
       if ((lock !== 'open' || t < holdUntil) && HELD.has(i.kind)) continue;   // the bell lock, or a hold (the Deck Cam)
       if (i.kind === 'TIP' && t - lastHide < SAY.TIP_QUIET) continue;
       if (t - i.at < (SAY.SETTLE[i.kind] ?? 0)) continue;
@@ -96,6 +109,8 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
     say, update,
     get visible() { return visible; },
     get queued() { return queue.slice(); },
+    // Council round 12, 9.4: items waiting that will show (tips excluded: they wait for quiet themselves). No allocation.
+    get pending() { let n = 0; for (const i of queue) if (i.kind !== 'TIP') n++; return n; },
     get dropped() { return dropped; },
     get lock() { return lock; },
     busy: (...kinds) => !!visible && (!kinds.length || kinds.includes(visible.kind)),
@@ -125,7 +140,18 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
     get held() { return now() < holdUntil; },
     // Round 12: the story card asks for the centre (granted at once when nothing is up and no PA line is waiting),
     // and gives it back when its beat ends. want() returns true when the turn is granted now.
-    want() { if (gate === 'off') gate = 'want'; return tryGrant(now()); },
+    // Council round 12, 4c: a PA card already up with more than PA_WAIT to go is snapped off for the card (its caption
+    // resumes after); one that ends within PA_WAIT, or a PA line still queued, goes first as before.
+    want() {
+      const t = now();
+      if (gate === 'off') {
+        gate = 'want';
+        if (visible?.kind === 'PA' && visible.until - t > SAY.PA_WAIT && !paBlocks(t)) yieldToCard(t);
+      }
+      return tryGrant(t);
+    },
+    // Council round 12, 4c: no PA card up and none waiting to show (the end card and the like wait on this).
+    get paIdle() { return visible?.kind !== 'PA' && !queue.some(i => i.kind === 'PA'); },
     release() { if (gate === 'off') return; gate = 'off'; lastHide = now(); },
     get gate() { return gate; },
     clear() { dropped += queue.length; queue = []; if (visible) hide(now()); },
@@ -197,11 +223,33 @@ export function createSay({ $ = id => document.getElementById(id), dev = false, 
     const tr = el.style.transition; el.style.transition = 'none';
     setTimeout(() => { el.style.transition = tr; }, 60);
   }
+  // Council round 12, 4c: the "PA idle" signal. whenPaIdle(cap) resolves once no PA card is up, queued or fading out,
+  // or after `cap` seconds whatever (never a stuck end card). Checked on every sync.
+  let idleWaits = [];
+  const paFading = () => !!fading && fading.kind === 'PA';
+  const paIdleNow = () => model.paIdle && !paFading() && !$('pa-card')?.classList?.contains('on');
+  function checkIdle() {
+    if (!idleWaits.length) return;
+    const t = now(), idle = paIdleNow();
+    idleWaits = idleWaits.filter(w => { if (idle || t >= w.until) { w.resolve(idle); return false; } return true; });
+  }
+  function whenPaIdle(cap = SAY.PA_WAIT) {
+    return new Promise(resolve => { idleWaits.push({ resolve, until: now() + Math.max(0, cap) }); checkIdle(); });
+  }
+  // The DOM side of the story turn: while the card owns the centre, no PA card or memo element stays lit, whatever a
+  // card's own show/hide did (Stadium day 1, A #6). Class writes only when something is actually on.
+  function guardCard() {
+    if (model.gate !== 'on') return;
+    const pc = $('pa-card'), me = $('memo');
+    if (pc?.classList?.contains('on')) { const tr = pc.style.transition; pc.style.transition = 'none'; pc.classList.remove('on'); setTimeout(() => { pc.style.transition = tr; }, 60); }
+    if (me?.classList && !me.classList.contains('hidden')) me.classList.add('hidden');
+  }
   function sync() {
     const v = model.update();
+    guardCard(); checkIdle();
     if (model.gate === 'on' && fadeEl) snap();
     if (v === shown && (!v || v.v === shownV)) return;
-    if (shown && shown !== v) { render(shown, false); if (v?.kind !== 'STAMP') startFade(shown); shown = null; shownV = -1; }
+    if (shown && shown !== v) { render(shown, false); if (v?.kind !== 'STAMP') startFade(shown); shown = null; shownV = -1; if (model.gate === 'on' && fadeEl) snap(); }
     if (fading && now() - fadeAt > 1) endFade();
     if (v && v !== shown && fading && v.kind !== 'STAMP') {   // wait out the fade (transitionend, or FADE_MAX after it's due)
       fadeUntil ??= now() + SAY.FADE_MAX;
@@ -224,6 +272,8 @@ export function createSay({ $ = id => document.getElementById(id), dev = false, 
     // Council round 11 8.6: the story card's own fade-out is an outgoing card too (the memo after a beat waited on nothing).
     want: wrap(model.want), release: wrap(() => { const was = model.gate; model.release(); if (was !== 'off') startFade({ kind: 'CARD' }, $('story-card')); }), get gate() { return model.gate; },   // round 12: the story card's turn
     get held() { return model.held; },
+    get paIdle() { return paIdleNow(); }, whenPaIdle,   // council round 12, 4c: the "PA idle" signal
+    get pending() { return model.pending; },
     get up() { return [...up]; },
     busy: model.busy,
     get dropped() { return model.dropped; },

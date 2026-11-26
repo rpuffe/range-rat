@@ -1,21 +1,30 @@
 // Council round 11 #5: the souvenir request's look. "WE WANT A BALL!": a pulsing gold ring on the lit stretch of rail,
 // that section's fans on their feet waving, a world banner over the stand, and a confetti puff when it's answered.
-// The rules live in ../stadium.js (REQ, SECTIONS). Xbox budget: four meshes built once (the ring, the banner, one
-// InstancedMesh of arms, one of confetti), hidden when idle; no per-frame allocations.
+// Council round 12 #2c/#2e: a gold beam over every lit section (the beacon look, 20 m tall, pulsing: seen from under the
+// deck and from the mats), and up to three sections at once for the Seventh-Inning Stretch.
+// The rules live in ../stadium.js (REQ, SECTIONS). Xbox budget: five meshes built once (the rings and the beams as one
+// InstancedMesh each, the banner, one InstancedMesh of arms, one of confetti), hidden when idle; no per-frame allocations.
 import * as THREE from 'three';
 import { SECTIONS, SOUV, REQ } from '../stadium.js';
 
-const ARMS = 48, BITS = 40, PUFF_SECS = 1.6;
+const MAXLIT = 3, ARMS = 96, BITS = 40, PUFF_SECS = 1.6, BEAM_H = 20;
 
 export function createSouvReq(ctx, parent) {
   const root = new THREE.Group(); root.name = 'souv_req'; parent.add(root);
 
-  // The ring: a standing gold hoop on the rail, 16 m long and facing the field (flat on the ground it vanished at range).
+  // The rings: standing gold hoops on the rail, 16 m long and facing the field (flat on the ground they vanished at range).
   const ringMat = new THREE.MeshBasicMaterial({ color: 0xffc83a, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false });
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 48), ringMat);
-  ring.rotation.y = Math.PI / 2; ring.renderOrder = 2; ring.visible = false; root.add(ring);
+  const rings = new THREE.InstancedMesh(new THREE.RingGeometry(0.86, 1, 48), ringMat, MAXLIT);
+  rings.frustumCulled = false; rings.renderOrder = 2; rings.visible = false; rings.count = 0; root.add(rings);
 
-  // The banner: one canvas, redrawn only when the section changes.
+  // The beams (round 12 #2e): one open cylinder per lit section, additive gold, the beacon look.
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0xffc83a, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending });
+  const beamGeo = new THREE.CylinderGeometry(1.1, 1.6, BEAM_H, 14, 1, true); beamGeo.translate(0, BEAM_H / 2, 0);
+  const beams = new THREE.InstancedMesh(beamGeo, beamMat, MAXLIT);
+  beams.frustumCulled = false; beams.renderOrder = 3; beams.visible = false; beams.count = 0; root.add(beams);
+
+  // The banner: one canvas, redrawn only when the section changes (single requests only: the Stretch's words are on the
+  // jumbotron and the Board).
   const cv = document.createElement('canvas'); cv.width = 512; cv.height = 160;
   const g2 = cv.getContext('2d');
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
@@ -33,7 +42,7 @@ export function createSouvReq(ctx, parent) {
     tex.needsUpdate = true;
   };
 
-  // The fans: arms up and waving over the lit section's crowd (the stand crowd is venues.js's InstancedMesh).
+  // The fans: arms up and waving over the lit sections' crowd (the stand crowd is venues.js's InstancedMesh).
   const arms = new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 0.75, 0.12), new THREE.MeshLambertMaterial({ color: 0xffe0c0 }), ARMS);
   arms.frustumCulled = false; arms.visible = false; arms.count = 0; root.add(arms);
   const fanPos = new Float32Array(ARMS * 2);   // [x, y, z, phase] per fan, up to ARMS / 2 fans (two arms each)
@@ -49,37 +58,57 @@ export function createSouvReq(ctx, parent) {
   const bitV = new Float32Array(BITS * 3), bitP = new Float32Array(BITS * 3);
   let puffT = -1;
 
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s1 = new THREE.Vector3(1, 1, 1);
-  let sec = null;
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s1 = new THREE.Vector3(1, 1, 1), sv = new THREE.Vector3();
+  const qRing = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));   // the hoop turned to the YZ plane
+  const q0 = new THREE.Quaternion();
+  const lit = [];          // the lit SECTIONS (0..MAXLIT)
+  let key = '';
 
-  function pickFans(sc) {
+  function pickFans() {
     nFans = 0;
     const crowd = ctx.venues?.crowd ?? [];
-    const side = sc.side < 0 ? 'left' : 'right';
-    for (const c of crowd) {
-      if (c.side !== side) continue;
-      for (const b of c.base) {
-        if (b[2] < sc.z0 || b[2] > sc.z1 || nFans >= ARMS / 2) continue;
-        fanPos[nFans * 4] = b[0]; fanPos[nFans * 4 + 1] = b[1]; fanPos[nFans * 4 + 2] = b[2]; fanPos[nFans * 4 + 3] = b[3];
-        nFans++;
+    const per = Math.floor(ARMS / 2 / Math.max(1, lit.length));
+    for (const sc of lit) {
+      const side = sc.side < 0 ? 'left' : 'right';
+      let k = 0;
+      for (const c of crowd) {
+        if (c.side !== side) continue;
+        for (const b of c.base) {
+          if (b[2] < sc.z0 || b[2] > sc.z1 || k >= per || nFans >= ARMS / 2) continue;
+          fanPos[nFans * 4] = b[0]; fanPos[nFans * 4 + 1] = b[1]; fanPos[nFans * 4 + 2] = b[2]; fanPos[nFans * 4 + 3] = b[3];
+          nFans++; k++;
+        }
       }
     }
   }
+  const ringAt = (j, sc, sy) => { p.set(sc.side * (SOUV.RAIL_X - 0.5), 2.2, sc.zc); sv.set(REQ.LEN / 2 + 0.5, sy, 1); rings.setMatrixAt(j, m4.compose(p, qRing, sv)); };
 
   return {
-    // req: the snapshot's mods.stadium.req ({ i, sec, left }) or null.
-    set(req) {
-      const next = req ? SECTIONS[req.i] ?? null : null;
-      if (next === sec) return;
-      sec = next;
-      ring.visible = banner.visible = arms.visible = !!sec;
-      if (!sec) return;
-      ring.position.set(sec.side * (SOUV.RAIL_X - 0.5), 2.2, sec.zc);
-      ring.scale.set(REQ.LEN / 2 + 0.5, 2.2, 1);   // turned to the YZ plane: local x runs along the rail (z)
-      banner.position.set(sec.side * 76, 10.5, sec.zc);
-      banner.rotation.y = sec.side < 0 ? Math.PI / 2 : -Math.PI / 2;   // facing the field
-      drawBanner(sec.name);
-      pickFans(sec);
+    // req: the snapshot's mods.stadium.req ({ i, sec, left }) or null; stretch: mods.stadium.stretch ({ i: [..] }) or null.
+    set(req, stretch = null) {
+      const ids = stretch?.i?.length ? stretch.i : req ? [req.i] : [];
+      const k = (stretch ? 's' : 'r') + ids.join(',');
+      if (k === key) return;
+      key = k; lit.length = 0;
+      for (const i of ids) if (SECTIONS[i] && lit.length < MAXLIT) lit.push(SECTIONS[i]);
+      const on = lit.length > 0;
+      rings.visible = beams.visible = arms.visible = on;
+      rings.count = beams.count = lit.length;
+      banner.visible = on && !stretch;
+      if (!on) return;
+      lit.forEach((sc, j) => {
+        ringAt(j, sc, 2.2);
+        p.set(sc.side * (SOUV.RAIL_X + 1.5), 0.5, sc.zc);
+        beams.setMatrixAt(j, m4.compose(p, q0, s1));
+      });
+      rings.instanceMatrix.needsUpdate = true; beams.instanceMatrix.needsUpdate = true;
+      if (banner.visible) {
+        const sc = lit[0];
+        banner.position.set(sc.side * 76, 10.5, sc.zc);
+        banner.rotation.y = sc.side < 0 ? Math.PI / 2 : -Math.PI / 2;   // facing the field
+        drawBanner(sc.name);
+      }
+      pickFans();
     },
     // A souvenir answered section i: confetti over it.
     puff(i) {
@@ -92,10 +121,12 @@ export function createSouvReq(ctx, parent) {
       }
     },
     tick(dt, t) {
-      if (sec) {
+      if (lit.length) {
         const k = 0.5 + 0.5 * Math.sin(t * 6);
         ringMat.opacity = 0.45 + 0.5 * k;
-        ring.scale.y = 2.2 + 0.35 * k;
+        beamMat.opacity = 0.22 + 0.25 * (0.5 + 0.5 * Math.sin(t * 3.2));
+        for (let j = 0; j < lit.length; j++) ringAt(j, lit[j], 2.2 + 0.35 * k);
+        rings.instanceMatrix.needsUpdate = true;
         let n = 0;
         for (let f = 0; f < nFans && n + 1 < ARMS; f++) {
           const x = fanPos[f * 4], y = fanPos[f * 4 + 1], z = fanPos[f * 4 + 2], ph = fanPos[f * 4 + 3];
@@ -121,7 +152,8 @@ export function createSouvReq(ctx, parent) {
         bits.instanceMatrix.needsUpdate = true;
       }
     },
-    hide() { this.set(null); bits.visible = false; puffT = -1; },
-    get lit() { return sec; },
+    hide() { this.set(null, null); bits.visible = false; puffT = -1; },
+    get lit() { return lit[0] ?? null; },
+    get litN() { return lit.length; },
   };
 }

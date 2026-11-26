@@ -145,3 +145,62 @@ export function streakLine(res) {
 // One stripe a Rat, in join order (the snapshot's player order), at most 6. Hex strings or numbers.
 export const crewStripes = players => (players ?? []).map(p => p?.color).filter(c => c != null && c !== '').slice(0, 6);
 export const STATUE_PA = 'statue';
+
+// ---- council round 12 #8 (builder 3): Site 13, the live endless rival --------------------------------------------
+// From endless day 2 the Board races Site 13: "SITE 13 $41.8M (est.)" under your total. Their number climbs through
+// the shift on the same curve as yours (yesterday's, as paceAt reads it: the Last Call surge is in it), aiming at
+// F × your average for the last 3 Owners' days, ±JITTER from hash32(day). The council asked for 1.04 / 1.08; endless
+// income is flat day to day once the Owner's projects are bought, so 1.04 beat the bot on only 36 % of days (18 runs):
+// F 1.00 / F2 1.04 measures 45-55 % (design/round14-ending.md). Beat them on WIN of the WEEK endless days
+// (days 2–8, 9–15, …) and Site 13 is acquired: the next morning's memo says so, their fence sign takes the crew's teal
+// and the Site 13 jacket unlocks. Week 2 on they come back with a jumbotron: F2.
+// records.rival = { week, wins, days, last: [the last 3 Owners' days' cash], acquired } (saved with the records).
+export const RIVAL = Object.freeze({ FROM: 2, F: 1.0, F2: 1.04, JITTER: 0.06, WEEK: 7, WIN: 4, LAST: 3, PASS_AFTER: 60 });
+// FNV-1a over the day (the same hash as today.js hash32, kept local: this module imports nothing).
+function hashDay(day) {
+  let h = 0x811c9dc5;
+  for (const ch of String(day) + '|site13') { h ^= ch.charCodeAt(0); h = Math.imul(h, 0x01000193); }
+  h ^= h >>> 13; h = Math.imul(h, 0x5bd1e995); h ^= h >>> 15;
+  return h >>> 0;
+}
+export const rivalJitter = day => ((hashDay(day) % 10001) / 10000 * 2 - 1) * RIVAL.JITTER;   // −6 % … +6 %
+// Today's target, or null (no Owners' day banked yet). rival: records.rival; day: the global day.
+export function rivalTarget(rival, day) {
+  const last = (rival?.last ?? []).filter(v => Number.isFinite(v) && v >= 0).slice(-RIVAL.LAST);
+  if (!last.length) return null;
+  const avg = last.reduce((a, b) => a + b, 0) / last.length;
+  const f = (rival?.week | 0) >= 2 ? RIVAL.F2 : RIVAL.F;
+  return Math.round(avg * f * (1 + rivalJitter(day)) * 100) / 100;
+}
+// Their live number at shiftT: the target on yesterday's curve (linear without one).
+export function rivalPace(target, records, shiftT, shiftSecs) {
+  if (!(target > 0)) return 0;
+  const y = yesterdayPace(records);
+  if (!y || !y.curve || !(y.curve[CURVE_N - 2] > 0)) return target * Math.max(0, Math.min(1, shiftT / shiftSecs));   // no (or an empty) curve: linear
+  return target * paceAt({ cash: y.cash, curve: y.curve }, shiftT, shiftSecs) / y.cash;
+}
+// At an Owners' bell: today's cash against today's target (null target: no race, day 1). Returns
+// { rival: the new records.rival, result: { win, target, cash } | null, acquired: bool (the week was won), newWeek }.
+export function rivalBell(rival, target, dayCash) {
+  const r = cleanRival(rival) ?? { week: 1, wins: 0, days: 0, last: [], acquired: 0 };
+  const cash = Math.max(0, +dayCash || 0);
+  const last = [...r.last, cash].slice(-RIVAL.LAST);
+  if (!(target > 0)) return { rival: { ...r, last }, result: null, acquired: false, newWeek: false };
+  const win = cash > target;
+  let { week, wins, days, acquired } = r;
+  days++; if (win) wins++;
+  let won = false, newWeek = false;
+  if (days >= RIVAL.WEEK) { won = wins >= RIVAL.WIN; if (won) acquired++; week++; wins = 0; days = 0; newWeek = true; }
+  return { rival: { week, wins, days, last, acquired }, result: { win, target: Math.round(target * 100) / 100, cash: Math.round(cash * 100) / 100 }, acquired: won, newWeek };
+}
+// A saved rival, or undefined.
+export function cleanRival(r) {
+  if (!r || typeof r !== 'object') return undefined;
+  const n = (v, hi) => Math.max(0, Math.min(hi, Math.floor(Number(v) || 0)));
+  const last = (Array.isArray(r.last) ? r.last : []).map(Number).filter(v => Number.isFinite(v) && v >= 0).slice(-RIVAL.LAST);
+  return { week: Math.max(1, n(r.week, 1e6)), wins: n(r.wins, RIVAL.WEEK), days: n(r.days, RIVAL.WEEK - 1), last, acquired: n(r.acquired, 1e6) };
+}
+// The report's first line (not centre text): "Site 13 revised its estimate." / "Site 13 sends a fruit basket."
+export const rivalLine = res => (!res ? '' : res.win ? 'Site 13 revised its estimate.' : 'Site 13 sends a fruit basket.');
+// The week so far, for the report's row: "Site 13 this week: 3 of 5 won (4 of 7 acquires)."
+export const rivalWeekLine = rival => (rival ? `Site 13 this week: ${rival.wins} of ${rival.days} won (${RIVAL.WIN} of ${RIVAL.WEEK} acquires).` : '');

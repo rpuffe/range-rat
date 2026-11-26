@@ -79,7 +79,7 @@ export function createBallReturn(scene, { pool = 24 } = {}) {
   balls.frustumCulled = false; balls.count = 0; balls.visible = false; scene.add(balls);
   balls.setColorAt(0, CLEAN);
   const live = [];                       // { t, delay, route, fall }
-  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Vector3();
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _e = new THREE.Euler();   // council round 12, 4b: was a Vector3 (no order): "setFromEuler unknown order" every frame
   const IN_SILO = curves.direct.getPoint(1);
   let siloY = siloLevelY(400);
 

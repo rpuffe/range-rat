@@ -136,3 +136,45 @@ export function hazPair(rats, hazards) {
 export const zoningLabel = (kpi, haz = 0) => `ZONING ${Math.round(Math.max(0, Math.min(1, kpi ?? 1)) * 100)}%${haz > 0 ? ` · ${haz} HAZARD${haz === 1 ? '' : 'S'}` : ''}`;
 // The first van tow's toast (the rest go to the feed).
 export const vanToast = n => `Zoning towed ${n} balls. Bag the hazards!`;
+
+// ---- council round 12 #7a: Inspection Hour, the County's peak --------------------------------------------------------
+// Once a shift at T-3:30 (AT s left; a live van or nothing at all doesn't delay it, but never later than LATEST s left),
+// an FHI inspector walks for SECS s (SOLO_SECS solo) round the patch of the hose's ground with the most hazards: a circle
+// of R m round the hazard with the most others within R (none out: the middle of the hazard ground). In his patch, while
+// he's there, a bagged hazard pays ×PAY and +BONUS Zoning; one still in it when he leaves is "noted": -NOTED Zoning while it's out, it
+// counts double until the cleanup (T-1:00); from then to the bell it's filed and doesn't count (lead's call, round 14), and it is never written off. Hazards are short of the kerb,
+// so his patch is on the hose's ground, not in the back yards (round 14 notes).
+export const INSPECT = { AT: 210, LATEST: 120, SECS: 60, SOLO_SECS: 75, R: 15, PAY: 3, BONUS: 0.04, NOTED: 0.05, CENTRE: { x: 22, z: -28 } };
+export const inspectSecs = n => ((n | 0) <= 1 ? INSPECT.SOLO_SECS : INSPECT.SECS);
+export const inspectDue = ({ left, done = false }) => !done && left <= INSPECT.AT && left > INSPECT.LATEST;
+export const inPatch = (ins, x, z) => !!ins && Math.hypot(x - ins.x, z - ins.z) <= ins.r;
+// The patch: hazards [{ x, z }] → { x, z, r } round the busiest one (ties: the first), or the middle with none out.
+export function inspectPatch(hazards, r = INSPECT.R) {
+  let best = null, bn = -1;
+  for (const a of hazards ?? []) {
+    let n = 0;
+    for (const b of hazards) if (Math.hypot(a.x - b.x, a.z - b.z) <= r) n++;
+    if (n > bn) { bn = n; best = a; }
+  }
+  return best ? { x: best.x, z: best.z, r } : { x: INSPECT.CENTRE.x, z: INSPECT.CENTRE.z, r };
+}
+// Zoning with the noted hazards counted twice and the shift's inspection adjustments (adj: +bonuses, -notes).
+export const zoningInspected = (strays, hazards = 0, noted = 0, adj = 0) =>
+  Math.max(0, Math.min(1, zoningWith(strays, hazards + noted) + adj));
+// The Board (bvtext.js kpiNoteOf reads mods.county.inspect): "INSPECTION · 4 HAZARDS · 0:45".
+export const inspectAlert = 'Inspection! Bag the hazards by the inspector!';   // 7 words, the one centre ALERT
+export const inspectWhere = n => `${n} HAZARD${n === 1 ? '' : 'S'}`;
+// The memo flavour after a clean inspection (builder 4's slot; 8 words).
+export const INSPECT_MEMO = "The inspector was impressed. He's from Site 13.";
+
+// ---- council round 12 #7b: spray chains ---------------------------------------------------------------------------------
+// A spray that wets a hazard wets every hazard within R m of it. Bag N wet hazards within SECS s (one Rat): CLEAN SWEEP,
+// a feed line, a chime, and ×2 on the Nth.
+export const CHAIN = { R: 3, N: 3, SECS: 6, PAY: 2 };
+// Mutates times (a Rat's recent bag times, oldest first). Returns true when this bag (at t) completes a sweep (and resets).
+export function sweepStep(times, t) {
+  while (times.length && t - times[0] > CHAIN.SECS) times.shift();
+  times.push(t);
+  if (times.length >= CHAIN.N) { times.length = 0; return true; }
+  return false;
+}

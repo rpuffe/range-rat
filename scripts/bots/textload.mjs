@@ -8,19 +8,27 @@
 // seconds, its centre items (a story beat counts once; its cards are listed), and when the memo (the day's target) shows.
 //
 // usage: node scripts/bots/textload.mjs [seeds=7,11,23] [N=4]     env REPO=<a checkout> measures another tree (a baseline)
-//        env V=1 prints each morning's item timeline
+//        env V=1 prints each morning's item timeline; env FULL=1 watches every whole shift
+//
+// Council round 12, 9.2 (builder 4): it measures what matters.
+//   - overlaps: two centre items up at once (a say.js item other than the bell's stamp while a story card is up, or a
+//     story card and a say item swapping in the same 0.1 s with no gap counts as nothing; only true co-presence counts).
+//     Counted as episodes over the whole watched window, not just the morning block. Target 0 everywhere.
+//   - the watch widens to the whole shift on boss days (crew.bossToday()), and at the Stadium and the County (the
+//     Stretch and Inspection Hour fire at T−3:30). `alerts` counts the ALERTs in the watched window.
+//   - the endless preset is a true first endless morning (council round 12, 9.1): the epilogue's story beat plays.
 import { readFileSync } from 'node:fs';
 const REPO = process.env.REPO ? new URL('file:///' + process.env.REPO.replace(/\\/g, '/').replace(/\/?$/, '/')).href : new URL('../../', import.meta.url).href;
 const { Crew } = await import(REPO + 'server/crew.mjs');
 const SAYM = await import(REPO + 'web/js/say.js');
 const { createStoryCard } = await import(REPO + 'web/js/storycard.js');
-const { PA_LINES } = await import(REPO + 'web/js/pa.js');
+const PAM = await import(REPO + 'web/js/pa.js'), { PA_LINES } = PAM;
 const S = await import(REPO + 'web/js/sim.js');
 const presetDir = new URL('server/presets/', REPO);
 
 const SEEDS = (process.argv[2] ?? '7,11,23').split(',').map(Number), N = +(process.argv[3] ?? 4), V = process.env.V === '1';
 const DT = 0.1, WINDOW = 120, MERGE = 1.5;
-const paSecs = line => (Math.max(4000, line.split(/\s+/).filter(Boolean).length * 380 + 1000) + 700) / 1000;   // pa.js secsFor
+const paSecs = line => (Math.max(PAM.MIN_SHOW_MS ?? 4000, line.split(/\s+/).filter(Boolean).length * 380 + 1000) + 700) / 1000;   // pa.js secsFor
 const preset = id => { const j = JSON.parse(readFileSync(new URL(id + '.json', presetDir), 'utf8')); return j.save ?? j; };
 
 function makeCrew(save, seed) {
@@ -37,6 +45,8 @@ function morning(env, tag) {
   crew.flush();
   for (const p of rats) crew.readyUp(p);
   if (crew.phase !== 'shift') return null;
+  const whole = process.env.FULL === '1' || !!crew.bossToday?.() || (!crew.endless && (crew.venue === 3 || crew.venue === 4));
+  const WIN = whole ? Math.max(WINDOW, crew.shiftSecs ?? 420) : WINDOW;
   let t = 0;
   const sayer = SAYM.createSayModel({ now: () => t });
   const card = createStoryCard({ sayer, now: () => t, tick: 0 });
@@ -57,12 +67,16 @@ function morning(env, tag) {
   const busy = [];   // [t, what] samples
   let prevVis = null, prevCard = null;
   const shown = [];
-  for (; t <= WINDOW; t = Math.round((t + DT) * 1000) / 1000) {
+  let overlaps = 0, overlapT = 0, inOverlap = false, alerts = 0;
+  for (; t <= WIN && crew.phase === 'shift'; t = Math.round((t + DT) * 1000) / 1000) {
     for (const e of crew.flush().ev ?? []) feed(e, t);
     for (let i = later.length - 1; i >= 0; i--) if (later[i].at <= t) { later[i].fn(); later.splice(i, 1); }
     sayer.update(); card.step();
     const vis = sayer.visible, c = card.card;
-    if (vis && vis !== prevVis) shown.push({ t, kind: vis.kind, text: vis.text, data: vis.data });
+    if (vis && vis !== prevVis) { shown.push({ t, kind: vis.kind, text: vis.text, data: vis.data }); if (vis.kind === 'ALERT') alerts++; }
+    const both = !!(vis && vis.kind !== 'STAMP' && c && card.up);   // two centre items at once
+    if (both) { overlapT += DT; if (!inOverlap) { overlaps++; if (V) console.log(`      !! overlap at ${t.toFixed(1)}: ${vis.kind} "${vis.text}" under "${c.line}"`); } }
+    inOverlap = both;
     if (c && card.beat && c !== prevCard) shown.push({ t, kind: 'CARD', text: c.line, beat: card.beat.id });
     prevVis = vis; prevCard = c;
     busy.push(vis || c ? 1 : 0);
@@ -81,7 +95,8 @@ function morning(env, tag) {
   const items = inBlock.filter(s => s.kind !== 'CARD').length + beats.size;
   const memos = inBlock.filter(s => s.kind === 'MEMO').length;
   const memoAt = inBlock.find(s => s.kind === 'MEMO' && s.data?.memo)?.t ?? null;
-  return { tag, day: crew.day, venue: crew.venue, vday: crew.venueDay, secs: +end.toFixed(1), items, memos, cards: inBlock.filter(s => s.kind === 'CARD').length, memoAt, shown: inBlock };
+  return { tag, day: crew.day, venue: crew.venue, vday: crew.venueDay, secs: +end.toFixed(1), items, memos, cards: inBlock.filter(s => s.kind === 'CARD').length, memoAt, shown: inBlock,
+    overlaps, overlapT: +overlapT.toFixed(1), alerts, win: whole ? 'shift' : WINDOW + ' s', epilogue: shown.some(s => s.beat === 'epilogue') };
 }
 // Play out the rest of the shift idle (to the bell and the report) so the next morning can start.
 function finishShift(env) {
@@ -112,9 +127,9 @@ for (const seed of SEEDS) {
 
 const pad = (s, n) => String(s).padEnd(n);
 console.log(`text load (${N}P, seeds ${SEEDS.join('/')}${process.env.REPO ? ', REPO ' + process.env.REPO : ''})`);
-console.log(pad('morning', 16) + pad('seed', 6) + pad('day', 5) + pad('v/vd', 7) + pad('secs', 7) + pad('items', 7) + pad('memos', 7) + pad('cards', 7) + 'memo at');
+console.log(pad('morning', 16) + pad('seed', 6) + pad('day', 5) + pad('v/vd', 7) + pad('secs', 7) + pad('items', 7) + pad('memos', 7) + pad('cards', 7) + pad('memo at', 9) + pad('overlap', 9) + pad('alerts', 8) + 'watched');
 for (const r of results) {
-  console.log(pad(r.tag + (r.promo ? ' *' : ''), 16) + pad(r.seed, 6) + pad(r.day, 5) + pad(`${r.venue}/${r.vday}`, 7) + pad(r.secs, 7) + pad(r.items, 7) + pad(r.memos, 7) + pad(r.cards, 7) + (r.memoAt ?? '-'));
+  console.log(pad(r.tag + (r.promo ? ' *' : ''), 16) + pad(r.seed, 6) + pad(r.day, 5) + pad(`${r.venue}/${r.vday}`, 7) + pad(r.secs, 7) + pad(r.items, 7) + pad(r.memos, 7) + pad(r.cards, 7) + pad(r.memoAt ?? '-', 9) + pad(r.overlaps + (r.overlaps ? ` (${r.overlapT}s)` : ''), 9) + pad(r.alerts, 8) + r.win + (r.epilogue ? ' · epilogue' : ''));
   if (V) for (const s of r.shown) console.log(`      ${s.t.toFixed(1).padStart(5)} ${pad(s.kind, 6)} ${s.text}${s.kind === 'MEMO' && s.data?.second ? '  / ' + s.data.second : ''}`);
 }
 const promos = results.filter(r => r.promo), club = results.filter(r => r.label === 'club' && r.i < 4);
@@ -122,3 +137,6 @@ const max = (a, k) => Math.max(...a.map(r => r[k]));
 console.log(`\npromotion mornings: max ${max(promos, 'secs')} s, max ${max(promos, 'items')} items  (target ≤ 28 s, ≤ 3 items)`);
 console.log(`Club days 1–4: max ${max(club, 'secs')} s  (target ≤ 22 s)`);
 console.log(`mornings with two or more memos: ${results.filter(r => r.memos > 1).length} of ${results.length}  (target 0)`);
+console.log(`overlaps (two centre items at once): ${results.reduce((a, r) => a + r.overlaps, 0)} in ${results.filter(r => r.overlaps).length} of ${results.length} watched windows  (target 0)`);
+const ep = results.filter(r => r.label === 'endless' && r.i === 0);
+console.log(`the first endless morning plays the epilogue: ${ep.filter(r => r.epilogue).length} of ${ep.length}; max ${ep.length ? max(ep, 'secs') : '-'} s  (target ≤ 28 s)`);

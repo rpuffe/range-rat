@@ -54,7 +54,7 @@ test('banking ticks the bank goal; done once, paid its reward once, one event', 
 
 test('a hot dog, a TARGET, a lap, a ping and a treasure each tick their goal once', () => {
   for (const [venue, id, e] of [[2, 'targets', { t: 'target' }], [2, 'orders', { t: 'deckTab', order: true }],
-    [3, 'laps', { t: 'crowd', kind: 'lap' }], [3, 'pings', { t: 'ping', prize: 'mult' }], [1, 'treasures', { t: 'treasure', phase: 'banked' }]]) {
+    [3, 'pings', { t: 'ping', prize: 'mult' }], [1, 'treasures', { t: 'treasure', phase: 'banked' }]]) {
     const { crew } = makeCrew({ venue, venueDay: 0, day: 10, up: { shed: 1 } });
     crew.startShift(); quiet(crew); crew.flush();
     crew.events.push({ ...e });

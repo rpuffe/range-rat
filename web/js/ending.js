@@ -103,7 +103,7 @@ export function createEnding({ scene, root, camera }) {
   // ---- the crack (council round 11 #4): Ball No. 1 opens on the return's lip and the note rises out of it ----
   // Three meshes (two gold halves and the curl of paper), built on first use, plus a warm light. Only now.
   let crackG = null, crackT = -1, halfTop = null, halfBot = null, paper = null, crackLight = null;
-  const CRACK = { HINGE: 0.6, RISE0: 0.45, RISE1: 1.4, RISE: 0.4, R: 0.17 };
+  const CRACK = { HINGE: 0.6, RISE0: 0.45, RISE1: 1.4, RISE: 0.4, R: 0.17, SCALE: 2.2 };
   function buildCrack() {
     crackG = new THREE.Group(); crackG.name = 'ball-one-crack'; crackG.visible = false; group.add(crackG);
     const tex = ballTexture();
@@ -120,11 +120,14 @@ export function createEnding({ scene, root, camera }) {
     paper.rotation.z = Math.PI / 2; crackG.add(paper);
     crackLight = new THREE.PointLight(0xffc870, 0, 6, 2); crackLight.position.y = 0.3; crackG.add(crackLight);
   }
-  // crack(x, y, z) opens it there; crack(null) puts it away (the next morning).
-  function crack(x, y, z) {
+  // crack(x, y, z, yaw) opens it there; crack(null) puts it away (the next morning). Council round 12 #3b: `yaw` turns
+  // its open side (+x) toward the viewer's camera, so every Rat sees into the locket; it sways a little, no spin.
+  let crackYaw = 0;
+  function crack(x, y, z, yaw = 0) {
     if (x == null) { if (crackG) crackG.visible = false; crackT = -1; return; }
     if (!crackG) buildCrack();
-    crackG.position.set(x, y, z); crackG.rotation.y = 0;
+    crackYaw = Number.isFinite(yaw) ? yaw : 0;
+    crackG.position.set(x, y, z); crackG.rotation.y = crackYaw; crackG.scale.setScalar(CRACK.SCALE);   // council round 12 #3b: big enough to read in frame
     halfTop.rotation.z = 0; halfBot.rotation.z = 0; paper.position.y = 0; crackLight.intensity = 0;
     crackG.visible = true; crackT = 0;
   }
@@ -138,7 +141,7 @@ export function createEnding({ scene, root, camera }) {
     paper.position.y = r * CRACK.RISE + Math.sin(crackT * 1.7) * 0.015 * r;
     paper.rotation.y = crackT * 0.6;
     crackLight.intensity = 3.5 * sm(0.2, 0.9, crackT) * (0.9 + 0.1 * Math.sin(crackT * 9));
-    crackG.rotation.y += dt * 0.15;
+    crackG.rotation.y = crackYaw + 0.12 * Math.sin(crackT * 0.8);   // council round 12 #3b: a sway, facing the viewer
   }
 
   // ---- huddle banner ----

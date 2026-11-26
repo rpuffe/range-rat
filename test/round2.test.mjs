@@ -297,7 +297,9 @@ test('every later venue has its reveal line', () => {
     crew.startShift();
     const ev = events(crew);
     assert.ok(ev.find(e => e.t === 'reveal' && e.venue === v), 'reveal ' + v);
-    assert.ok(ev.find(e => e.t === 'pa' && e.id === VENUE_RULES[v].pa), 'pa ' + VENUE_RULES[v].pa);
+    // Council round 12, 4c: the Stadium's reveal plays no PA (the newsreel card says it); the others still do.
+    if (v === 3) assert.ok(!ev.some(e => e.t === 'pa' && (e.id === 'stadium' || e.id == null)), 'no Stadium reveal PA');
+    else assert.ok(ev.find(e => e.t === 'pa' && e.id === VENUE_RULES[v].pa), 'pa ' + VENUE_RULES[v].pa);
   }
 });
 

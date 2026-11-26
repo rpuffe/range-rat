@@ -252,6 +252,8 @@
     }
    ]
   },
-  "test": true
- }
+  "test": true,
+  "endlessFresh": true
+ },
+ "note": "Council round 12, 9.1: a true first endless morning (endlessFresh: the epilogue plays, no contract offers, no owners book)."
 }

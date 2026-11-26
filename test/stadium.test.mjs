@@ -154,7 +154,9 @@ test('a seeded shift: no laps fails; 60 s of laps at Last Call fails; one Rat la
   const { crew, kpi } = lapShift([[0, S]]);
   assert.ok(kpi >= 0.5, `graded ${kpi}`);
   const snap = crew.snapshot().mods.stadium;
-  assert.ok(snap.s != null && snap.k != null && snap.s !== snap.k, 'the snapshot carries the live s and the graded k');
+  // Council round 12 #2: with the Stretch's request pause, this seed's lapper ends on a full live crowd and a full window
+  // (s and k both 1), so the shape is checked here and the graded k is pinned on the next line.
+  assert.ok(snap.s != null && snap.k != null, 'the snapshot carries the live s and the graded k');
   assert.equal(snap.k, Math.round(kpi * 1000) / 1000);
 });
 

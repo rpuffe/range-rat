@@ -109,13 +109,13 @@ test('contracts: three offers, one of each star count, three different modifiers
   assert.equal(cleanContract({ mod: { id: 'nope' }, goal: { k: 'cash', n: 1 } }), null);
 });
 
-test('cosmetics: one every 10 stars, cheap recolours; the locker cycles only what is unlocked', () => {
-  COSMETICS.forEach((c, i) => { assert.equal(c.stars, 10 * (i + 1)); assert.ok(['hat', 'vest', 'cart'].includes(c.part)); assert.ok(Number.isInteger(c.hex)); });
-  assert.equal(unlockedLooks(9).length, 0); assert.equal(unlockedLooks(10).length, 1); assert.equal(unlockedLooks(35).length, 3);
-  assert.equal(nextLook(10).stars, 20); assert.equal(nextLook(1000), null);
-  assert.equal(newlyUnlocked(8, 11).id, 'hat-teal'); assert.equal(newlyUnlocked(11, 12), null); assert.equal(newlyUnlocked(18, 31).id, 'vest-pink');
-  assert.ok(canWear('hat-teal', 'hat', 10)); assert.ok(!canWear('hat-teal', 'hat', 9)); assert.ok(!canWear('hat-teal', 'vest', 99)); assert.ok(canWear(null, 'cart', 0));
-  assert.equal(cycleLook(null, 'hat', 45), 'hat-teal'); assert.equal(cycleLook('hat-teal', 'hat', 45), 'hat-black'); assert.equal(cycleLook('hat-black', 'hat', 45), null);
+test('cosmetics: one every 5 stars from 3 (council round 12 #6d), cheap recolours; the locker cycles only what is unlocked', () => {
+  COSMETICS.forEach((c, i) => { assert.equal(c.stars, 3 + 5 * i); assert.ok(['hat', 'vest', 'cart'].includes(c.part)); assert.ok(Number.isInteger(c.hex)); });
+  assert.equal(unlockedLooks(2).length, 0); assert.equal(unlockedLooks(3).length, 1); assert.equal(unlockedLooks(13).length, 3);
+  assert.equal(nextLook(3).stars, 8); assert.equal(nextLook(1000), null);
+  assert.equal(newlyUnlocked(1, 4).id, 'hat-teal'); assert.equal(newlyUnlocked(4, 5), null); assert.equal(newlyUnlocked(7, 14).id, 'vest-pink');
+  assert.ok(canWear('hat-teal', 'hat', 3)); assert.ok(!canWear('hat-teal', 'hat', 2)); assert.ok(!canWear('hat-teal', 'vest', 99)); assert.ok(canWear(null, 'cart', 0));
+  assert.equal(cycleLook(null, 'hat', 20), 'hat-teal'); assert.equal(cycleLook('hat-teal', 'hat', 20), 'hat-black'); assert.equal(cycleLook('hat-black', 'hat', 20), null);
   assert.equal(cycleLook(null, 'vest', 5), null, 'nothing unlocked: stays standard');
   assert.deepEqual(cleanLooks({ Ann: { hat: 'hat-teal', vest: 'cart-gold' }, Bob: { hat: 'x' }, ['x'.repeat(20)]: { hat: 'hat-teal' } }), { Ann: { hat: 'hat-teal' } });
 });
@@ -236,23 +236,23 @@ test('server: endless contracts: offers at the report, any Rat picks, the mornin
 });
 
 test('server: stars unlock cosmetics; the locker refuses what is locked; looks, paint, stars and the night are saved', () => {
-  const { crew, rats } = crewAt({ v: 5, day: 30, venue: 5, endless: true, stars: 25 });
+  const { crew, rats } = crewAt({ v: 5, day: 30, venue: 5, endless: true, stars: 10 });   // council round 12 #6d: 3, 8, 13, …
   const [a] = rats;
   crew.input(a, { a: [{ t: 'look', part: 'hat', id: 'hat-teal' }, { t: 'look', part: 'cart', id: 'cart-gold' }, { t: 'look', part: 'vest', id: 'vest-pink' }] });
-  assert.deepEqual(crew.looks, { Rat0: { hat: 'hat-teal' } }, 'the vest needs 30 stars');
+  assert.deepEqual(crew.looks, { Rat0: { hat: 'hat-teal' } }, 'the vest needs 13 stars');
   assert.equal(crew.cartPaint, 'cart-gold');
   const sp = crew.snapshot();
   assert.deepEqual(sp.players.find(p => p.id === a.id).look, { hat: 'hat-teal' });
-  assert.equal(sp.cartPaint, 'cart-gold'); assert.equal(sp.stars, 25);
+  assert.equal(sp.cartPaint, 'cart-gold'); assert.equal(sp.stars, 10);
   crew.input(a, { a: [{ t: 'look', part: 'hat', id: null }] });
   assert.deepEqual(crew.looks, {});
   crew.input(a, { a: [{ t: 'look', part: 'hat', id: 'hat-teal' }] });
   crew.startShift(); crew.contract = null; crew.endShift();
   const save = JSON.parse(JSON.stringify(crew.toSave()));
-  assert.equal(save.stars, 25); assert.deepEqual(save.looks, { Rat0: { hat: 'hat-teal' } }); assert.equal(save.cartPaint, 'cart-gold');
+  assert.equal(save.stars, 10); assert.deepEqual(save.looks, { Rat0: { hat: 'hat-teal' } }); assert.equal(save.cartPaint, 'cart-gold');
   assert.ok(save.night && save.night.rats.length === 2);
   const back = new Crew('TDAY', save, { shiftSecs: 120, seed: 3 });
-  assert.equal(back.stars, 25); assert.deepEqual(back.looks, { Rat0: { hat: 'hat-teal' } }); assert.equal(back.cartPaint, 'cart-gold');
+  assert.equal(back.stars, 10); assert.deepEqual(back.looks, { Rat0: { hat: 'hat-teal' } }); assert.equal(back.cartPaint, 'cart-gold');
   // "Previously on Range Rat": the welcome carries the saved card until this session's first bell
   const p = back.join('Rat0');
   const w = back.welcome(p.id);

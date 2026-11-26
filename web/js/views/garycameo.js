@@ -10,6 +10,7 @@
 // he's on show. No per-frame allocation.
 import * as THREE from 'three';
 import { buildPerson, animatePerson } from '../people.js';
+import { clampBubbleY } from '../bubbleclamp.js';   // council round 12 9.5 (builder 4's hand-off): the bubble never covers the HUD
 
 export const CAMEO = Object.freeze({
   RIDE_SECS: 30,          // the whole ride: board, up, the view, down, step off
@@ -17,6 +18,8 @@ export const CAMEO = Object.freeze({
   NEAR: 3,                // a Rat this close to him at the return gets his bubble
   BUBBLE: 'Where do these go, boss?',
   BUBBLE_SECS: 5,
+  RIDE_SCALE: 1.3,       // council round 12 #3c: he reads at 800 × 600 from the reveal camera's Lift shot
+  FACE: -1.45,            // council round 12 #3d: at the return he faces the crew (−x) and the reveal's case shot (C #11: his back was to them)
   ROOF: 1.65,             // the car's roof above its centre (venues.js: a 2.4 m box + the 0.5 m green cap at +1.4)
   SPOT: Object.freeze({ dx: -2.4, dz: 1.3 }),   // at the return (SIM.STAND), beside it, facing the mats
 });
@@ -54,6 +57,7 @@ function bubbleSprite(text) {
 export function createGaryCameo(scene) {
   let fig = null, tie = null, bubble = null, root = null;
   let rideT = -1, atReturn = null, bubbleT = 0, bubbled = false, clock = 0;
+  const BUBBLE_Y = 2.35, scratch = new THREE.Vector3();
   function build() {
     if (root) return;
     root = new THREE.Group(); root.name = 'gary-cameo'; root.visible = false; scene.add(root);
@@ -64,22 +68,22 @@ export function createGaryCameo(scene) {
     const quad = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.36), new THREE.MeshLambertMaterial({ color: 0xb3261e, side: THREE.DoubleSide }));
     quad.position.y = -0.18; tie.add(quad);
     fig.parts.torso.add(tie);
-    bubble = bubbleSprite(CAMEO.BUBBLE); bubble.position.y = 2.35; bubble.visible = false; root.add(bubble);
+    bubble = bubbleSprite(CAMEO.BUBBLE); bubble.position.y = BUBBLE_Y; bubble.visible = false; root.add(bubble);
   }
   return {
     // The Lift ride starts now (the Orbital's promotion beat).
-    ride() { build(); rideT = 0; atReturn = null; fig.setCarry('none'); },
+    ride() { build(); rideT = 0; atReturn = null; fig.setCarry('none'); root.scale.setScalar(CAMEO.RIDE_SCALE); },
     // He stands at the return (spot: {x, z}) until stand(null).
     stand(spot) {
       if (!spot) { atReturn = null; if (root && rideT < 0) root.visible = false; return; }
-      build(); atReturn = spot; rideT = -1; bubbled = false; bubbleT = 0; fig.setCarry('bucket');
+      build(); atReturn = spot; rideT = -1; bubbled = false; bubbleT = 0; fig.setCarry('bucket'); root.scale.setScalar(1);
     },
     get riding() { return rideT >= 0 && rideT < CAMEO.RIDE_SECS; },
     get standing() { return !!atReturn; },
     // The Lift car's height this ride wants (0 when he isn't riding): views/orbit.js lifts the car with it.
     rideY() { return this.riding ? liftRideY(rideT) : 0; },
     // Every frame. lift: { x, z, carY } (the car's centre now); rats: [{ x, z, ok }] (for the bubble).
-    tick(dt, { lift = null, rats = null } = {}) {
+    tick(dt, { lift = null, rats = null, camera = null } = {}) {
       if (!root) return;
       clock += dt;
       if (rideT >= 0) {
@@ -99,12 +103,14 @@ export function createGaryCameo(scene) {
       if (!atReturn) { root.visible = false; return; }
       root.visible = true;
       root.position.set(atReturn.x, 0, atReturn.z);
-      root.rotation.y = -Math.PI / 2;   // facing the return and the bank (+x), where the Rats come
+      root.rotation.y = CAMEO.FACE;   // council round 12 #3d: facing the crew, beside the glass case
       tie.rotation.x = -0.35; tie.rotation.z = 0.25 + 0.04 * Math.sin(clock * 1.3);   // tie loose
       animatePerson(fig, dt, { mode: 'idle' });
       if (!bubbled && firstNear(rats, atReturn)) { bubbled = true; bubbleT = CAMEO.BUBBLE_SECS; }
       if (bubbleT > 0) bubbleT = Math.max(0, bubbleT - dt);
       bubble.visible = bubbleT > 0;
+      // At the return the root is at ground level, scale 1: the bubble's local y is its world height.
+      if (bubble.visible && camera) bubble.position.y = clampBubbleY(BUBBLE_Y, { x: atReturn.x, z: atReturn.z, half: bubble.scale.y / 2 }, camera, scratch);
     },
   };
 }

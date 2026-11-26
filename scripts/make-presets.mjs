@@ -70,6 +70,8 @@ const made = new Date().toISOString().slice(0, 10);
 for (const p of PRESETS) {
   const s = need(picks[p.id], p.label);
   const save = normalise(s.save);
+  // Council round 12, 9.1: the endless preset is a true first endless morning (the epilogue plays; no offers, no owners' book).
+  if (p.id === 'endless') { save.endlessFresh = true; delete save.offers; delete save.contractPick; for (const k of ['yesterday', 'streak', 'owner', 'rival']) delete save.records?.[k]; }
   const file = { id: p.id, label: p.label, made, bot: `${N}P seed ${SEED}, ${s.tag} snap`, players: N, save };
   writeFileSync(join(OUT, `${p.id}.json`), JSON.stringify(file, null, 1) + '\n');
   console.log(`  ${p.id.padEnd(10)} day ${String(save.day).padStart(2)} venue ${save.venue} vd ${save.venueDay}${save.endless ? ' endless' : ''} cash $${Math.round(save.cash).toLocaleString()} outstanding ${save.outstanding.toLocaleString()} treasures ${save.lostFound?.length ?? 0} up ${JSON.stringify(save.up)}`);

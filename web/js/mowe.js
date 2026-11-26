@@ -118,7 +118,7 @@ export const mowerBoard = s => s && s.phase === 'warn' ? `MOW-E · BY ${laneName
 //   warn     15 s build-up in the shed (the PA, the Board countdown, the striped near lanes, speeding beeps)
 //   harvest  a serpentine along the three near lanes at 3.5 m/s, eating resting balls within 3 m (up to 40 s)
 //   hunt     from half HP (or 40 s): it hunts the nearest Rat on foot, re-aiming every 3 s, turning 120°/s
-//   plug     at HP 0 it chokes: hold Use in the ring at its back (2.4 s ÷ min(3, holders)); 10 s idle reboots it at 1 HP
+//   plug     at HP 0 it chokes and crawls home: hold Use in the ring at its back (a tug-of-war, round 12); 10 s idle reboots it
 //   tamed    the win: it limps into the pond and sinks (s.out 'limp' → 'sink' → 'gone')
 //   fled     the loss: the 100 s cap ran out, it drives home to the shed (s.out 'home' → 'gone')
 // Yaw: as the legacy mower and the Rats (atan2(-dx, -dz)): forward is (-sin yaw, -cos yaw).
@@ -141,29 +141,47 @@ export const BOSS = {
   POND: { x: -12, z: -78, r: 8 },   // MAP.POND (the win's cutscene; test/boss.test.mjs checks it matches)
   BURST: 7,                 // m/s out of the shed to the first lane
   SPEED: 3.5,               // m/s, the harvest (a walking Rat, 4.2, keeps up)
-  EAT_R: 3,                 // m: every resting ball this close goes in the catcher
-  CATCHER: 30,              // ...until it's full (the bag at its biggest): a win pays at most 60 balls from it
-  HIT_SECS: 2,              // seconds of spray a hit (÷ the nozzle's washRate; several hosers add up; halved while stalled)
+  EAT_R: 3,                 // m: a resting ball this close can go in the catcher...
+  EAT_EVERY: 0.6, GRAZE: 0.35,           // ...one every 0.6 s (council round 12 #5c: an unblocked harvest fills 30 in ~18 s; a block shrinks it)
+  CATCHER: 30,              // ...until it's full (the bag at its biggest): a win fountains at most 30 MOW-E balls (×2 each)
+  HIT_SECS: 2,              // seconds of spray that fill YOUR meter (÷ the nozzle's washRate; twice as fast while stalled)
+  // Council round 12 #1a: each Rat has their own hit meter (no shared vent). A full meter is your hit, and YOUR nozzle
+  // cools 8 s. Two or more Rats spraying it at once fill ×1.25 (crossfire). After any hit, 1 s where no meter fills.
+  // A meter unsprayed for 1 s drains 0.5/s. The harvest's bolt fires at most once every 8 s.
+  COOL_ME: 8, CROSSFIRE: 1.25, CROSS_WIN: 0.4, STAGGER_ALL: 1.0, DECAY: 0.5, DECAY_AFTER: 1, BOLT_COOL: 8,
   REAR_COS: Math.cos(110 * D2R),   // the grille: the Rat must stand more than 110° off its nose
   BODY_R: 1.2,              // m, added to the wand's reach
   STAGGER: 1,               // s it stops after a hit
-  VENT: 6, VENT_N: 2,       // s after a hit its grille is shut (smoke; +2 s a Rat past the first): spray lands, does nothing
   BOLT: 5.5, BOLT_SECS: 2.5,   // in the harvest a hit makes it bolt (after the stagger): the hosers must catch it again
   RAGE: 3,                  // s it revs and turns on the crew at the hunt's start (and a reboot): no damage
   STALL: 6, SHOVE: 4, SHOVE_MUD: 0.4, COOL: 8, CART_STOP: 3,   // a cart in front: 6 s stall, shoved 4 m aside, 8 s cooldown
+  // Round 12 #1b, by crew size [-, 1P, 2P, 3P, 4P, 5P, 6P]: HP (crewHP) and the seconds of spray a hit (meterSecs, ÷ washRate).
+  // The council's 3/4/6/7 with a 2 s meter gave 4P fights of 26–35 s (bots): per-Rat meters make the crew's damage scale
+  // with its size, so 3P+ get more pips and a bigger meter (design/round14-mowe.md has the sweep).
+  HP_BY_N: [3, 3, 4, 9, 12, 13, 14],
+  METER_BY_N: [2, 2, 2, 3, 4, 4, 4],
   HARVEST_MAX: 40,
   REAIM: 3, TURN: 120 * D2R,
   KNOCK_R: 1.3, KNOCK_R_SOLO: 1.0, IMMUNE: 5,
-  PLUG_SECS: 2.4, PLUG_MAX: 3, PLUG_IDLE: 10,
+  PLUG_IDLE: 10,
+  // Council round 12 #1c, the plug as a tug-of-war: it crawls home at 1 m/s dragging the ring; the bar fills at
+  // (holders ÷ crew online) ÷ 3 s; every 1.5 s it yanks (0.5 m, and −0.06 unless half the crew holds); nobody holding
+  // drains 0.1/s. A Rat holding in the ring walks at 2 m/s (the client's cap).
+  PULL_SECS: 3, CRAWL: 1.0, CRAWL_TURN: 25 * D2R, YANK: 1.5, YANK_LOSS: 0.06, YANK_JERK: 0.5, PULL_DRAIN: 0.1, HOLD_WALK: 2.0,
   RING_R: 1.25, RING_BACK: 2.4, RING_SLACK: 1.0,    // the ring is 2.5 m across, 2.4 m behind its centre (+1 m of slack)
-  // The win: eaten ×2; a gold ball per Rat ("everyone grabs one", at most 5); Corporate's bounty, 10 × BV. Measured (bots,
-  // design/round13-mowe.md): a 4P Club day-3 shift is ~575 ball-weights, so the council's 5 gold + 100 × BV alone was ~26 %.
-  PAYX: 2, GOLD: 5, GOLD_R: 6, BOUNTY: 10,
-  LIMP: 4, HOME: 5, SINK: 3, AFTER: 30,              // the outros (m/s, s) and how long the Board keeps the result
+  // The win (council round 12 #5b): the catcher bursts on the spot, every eaten ball a resting MOW-E ball worth ×2
+  // within FOUNT_R of the ring (the bell banks leftovers ×1); a gold ball per Rat (at most 5) within GOLD_R of the ring;
+  // Corporate's bounty, 10 × BV.
+  PAYX: 2, GOLD: 5, GOLD_R: 6, FOUNT_R: 8, BOUNTY: 10,
+  LIMP: 6, LIMP_SECS: 8.5, HOME: 5, SINK: 3, AFTER: 30,   // the outros (m/s; the limp speeds up to reach the pond in 8.5 s)
   ENCORE_HP: 1, ENCORE_SPEED: 1.1,
 };
-// The tame pet (§2.4): two passes a shift, at 25 % and 60 %, at every venue from the morning after the boss.
-export const TAME = { AT: [0.25, 0.6], SPEED: 4, OUT: 7, HOME: 5, HALF: 3, GATHER_X: 1.5, STOP: 2.7, CREEP: 6, BEEP: 1.5 };
+// The tame pet, at every venue from the morning after the boss. Council round 12 #5d: three passes a shift (20 %, 45 %,
+// 70 %), each to the field's richest spot (a RUN m drive either side of it, gathering ±HALF m, up to CAP a pass), then
+// the nearest return. Plus the whistle: once a shift, Use at the MOW-E post by the return sends a bonus pass now.
+export const TAME = { AT: [0.2, 0.45, 0.7], SPEED: 4, OUT: 7, HOME: 5, HALF: 4, GATHER_X: 1.5, STOP: 2.7, CREEP: 6, BEEP: 1.5,
+  CAP: 25, RUN: 25, BOX: { x0: -60, x1: 60, z0: -180, z1: -10 } };
+export const WHISTLE = { POST: { x: 31.5, z: 1.2 }, R: 2.2 };
 
 // The centre lines (each <= 8 words) and the memo's second lines. `btn` is the Use glyph ('Ⓐ', or 'Space').
 export const BOSS_LINES = {
@@ -177,11 +195,14 @@ export const BOSS_LINES = {
   regards: 'MOW-E sends his regards.',
   warranty: "MOW-E's warranty expired. He's yours now.",
   kept: n => `MOW-E kept ${n} balls.`,
+  whistle: (btn = 'Ⓐ') => `${btn}: whistle for MOW-E`,
 };
 
 const clampN = n => Math.max(1, Math.min(6, Math.floor(Number(n) || 1)));
-// §2.3: HP by crew size (solo and 2P 3, 3–4P 4, 5–6P 5) and the hunt's speed (4.0, 4.2, 4.4, 4.6, 4.8, 5.0 m/s).
-export const crewHP = n => { n = clampN(n); return n <= 2 ? 3 : n <= 4 ? 4 : 5; };
+// Council round 12 #1b: HP by crew size (1P 3, 2P 4, 3P 9, 4P 12, 5P 13, 6P 14), so a 4P fight is long enough to share;
+// the hunt's speed (4.0, 4.2, 4.4, 4.6, 4.8, 5.0 m/s).
+export const crewHP = n => BOSS.HP_BY_N[clampN(n)];
+export const meterSecs = n => BOSS.METER_BY_N[clampN(n)] ?? BOSS.HIT_SECS;
 export const huntSpeed = n => [4.0, 4.0, 4.2, 4.4, 4.6, 4.8, 5.0][clampN(n)];
 
 // Is today a boss day? 'club' (the fight or its rematch), 'encore' (MOW-E 2.0) or null. st: the save's
@@ -206,12 +227,21 @@ export function newBoss({ n = 4, encore = false, lost = 0 } = {}) {
   const k = encore ? BOSS.ENCORE_SPEED : 1;
   return {
     kind: 'boss', encore: !!encore, n, phase: 'warn', t: BOSS.WARN, ph: 0, ft: 0, cap: BOSS.CAP, clock: 0,
-    hp: hpMax, hpMax, speed: BOSS.SPEED * k, hunt: huntSpeed(n) * k, knockR: n === 1 ? BOSS.KNOCK_R_SOLO : BOSS.KNOCK_R,
+    hp: hpMax, hpMax, meterSecs: meterSecs(n), speed: BOSS.SPEED * k, hunt: huntSpeed(n) * k, knockR: n === 1 ? BOSS.KNOCK_R_SOLO : BOSS.KNOCK_R,
     x: BOSS.SHED.x, z: BOSS.SHED.z, yaw: Math.atan2(-(WP[0].x - BOSS.SHED.x), -(WP[0].z - BOSS.SHED.z)),
-    wp: 0, burst: true, eaten: 0, eatenW: 0, acc: 0, stagger: 0, stall: 0, stallCart: -1, cool: {},
-    target: null, aimT: 0, aim: null, immune: {}, vent: 0, ventSecs: BOSS.VENT + BOSS.VENT_N * (n - 1), rage: 0, bolt: 0, seekT: 0, goal: null, plug: 0, idle: 0, holders: 0, ring: null, rebooted: 0,
+    wp: 0, burst: true, eaten: 0, eatenW: 0, eatT: BOSS.EAT_EVERY, stagger: 0, stall: 0, stallCart: -1, cool: {},
+    target: null, aimT: 0, aim: null, immune: {}, rage: 0, bolt: 0, boltNext: 0, seekT: 0, goal: null,
+    meter: {}, coolMe: {}, sprayAt: {}, allUntil: 0,   // round 12 #1a: per-Rat meters (id → 0..1), cooled-until, last spray, the global stagger
+    plug: 0, idle: 0, holders: 0, crew: n, ring: null, ring0: null, yankT: 0, yanks: 0, limp: BOSS.LIMP, rebooted: 0,
     hits: 0, by: {}, knocks: 0, stalls: 0, out: null, sink: 0, moving: false,
   };
+}
+// Round 12 #1a: is that Rat's nozzle cooling? Seconds left (0: no).
+export const coolLeft = (s, id) => Math.max(0, (s?.coolMe?.[id] ?? 0) - (s?.clock ?? 0));
+// Is anyone else spraying it right now (crossfire)? A cooled Rat's spray doesn't count.
+function crossfire(s, id) {
+  for (const k in s.sprayAt) if (k !== String(id) && s.sprayAt[k] >= s.clock - BOSS.CROSS_WIN && !(coolLeft(s, k) > 0)) return true;
+  return false;
 }
 
 const fwd = s => ({ x: -Math.sin(s.yaw), z: -Math.cos(s.yaw) });
@@ -234,8 +264,12 @@ export const bossFighting = s => !!s && s.kind === 'boss' && (s.phase === 'harve
 function setPhase(s, ph, out) {
   s.phase = ph; s.ph = 0; if (out) out.phase = ph;
   if (ph === 'hunt') { s.aimT = 0; s.target = null; s.rage = BOSS.RAGE; s.acc = 0; }
-  if (ph === 'plug') { s.plug = 0; s.idle = 0; s.stall = 0; s.stallCart = -1; s.stagger = 0; s.target = null; s.ring = ringOf(s); s.moving = false; }
-  if (ph === 'tamed') { s.out = 'limp'; s.t = 0; s.ring = null; s.target = null; }
+  if (ph === 'plug') { s.plug = 0; s.idle = 0; s.stall = 0; s.stallCart = -1; s.stagger = 0; s.target = null; s.ring = ringOf(s); s.ring0 = { ...s.ring }; s.yankT = 0; s.moving = false; }
+  if (ph === 'tamed') {
+    s.burstAt = s.ring ? { ...s.ring } : ringOf(s);   // round 12 #5b: where the catcher bursts and the gold lands
+    const b = pondBank(s); s.limp = Math.max(BOSS.LIMP, Math.hypot(b.x - s.x, b.z - s.z) / BOSS.LIMP_SECS);   // the splash is in ~9 s
+    s.out = 'limp'; s.t = 0; s.ring = null; s.target = null;
+  }
   if (ph === 'fled') { s.out = 'home'; s.t = 0; s.ring = null; s.target = null; s.stall = 0; s.stagger = 0; }
 }
 
@@ -267,9 +301,9 @@ const inBox = s => {
 };
 const inArena = b => { const B = BOSS.BOX; return b.x >= B.x0 && b.x <= B.x1 && b.z >= B.z0 && b.z <= B.z1 && Math.hypot(b.x - BOSS.HOSE.x, b.z - BOSS.HOSE.z) <= BOSS.HOSE.r; };
 // The harvest's goal: the resting ball in the arena with the most others within SEEK_R (ties: the nearest), or null.
-export function richest(s, balls) {
+export function richest(s, balls, within = inArena) {
   const bs = [];
-  for (const b of balls instanceof Map ? balls.values() : balls ?? []) if (eatable(b) && inArena(b)) bs.push(b);
+  for (const b of balls instanceof Map ? balls.values() : balls ?? []) if (eatable(b) && within(b)) bs.push(b);
   let best = null, bn = 0, bd = Infinity;
   const R = BOSS.SEEK_R;
   for (const a of bs) {
@@ -310,17 +344,27 @@ const pondBank = s => {
 
 // Spray from a Rat on foot with the wand. secs: seconds of spray (crew.wash's clamp); rate: the nozzle's washRate;
 // reach: the wand's reach. Returns { ok, why?, hit?, hp?, phase? }: ok false when it isn't hittable from there.
+// Round 12 #1a: the spray fills THAT Rat's meter (cool: your nozzle is cooling; stagger: the 1 s after any hit; fill:
+// it counted, cross: with crossfire).
 export function hoseBoss(s, rat, secs, { rate = 1, reach = 7 } = {}) {
   if (!bossFighting(s) || !(secs > 0)) return { ok: false, why: 'idle' };
   if (Math.hypot(rat.x - s.x, rat.z - s.z) > reach + BOSS.BODY_R) return { ok: false, why: 'far' };
   if (!behind(s, rat)) return { ok: false, why: 'front' };
-  if (s.vent > 0 || s.rage > 0) return { ok: true, hit: false, why: 'shut' };   // the grille is shut: it lands, it does nothing
-  s.acc += secs * rate * (s.stall > 0 ? 2 : 1);
-  if (s.acc < BOSS.HIT_SECS) return { ok: true, hit: false };
-  s.acc = 0; s.hp = Math.max(0, s.hp - 1); s.hits++; s.by[rat.id] = (s.by[rat.id] ?? 0) + 1;
-  if (s.stall <= 0) { s.stagger = BOSS.STAGGER; if (s.phase === 'harvest') s.bolt = BOSS.BOLT_SECS; }
-  s.vent = s.ventSecs ?? BOSS.VENT;
-  const out = { ok: true, hit: true, hp: s.hp, phase: null };
+  const id = rat.id;
+  if (s.rage > 0) return { ok: true, hit: false, why: 'shut' };   // it revs and turns: the grille is shut
+  if (coolLeft(s, id) > 0) return { ok: true, hit: false, why: 'cool' };   // your nozzle sputters grey
+  s.sprayAt[id] = s.clock;
+  if (s.clock < s.allUntil) return { ok: true, hit: false, why: 'stagger' };
+  const cross = crossfire(s, id);
+  s.meter[id] = (s.meter[id] ?? 0) + secs * rate * (s.stall > 0 ? 2 : 1) * (cross ? BOSS.CROSSFIRE : 1) / (s.meterSecs ?? BOSS.HIT_SECS);
+  if (s.meter[id] < 1 - 1e-9) return { ok: true, hit: false, fill: true, cross };
+  s.meter[id] = 0; s.coolMe[id] = s.clock + BOSS.COOL_ME; s.allUntil = s.clock + BOSS.STAGGER_ALL;
+  s.hp = Math.max(0, s.hp - 1); s.hits++; s.by[id] = (s.by[id] ?? 0) + 1;
+  if (s.stall <= 0) {
+    s.stagger = BOSS.STAGGER;
+    if (s.phase === 'harvest' && s.clock >= s.boltNext) { s.bolt = BOSS.BOLT_SECS; s.boltNext = s.clock + BOSS.BOLT_COOL; }
+  }
+  const out = { ok: true, hit: true, fill: true, cross, hp: s.hp, phase: null };
   if (s.hp <= 0) setPhase(s, 'plug', out);
   else if (s.phase === 'harvest' && s.hp <= Math.ceil(s.hpMax / 2)) setPhase(s, 'hunt', out);
   return out;
@@ -332,7 +376,7 @@ export function hoseBoss(s, rat, secs, { rate = 1, reach = 7 } = {}) {
 //   shove { i, dx, dz } (move that cart, +SHOVE_MUD), honk (a cart stalled it), target (the hunt picked a new Rat;
 //   null: none; undefined: no change), reboot, sunk (the win's pond), home (the loss reached the shed).
 export function stepBoss(s, dt, ctx = {}) {
-  const out = { eaten: [], knocked: [], phase: null, shove: null, honk: false, target: undefined, reboot: false, sunk: false, home: false };
+  const out = { eaten: [], knocked: [], phase: null, shove: null, honk: false, target: undefined, reboot: false, sunk: false, home: false, yank: false };
   if (!s || s.kind !== 'boss') return out;
   s.clock += dt;
   const rats = ctx.rats ?? [];
@@ -341,28 +385,47 @@ export function stepBoss(s, dt, ctx = {}) {
     if (s.t <= 0) { s.t = 0; setPhase(s, 'harvest', out); }
     return out;
   }
-  if (s.phase === 'plug') {
-    const hold = rats.filter(r => r.holding && r.online !== false && !(r.down > 0) && !r.driving && !r.diving && inRing(s, r));
-    s.holders = Math.min(BOSS.PLUG_MAX, hold.length);
-    if (s.holders > 0) {
-      s.idle = 0; s.plug = Math.min(1, s.plug + dt * s.holders / BOSS.PLUG_SECS);
+  if (s.phase === 'plug') {   // round 12 #1c: the tug-of-war
+    let online = 0, hold = 0;
+    for (const r of rats) {
+      if (r.online === false) continue;
+      online++;
+      if (r.holding && !(r.down > 0) && !r.driving && !r.diving && inRing(s, r)) hold++;
+    }
+    online = Math.max(1, online); s.holders = hold; s.crew = online;
+    // It crawls home, dragging the ring, and lurches every YANK s.
+    steer(s, BOSS.SHED.x, BOSS.SHED.z, BOSS.CRAWL, dt, BOSS.CRAWL_TURN); inBox(s);
+    if ((s.yankT += dt) >= BOSS.YANK) {
+      s.yankT -= BOSS.YANK; s.yanks++; out.yank = true;
+      const f = fwd(s); s.x += f.x * BOSS.YANK_JERK; s.z += f.z * BOSS.YANK_JERK; inBox(s);
+      if (hold * 2 < online) s.plug = Math.max(0, s.plug - BOSS.YANK_LOSS);
+    }
+    s.ring = ringOf(s);
+    if (hold > 0) {
+      s.idle = 0; s.plug = Math.min(1, s.plug + dt * hold / online / BOSS.PULL_SECS);
       if (s.plug >= 1 - 1e-9) setPhase(s, 'tamed', out);
-    } else if ((s.idle += dt) >= BOSS.PLUG_IDLE) {
-      s.hp = 1; s.cap += BOSS.REBOOT_CAP; s.plug = 0; s.idle = 0; s.rebooted++; s.ring = null;
-      setPhase(s, 'hunt', out); out.reboot = true;
+    } else {
+      s.plug = Math.max(0, s.plug - BOSS.PULL_DRAIN * dt);
+      if ((s.idle += dt) >= BOSS.PLUG_IDLE) {
+        s.hp = 1; s.cap += BOSS.REBOOT_CAP; s.plug = 0; s.idle = 0; s.rebooted++; s.ring = null;
+        setPhase(s, 'hunt', out); out.reboot = true;
+      }
     }
     return out;
   }
   if (s.phase === 'tamed' || s.phase === 'fled') {
     s.t += dt;
-    if (s.out === 'limp') { if (driveTo(s, pondBank(s), BOSS.LIMP, dt, 0.4)) s.out = 'sink'; }
-    else if (s.out === 'sink') { s.moving = false; s.sink = Math.min(1, s.sink + dt / BOSS.SINK); if (s.sink >= 1) { s.out = 'gone'; s.goneT = s.t; out.sunk = true; } }
+    // Round 12 #5b: the pond event (and its PA) is the splash, the moment it reaches the bank.
+    if (s.out === 'limp') { if (driveTo(s, pondBank(s), s.limp ?? BOSS.LIMP, dt, 0.4)) { s.out = 'sink'; s.splashT = s.t; out.sunk = true; } }
+    else if (s.out === 'sink') { s.moving = false; s.sink = Math.min(1, s.sink + dt / BOSS.SINK); if (s.sink >= 1) { s.out = 'gone'; s.goneT = s.t; } }
     else if (s.out === 'home' && driveTo(s, BOSS.SHED, BOSS.HOME, dt, 0.8)) { s.out = 'gone'; s.goneT = s.t; out.home = true; }
     return out;
   }
   // harvest / hunt
   s.ft += dt; s.ph += dt;
-  if (s.vent > 0) s.vent = Math.max(0, s.vent - dt);
+  // #1a: no banking a meter across a bolt. Only in the harvest (where it bolts): in the hunt the hunted Rat sprays in
+  // bursts between dodges, and a solo Rat is always the one hunted (measured: decay there lost 1p-chase its fights).
+  if (s.phase === 'harvest') for (const k in s.meter) if (s.meter[k] > 0 && s.clock - (s.sprayAt[k] ?? -1e9) > BOSS.DECAY_AFTER) s.meter[k] = Math.max(0, s.meter[k] - BOSS.DECAY * dt);
   if (s.ft >= s.cap) { setPhase(s, 'fled', out); return out; }
   if (s.phase === 'harvest' && s.ph >= BOSS.HARVEST_MAX) setPhase(s, 'hunt', out);
   if (s.stall > 0) {
@@ -398,20 +461,26 @@ export function stepBoss(s, dt, ctx = {}) {
   }
   const bolt = s.bolt > 0; if (bolt) s.bolt = Math.max(0, s.bolt - dt);
   if (s.phase === 'hunt' && s.aim) { steer(s, s.aim.x, s.aim.z, s.hunt, dt); inBox(s); s.burst = false; }
-  else if (s.phase === 'harvest' && !s.burst && s.goal) { steer(s, s.goal.x, s.goal.z, bolt ? BOSS.BOLT : s.speed, dt); inBox(s); }
+  else if (s.phase === 'harvest' && !s.burst && s.goal) { steer(s, s.goal.x, s.goal.z, bolt ? BOSS.BOLT : s.grazing ? s.speed * BOSS.GRAZE : s.speed, dt); inBox(s); }
   else {
     const w = WP[s.wp % WP.length];
     const d = steer(s, w.x, w.z, s.burst ? BOSS.BURST : s.phase === 'hunt' ? s.hunt : bolt ? BOSS.BOLT : s.speed, dt, s.burst ? Math.PI * 4 : BOSS.TURN);
     if (d < 1.5) { s.wp = (s.wp + 1) % WP.length; s.burst = false; }
     if (!s.burst) inBox(s);
   }
-  // Eat.
-  const weigh = ctx.weigh ?? (() => 1);
-  const bs = ctx.balls instanceof Map ? ctx.balls.values() : ctx.balls ?? [];
-  if (s.eaten < BOSS.CATCHER) for (const b of bs) {
-    if (s.eaten >= BOSS.CATCHER) break;
-    if (Math.abs(b.x - s.x) > BOSS.EAT_R || Math.abs(b.z - s.z) > BOSS.EAT_R || !eatable(b) || Math.hypot(b.x - s.x, b.z - s.z) > BOSS.EAT_R) continue;
-    out.eaten.push(b.id); s.eaten++; s.eatenW += weigh(b);
+  // Eat: round 12 #5c, the nearest resting ball within EAT_R, one every EAT_EVERY s (it never banks a backlog).
+  // While there's something to eat in reach, the harvest slows to graze (GRAZE): a window to hose it, or block it.
+  s.eatT = Math.min(BOSS.EAT_EVERY, (s.eatT ?? BOSS.EAT_EVERY) + dt); s.grazing = false;
+  if (s.eaten < BOSS.CATCHER) {
+    const bs = ctx.balls instanceof Map ? ctx.balls.values() : ctx.balls ?? [];
+    let best = null, bd = Infinity;
+    for (const b of bs) {
+      if (Math.abs(b.x - s.x) > BOSS.EAT_R || Math.abs(b.z - s.z) > BOSS.EAT_R || !eatable(b)) continue;
+      const d = Math.hypot(b.x - s.x, b.z - s.z);
+      if (d <= BOSS.EAT_R && d < bd) { bd = d; best = b; }
+    }
+    s.grazing = !!best;
+    if (best && s.eatT >= BOSS.EAT_EVERY - 1e-9) { out.eaten.push(best.id); s.eaten++; s.eatenW += (ctx.weigh ?? (() => 1))(best); s.eatT = 0; }
   }
   // Knock.
   if (!s.burst) for (const r of rats) {
@@ -430,10 +499,28 @@ const mmss = t => { const k = Math.max(0, Math.ceil(t)); return `${Math.floor(k 
 // What the clients see.
 export function bossSnap(s) {
   if (!s || s.kind !== 'boss') return null;
+  // Round 12 #1a: meters { id: [fill 0..1, cooling s] } (each Rat's crosshair ring); full: the fullest live meter (the grille's glow).
+  let meters = null, full = 0;
+  if (bossFighting(s)) {
+    meters = {};
+    for (const k in s.meter) { const c = coolLeft(s, k); meters[k] = [Math.round(s.meter[k] * 100) / 100, Math.round(c * 10) / 10]; if (!(c > 0)) full = Math.max(full, s.meter[k]); }
+    for (const k in s.coolMe) if (!(k in meters) && coolLeft(s, k) > 0) meters[k] = [0, Math.round(coolLeft(s, k) * 10) / 10];
+  }
   return { kind: 'boss', encore: s.encore, phase: s.phase, t: s.t, x: s.x, z: s.z, yaw: s.yaw, hp: s.hp, hpMax: s.hpMax, eaten: s.eaten,
-    stall: s.stall > 0, hit: s.stagger > 0, open: s.vent <= 0 && s.rage <= 0, rage: s.rage > 0, target: s.target, plug: s.plug, holders: s.holders, ring: s.ring, sink: s.sink, out: s.out,
-    left: Math.max(0, s.cap - s.ft), hits: s.hits, moving: s.moving, final: !!s.final };
+    stall: s.stall > 0, hit: s.stagger > 0, open: s.rage <= 0 && s.clock >= (s.allUntil ?? 0), rage: s.rage > 0, target: s.target, plug: s.plug, holders: s.holders, crew: s.crew, ring: s.ring, sink: s.sink, out: s.out,
+    left: Math.max(0, s.cap - s.ft), hits: s.hits, moving: s.moving, final: !!s.final, meters, full: Math.round(full * 100) / 100, yanks: s.yanks ?? 0 };
 }
+// Round 12 #5a: the boss morning, from the bell to the warn: the Board's update bar and the near lanes' stripes.
+// shiftT: seconds into the shift. Returns { kind: 'update', pct } until the warn, else null.
+export function updateSnap(day, shiftT, shiftSecs) {
+  if (!day || !(shiftSecs > 0)) return null;
+  const at = shiftSecs * BOSS.AT;
+  return shiftT < at ? { kind: 'update', pct: Math.max(0, Math.min(1, shiftT / at)) } : null;
+}
+export const updateBoard = u => {
+  const k = Math.max(0, Math.min(1, u?.pct ?? 0)), n = Math.min(4, Math.floor(k * 4 + 0.5));
+  return `MOW-E UPDATE ${'▓'.repeat(n)}${'░'.repeat(4 - n)} ${Math.floor(k * 100)} %`;
+};
 // The Board's banner. The encore's jumbotron is the HP bar.
 export function bossBoard(s) {
   if (!s || s.kind !== 'boss') return null;
@@ -442,9 +529,9 @@ export function bossBoard(s) {
   switch (s.phase) {
     case 'warn': return `${name} · ROGUE · ${mmss(s.t)}`;
     case 'harvest': case 'hunt': return s.encore ? `MOW-E 2.0 VS SITE 12 · ${pips(s.hp, s.hpMax)}` : `MOW-E · ${pips(s.hp, s.hpMax)} · ATE ${s.eaten}`;
-    case 'plug': return `${name} · PULL THE PLUG`;
+    case 'plug': { const n = Math.min(4, Math.floor((s.plug ?? 0) * 4 + 1e-9)); return `PULL! ${'■'.repeat(n)}${'□'.repeat(4 - n)}`; }   // round 12 #1c
     case 'tamed': return after ? `${name} TAMED` : null;
-    case 'fled': return after ? (s.encore ? 'MOW-E 2.0 WINS' : s.final ? 'MOW-E WINS · WARRANTY EXPIRED' : 'MOW-E WINS · REMATCH TOMORROW') : null;
+    case 'fled': return after ? (s.encore ? 'MOW-E 2.0 WINS' : s.final ? 'MOW-E WINS · WARRANTY EXPIRED' : 'MOW-E WINS · REMATCH NEXT CLUB DAY') : null;   // 9.11
     default: return null;
   }
 }
@@ -455,10 +542,24 @@ export function tameDue({ venue, endless = false, tame = false, shiftT, shiftSec
   if (!BOSS.ON || !tame || endless || !(venue >= 1) || k >= TAME.AT.length) return -1;
   return shiftT >= shiftSecs * TAME.AT[k] ? k : -1;
 }
-// The richest of the six old lanes (ties: the first, so the pass draws no RNG).
-export function newTame(balls, k = 0) {
-  const lane = pickLane(balls, () => 0);
-  return { kind: 'tame', k, phase: 'out', lane, x: BOSS.SHED.x, z: BOSS.SHED.z, yaw: -Math.PI / 2, load: 0, loadW: 0, blocked: false, blockT: 0, beepT: 0, moving: false };
+// Round 12 #5d: the pass seeks the field's richest spot (richest(), inside TAME.BOX; no RNG) and mows a RUN m drive
+// either side of it along x, clipped to the box and kept out of the pond. No spot: the richest of the six old lanes.
+// bonus: the whistle's pass (it doesn't use up a scheduled one).
+const inTameBox = b => { const B = TAME.BOX, P = BOSS.POND; return b.x >= B.x0 && b.x <= B.x1 && b.z >= B.z0 && b.z <= B.z1 && Math.hypot(b.x - P.x, b.z - P.z) > P.r + 1; };
+export function tameRun(balls) {
+  const spot = richest({ x: 0, z: -40 }, balls, inTameBox);
+  const z = spot ? spot.z : pickLane(balls, () => 0);
+  let x0 = spot ? spot.x - TAME.RUN : MOWER.X0, x1 = spot ? spot.x + TAME.RUN : MOWER.X1;
+  x0 = Math.max(TAME.BOX.x0, x0); x1 = Math.min(TAME.BOX.x1, x1);
+  const P = BOSS.POND, w = Math.abs(z - P.z) < P.r + 2 ? Math.sqrt(Math.max(0, (P.r + 2) ** 2 - (z - P.z) ** 2)) : 0;
+  if (w > 0 && P.x + w > x0 && P.x - w < x1) {   // the drive would cross the pond: keep the spot's side
+    if (spot && spot.x >= P.x) x0 = Math.max(x0, P.x + w); else x1 = Math.min(x1, P.x - w);
+  }
+  return { z, x0, x1: Math.max(x0 + 4, x1), spot: spot ? { x: spot.x, z: spot.z, n: spot.n } : null };
+}
+export function newTame(balls, k = 0, { bonus = false } = {}) {
+  const r = tameRun(balls);
+  return { kind: 'tame', k, bonus, phase: 'out', lane: r.z, x0: r.x0, x1: r.x1, spot: r.spot, x: BOSS.SHED.x, z: BOSS.SHED.z, yaw: -Math.PI / 2, load: 0, loadW: 0, blocked: false, blockT: 0, beepT: 0, moving: false };
 }
 // One tick of a pass: out of the shed to the lane, along it (gathering every resting ball within ±3 m as it passes),
 // to the nearest owned return (bank them), back to the shed. It never knocks anyone down: it stops short of a Rat
@@ -473,33 +574,40 @@ export function stepTame(s, dt, ctx = {}) {
   s.blocked = block && s.blockT < TAME.CREEP;
   if (s.blocked) { s.moving = false; if ((s.beepT -= dt) <= 0) { s.beepT = TAME.BEEP; out.beep = true; } return out; }
   s.beepT = 0;
-  if (s.phase === 'out') { if (driveTo(s, { x: MOWER.X0, z: s.lane }, TAME.OUT, dt)) { s.phase = 'mow'; s.yaw = -Math.PI / 2; } }
+  const X0 = s.x0 ?? MOWER.X0, X1 = s.x1 ?? MOWER.X1;
+  if (s.phase === 'out') { if (driveTo(s, { x: X0, z: s.lane }, TAME.OUT, dt)) { s.phase = 'mow'; s.yaw = -Math.PI / 2; } }
   else if (s.phase === 'mow') {
-    driveTo(s, { x: MOWER.X1, z: s.lane }, TAME.SPEED, dt);
+    driveTo(s, { x: X1, z: s.lane }, TAME.SPEED, dt);
     const weigh = ctx.weigh ?? (() => 1);
     const bs = ctx.balls instanceof Map ? ctx.balls.values() : ctx.balls ?? [];
     for (const b of bs) {
+      if (s.load >= TAME.CAP) break;
       if (Math.abs(b.z - s.lane) > TAME.HALF || Math.abs(b.x - s.x) > TAME.GATHER_X || !eatable(b)) continue;
       out.gathered.push(b.id); s.load++; s.loadW += weigh(b);
     }
-    if (s.x >= MOWER.X1 - 0.6) s.phase = 'home';
+    if (s.x >= X1 - 0.6 || s.load >= TAME.CAP) s.phase = 'home';
   } else if (s.phase === 'home') {
     const r = ctx.returnAt?.(s.x, s.z) ?? { x: 27, z: 1.8 };
     if (driveTo(s, r, TAME.HOME, dt, 2.5)) { if (s.load > 0) out.bank = { n: s.load, w: s.loadW }; s.load = 0; s.loadW = 0; s.phase = 'shed'; }
   } else if (s.phase === 'shed' && driveTo(s, BOSS.SHED, TAME.OUT, dt, 0.8)) { s.phase = 'done'; out.done = true; s.moving = false; }
   return out;
 }
-export const tameSnap = s => s && s.kind === 'tame' ? { kind: 'tame', phase: s.phase, lane: s.lane, x: s.x, z: s.z, yaw: s.yaw, load: s.load, blocked: s.blocked, moving: s.moving } : null;
-export const tameBoard = s => s && s.kind === 'tame' && (s.phase === 'mow' || s.phase === 'home') ? `MOW-E · BRINGING ${s.load} HOME` : null;
+export const tameSnap = s => s && s.kind === 'tame' ? { kind: 'tame', phase: s.phase, lane: s.lane, x: s.x, z: s.z, yaw: s.yaw, load: s.load, blocked: s.blocked, moving: s.moving, bonus: !!s.bonus } : null;
+export const tameBoard = s => s && s.kind === 'tame' && (s.phase === 'mow' || s.phase === 'home') ? `MOW-E · BRINGING ${s.load} HOME`
+  : s && s.kind === 'tame' && s.bonus && s.phase === 'out' ? 'MOW-E · ON HIS WAY' : null;
 
-// Any mower state (the boss, the tame pass, or the legacy pass) to its snapshot and Board banner.
-export const moweSnap = s => !s ? null : s.kind === 'boss' ? bossSnap(s) : s.kind === 'tame' ? tameSnap(s) : mowerSnap(s);
-export const moweBoard = s => !s ? null : s.kind === 'boss' ? bossBoard(s) : s.kind === 'tame' ? tameBoard(s) : mowerBoard(s);
+// Round 12 #5d, the whistle: once a shift, at the MOW-E post, on a day the pet works (tamed, not endless, no boss today).
+export const atPost = p => !!p && Math.hypot(p.x - WHISTLE.POST.x, p.z - WHISTLE.POST.z) <= WHISTLE.R;
+export const whistleOpen = ({ tame = false, endless = false, venue = 0, boss = false } = {}) => !!BOSS.ON && tame && !endless && venue >= 1 && !boss;
+
+// Any mower state (the boss, the tame pass, the legacy pass, or the boss morning's update) to its snapshot and Board banner.
+export const moweSnap = s => !s ? null : s.kind === 'boss' ? bossSnap(s) : s.kind === 'tame' ? tameSnap(s) : s.kind === 'update' ? s : mowerSnap(s);
+export const moweBoard = s => !s ? null : s.kind === 'boss' ? bossBoard(s) : s.kind === 'tame' ? tameBoard(s) : s.kind === 'update' ? updateBoard(s) : mowerBoard(s);
 
 // The save's `mowe`: { tame, lost (0–2), encore, memo? } (an old save: untamed, no losses, no encore).
 const MEMOS = [BOSS_LINES.eotm, BOSS_LINES.regards, BOSS_LINES.warranty];
 export function cleanMowe(o) {
   const lost = Math.max(0, Math.min(2, Math.floor(Number(o?.lost) || 0)));
   const memo = MEMOS.includes(o?.memo) ? o.memo : null;
-  return { tame: o?.tame === true || lost >= 2, lost, encore: o?.encore === true, ...(memo ? { memo } : {}) };
+  return { tame: o?.tame === true || lost >= 2, lost, encore: o?.encore === true, ...(o?.beat === true ? { beat: true } : {}), ...(memo ? { memo } : {}) };   // beat: won since Gary's last Club verdict
 }

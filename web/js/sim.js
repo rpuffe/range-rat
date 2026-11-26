@@ -460,11 +460,49 @@ export function kindNewLine(kinds) {
 export const debutFloat = (kind, told = true) => (told ? 'NEW' : 'NEW: ' + (KIND_NAMES[kind] ?? kind).replace(/ ball$/i, '')) + (KIND_W[kind] > 1 ? ' ×' + KIND_W[kind] : '');
 // The memo's second line (≤ 8 words), by priority: Today's modifier, a NEW line, a MOW-E line, the flavour.
 // Returns { today, line, lost }: `lost` is a NEW line that lost to Today (it shows as the first hit's float instead).
-export function memoSecond({ today = null, venueNew = null, kindNew = null, mowe = null, flavor = '' } = {}) {
-  const fresh = venueNew ?? kindNew ?? null;
-  if (today) return { today, line: null, lost: fresh };
-  return { today: null, line: fresh ?? mowe ?? flavor ?? '', lost: null };
+// Council round 12, 4a (builder 4): where each Rat clocks in at the start of a shift (crew.mjs startShift). The old
+// row (x 18 + 2.4 per slot, z 4) put slot 0 under the Tiered deck's right end (x ≤ 20, z 2..6) and the first two under
+// the Club awning (x ≤ 23.5): the black slab over the top of the view. From the Stadium on (venue ≥ 3, endless too)
+// the row is LATE_XS: past the awning's end, either side of the washer (x 26.1..28.9, its handles), so the deck's
+// corner is ≥ 59° left of a Rat facing the field (outside the 43° half-FOV at 4:3) and the awning is at most a corner.
+export const CLOCK_IN = { X: 18, STEP: 2.4, Z: 4, LATE_FROM: 3, LATE_XS: [24.6, 25.8, 29.4, 30.6, 31.8, 33.0] };
+export function clockInSpot(venue = 0, slot = 0, endless = false) {
+  const late = endless || (venue ?? 0) >= CLOCK_IN.LATE_FROM, k = (slot | 0) % 6;
+  return late ? { x: CLOCK_IN.LATE_XS[k], z: CLOCK_IN.Z } : { x: CLOCK_IN.X + k * CLOCK_IN.STEP, z: CLOCK_IN.Z };
 }
+// Council round 12 (builder 4, the hand-off hooks): `news` (a one-morning headline: Site 13's acquisition, builder 3)
+// beats everything; `contract` (the endless contract, contractMemo) takes Today's slot and shows as the line itself;
+// `note` (a one-morning flavour override: the inspector, builder 2) takes the flavour's place.
+export function memoSecond({ today = null, venueNew = null, kindNew = null, mowe = null, flavor = '', contract = null, news = null, note = null } = {}) {
+  const fresh = venueNew ?? kindNew ?? null;
+  if (news) return { today: null, line: news, lost: fresh };
+  if (contract) return { today: null, line: contract, lost: fresh };
+  if (today) return { today, line: null, lost: fresh };
+  return { today: null, line: fresh ?? mowe ?? note ?? flavor ?? '', lost: null };
+}
+// Council round 12: the memo's one-morning lines other builders set on the crew (each ≤ 8 words, words.test.mjs).
+//   crew.moweMemo  (builder 1's slot): the boss morning gets MEMO_LINES.moweUpdate automatically (crew.mjs memo push)
+//   crew.memoNote  (flavour slot, next morning only): builder 2 sets MEMO_LINES.inspector after a clean inspection
+//   crew.memoNews  (beats all, next morning only): builder 3 sets MEMO_LINES.acquired / .rivalBack for Site 13's week
+export const MEMO_LINES = {
+  moweUpdate: 'MOW-E is downloading an update.',
+  inspector: "The inspector was impressed. He's from Site 13.",
+  acquired: 'Site 13 has been acquired. By you.',
+  rivalBack: 'Site 13 is back. With a jumbotron.',
+};
+// Council round 12, 9.8: Corporate's memo flavours (crew.mjs memoFlavor; one rng draw a morning whatever the text),
+// the Rats' endless memos, and the Muni's day 1–2 flavours. Every one ≤ 8 words (they were up to 13).
+export const MEMO_FLAVORS = [
+  'Corporate believes in you, statistically.',
+  'Every Ball Matters.™ Some matter more.',
+  'Gary from Regional is always watching.',
+  'Smiling is not required, but it is tracked.',
+  'Dimples asks that you keep the mats clean.',
+];
+export const RAT_MEMOS = ["Today's target: whatever. — the Rats", 'We are Corporate now. Do not tell us.', 'Fries are free. For us. — the Rats'];
+export const MEMO_DAY_FLAVOR = { 1: 'Beginners’ clinic today. Balls will land closer.', 2: 'Corporate has sent a teenager to help.' };
+// Item 6c: "Contract: at most 2 knockdowns." from today.js goalText ("At most 2 knockdowns").
+export const contractMemo = text => (text ? 'Contract: ' + text[0].toLowerCase() + text.slice(1).replace(/\.$/, '') + '.' : null);
 export const KIND_NAMES = { range: 'range ball', glow: 'glow ball', lead: 'lead ball', square: 'square ball', gold: 'GOLD BALL', splitter: 'splitter', bouncy: 'super-bouncy ball', debris: 'orbital debris' };
 export const KIND_BLURB = {
   square: "Worth ×2. The reels can't take it.",
@@ -532,11 +570,11 @@ export const VENUE_RULES = [
   { name: 'Range Club', title: 'Club Retrieval Associate', fee: 2500, writeOff: 1_200_000_000, memo: 'NEW: the kitchen. Fries raise every ball.', pa: 'club', eatEvery: 8 },
   { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 50000, writeOff: 1_500_000_000, memo: 'NEW: target greens. Land a crew ball there.', pa: 'tiered', eatEvery: 8,
     kpi: 'BAY UTILIZATION', howto: 'New: Target Greens. Balls in a cup block the sensors. Bay Utilization is now on the Board. The Upper Deck is now serving.' },
-  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 600000, writeOff: 800_000_000, memo: 'NEW: the Ping Track. Keep the crowd happy.', pa: 'stadium', eatEvery: 8,
+  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 600000, writeOff: 800_000_000, memo: 'NEW: the Ping Track. Keep the crowd happy.', pa: null /* council round 12, 4c: was 'stadium' (four jumbotron jokes in 20 s) */, eatEvery: 8,
     kpi: 'CROWD SENTIMENT', howto: 'New: the Ping Track. The crowd grades you now. The crowd has never played golf.' },
   { name: 'County Range', title: 'County Retrieval Director', fee: 3_000_000, writeOff: 712_000_000, memo: 'NEW: the Yards. Spray green hazards, then bag.', pa: 'county', eatEvery: 8,
     kpi: 'ZONING COMPLIANCE', howto: 'New: the Yards. Your customers now hit into the county. The county has noticed.' },
-  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 12_500_000,   /* round 11: 15M -> 12.5M, so the County's 2 good days are its 2 shifts */ writeOff: 'rest', memo: 'NEW: the Lift. 1,958 balls are in orbit.', pa: 'orbital', eatEvery: 8,
+  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 12_500_000,   /* round 11: 15M -> 12.5M, so the County's 2 good days are its 2 shifts */ writeOff: 'rest', memo: 'NEW: the Lift. Ride it to the sky.' /* council round 12, 9.3: the first line already says 1,958 */, pa: 'orbital', eatEvery: 8,
     kpi: 'ORBITAL DEBRIS', howto: 'The Lift is open. Keep the sky clear.' },
 ];
 // Round 4: VENUE_RULES[v].kpi is the Board's fourth gauge label (only the current venue's KPI is graded).
