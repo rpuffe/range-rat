@@ -68,8 +68,8 @@ export function dealMod(id, key, day, nMats = 10) {
 }
 
 // Today's modifier, or null. ctx: { key, day, venue, endless, gary, promo, reveal, nMats }.
-export function todayFor({ key = 0, day = 1, venue = 0, endless = false, gary = false, promo = false, reveal = false, nMats = 10 } = {}) {
-  if (endless || venue >= 5 || day < TODAY.FROM_DAY || gary || promo || reveal) return null;
+export function todayFor({ key = 0, day = 1, venue = 0, endless = false, gary = false, promo = false, reveal = false, nMats = 10, boss = false } = {}) {
+  if (endless || venue >= 5 || day < TODAY.FROM_DAY || gary || promo || reveal || boss) return null;   // council round 11 #1: no Today on a boss day
   const pool = todayPool(venue);
   // Never the same two days running: walk the last month's deals (bounded, so it stays cheap and deterministic).
   let id = null;

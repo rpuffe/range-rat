@@ -10,6 +10,7 @@ import { SIM, CART, WASH, FRIES, POND, VENUES, VENUE_RULES, ONE_YEAR, BALLS_OUTS
 // A crew on a fake clock. `run(secs)` steps 20 ticks a second.
 function makeCrew(save = null, shiftSecs = 600, seed = 11) {
   if (save?.venue === 1 && save.venueDay == null) save = { ...save, venueDay: 3 };   // round 11 (clubdays.js): a Club crew past the stagger unless a test says otherwise
+  if (save?.venue === 1 && save.mowe == null) save = { ...save, mowe: { tame: true } };   // council round 11 #1: ...and past MOW-E's fight (a boss day slips Gary)
   const clock = { t: 1_000_000 };
   const crew = new Crew('RND2', save, { shiftSecs, seed, now: () => clock.t });
   const run = secs => { for (let i = 0; i < secs * 20; i++) { clock.t += 50; crew.tick(0.05); } };
@@ -995,14 +996,14 @@ test('PA: the first shift ever welcomes the crew, once; voiced is saved and rest
   assert.deepEqual(makeCrew({ voiced: [1, 'ok', null] }).crew.toSave().voiced, ['ok']);
 });
 
-test('PA: debut lines fire with the debut, once', () => {
+test('PA: a debut fires its event once, and no kind PA (council round 11 #3: the memo tells it; glow keeps its line)', () => {
   const { crew } = makeCrew({ day: 3, voiced: ['welcome'] });
   openShift(crew);
   crew.rng = () => 0.001;                              // pickKind: a gold ball
   swing(crew);
   let ev = events(crew);
   assert.ok(ev.find(e => e.t === 'debut' && e.kind === 'gold'));
-  assert.ok(ev.find(e => e.t === 'pa' && e.id === 'gold'), 'the gold line');
+  assert.ok(!ev.find(e => e.t === 'pa' && e.id === 'gold'), 'the gold line is cut');
   crew.mats[0].next = 0; crew.tick(0.05);
   ev = events(crew);
   assert.equal(ev.filter(e => e.t === 'debut').length, 0);
@@ -1169,7 +1170,7 @@ test('the record PA (round 7 #3): none on a review day, one in endless', () => {
   openShift(review.crew); review.crew.bank(10, 'x'); review.run(6);
   assert.ok(review.crew.report.record, 'a record shift');
   assert.ok(!events(review.crew).find(e => e.t === 'pa' && e.id === 'record'), 'no PA over the stamp on a review day');
-  const endless = makeCrew({ day: 9, venue: 5, endless: true, outstanding: 1, voiced: ['welcome', 'gary', 'endless'] }, 5);
+  const endless = makeCrew({ day: 9, venue: 5, endless: true, outstanding: 1, voiced: ['welcome', 'gary', 'endless'], records: { cash: 0, owner: { cash: 1 } } }, 5);   // council round 11 #6: the Owners' book is open
   openShift(endless.crew); endless.crew.bank(10, 'x'); endless.run(6);
   assert.ok(endless.crew.report.record, 'a record shift');
   assert.equal(events(endless.crew).filter(e => e.t === 'pa' && e.id === 'record').length, 1, 'endless: the record is the game');
@@ -1435,7 +1436,7 @@ test('Endless mode: a reveal, no quota, no Gary, and the first customer ball set
   assert.equal(crew.snapshot().quota, null);
   assert.equal(crew.outstanding, 0, 'nothing out there yet');
   for (const m of crew.mats) m.next = 1e9;
-  run(6.5);                                             // the reveal
+  run(14.5);                                            // the reveal (council round 11: the epilogue holds the clock 14 s)
   setMud(crew, 0); run(2);                              // the morning mud kept the early birds waiting: hose it, they step on
   crew.flush();
   swing(crew);
@@ -1678,7 +1679,7 @@ test('Gary\'s mats check ignores mats that are not in play (solo uses 6 of 10)',
 
 // ---- round 4 item 12: the endless target (record pace) --------------------------------------------
 test('Endless target: snapshot.pace is record pace in endless, null otherwise, and scales with shiftT', () => {
-  const e = makeCrew({ venue: 5, endless: true, day: 9, records: { cash: 400, banked: 10, day: 4 } }, 600);
+  const e = makeCrew({ venue: 5, endless: true, day: 9, records: { cash: 400, banked: 10, day: 4, yesterday: { cash: 400 } } }, 600);   // council round 11 #6: the race is yesterday
   openShift(e.crew);
   assert.equal(e.crew.snapshot().quota, null);
   e.crew.shiftT = 0;

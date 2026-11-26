@@ -7,7 +7,9 @@
 //     round 11 (expert #5.3): sized to ~5–10% of a shift's income at every venue (it was a flat 50 × BV: 2% late).
 // Counts scale with the crew printed on the venue's first morning (solo ×0.4 … 6P ×1.4, rounded up) and never move.
 // Pure: no THREE, no DOM. server/crew.mjs keeps the card; board.js, round2.js, morning.js and main.js read it.
-import { money } from './sim.js';
+import { money, nextPrice } from './sim.js';
+import { debrisBalls } from './orbit.js';      // council round 11 8.8: the sky row counts pieces
+import { shortMoney } from './bvtext.js';      // council round 11 8.8: the winch price line
 
 // Round 11: a feature goal pays REWARD_BV[venue] × BV × crewScale(crew). Measured (4P bots, round 11): ~$255 against a
 // ~$3k Muni shift, $2.7–3.8k against $45–64k at the Club, ~$44k against $0.6–0.9M at Tiered, $0.19–0.26M against ~$3M
@@ -33,7 +35,7 @@ const G = {
   // Playthrough 5 B5: FED as uptime (a count of dogs taught spamming them): working seconds with FED up.
   fed: { kind: 'secs', n: 180, reward: true, text: n => `Keep the crew fed for ${mins(n)}`, more: n => mins(n).replace(' ', ' more ') + ' fed', short: n => `Fed for ${mins(n)}` },
   treasures: { kind: 'fixed', n: 2, reward: true, treasure: true, text: n => `Bring up ${n} treasures`, more: n => `${n} more treasure${n === 1 ? '' : 's'}`, short: n => `${n} treasures` },
-  seal: { kind: 'once', gary: true, reward: true, text: () => "Earn Gary's Seal", short: () => "Gary's Seal" },
+  seal: { kind: 'once', gary: true, reward: true, text: () => "Earn Gary's Seal: huddle at the return", short: () => "Gary's Seal" },   // council round 11 8.7: it hid the huddle
   targets: { kind: 'count', n: 8, reward: true, text: n => `Land ${n} TARGETs`, more: n => `${n} more TARGET${n === 1 ? '' : 's'}`, short: n => `${n} TARGETs` },
   orders: { kind: 'count', n: 24, reward: true, text: n => `Fill ${n} deck orders`, more: n => `${n} more deck order${n === 1 ? '' : 's'}`, short: n => `${n} deck orders` },
   gutters: { kind: 'buy', row: 'gutters', tier: 1, reward: true, text: () => 'Buy the ball-return gutters', short: () => 'The gutters' },
@@ -146,26 +148,33 @@ export function rowsOf(card, live = {}, today = []) {
     switch (d.kind) {
       case 'fee': need = live.fee ?? 0; have = Math.min(need, Math.max(0, live.cash ?? 0)); done = need > 0 && (live.cash ?? 0) >= need; break;
       case 'sky': done = !!live.sky; have = done ? 1 : 0; break;   // its words: skyText (what the gate still waits on)
-      case 'buy': done = done || (live.up?.[d.row] ?? 0) >= d.tier; have = done ? 1 : 0; break;
+      case 'buy': done = done || (live.up?.[d.row] ?? 0) >= d.tier; have = done ? 1 : 0; break;   // (its price: below)
       case 'once': done = done || (card.n[g.id] ?? 0) >= 1; have = done ? 1 : 0; break;
       case 'riders': need = card.need[g.id] ?? card.crew ?? 1; have = Math.min(need, card.who?.length ?? 0); done = done || have >= need; break;
       default: need = card.need[g.id] ?? needOf(g, card.scale ?? 1, card.crew ?? 4);
         if (Number.isFinite(live.cap?.[g.id])) need = Math.max(0, Math.min(need, Math.floor(live.cap[g.id])));
         have = Math.min(need, card.n[g.id] ?? 0); done = done || have >= need;
     }
-    const text = d.kind === 'sky' && !done ? skyText(live) : d.text(need, live.fee);
-    return { id: g.id, kind: d.kind, text, have, need, done, reward: !!d.reward, fresh: done && today.includes(g.id) };
+    const text = d.kind === 'sky' && !done ? skyText({ ...live, crew: card.crew }) : d.text(need, live.fee);
+    const row = { id: g.id, kind: d.kind, text, have, need, done, reward: !!d.reward, fresh: done && today.includes(g.id) };
+    if (d.kind === 'buy' && !done) { const price = nextPrice(d.row, live.up ?? {}, card.crew ?? 4, 0, card.venue); if (price != null) { row.price = price; row.cash = live.cash ?? 0; } }   // council round 11 8.8
+    return row;
   });
 }
 // Owner playtest (round 12): "the sky never cleared". The row read a bare "Clear the sky" while the gate waited on
 // Balls Outstanding (only debris brought down counts) and then on the debris overhead. Say which, with the number.
 // live.skyOut: Balls Outstanding; live.skyUp: debris still to bring down before Ball No. 1 can fall (orbit.js skyToClear).
+// Council round 11 8.8 (C #2b): the row counted balls while the debris goal counted pieces. It counts pieces now: the
+// balls still in orbit come home DEBRIS_BALLS a piece (solo 15; orbit.js debrisBalls), so "Clear the sky · 57 debris up".
+export const skyPieces = (out, crew = 4) => Math.ceil(Math.max(0, out) / Math.max(1, debrisBalls(1, crew)));
 export function skyText(live = {}) {
   const out = Math.max(0, (live.skyOut ?? 0) - 1), up = Math.max(0, live.skyUp ?? 0);
-  if (out > 0) return `Clear the sky · ${commas(out)} balls still in orbit`;
-  if (up > 0) return `Clear the sky · ${commas(up)} more debris down`;
+  if (out > 0) return `Clear the sky · ${commas(skyPieces(out, live.crew ?? 4))} debris up`;
+  if (up > 0) return `Clear the sky · ${commas(up)} debris up`;
   return 'Clear the sky';
 }
+// Council round 11 #6 → 8.8: while Ball No. 1 waits on an unbought winch, the strip names its price and the wallet.
+export const winchLine = (price, cash) => `SKY CLEAR · WINCH ${shortMoney(price)} · YOU HAVE ${shortMoney(Math.max(0, cash ?? 0))}`;
 export const cardDone = rows => rows.length > 0 && rows.every(r => r.done);
 export const doneCount = rows => rows.filter(r => r.done).length;
 
@@ -202,8 +211,9 @@ export const doneToast = (id, need, reward) => `Goal done! ${G[id]?.short?.(need
 export function strip(rows, venue) {
   if (!rows?.length) return null;
   const k = doneCount(rows), n = rows.length, nx = nextGoal(rows);
+  const winch = venue === LAST_CARD && rows.find(r => r.kind === 'sky')?.done ? rows.find(r => r.id === 'tether' && !r.done && r.price != null) : null;
   return { pips: rows.map(r => r.done), label: venue === LAST_CARD ? `THE LAST BUCKET ${k} OF ${n}` : `${k} OF ${n} GOALS`,
-    next: nx ? 'NEXT: ' + moreText(nx).toUpperCase() : venue === LAST_CARD ? 'BALL NO. 1 IS COMING' : 'CARD DONE · SIGN AT THE BELL' };
+    next: winch ? winchLine(winch.price, winch.cash) : nx ? 'NEXT: ' + moreText(nx).toUpperCase() : venue === LAST_CARD ? 'BALL NO. 1 IS COMING' : 'CARD DONE · SIGN AT THE BELL' };
 }
 
 // The report's headline: "3 of 5 done · 2 to go", or "Card done! Sign for Tiered."

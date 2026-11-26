@@ -70,7 +70,7 @@ test('the banner: one line, "HOLD Ⓐ TOGETHER · 3 / 4" once the carrier is at 
   assert.equal(lastBucketLine({ ...c, lastBucket: { phase: 'huddle', slots: ['a'], held: [], in: [] } }, 'a', 'SPACE'), 'HOLD SPACE');
   // Before the stand: the old line, with names escaped (the banner is innerHTML).
   const walking = lastBucketLine({ ...c, lastBucket: { phase: 'carried' } }, 'a');
-  assert.match(walking, /^BALL NO\. 1 → THE RETURN · <b>1 \/ 2<\/b> · waiting: &#60;Bo&#62;$/);
+  assert.equal(walking, 'BALL NO. 1 · HOME · <b>1/2</b> · WAITING: &#60;BO&#62;');   // council round 11 8.3: one name plus a count
   assert.equal(lastBucketLine({ ...c, players: [], lastBucket: { phase: 'down' } }, 'a'), 'BALL NO. 1 IS DOWN · follow the beam');
   assert.equal(lastBucketLine({ ...c, lastBucket: { phase: 'done' } }, 'a'), '');
   assert.equal(lastBucketLine({ ...c, phase: 'report' }, 'a'), '');
@@ -92,4 +92,39 @@ test('round 7 #5: the Last Bucket line during the sky gate counts the pieces sti
   const { lastBucketLine: line } = await import('../web/js/huddlerules.js');
   assert.equal(line({ phase: 'shift', players: [], lastBucket: { phase: 'sky', debris: 38 } }, 'a'), 'CLEAR THE SKY · 23 UP');
   assert.equal(line({ phase: 'shift', players: [], lastBucket: { phase: 'sky', debris: 15 } }, 'a'), 'CLEAR THE SKY · 0 UP');
+});
+
+// Council round 11 8.3 (builder 4): the carry banner fits 800 px at 1–6 Rats: one name plus a count, never a list.
+test('8.3: the carry banner is one name plus a count at 1–6 Rats (≤ 46 characters with long names), solo is the goal', async () => {
+  const { lastBucketLine: line, LB_NAME } = await import('../web/js/huddlerules.js');
+  const plain = s => s.replace(/<[^>]+>/g, '').replace(/&#\d+;/g, 'x');
+  for (let n = 1; n <= 6; n++) {
+    const players = Array.from({ length: n }, (_, i) => ({ id: 'p' + i, name: 'Bartholomew The ' + i, online: true, one: i === 0, x: i === 0 ? SIM.STAND.x : 60, z: i === 0 ? SIM.STAND.z : 6 }));
+    const l = plain(line({ phase: 'shift', players, lastBucket: { phase: 'carried' } }, 'p0'));
+    if (n === 1) { assert.equal(l, 'BALL NO. 1 → THE RETURN'); continue; }
+    assert.ok(l.length <= 46, `${n} Rats: ${l} (${l.length})`);
+    assert.equal(l, `BALL NO. 1 · HOME · 1/${n} · WAITING: ${'BARTHOLOMEW THE 1'.slice(0, LB_NAME - 1)}…${n > 2 ? ' +' + (n - 2) : ''}`);
+  }
+  const me = [{ id: 'a', name: 'A', online: true, one: true, x: SIM.STAND.x, z: SIM.STAND.z }, { id: 'b', name: 'Bo', online: true, x: 60, z: 6 }, { id: 'c', name: 'Cy', online: true, x: 60, z: 9 }];
+  assert.equal(line({ phase: 'shift', players: me, lastBucket: { phase: 'carried' } }, 'c'), 'BALL NO. 1 · HOME · <b>1/3</b> · WAITING: YOU +1', 'you first');
+  assert.equal(line({ phase: 'shift', players: me.map(p => ({ ...p, x: SIM.STAND.x, z: SIM.STAND.z })), lastBucket: { phase: 'carried' } }, 'c'), 'BALL NO. 1 · HOME · <b>3/3</b>');
+});
+
+// Council round 11 8.5 (builder 4): the basket line stands down at the climax and during the boss.
+test('8.5: the morning deal stands down while Ball No. 1 is down, carried or in the huddle, and while the boss is live', async () => {
+  const { standDown } = await import('../web/js/morning.js');
+  for (const phase of ['down', 'carried', 'huddle']) assert.equal(standDown({ lastBucket: { phase } }), true, phase);
+  for (const phase of ['sky', 'done']) assert.equal(standDown({ lastBucket: { phase } }), false, phase);
+  assert.equal(standDown({}), false);
+  for (const phase of ['warn', 'harvest', 'hunt', 'plug']) assert.equal(standDown({ mower: { kind: 'boss', phase } }), true, phase);
+  assert.equal(standDown({ mower: { kind: 'boss', phase: 'tamed' } }), false);
+  // The server: a crew with the basket short at the Last Bucket's carry deals nothing, and its snapshot has no line.
+  const { Crew } = await import('../server/crew.mjs');
+  const crew = new Crew('SD85', { venue: 5, day: 20, venueDay: 2 }, { seed: 3, now: () => 1e6 });
+  const p = crew.join('A'); crew.connect(p);
+  crew.startShift();
+  const nudge = () => crew.snapshot().mods?.nudge;
+  assert.ok(Object.values(nudge() ?? {}).some(v => String(v).startsWith('am:')), 'a morning line on an ordinary morning');
+  crew.lastBucket = { phase: 'carried' };
+  assert.equal(nudge(), undefined, 'none while Ball No. 1 is carried');
 });

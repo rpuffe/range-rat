@@ -9,7 +9,7 @@ export const RALLY_LINES = {
   gauge: {                                   // by venue: the fourth gauge is under QUOTA_KPI
     2: 'Bowls judged at 2:30! Shoot them clear!',   // round 11: the bowls are read at Last Call (T-2:30): a buzzer-beater
     3: 'The crowd is bored. Lap the Track!',
-    4: 'Strays in the Yards. Go get them!',
+    4: "Zoning's low! Bag hazards, fetch strays!",   // council round 11 #2: hazards are usually the bigger term now
     5: 'Debris overhead. Everyone up the Lift!',   // round 8 #4: the crank is gone, so every Rat rides
   },
   mats: 'Hose the mats before the bell!',
@@ -22,6 +22,7 @@ export const RALLY_LINES = {
   pick: 'Grab the last balls!',              // owner playtest 3 §2: the cleanup deal, over RALLY_PICK balls out there
   friesBell: 'Fries for the bell!',          // council round 10 #2: the Club's dusk, on target, the fryer under half
   glowDive: 'Glow in the creek! Dive!',      // council round 10 #5: the Club's dusk, 5+ glow balls snagged in the creek
+  hazards: 'Hazards out! Spray and bag!',     // council round 11 #2: the County's live deal (county.js HAZ_DEAL), two Rats
 };
 
 // The report's miss line when the gauge, not Upkeep, cost the stamp (by venue).
@@ -31,6 +32,28 @@ export const GAUGE_MISS = {
   4: 'Missed: strays in the Yards.',
   5: 'Missed: too much debris overhead.',
 };
+
+// Council round 11 #2: the County's DENIED names its bigger term. Zoning = 1 - strays / 30 - hazards / 12
+// (county.js zoningWith), so a hazard costs 2.5 strays. st: the county module's state ({ haz, strays }) at the bell.
+// Hazards win ties (haz / 12 >= strays / 30). Nothing out (a stubbed gauge, an old caller): GAUGE_MISS[venue].
+export const ZONE_COST = Object.freeze({ HAZ: 12, STRAY: 30 });   // county.js HAZ.CAP and ZONING.STRAY_CAP (pinned by test)
+export function zoningCause(st) {
+  const haz = Math.max(0, st?.haz | 0), strays = Math.max(0, st?.strays | 0);
+  if (!haz && !strays) return null;
+  return haz / ZONE_COST.HAZ >= strays / ZONE_COST.STRAY ? { cause: 'haz', n: haz } : { cause: 'strays', n: strays };
+}
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+export function missLine(venue, st) {
+  const c = venue === 4 ? zoningCause(st) : null;
+  if (!c) return GAUGE_MISS[venue];
+  return c.cause === 'haz' ? `Missed: ${plural(c.n, 'hazard', 'hazards')} left out. Spray, then bag.` : `Missed: ${plural(c.n, 'stray', 'strays')} in the Yards.`;
+}
+// The quota's miss fields: why (the stamp's line), and at the County out ('9 hazards out', the report row's tail)
+// and cause ('haz' | 'strays': the hazard tip re-arms on 'haz').
+export function gaugeMiss(venue, st) {
+  const c = venue === 4 ? zoningCause(st) : null;
+  return { why: missLine(venue, st), ...(c ? { cause: c.cause, out: c.cause === 'haz' ? plural(c.n, 'hazard', 'hazards') + ' out' : plural(c.n, 'stray', 'strays') + ' out' } : {}) };
+}
 
 // Kept for reference; shortfall() now compares every term by its real Upkeep cost (playtest round 2 #1).
 export const FRIES_LOW = 0.5;

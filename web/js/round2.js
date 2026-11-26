@@ -19,6 +19,8 @@ import { createCCTV } from './cctv.js';
 import { createHuddleRing, roar } from './huddle.js';                          // round 6 #5: the huddle beat
 import { HUDDLE, ringSlots, garyRingSlots, sweepNow, lastBucketLine } from './huddlerules.js';
 import { sharedConfetti, confettiCount } from './confetti.js';
+import { BANK_SEQ } from './story.js';                                         // council round 11 #4: the note at the huddle
+import { drawNewsreel, NEWSREEL } from './founder.js';                         // council round 11 #7: the jumbotron's newsreel
 
 export function setupRound2(ctx) {
   const { scene, camera, $, toast, board, SFX, nameOf, me } = ctx;
@@ -51,6 +53,53 @@ export function setupRound2(ctx) {
   let mouse = { dx: 0, dy: 0, wheel: 0, down: false, click: false };
   let oneId = null, endingCard = null, ledgerKey = '';
   let finaleUp = false, lastWaits = false;   // playthrough 4 C3: the $∞ flash, and the last PA held behind it
+
+  // ---- council round 11 #4: the bank → the hush → the crack → the note → the $∞ finale → the end card ---------------
+  // The server sends 'banked', then { t: 'story', id: 'note' } (once per crew), then the last PA (held here until the
+  // digits fade) and the report. The note card's delay (story.js NOTE.DELAY) lets the crack play first; its beat's end
+  // (storycard's 'rr-story' event) starts the finale; the end card waits on the finale's promise, not a fixed 7 s.
+  let bank = null;   // { timers, note: the note is coming, finale: started, done: Promise, resolve }
+  function bankBegin() {
+    bankEnd();
+    let resolve; const done = new Promise(r => { resolve = r; });
+    const b = bank = { timers: [], note: false, finale: false, done, resolve, ducked: false };
+    const at = (s, fn) => b.timers.push(setTimeout(fn, s * 1000));
+    at(BANK_SEQ.HUSH, () => {   // 0.8 s of near-silence: the floods go off, the ambience ducks (the roar with it)
+      ctx.floods?.forEach((l, i) => setTimeout(() => { l.intensity = 0; }, 120 * i));
+      SFX.duck?.(true); b.ducked = true;
+    });
+    at(BANK_SEQ.CRACK, () => { ending.crack(SIM.STAND.x, 1.62, SIM.STAND.z); SFX.bonk?.(); });   // on the return's lip
+    at(BANK_SEQ.NOTE + 0.3, () => { if (!b.note) bankFinale(); });                           // no note (seen): straight on
+    at(BANK_SEQ.NOTE + BANK_SEQ.WAIT, () => bankFinale());                                   // never stuck behind a card
+  }
+  function bankFinale() {
+    const b = bank;
+    if (!b || b.finale) return;
+    b.finale = true;
+    if (b.ducked) { SFX.duck?.(false); b.ducked = false; }
+    finaleUp = true;
+    ending.finale({}, () => { finaleUp = false; if (lastWaits) { lastWaits = false; pa.say('last'); } }).then(() => b.resolve());
+  }
+  function bankEnd() {
+    if (!bank) return;
+    bank.timers.forEach(clearTimeout);
+    if (bank.ducked) SFX.duck?.(false);
+    bank.resolve();
+    bank = null;
+  }
+  // The story card's cards and ends (storycard.js 'rr-story'): the note's bell and its end; the Stadium's newsreel.
+  let reelOff = null;
+  const onStory = ev => {
+    const d = ev?.detail;
+    if (!d) return;
+    if (d.id === 'note' && d.phase === 'card') SFX.bell?.(392);                  // one soft bell strike
+    if (d.id === 'note' && d.phase === 'end') bankFinale();
+    if (d.id === 'promo:3' && d.phase === 'card' && d.index === 0 && board.overlay) {   // the jumbotron plays it, 12 s
+      board.overlay(drawNewsreel);
+      clearTimeout(reelOff); reelOff = setTimeout(() => board.overlay(null), NEWSREEL.SECS * 1000);
+    }
+  };
+  if (typeof window !== 'undefined') window.addEventListener('rr-story', onStory);
 
   // ---- the road sign, per venue ---------------------------------------------------
   function repaintSign(v) {
@@ -108,9 +157,11 @@ export function setupRound2(ctx) {
           // Two confetti cannons at the stand and the crowd's roar, then the $∞ finale (round 6 #5).
           for (const dx of [-2.5, 2.5]) confetti.burst(SIM.STAND.x + dx, 1.2, SIM.STAND.z, { n: confettiCount(160, low(), 80), secs: 2.5, speed: 5, up: 11 });
           roar(SFX.audioHandle?.());
-          ending.huddle(null); finaleUp = true; ending.finale({}, () => { finaleUp = false; if (lastWaits) { lastWaits = false; pa.say('last'); } }); ctx.floods?.forEach((l, i) => setTimeout(() => { l.intensity = 0; }, 400 * i));
+          // Council round 11 #4: then the hush, the crack, the note, and only then the $∞ finale (bankBegin).
+          ending.huddle(null); finaleUp = true; bankBegin();
         }
         break;
+      case 'story': if (e.id === 'note' && bank) bank.note = true; break;   // the note is coming: the finale waits for it
       case 'promoday':   // round 11: Promotion Day passed: two confetti cannons at the return (the PA says it; the report shows it)
         if (e.pass) for (const dx of [-2.5, 2.5]) confetti.burst(SIM.STAND.x + dx, 1.2, SIM.STAND.z, { n: confettiCount(160, low(), 80), secs: 2.5, speed: 5, up: 11 });
         break;
@@ -121,8 +172,9 @@ export function setupRound2(ctx) {
       }
       case 'rest': if (e.one) { ending.land(); SFX.bonk(); } break;
       case 'shift':
-        if (e.phase === 'report' && e.report?.ending) setTimeout(() => showEndCard(e.report), 7000);
-        if (e.phase === 'shift') { endingCard?.remove?.(); endingCard = null; }
+        // Council round 11 #4: the end card waits on the finale (the note may hold it); a rejoin into it: at once.
+        if (e.phase === 'report' && e.report?.ending) (bank?.done ?? Promise.resolve()).then(() => showEndCard(e.report));
+        if (e.phase === 'shift') { endingCard?.remove?.(); endingCard = null; ending.crack(null); bankEnd(); finaleUp = false; }
         break;
     }
   }

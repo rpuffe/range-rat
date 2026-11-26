@@ -15,11 +15,14 @@
 //     OUTSTANDING), fed (the FED factor, the orange chip under Hustle) and fedLeft (0..1 of FED.EVERY to the next 5%
 //     loss: the chip's thin ring); the fry gauge reads FRIES 14/20
 //     round 11 (builder "today") adds: today (today.js todayChip, e.g. 'WINDY': the TODAY pill by EACH BALL PAYS)
+//     council round 11 (builder 4) adds: kpiNote (bvtext kpiNoteOf: '7 HAZARDS', 'SECTION C WANTS A BALL · 0:18'), shown
+//     on the venue gauge's label row
+//   b.overlay(fn | null)                   // council round 11: fn(ctx, W, H, t) paints over the Board at 20 Hz (t = s since set)
 import * as THREE from 'three';
 import { BOARD_YAW } from './signs.js';
 import { BELL, crossing, gaugeRed, gaugePass, stampFor } from './closingbell.js';
 import { sharedConfetti, confettiCount } from './confetti.js';
-import { cleanFrac, targetFrac, pct, barWord, whyLine, pipsOf, PIP_HEX, fedText, friesLabel } from './bvtext.js';   // owner playtest 3 §1: Ball Value in one look
+import { cleanFrac, targetFrac, pct, barWord, whyLine, pipsOf, PIP_HEX, fedText, friesLabel, shouldFlip } from './bvtext.js';   // owner playtest 3 §1: Ball Value in one look
 import { FRIES } from './sim.js';   // council round 10 #2: FRIES 14/20
 
 const W = 1024, H = 512;
@@ -104,6 +107,8 @@ export function createBoard(scene, { x, z, onCross = null }) {
   let stampT = 0, stampNow = null, stampEl = null, clock = 0;
   let key = '';
   let flipT = 0, flipAcc = 0;
+  let overlayFn = null, overlayT = 0, overlayAcc = 0;   // council round 11: board.overlay (the Stadium newsreel)
+  let prevPrice = null;
   const prev = { bv: '', quota: '', banner: '' };
   const flipping = { bv: false, quota: false, banner: false };
 
@@ -174,12 +179,16 @@ export function createBoard(scene, { x, z, onCross = null }) {
     const gx = 612, gw = 388;
     const gauges = [['GROUNDS', st.curb, '#6fd36f'], ['POND CLARITY', st.pond, '#4fb3e8'],
       [st.fries == null ? 'FRIES' : friesLabel(Math.round(clamp01(st.fries) * FRIES.MAX), FRIES.MAX), st.fries, '#f0a93a']];   // round 10 #2: what the fryer holds
-    if (st.kpiLabel) gauges.push([String(st.kpiLabel).toUpperCase(), st.kpi, '#c77dff']);
+    if (st.kpiLabel) {                                    // council round 11: the gauge's live note (ZONING · 7 HAZARDS)
+      const kl = String(st.kpiLabel).toUpperCase(), note = st.kpiNote ? String(st.kpiNote).toUpperCase() : '';
+      const head = kl.split(' ')[0];   // the County's label may already say ZONING 62% · 7 HAZARDS; a bare '7 HAZARDS' gets the word
+      gauges.push([!note ? kl : /WANTS/.test(note) || note.startsWith(head) ? note : head + ' · ' + note, st.kpi, '#c77dff']);
+    }
     const four = gauges.length > 3, rowH = four ? 44 : 58, lab = four ? 17 : 20, barY = four ? 20 : 24, barH = four ? 18 : 24;
     gauges.forEach(([label, v, color], i) => {
       const gy = 98 + i * rowH;
-      g.textAlign = 'left'; g.font = `600 ${lab}px ${SANS}`;
-      g.fillStyle = v == null ? '#4a4f5a' : '#cfc8b0'; g.textBaseline = 'alphabetic';
+      g.textAlign = 'left'; g.font = `600 ${fit(label, p => `600 ${p}px ${SANS}`, gw - 64, lab)}px ${SANS}`;
+      g.fillStyle = v == null ? '#4a4f5a' : four && i === 3 && st.kpiNote ? '#ffd27a' : '#cfc8b0'; g.textBaseline = 'alphabetic';
       g.fillText(label, gx, gy + lab - 2);
       if (v != null) { g.textAlign = 'right'; g.font = `700 ${lab}px ${MONO}`; g.fillText(Math.round(clamp01(v) * 100) + '%', gx + gw, gy + lab - 2); }
       const isKpi = four && i === 3;                       // round 6 #2/#3: the venue gauge decides the stamp
@@ -331,6 +340,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
       g.strokeRect(-sw / 2, -64, sw, 128); g.fillText(stampNow.text, 0, 4);
       g.restore();
     }
+    if (overlayFn) { g.save(); try { overlayFn(g, W, H, overlayT); } catch (err) { console.warn('board overlay', err); overlayFn = null; } g.restore(); }
     tex.needsUpdate = true;
   }
   // Round 11 (builder "today"): the TODAY chip, a pill right of EACH BALL PAYS ("TODAY · WINDY"). It sits clear of
@@ -449,13 +459,19 @@ export function createBoard(scene, { x, z, onCross = null }) {
       state.goals ? state.goals.pips.map(Number).join('') + state.goals.label + state.goals.next : '',
       state.fed > 1 + 1e-9 ? state.fed.toFixed(2) + ':' + Math.round(clamp01(state.fedLeft ?? 1) * 10) : '',
       state.today ?? '', state.stars ?? '',   // round 11: the TODAY chip, the endless stars
+      state.kpiNote ?? '',                   // council round 11: the gauge's live note
     ].join('|');
     if (k === key) return;
     key = k;
     const next = { bv: boardMoney(priceShown(state)), quota: state.quota == null || state.q == null ? '' : String(pct(targetFrac(state.q, state.ceiling ?? 1.5))), banner: bannerOf(state) };
-    if (s) {                                   // no flip on the very first draw
-      for (const f of ['bv', 'quota', 'banner']) if (next[f] !== prev[f]) { flipping[f] = true; flipT = FLIP_TIME; }
+    // Council round 11, 8.1: flip only on a new skeleton (digits as '#'), never on a < 1 % price move, never mid-flip.
+    const price = priceShown(state);
+    if (s && flipT <= 0) {                     // no flip on the very first draw
+      for (const f of ['bv', 'quota', 'banner']) {
+        if (f === 'bv' ? shouldFlip(prev.bv, next.bv, prevPrice, price) : shouldFlip(prev[f], next[f])) { flipping[f] = true; flipT = FLIP_TIME; }
+      }
     }
+    prevPrice = price;
     Object.assign(prev, next);
     s = state;
     draw();
@@ -470,6 +486,10 @@ export function createBoard(scene, { x, z, onCross = null }) {
     if (stampT > 0 && (stampT -= dt) <= 0) {
       stampT = 0; stampNow = null; draw();
       if (stampEl) stampEl.style.opacity = '0';
+    }
+    if (overlayFn) {                           // the overlay redraws at the flip's 20 Hz, not every frame
+      overlayT += dt; overlayAcc += dt;
+      if (overlayAcc >= FLIP_STEP && flipT <= 0) { overlayAcc = 0; if (s) draw(); }
     }
     if (flipT > 0) {
       flipT -= dt; flipAcc += dt;
@@ -535,5 +555,11 @@ export function createBoard(scene, { x, z, onCross = null }) {
   const frameBase = frameMat.color.getHex();
   const attach = obj => root.add(obj);
   const frameColor = hex => frameMat.color.setHex(hex ?? frameBase);
-  return { update, floatText, tick, stamp, attach, frameColor, dims: { BW, BH, BOTTOM } };
+  // Council round 11 (item 7, builder 2's newsreel): overlay(fn) paints fn(ctx, W, H, t) over the Board's canvas at 20 Hz
+  // until overlay(null) snaps it back. A throwing fn is dropped (the Board must never go dark).
+  function overlay(fn) {
+    overlayFn = typeof fn === 'function' ? fn : null; overlayT = 0; overlayAcc = 0;
+    if (s) draw();
+  }
+  return { update, floatText, tick, stamp, attach, frameColor, overlay, dims: { BW, BH, BOTTOM } };
 }

@@ -7,12 +7,14 @@ import { lastBucketLine } from '../web/js/huddlerules.js';
 import { ORBIT } from '../web/js/orbit.js';
 
 test('the sky row names Balls Outstanding first, then the debris overhead', () => {
-  assert.equal(skyText({ skyOut: 1959, skyUp: 30 }), 'Clear the sky · 1,958 balls still in orbit');
-  assert.equal(skyText({ skyOut: 1, skyUp: 7 }), 'Clear the sky · 7 more debris down');
+  // Council round 11 8.8: in pieces (10 balls a piece at 3P+, 15 solo), like the debris goal.
+  assert.equal(skyText({ skyOut: 1959, skyUp: 30 }), 'Clear the sky · 196 debris up');
+  assert.equal(skyText({ skyOut: 1959, skyUp: 30, crew: 1 }), 'Clear the sky · 131 debris up');
+  assert.equal(skyText({ skyOut: 1, skyUp: 7 }), 'Clear the sky · 7 debris up');
   assert.equal(skyText({ skyOut: 1, skyUp: 0 }), 'Clear the sky');
   const card = { venue: 5, scale: 1, crew: 1, need: {}, n: {}, done: [], who: [] };
   const sky = rowsOf(card, { skyOut: 500, skyUp: 0 }).find(r => r.id === 'sky');
-  assert.match(sky.text, /499 balls still in orbit/);
+  assert.match(sky.text, /34 debris up/);   // 499 balls, solo 15 a piece
   assert.equal(CARDS[5].at(-1).id, 'sky');
 });
 

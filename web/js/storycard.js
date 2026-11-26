@@ -7,8 +7,15 @@
 //   menufocus.js and the pad's menu walk never see it). main.js routes the pad's Ⓐ/Ⓑ and the keys here while it's up.
 // - The bell's stamp preempts it (the beat is skipped).
 // DOM only, built lazily; ticks on a real-time interval as well as the frame (a background tab pauses rAF).
+// Council round 11: a card may carry the founder's 1958 photo (founder.js, drawn in the card); the note from inside
+// Ball No. 1 has its own style; and every card shown / beat ended is announced as a window 'rr-story' event
+// ({ id, index, phase: 'card' | 'end' }) so round2.js (the newsreel, the finale) and the Gary cameos can follow the
+// cards without main.js.
 import { createStoryModel, WHO, STORY } from './story.js';
 import { drawSeal } from './pa.js';
+import { drawFounder, PHOTO } from './founder.js';
+
+const announce = detail => { try { if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent('rr-story', { detail })); } catch { /* ignore */ } };
 
 const CSS_ID = 'story-style';
 const CSS = `
@@ -29,6 +36,13 @@ const CSS = `
 #story-card.gary .st-head { color: #7d1812; }
 #story-card .st-foot { display: flex; justify-content: space-between; gap: 1em; font-size: 0.7em; opacity: 0.7; }
 #story-card .st-bar { height: 2px; background: currentColor; opacity: 0.35; transform-origin: left; }
+#story-card .st-photo { display: none; width: 160px; height: 100px; margin: 0.4em 0 0.1em; border: 4px solid #f3ead2; box-shadow: 0 0.2em 0.6em #0009; transform: rotate(-1.5deg); }
+#story-card.photo .st-photo { display: block; }
+#story-card.note { top: 18%; width: min(calc(100vw - 32px), 34em); background: radial-gradient(ellipse at 50% 30%, #2c2440, #15111f 75%); color: #fff3d6;
+  border: 1px solid #ffb34766; box-shadow: 0 0 2.5em #ffb34744, 0 0.4em 1.5em #000a; padding: 1.1em 1.6em 0.8em; }
+#story-card.note .st-icon { color: #ffd878; text-shadow: 0 0 0.5em #ffb347; }
+#story-card.note .st-head { text-align: center; border-color: #ffb34799; color: #ffcf7a; letter-spacing: 0.2em; }
+#story-card.note .st-text { text-align: center; font-size: clamp(1.25em, 3.4vh, 1.9em); font-weight: 500; line-height: 1.35; }
 `;
 
 // Gary's mark: a clipboard (no seal: he isn't Corporate's mascot, he's Regional's man).
@@ -49,7 +63,7 @@ function drawClipboard(canvas) {
 export function createStoryCard({ sayer, keys = () => ({ next: 'Space', skip: 'Esc' }), now = () => performance.now() / 1000, tick = 100, onChange = null } = {}) {
   const model = createStoryModel({ now });
   const doc = typeof document !== 'undefined' ? document : null;
-  let el = null, iconEl = null, headEl = null, textEl = null, footEl = null, barEl = null, shown = null, shownWho = null;
+  let el = null, iconEl = null, headEl = null, textEl = null, footEl = null, barEl = null, photoEl = null, photoG = null, shown = null, shownWho = null;
 
   function build() {
     if (el || !doc?.body) return !!el;
@@ -61,7 +75,9 @@ export function createStoryCard({ sayer, keys = () => ({ next: 'Space', skip: 'E
     textEl = doc.createElement('p'); textEl.className = 'st-text';
     barEl = doc.createElement('div'); barEl.className = 'st-bar';
     footEl = doc.createElement('div'); footEl.className = 'st-foot';
-    body.append(headEl, textEl, barEl, footEl); el.append(iconEl, body);
+    photoEl = doc.createElement('canvas'); photoEl.className = 'st-photo'; photoEl.width = PHOTO.W; photoEl.height = PHOTO.H;   // the 1958 photo (160 × 100)
+    photoEl.setAttribute('aria-hidden', 'true'); photoG = photoEl.getContext?.('2d') ?? null;
+    body.append(headEl, photoEl, textEl, barEl, footEl); el.append(iconEl, body);
     // A click on the card advances (pointer-events only while it's on). mousedown, so the canvas handler never sees it.
     el.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); press(); });
     doc.body.appendChild(el);
@@ -73,39 +89,52 @@ export function createStoryCard({ sayer, keys = () => ({ next: 'Space', skip: 'E
     iconEl.textContent = '';
     if (who === 'MEMO' || who === 'PA' || who === 'GARY') {
       const cv = doc.createElement('canvas'); (who === 'GARY' ? drawClipboard : drawSeal)(cv); iconEl.appendChild(cv);
-    } else iconEl.textContent = '✦';
+    } else iconEl.textContent = who === 'NOTE' ? '❍' : '✦';
+  }
+  let shownBeat = null, footReady = true;
+  function foot() {
+    const n = model.beat.cards.length, k = keys();
+    footReady = model.canPress;   // the note: no "next" until Ⓐ works (2 s)
+    footEl.innerHTML = `<span>${'●'.repeat(model.index + 1)}${'○'.repeat(n - model.index - 1)}</span><span>${footReady ? `${k.next} next · ${k.skip} skip` : ''}</span>`;
   }
   function render() {
     const c = model.card, beat = model.beat;
-    if (c === shown) { if (c) bar(); return; }   // nothing changed (and no class write while idle)
-    shown = c;
+    if (c === shown) { if (c) { bar(); photo(); if (!footReady && model.canPress) foot(); } return; }   // nothing changed (and no class write while idle)
+    if (shownBeat && shownBeat !== beat) announce({ id: shownBeat.id, index: -1, phase: 'end' });
+    shown = c; shownBeat = beat;
     if (!c) { el?.classList.remove('on'); onChange?.(null); return; }
     if (!build()) return;
-    el.className = 'on ' + c.who.toLowerCase();
-    icon(c.who);
+    el.className = 'on ' + c.who.toLowerCase() + (c.style ? ' ' + c.style : '') + (c.photo && photoG ? ' photo' : '');
+    icon(c.style === 'note' ? 'NOTE' : c.who);
     headEl.textContent = c.head ?? WHO[c.who] ?? '';
     textEl.textContent = c.who === 'GARY' ? '“' + c.line + '”' : c.line;
-    const n = beat.cards.length, k = keys();
-    footEl.innerHTML = `<span>${'●'.repeat(model.index + 1)}${'○'.repeat(n - model.index - 1)}</span><span>${k.next} next · ${k.skip} skip</span>`;
-    bar();
+    foot();
+    bar(); photo();
     onChange?.(c);
+    announce({ id: beat.id, index: model.index, phase: 'card' });
   }
   let shownAt = 0;
   function bar() {
     if (!barEl) return;
     if (shown !== barEl._card) { barEl._card = shown; shownAt = now(); }
-    barEl.style.transform = `scaleX(${Math.max(0, 1 - (now() - shownAt) / STORY.CARD_SECS).toFixed(3)})`;
+    barEl.style.transform = `scaleX(${Math.max(0, 1 - (now() - shownAt) / model.secs).toFixed(3)})`;
+  }
+  // The founder's photo: the swing plays once across the card's life (redrawn on the card's 10 Hz tick, 160 × 100).
+  function photo() {
+    const c = shown;
+    if (!c?.photo || !photoG) return;
+    drawFounder(photoG, PHOTO.W, PHOTO.H, Math.min(1, (now() - shownAt) / Math.max(1, model.secs - 0.5)), { sepia: true, grain: true, circle: c.photo === 'circled', seed: (now() * 10) | 0 });
   }
   // The loop: start a queued beat once say.js grants the turn; step the card; give the turn back at the end.
   function step() {
     if (model.up && sayer?.visible?.kind === 'STAMP') model.skip();   // the bell's stamp preempts a card
-    if (!model.up && model.pending) {
+    if (!model.up && model.ready) {   // council round 11: a beat's delay (the note waits for the crack) holds it here
       const granted = !sayer || sayer.gate === 'on' || sayer.want();
       if (!granted) { render(); return; }
       model.begin();
     }
     if (model.up) model.tick();
-    if (!model.up && !model.pending && sayer?.gate !== 'off') sayer?.release?.();
+    if (!model.up && !model.ready && sayer?.gate !== 'off') sayer?.release?.();
     render();
   }
   function add(id) {

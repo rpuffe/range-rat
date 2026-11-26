@@ -179,3 +179,25 @@ complaint) and Ball Value reads in one look. The mid-game is "no longer boring" 
 rounds of new systems brought new bugs (the promotion skip, Gary chasing the autopilot cart, goals ticking for
 things the crew didn't do). **Shared complaint from all three testers:** the last day at every venue is dead
 time once the card is done; the fix is "Clock out early" plus one goal that only lands with some risk.
+
+## Round 6 (2026-11-26, build 84f3fad: round 11 expert pacing, textures, the sky fix, round 12 story beats)
+
+| Metric | A | B | C | **Avg** | R5 | R1 | Δ vs R5 |
+|---|---|---|---|---|---|---|---|
+| Fun | 7 | 7 | 7 | **7.0** | 6.7 | 6.0 | +0.3 |
+| Clarity | 7 | 7 | 6.5 | **6.8** | 7.3 | 5.7 | −0.5 |
+| Text load | 6 | 6.5 | 6 | **6.2** | 6.8 | 4.0 | −0.6 |
+| Pacing | 6.5 | 6.5 | 7 | **6.7** | 6.7 | 5.0 | 0 |
+| Co-op | 6.5 | 7 | 7 | **6.8** | 6.8 | 6.0 | 0 |
+| Meaningful features | 6 | 6 | 6.5 | **6.2** | 6.7 | 4.7 | −0.5 |
+| Look & feel | 7 | 7.5 | 7.5 | **7.3** | 7.5 | 7.0 | −0.2 |
+| Polish | 7 | 6.5 | 6.5 | **6.7** | 6.2 | 4.7 | +0.5 |
+| One more shift | 7 | 7 | 6 | **6.7** | 6.7 | 6.0 | 0 |
+| Decision density | 5.5 | 5.5 | 6 | **5.7** | — | — | new |
+| **Overall** | **6.5** | **7** | **7** | **6.8** | 6.8 | 5.5 | 0 |
+
+**Read:** Fun and Polish up; Text load and Clarity down, because promotion and Club mornings now stack the
+story beat, the PA and the NEW memos (30–50 s of centre text). Meaningful features dipped on MOW-E (all three:
+"barely exists") and the late jobs (souvenirs ignorable; County hazards decide promotion but the bell blames
+strays). Best line in the game: the note inside Ball No. 1. Owner calls this round: MOW-E becomes a boss moment;
+grass calmer (done, 84f3fad).

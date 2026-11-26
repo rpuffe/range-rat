@@ -23,10 +23,11 @@ test('every story line is 8 words or fewer, and every head too', () => {
   for (const l of [...GARY_HELLO, ...GARY_BYE]) assert.ok(wordCount(l) <= STORY.MAX_WORDS, l);
 });
 
-test('every beat has 2-4 cards, a known speaker, and a unique id', () => {
+test('every beat has 2-4 cards (the note: one), a known speaker, and a unique id', () => {
   assert.equal(new Set(BEAT_IDS).size, BEATS.length);
   for (const b of BEATS) {
-    assert.ok(b.cards.length >= 2 && b.cards.length <= 4, b.id);
+    if (b.id === 'note') assert.equal(b.cards.length, 1);
+    else assert.ok(b.cards.length >= 2 && b.cards.length <= 4, b.id);
     for (const c of b.cards) assert.ok(Object.hasOwn(WHO, c.who), `${b.id}: ${c.who}`);
     assert.equal(BEAT_BY_ID[b.id], b);
   }
@@ -41,14 +42,17 @@ test('every venue 0-5 has a promotion beat (the Muni: the cold open) and a mid-v
   for (let v = 1; v <= 5; v++) assert.equal(beatFor('promo', v).id, 'promo:' + v);
 });
 
-test('the cold open, the epilogue and the mid beats exist; the cold open is 2-3 cards, the epilogue 3-4', () => {
-  const cold = BEAT_BY_ID.cold, epi = BEAT_BY_ID.epilogue;
+test('the cold open, the note, the epilogue and the mid beats exist; the cold open is 2-3 cards, the epilogue 3', () => {
+  const cold = BEAT_BY_ID.cold, epi = BEAT_BY_ID.epilogue, note = BEAT_BY_ID.note;
   assert.ok(cold && cold.cards.length >= 2 && cold.cards.length <= 3);
-  assert.ok(epi && epi.cards.length >= 3 && epi.cards.length <= 4);
+  assert.equal(epi.cards.length, 3, 'council round 11 #4: Gary\'s bucket, Dimples retiring, the sign');
   assert.equal(beatFor('epilogue').id, 'epilogue');
+  assert.equal(beatFor('note').id, 'note');
+  assert.match(note.cards[0].head, /INSIDE BALL No\. 1/);
+  assert.match(note.cards[0].line, /Whoever finds this: the range is yours/);
   assert.match(cold.cards.map(c => c.line).join(' '), /Site 12/);
   assert.match(cold.cards.map(c => c.line).join(' '), /probation/);
-  const e = epi.cards.map(c => (c.head ?? '') + ' ' + c.line).join(' ');
+  const e = [...note.cards, ...epi.cards].map(c => (c.head ?? '') + ' ' + c.line).join(' ');
   for (const k of [/Ball No\. 1/i, /tie/, /Dimples|Site 13/, /Under New Management/]) assert.match(e, k);
 });
 
@@ -152,7 +156,7 @@ test('server: an old save with no story list loads (every beat still to come) an
 });
 
 test('server: the epilogue plays on the first Under New Management morning, before its PA', () => {
-  const crew = crewAt({ v: 5, day: 21, venue: 5, venueDay: 3, story: ['promo:5', 'mid:5'] });
+  const crew = crewAt({ v: 5, day: 21, venue: 5, venueDay: 3, story: ['promo:5', 'mid:5', 'note'] });
   crew.endless = true; crew.endlessFresh = true; crew.phase = 'report';
   crew.startShift();
   assert.deepEqual(storyEvents(crew), ['epilogue']);
@@ -209,4 +213,130 @@ test('say: the story turn is granted at once when nothing is up (the cold open g
   s.say('PA', 'Good morning.');
   t = 12; s.update(); assert.equal(s.visible, null);
   s.release(); t = 12.4; s.update(); assert.equal(s.visible?.kind, 'PA');
+});
+
+// ---- council round 11 #4: the note at the huddle, the epilogue's held clock ----------------------------------------
+import { readFileSync } from 'node:fs';
+import { NOTE, BANK_SEQ, EPILOGUE_HOLD } from '../web/js/story.js';
+import { SIM } from '../web/js/sim.js';
+
+// The lastbucket preset (server/presets), at 1-4 Rats, run to Ball No. 1 on the field.
+function lastBucket(n = 1) {
+  const save = JSON.parse(readFileSync(new URL('../server/presets/lastbucket.json', import.meta.url), 'utf8')).save;
+  let t = 0;
+  const c = new Crew('NOTE', JSON.parse(JSON.stringify(save)), { now: () => t * 1000, seed: 7 });
+  const ps = Array.from({ length: n }, (_, i) => { const p = c.join('R' + i); c.connect(p); return p; });
+  const log = [];
+  const run = secs => { for (let i = 0; i < Math.round(secs * 10); i++) { t += 0.1; for (const p of c.players.values()) if (p.online > 0) p.seenAt = t * 1000; c.tick(0.1); log.push(...c.events); c.events = []; } };
+  if (c.phase !== 'shift') { for (const p of ps) c.readyUp(p); run(1); }
+  for (let i = 0; i < 400 && ![...c.balls.values()].some(b => b.kind === 'one' && b.y <= 0.4); i++) run(0.5);   // landed
+  return { c, ps, run, log };
+}
+function bank({ c, ps, run, log }) {
+  const b = [...c.balls.values()].find(x => x.kind === 'one');
+  assert.ok(b, 'Ball No. 1 is on the field');
+  ps[0].x = b.x; ps[0].z = b.z; assert.ok(c.pickup(ps[0], b.id));
+  for (const p of ps) { p.x = SIM.STAND.x + 0.3; p.z = SIM.STAND.z; c.input(p, { a: [{ t: 'hold', on: true }] }); }
+  log.length = 0;
+  run(3.4);
+  return log;
+}
+
+test('the note: one card that waits for the crack, reads at least 5 s, Ⓐ after 2 s, moves on at 7 s', () => {
+  const c = BEAT_BY_ID.note.cards[0];
+  assert.equal(c.style, 'note');
+  assert.deepEqual([c.grace, c.min, c.secs], [NOTE.GRACE, NOTE.MIN, NOTE.SECS]);
+  assert.deepEqual([NOTE.GRACE, NOTE.MIN, NOTE.SECS], [2, 5, 7]);
+  assert.equal(BEAT_BY_ID.note.delay, BANK_SEQ.NOTE);
+  assert.ok(BANK_SEQ.HUSH + 0.8 <= BANK_SEQ.CRACK + 1e-9, '0.8 s of near-silence before the crack');
+  assert.ok(BANK_SEQ.CRACK + 0.6 <= BANK_SEQ.NOTE + 1e-9, 'the halves are open before the card');
+});
+
+test('story model: a beat\'s delay holds it; a card\'s min keeps an early press until it is reached', () => {
+  let t = 0;
+  const m = createStoryModel({ now: () => t });
+  m.add('note');
+  assert.equal(m.pending, 1); assert.equal(m.ready, false, 'the crack plays first');
+  t = NOTE.DELAY - 0.01; assert.equal(m.ready, false);
+  t = NOTE.DELAY; assert.equal(m.ready, true);
+  m.begin(); const t0 = t;
+  t = t0 + 1; m.press(); m.tick(); assert.equal(m.up, true, 'inside the 2 s grace: ignored');
+  t = t0 + 2.5; m.press(); m.tick(); assert.equal(m.up, true, 'a press at 2.5 s is kept...');
+  t = t0 + 4.9; m.tick(); assert.equal(m.up, true);
+  t = t0 + 5; m.tick(); assert.equal(m.up, false, '...and acts at the 5 s minimum');
+  // no press: it moves on by itself at 7 s
+  m.add('note'); t += NOTE.DELAY; m.begin(); const t1 = t;
+  t = t1 + 6.9; m.tick(); assert.equal(m.up, true);
+  t = t1 + 7; m.tick(); assert.equal(m.up, false);
+  // a skip inside the minimum also waits for it
+  m.add('note'); t += NOTE.DELAY; m.begin(); const t2 = t;
+  t = t2 + 0.5; m.skip(); m.tick(); assert.equal(m.up, true);
+  t = t2 + 5; m.tick(); assert.equal(m.up, false);
+  // a plain card keeps the old rules (grace 0.4 s, no minimum)
+  m.add('cold'); m.begin(); t += 0.5; m.press(); assert.equal(m.index, 1);
+});
+
+test('the County beat opens with Gary\'s confession (5 s minimum); the Stadium beat has Gary and the new memo', () => {
+  const county = beatFor('promo', 4).cards;
+  assert.equal(county[0].who, 'GARY'); assert.match(county[0].line, /I was a Range Rat\. Here\. 1987\./); assert.equal(county[0].min, 5);
+  const stadium = beatFor('promo', 3).cards;
+  assert.match(stadium[0].line, /jumbotron plays a 1958 newsreel/);
+  assert.ok(stadium.some(c => c.who === 'GARY' && /jumbotron/i.test(c.line)), 'the ally half in this stretch');
+  assert.ok(stadium.some(c => c.who === 'MEMO' && /Site 13 sells tickets to its jumbotron/.test(c.line)));
+  assert.ok(!stadium.some(c => /founder swings/.test(c.line)), 'the jumbotron shows it now');
+  assert.equal(BEAT_BY_ID['mid:0'].cards[0].photo, 'sepia');
+  assert.equal(BEAT_BY_ID['mid:5'].cards[0].photo, 'circled');
+});
+
+test('an old save that saw the epilogue has seen the note (no replay); one that banked but missed it gets it first', () => {
+  assert.deepEqual(cleanStory(['epilogue']).sort(), ['epilogue', 'note']);
+  const seen = crewAt({ v: 5, day: 21, venue: 5, venueDay: 3, story: ['epilogue'] });
+  assert.equal(seen.story.has('note'), true);
+  assert.equal(seen.storyBeat('note'), false);
+  const missed = crewAt({ v: 5, day: 21, venue: 5, venueDay: 3, story: ['promo:5'] });
+  missed.endless = true; missed.endlessFresh = true; missed.phase = 'report';
+  missed.startShift();
+  assert.deepEqual(storyEvents(missed), ['note', 'epilogue']);
+});
+
+for (const n of [1, 2, 4]) {
+  test(`the bank at ${n}P: banked → story note → pa last, once; the Owners' book starts clean`, () => {
+    const m = lastBucket(n);
+    m.c.records.yesterday = { cash: 5, curve: [] }; m.c.records.streak = 3;
+    const log = bank(m);
+    const order = log.filter(e => (e.t === 'lastbucket' && e.phase === 'banked') || e.t === 'story' || (e.t === 'pa' && e.id === 'last'))
+      .map(e => e.t === 'story' ? 'story ' + e.id : e.t === 'pa' ? 'pa last' : 'banked');
+    assert.deepEqual(order, ['banked', 'story note', 'pa last']);
+    assert.equal(m.c.records.yesterday, undefined); assert.equal(m.c.records.streak, undefined);
+    assert.ok(m.c.records.cash > 0, 'the Orbital\'s record stays as "Best ever"');
+  });
+}
+
+for (const n of [1, 2, 4]) {
+  test(`the first endless morning at ${n}P: the clock holds ${EPILOGUE_HOLD} s while the epilogue plays; no customer swings`, () => {
+    const m = lastBucket(n);
+    bank(m);
+    m.run(2);
+    const { c, ps, run, log } = m;
+    assert.equal(c.phase, 'report');
+    log.length = 0;
+    for (const p of ps) c.readyUp(p);
+    log.push(...c.events); c.events = [];   // the morning's events (readyUp starts the shift at once)
+    assert.equal(c.phase, 'shift');
+    assert.ok(log.some(e => e.t === 'story' && e.id === 'epilogue'));
+    assert.ok(!log.some(e => e.t === 'story' && e.id === 'note'), 'the note played at the bank');
+    log.length = 0;
+    const shift0 = c.shiftT;
+    run(13);
+    assert.equal(c.shiftT, shift0, 'still held at 13 s');
+    assert.equal(log.filter(e => e.t === 'spawn').length, 0, 'no customer swings during the hold');
+    run(2);
+    assert.ok(c.shiftT > shift0, 'moving at 15 s');
+  });
+}
+
+test('council round 11: the mid-venue beat waits out a MOW-E boss day', async () => {
+  const { midDue } = await import('../web/js/story.js');
+  assert.ok(midDue({ venue: 1, venueDay: 3 }));
+  assert.equal(midDue({ venue: 1, venueDay: 3, boss: true }), null);
 });

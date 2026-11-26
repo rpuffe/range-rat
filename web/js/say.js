@@ -14,6 +14,8 @@ export const SAY = {
   TIP_QUIET: 2,      // a tip waits for this long with nothing showing
   SETTLE: { MEMO: 0.6 },   // a memo settles this long, so the PA line from the same moment (a tick later) goes first
   MAX_WORDS: 8,
+  STORY_MEMO: 5,     // council round 11 #3: a story morning's memo shows 5 s, not 7
+  FADE_MAX: 0.3,     // council round 11 8.6: the next card waits for the outgoing one's fade (transitionend), at most this long
 };
 const LOW = new Set(['ALERT', 'TOAST', 'TIP']);     // dropped by the stamp and the bell lock
 const HELD = new Set(['PA', 'MEMO']);               // held by the bell lock until the report closes
@@ -135,7 +137,11 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
 // The DOM adapter: #toast for ALERT and TOAST, #hint for TIP, #memo for MEMO; PA and STAMP bring their own show/hide
 // in data (the PA card, the board's stamp). It ticks on a real-time interval: a background tab pauses rAF.
 // now / tick: injectable for tests (a fake clock, no interval).
-export function createSay({ $ = id => document.getElementById(id), dev = false, onChange = null, now = () => performance.now() / 1000, tick = 100 } = {}) {
+// Council round 11 8.6: fade(el) → does the element have a fade running (default: a non-zero CSS transition); test-injectable.
+const cssFades = el => {
+  try { return !!el && typeof getComputedStyle === 'function' && getComputedStyle(el).transitionDuration.split(',').some(d => parseFloat(d) > 0); } catch { return false; }
+};
+export function createSay({ $ = id => document.getElementById(id), dev = false, onChange = null, now = () => performance.now() / 1000, tick = 100, fades = cssFades } = {}) {
   const model = createSayModel({
     now,
     warn: dev ? (text, n) => console.warn(`say: ${n} words (max ${SAY.MAX_WORDS}): ${text}`) : null,
@@ -171,10 +177,37 @@ export function createSay({ $ = id => document.getElementById(id), dev = false, 
     el.classList.toggle('show', on);
     el.classList.toggle('alert', on && item.kind === 'ALERT');
   }
+  // Council round 11 8.6: a card fading in over one fading out read as two texts on a slow frame. The outgoing element's
+  // fade finishes (transitionend, at most SAY.FADE_MAX) before the next shows. The bell's stamp never waits, and a story
+  // card taking the turn snaps the outgoing card off with no fade.
+  const elOf = item => (!item ? null : item.kind === 'MEMO' ? $('memo') : item.kind === 'PA' ? $('pa-card') : item.kind === 'TIP' ? $('hint') : item.kind === 'STAMP' ? null : $('toast'));
+  // fadeUntil: the next card waits at most FADE_MAX from when it is due (null until one is); a fade with no
+  // transitionend is over after 1 s anyway (never a stuck queue).
+  let fading = null, fadeAt = 0, fadeUntil = null, fadeEl = null;
+  function endFade() { fading = null; fadeUntil = null; }
+  function startFade(item, el = elOf(item)) {
+    if (!el || !fades(el)) return;
+    fading = item; fadeAt = now(); fadeUntil = null; fadeEl = el;
+    const done = ev => { if (ev && ev.target !== el) return; el.removeEventListener?.('transitionend', done); if (fading === item) { endFade(); sync(); } };
+    el.addEventListener?.('transitionend', done);
+  }
+  function snap() {   // the story card took the turn: the outgoing card goes at once
+    const el = fadeEl; endFade(); fadeEl = null;
+    if (!el?.style) return;
+    const tr = el.style.transition; el.style.transition = 'none';
+    setTimeout(() => { el.style.transition = tr; }, 60);
+  }
   function sync() {
     const v = model.update();
+    if (model.gate === 'on' && fadeEl) snap();
     if (v === shown && (!v || v.v === shownV)) return;
-    if (shown && shown !== v) render(shown, false);
+    if (shown && shown !== v) { render(shown, false); if (v?.kind !== 'STAMP') startFade(shown); shown = null; shownV = -1; }
+    if (fading && now() - fadeAt > 1) endFade();
+    if (v && v !== shown && fading && v.kind !== 'STAMP') {   // wait out the fade (transitionend, or FADE_MAX after it's due)
+      fadeUntil ??= now() + SAY.FADE_MAX;
+      if (now() < fadeUntil) return;
+    }
+    if (fading && v) endFade();
     if (v) render(v, true);
     shown = v; shownV = v?.v ?? -1;
     onChange?.(v);
@@ -188,7 +221,8 @@ export function createSay({ $ = id => document.getElementById(id), dev = false, 
   return {
     say: wrap(model.say),
     bell: wrap(model.bell), report: wrap(model.report), open: wrap(model.open), clear: wrap(model.clear), forget: wrap(model.forget), hold: wrap(model.hold),
-    want: wrap(model.want), release: wrap(model.release), get gate() { return model.gate; },   // round 12: the story card's turn
+    // Council round 11 8.6: the story card's own fade-out is an outgoing card too (the memo after a beat waited on nothing).
+    want: wrap(model.want), release: wrap(() => { const was = model.gate; model.release(); if (was !== 'off') startFade({ kind: 'CARD' }, $('story-card')); }), get gate() { return model.gate; },   // round 12: the story card's turn
     get held() { return model.held; },
     get up() { return [...up]; },
     busy: model.busy,

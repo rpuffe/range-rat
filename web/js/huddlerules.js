@@ -47,6 +47,8 @@ export function sweepNow(lb, since) {
   return Math.min(HUDDLE.HOLD, (lb.sweep ?? 0) + Math.max(0, since));
 }
 
+export const LB_NAME = 8;   // council round 11 8.3: the waiting name's most characters (then '…')
+const cutName = n => { const s = String(n ?? '').toUpperCase(); return s.length > LB_NAME ? s.slice(0, LB_NAME - 1) + '…' : s; };
 // The Last Bucket's one banner line (round2.js shows it; one centre text at a time). '' hides it.
 // `glyph` is the Use control (Ⓐ on a pad, SPACE on a keyboard). The huddle line is ≤ 8 words.
 export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = SIM.STAND) {   // the ball return (owner layout)
@@ -59,8 +61,12 @@ export function lastBucketLine(c, meId, glyph = 'Ⓐ', stand = SIM.STAND) {   //
   if (lb.phase === 'huddle') return (lb.slots ?? []).length <= 1 ? `HOLD ${glyph}` : `HOLD ${glyph} TOGETHER · <b>${(lb.held ?? []).length} / ${(lb.slots ?? []).length}</b>`;
   const carrier = on.find(p => p.one);
   if (carrier) {
-    const missing = on.filter(p => dist(p, stand) >= HUDDLE.R).map(p => p.id === meId ? 'you' : esc(p.name));
-    return `BALL NO. 1 → THE RETURN · <b>${on.length - missing.length} / ${on.length}</b>${missing.length ? ` · waiting: ${missing.slice(0, 3).join(', ')}` : ''}`;
+    // Council round 11 8.3: it clipped at 800 px. One name plus a count ("BALL NO. 1 · HOME · 3/4 · WAITING: RAT2 +1"),
+    // the name cut to LB_NAME characters, and a CSS max-width with an ellipsis as the backstop. Solo: just the goal.
+    if (on.length <= 1) return 'BALL NO. 1 → THE RETURN';
+    const missing = on.filter(p => dist(p, stand) >= HUDDLE.R).sort((a, b) => (b.id === meId) - (a.id === meId));
+    const who = !missing.length ? '' : missing[0].id === meId ? 'YOU' : esc(cutName(missing[0].name));
+    return `BALL NO. 1 · HOME · <b>${on.length - missing.length}/${on.length}</b>${who ? ` · WAITING: ${who}${missing.length > 1 ? ' +' + (missing.length - 1) : ''}` : ''}`;
   }
   return lb.phase === 'down' ? 'BALL NO. 1 IS DOWN · follow the beam' : '';
 }

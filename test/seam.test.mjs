@@ -110,19 +110,21 @@ test('GOLDEN: cartBlocked, fieldFor, clampToField and BV are unchanged at venues
 // the busier daytime crowd and the spotless/goal-reward cash (Muni and Club), and gear grime folded into the Clean %
 // (Club). The bays, Today, range and late work leave them unchanged. The venue-2+ module still changes nothing.
 test('GOLDEN: a whole seeded crew plays out identically at the Muni and the Club (no modules)', () => {
+  // Council round 11: the Club pair re-recorded (Muni unchanged). Causes, each checked by its builder: the MOW-E boss on
+  // Club day 3 (BOSS.ON = 0 restores the old pair) and the bouncy ball's debut moving from Club day 3 to day 4.
   assert.equal(fnv(crewRun(null)), 'dee0fab1');
-  assert.equal(fnv(crewRun(CLUB_SAVE)), 'ba21dc31');
+  assert.equal(fnv(crewRun(CLUB_SAVE)), 'e653c779');
 });
 
 test('GOLDEN: with the creek snags off, the Club run is the pre-round-10 fingerprint', (t) => {
   SNAG.ON = 0; t.after(() => { SNAG.ON = 1; });
-  assert.equal(fnv(crewRun(CLUB_SAVE)), 'dee791b9');
+  assert.equal(fnv(crewRun(CLUB_SAVE)), '50bf5913');
 });
 
 test('GOLDEN: a module that lives at venue 2+ changes nothing at venues 0-1', () => {
   const noisy = { id: 'noisy', venue: 2, kpi: () => 0, launchMod: (c, st, shot) => ({ ...shot, vx: shot.vx + 9 }), tick: c => { c.cash += 1000; } };
   assert.equal(fnv(crewRun(null, { modules: [noisy] })), 'dee0fab1');
-  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), 'ba21dc31');
+  assert.equal(fnv(crewRun(CLUB_SAVE, { modules: [noisy] })), 'e653c779');
 });
 
 // ---- the fourth gauge ------------------------------------------------------------------------------------------------
@@ -161,14 +163,14 @@ test('the Crew: a venue KPI lifts the ceiling to 3.0 and the quota scales with i
   assert.equal(crewAt(1, [dummyKpi(2, 0.5)], { venueDay: 2 }).crew.ceiling(), 2.5, 'nor before it');   // round 11: Club day 2, the pond filled
 });
 
-test('VENUE_RULES: a KPI label and a how-to card from Tiered on; the reveal shows the how-to second', () => {
+test('VENUE_RULES: a KPI label and a how-to card from Tiered on; the reveal plays no memo cards (council round 11 #3)', () => {
   assert.equal(VENUE_RULES[0].kpi, undefined); assert.equal(VENUE_RULES[1].kpi, undefined);
   assert.deepEqual(VENUE_RULES.slice(2).map(r => r.kpi), ['BAY UTILIZATION', 'CROWD SENTIMENT', 'ZONING COMPLIANCE', 'ORBITAL DEBRIS']);
   for (const r of VENUE_RULES.slice(2, 5)) assert.ok(r.howto?.startsWith('New: '));
   assert.equal(VENUE_RULES[5].howto, 'The Lift is open. Keep the sky clear.');   // round 7 #5: the Orbital's job is the sky
-  assert.deepEqual(revealCards(1, 'memo'), ['memo']);
-  assert.deepEqual(revealCards(2, 'memo'), ['memo', VENUE_RULES[2].howto]);
-  assert.deepEqual(revealCards(6, 'Under New Management.'), ['Under New Management.']);
+  // Council round 11 #3: the venue's NEW line (VENUE_RULES[v].memo) folds into the morning memo's second line.
+  for (const v of [1, 2, 3, 4, 5]) { assert.deepEqual(revealCards(v, 'memo'), []); assert.ok(VENUE_RULES[v].memo.startsWith('NEW: ')); }
+  assert.deepEqual(revealCards(6, 'Under New Management.'), []);
 });
 
 // ---- the server registry ---------------------------------------------------------------------------------------------

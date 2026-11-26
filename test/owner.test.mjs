@@ -140,10 +140,11 @@ test('streakLine: beat with a run, beat once, short by; all ≤ 8 words', () => 
   for (const r of [{ beat: true, streak: 123 }, { beat: false, by: 999_999_999 }]) assert.ok(words(streakLine(r)) <= 8, streakLine(r));
 });
 
-test('raceYesterday: the streak counts beats and resets on a miss; the record stands in before a yesterday', () => {
+test('raceYesterday: the streak counts beats and resets on a miss; no race before a yesterday (council round 11 #6)', () => {
   let rec = { cash: 50, streak: 0 };
   let r = raceYesterday(rec, 40, null);
-  assert.equal(r.result.beat, false); assert.equal(r.result.by, 10); assert.equal(r.streak, 0);
+  assert.deepEqual(r.result, { first: true, target: 40 }, 'endless day 1: no race, tomorrow beats today'); assert.equal(r.streak, 0);
+  assert.equal(r.yesterday.cash, 40);
   rec = { ...rec, yesterday: r.yesterday, streak: r.streak };
   r = raceYesterday(rec, 45, null);                 // beats yesterday (40), not the record
   assert.equal(r.result.beat, true); assert.equal(r.streak, 1);
@@ -151,7 +152,7 @@ test('raceYesterday: the streak counts beats and resets on a miss; the record st
   r = raceYesterday(rec, 46, null); assert.equal(r.streak, 2);
   rec = { ...rec, yesterday: r.yesterday, streak: r.streak };
   r = raceYesterday(rec, 46, null); assert.equal(r.streak, 0, 'a tie is not a beat');
-  assert.deepEqual(yesterdayPace({ cash: 10 }), { cash: 10, vs: 'record' });
+  assert.equal(yesterdayPace({ cash: 10 }), null, 'the Orbital record is never raced');
   assert.equal(yesterdayPace({ cash: 0 }), null);
   assert.equal(yesterdayPace({ cash: 10, yesterday: { cash: 7 } }).vs, 'yesterday');
 });
@@ -175,12 +176,13 @@ test('two endless shifts: yesterday is the second, the streak counts, the pace r
   const a = crew.join('A'); crew.connect(a);
   crew.startShift(); run(30);
   let p = crew.snapshot().pace;
-  assert.equal(p.vs, 'record', 'an old save with no yesterday races the record'); assert.equal(p.record, 1000);
+  assert.equal(p, null, 'endless day 1 has no race (council round 11 #6)');
   for (const m of crew.mats) m.next = 1e9;
   for (let t = 30; t < 420; t += 10) { crew.bank(1, a.id); run(10); }
   assert.equal(crew.phase, 'report');
   const d1 = crew.report, y1 = crew.records.yesterday.cash;
-  assert.ok(d1.race, 'an endless bell races'); assert.equal(y1, d1.cash);
+  assert.ok(d1.race?.first, 'endless day 1 opens the book'); assert.equal(y1, d1.cash); assert.equal(d1.record, null, 'no NEW on day 1');
+  assert.equal(crew.records.owner.cash, d1.cash);
   assert.equal(crew.snapshot().pace, null, 'no pace outside a shift');
   crew.startShift(); for (const m of crew.mats) m.next = 1e9;
   for (let t = 0; t < 420; t += 10) { crew.bank(5, a.id); run(10); }

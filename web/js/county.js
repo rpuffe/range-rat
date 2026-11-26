@@ -113,3 +113,26 @@ export function vanPick(balls, k) {
   out.sort((a, b) => b.x - a.x);
   return out.slice(0, Math.max(0, k | 0));
 }
+
+// ---- council round 11 #2: the County says "hazards" -------------------------------------------------------------------
+// A live deal: whenever Zoning is under the line + OVER and MIN+ hazards are out, the rally deals "Hazards out! Spray and
+// bag!" to the two Rats nearest the hazards (solo: the one Rat), at most every EVERY s (Last Call re-deals at once).
+export const HAZ_DEAL = { MIN: 3, OVER: 0.1, EVERY: 45 };
+export const hazDealDue = ({ haz = 0, kpi = 1, line = 0.5, since = Infinity }) => haz >= HAZ_DEAL.MIN && kpi < line + HAZ_DEAL.OVER && since >= HAZ_DEAL.EVERY;
+// Who gets it: [sprayer, bagger] ids (one id solo). rats: [{ id, x, z, wand }]; hazards: [{ x, z }]. The sprayer is the
+// wand holder nearest the hazards' centroid if anyone holds the wand, else the nearest Rat; the bagger is the nearest
+// other Rat. [] with no Rats or no hazards.
+export function hazPair(rats, hazards) {
+  if (!rats?.length || !hazards?.length) return [];
+  let cx = 0, cz = 0;
+  for (const h of hazards) { cx += h.x; cz += h.z; }
+  cx /= hazards.length; cz /= hazards.length;
+  const byDist = [...rats].sort((a, b) => Math.hypot(a.x - cx, a.z - cz) - Math.hypot(b.x - cx, b.z - cz));
+  const sprayer = byDist.find(r => r.wand) ?? byDist[0];
+  const bagger = byDist.find(r => r !== sprayer);
+  return bagger ? [sprayer.id, bagger.id] : [sprayer.id];
+}
+// The Board's Zoning gauge line (builder 4's board.js draws mods.county.label): "ZONING 62% · 7 HAZARDS".
+export const zoningLabel = (kpi, haz = 0) => `ZONING ${Math.round(Math.max(0, Math.min(1, kpi ?? 1)) * 100)}%${haz > 0 ? ` · ${haz} HAZARD${haz === 1 ? '' : 'S'}` : ''}`;
+// The first van tow's toast (the rest go to the feed).
+export const vanToast = n => `Zoning towed ${n} balls. Bag the hazards!`;

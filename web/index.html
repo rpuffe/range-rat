@@ -170,6 +170,8 @@
   .test-tag { display: none; font-size: 0.7em; font-weight: 700; letter-spacing: 0.12em; color: #1b1b1b; background: #ffcf3f; padding: 0.15em 0.6em; border-radius: 0.3em; }
   body.test-crew .test-tag { display: inline-block; }
   #report > .test-tag { flex: none; }
+  /* Council round 11 8.3: the Last Bucket carry banner never clips off-screen (ending.js draws it; this is the backstop). */
+  body #ending-huddle { max-width: calc(100vw - 32px); box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; }
 </style>
 <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
 </head>

@@ -100,6 +100,47 @@ export function createEnding({ scene, root, camera }) {
     dust.push({ m, t: 0 });
   }
 
+  // ---- the crack (council round 11 #4): Ball No. 1 opens on the return's lip and the note rises out of it ----
+  // Three meshes (two gold halves and the curl of paper), built on first use, plus a warm light. Only now.
+  let crackG = null, crackT = -1, halfTop = null, halfBot = null, paper = null, crackLight = null;
+  const CRACK = { HINGE: 0.6, RISE0: 0.45, RISE1: 1.4, RISE: 0.4, R: 0.17 };
+  function buildCrack() {
+    crackG = new THREE.Group(); crackG.name = 'ball-one-crack'; crackG.visible = false; group.add(crackG);
+    const tex = ballTexture();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xfff1c0, map: tex, emissive: 0xffc84a, emissiveMap: tex, emissiveIntensity: 1.1, roughness: 0.3, metalness: 0.35, side: THREE.DoubleSide });
+    // Each half pivots on a hinge at the back of the ball (-x), so they open like a locket.
+    const R = CRACK.R;
+    halfTop = new THREE.Group(); halfTop.position.set(-R, 0, 0); crackG.add(halfTop);
+    const top = new THREE.Mesh(new THREE.SphereGeometry(R, 24, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat); top.position.x = R; halfTop.add(top);
+    halfBot = new THREE.Group(); halfBot.position.set(-R, 0, 0); crackG.add(halfBot);
+    const bot = new THREE.Mesh(new THREE.SphereGeometry(R, 24, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat); bot.position.x = R; halfBot.add(bot);
+    // The curl of paper: a half-rolled sheet (an open cylinder arc), cream, lit from within.
+    paper = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.16, 12, 1, true, 0, Math.PI * 1.4),
+      new THREE.MeshBasicMaterial({ color: 0xfff3d0, side: THREE.DoubleSide }));
+    paper.rotation.z = Math.PI / 2; crackG.add(paper);
+    crackLight = new THREE.PointLight(0xffc870, 0, 6, 2); crackLight.position.y = 0.3; crackG.add(crackLight);
+  }
+  // crack(x, y, z) opens it there; crack(null) puts it away (the next morning).
+  function crack(x, y, z) {
+    if (x == null) { if (crackG) crackG.visible = false; crackT = -1; return; }
+    if (!crackG) buildCrack();
+    crackG.position.set(x, y, z); crackG.rotation.y = 0;
+    halfTop.rotation.z = 0; halfBot.rotation.z = 0; paper.position.y = 0; crackLight.intensity = 0;
+    crackG.visible = true; crackT = 0;
+  }
+  function tickCrack(dt) {
+    if (crackT < 0 || !crackG) return;
+    crackT += dt;
+    const sm = (a, b, x) => { const u = Math.max(0, Math.min(1, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+    const k = sm(0, CRACK.HINGE, crackT);
+    halfTop.rotation.z = -k * 1.9; halfBot.rotation.z = k * 0.35;   // the top swings back, the bottom settles
+    const r = sm(CRACK.RISE0, CRACK.RISE1, crackT);
+    paper.position.y = r * CRACK.RISE + Math.sin(crackT * 1.7) * 0.015 * r;
+    paper.rotation.y = crackT * 0.6;
+    crackLight.intensity = 3.5 * sm(0.2, 0.9, crackT) * (0.9 + 0.1 * Math.sin(crackT * 9));
+    crackG.rotation.y += dt * 0.15;
+  }
+
   // ---- huddle banner ----
   let huddleEl = null;
   function huddle(n, of) {
@@ -202,6 +243,7 @@ export function createEnding({ scene, root, camera }) {
       glowEl.style.opacity = k >= 1 ? '0' : String(Math.sin(k * Math.PI) * 0.9);
       if (k >= 1) glowT = 0;
     }
+    tickCrack(dt);
     if (shakeT > 0) {
       shakeT = Math.max(0, shakeT - dt); const a = (shakeT / SHAKE) ** 2 * 0.45;
       shake.set((Math.random() - 0.5) * 2 * a, (Math.random() - 0.5) * 2 * a, (Math.random() - 0.5) * a);
@@ -209,5 +251,5 @@ export function createEnding({ scene, root, camera }) {
     return shake;
   }
 
-  return { ballOne, hideBall, land, huddle, finale, endCard, tick };
+  return { ballOne, hideBall, land, crack, huddle, finale, endCard, tick };
 }

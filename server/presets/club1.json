@@ -95,7 +95,6 @@
   "voiced": [
    "welcome",
    "glow",
-   "gold",
    "cart",
    "garyIntro",
    "gary",
@@ -104,6 +103,15 @@
   "debuts": [
    "glow",
    "gold"
+  ],
+  "mowe": {
+   "tame": false,
+   "lost": 0,
+   "encore": false
+  },
+  "story": [
+   "cold",
+   "mid:0"
   ],
   "mods": {
    "deck": {

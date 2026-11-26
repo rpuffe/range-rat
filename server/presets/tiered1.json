@@ -6,33 +6,33 @@
  "players": 4,
  "save": {
   "v": 5,
-  "day": 12,
-  "cash": 60979.33,
+  "day": 11,
+  "cash": 27752.03,
   "totals": {
-   "picked": 8089,
-   "deposited": 5490,
-   "cash": 259937.35,
-   "knockdowns": 457,
-   "helped": 1780,
-   "carted": 965,
+   "picked": 7495,
+   "deposited": 4918,
+   "cash": 202968.22999999998,
+   "knockdowns": 411,
+   "helped": 1689,
+   "carted": 835,
    "swings": 0,
    "pings": 0,
-   "runOver": 298,
-   "washed": 422.5,
-   "scrubbed": 4691,
-   "unwashed": 305,
-   "lostPremium": 7744.089999999999,
-   "reviews": 10,
-   "launched": 10312,
-   "filled": 413,
+   "runOver": 257,
+   "washed": 356.8,
+   "scrubbed": 4126,
+   "unwashed": 301,
+   "lostPremium": 7156.87,
+   "reviews": 9,
+   "launched": 9214,
+   "filled": 373,
    "spotless": 65.4,
-   "sealCash": 4839.02,
-   "served": 122,
-   "fries": 1185,
-   "dogs": 86,
-   "fedCash": 25262.269999999997,
-   "dived": 652,
-   "snags": 288
+   "sealCash": 4248.42,
+   "served": 97,
+   "fries": 1014,
+   "dogs": 72,
+   "fedCash": 18919.05,
+   "dived": 445,
+   "snags": 198
   },
   "up": {
    "gear": 3,
@@ -47,7 +47,7 @@
    "shoes": 2,
    "hardhat": 1,
    "returns": 2,
-   "pond": 2,
+   "pond": 1,
    "amen": 1
   },
   "diveByName": {
@@ -59,81 +59,88 @@
   "lostFound": [
    "keys",
    "trophy",
-   "shades",
-   "duck"
+   "shades"
   ],
-  "commendations": 10,
+  "commendations": 8,
   "reviews": 0,
-  "pondSunk": 0,
+  "pondSunk": 32,
   "fries": 20,
   "venue": 2,
   "venueDay": 0,
-  "outstanding": 1513371449,
+  "outstanding": 1513372021,
   "pendingReveal": 2,
   "endless": false,
-  "garyDay": 13,
+  "garyDay": 12,
   "fixtures": {
-   "sign": 0.067,
-   "stand": 0.239,
-   "mat0": 0.036,
-   "mat1": 0.234,
-   "mat2": 0.192,
-   "mat3": 0.225,
-   "mat4": 0.216,
-   "mat5": 0.012,
-   "mat6": 0.222,
-   "mat7": 0.213,
-   "mat8": 0.219,
-   "mat9": 0.225,
-   "mat10": 0.18,
-   "mat11": 0.186,
-   "mat12": 0.066,
-   "mat13": 0.024,
-   "mat14": 0.228,
-   "mat15": 0.186
+   "sign": 0.059,
+   "stand": 0.233,
+   "mat0": 0.108,
+   "mat1": 0.108,
+   "mat2": 0.225,
+   "mat3": 0.102,
+   "mat4": 0.036,
+   "mat5": 0.093,
+   "mat6": 0,
+   "mat7": 0,
+   "mat8": 0,
+   "mat9": 0,
+   "mat10": 0.237,
+   "mat11": 0.234,
+   "mat12": 0.165,
+   "mat13": 0.174,
+   "mat14": 0.036,
+   "mat15": 0.231
   },
   "records": {
-   "cash": 51133.97,
-   "banked": 596,
-   "day": 11,
+   "cash": 41492.93,
+   "banked": 556,
+   "day": 10,
    "curve": [
-    1574.22,
-    5536,
-    7705.92,
-    10328.92,
-    16968.92,
-    19078.24,
-    20401.11,
-    22818.21,
-    29479.9,
-    30989.35,
-    35826.51,
-    38652.72,
-    41098.66,
-    51133.97
+    672.36,
+    4908.83,
+    7379.18,
+    9115.42,
+    13142.14,
+    18272,
+    20720.75,
+    21874.31,
+    22950.62,
+    25995.8,
+    33160.46,
+    36753.84,
+    37919.22,
+    41492.93
    ]
   },
   "voiced": [
    "welcome",
    "glow",
-   "gold",
    "cart",
    "garyIntro",
    "gary",
    "huddle",
    "club",
-   "lead",
    "treasure",
-   "splitter",
-   "mower"
+   "rogue"
   ],
   "debuts": [
    "glow",
    "gold",
    "square",
    "lead",
-   "splitter",
-   "bouncy"
+   "bouncy",
+   "splitter"
+  ],
+  "mowe": {
+   "tame": true,
+   "lost": 2,
+   "encore": false
+  },
+  "story": [
+   "cold",
+   "mid:0",
+   "promo:1",
+   "mid:1"
   ],
   "mods": {
    "deck": {
@@ -141,41 +148,41 @@
    }
   },
   "night": {
-   "minutes": 49,
+   "minutes": 42,
    "fromDay": 5,
-   "day": 11,
-   "shifts": 7,
+   "day": 10,
+   "shifts": 6,
    "venue": 2,
    "title": "Experiential Retrieval Lead",
-   "balls": 3219,
-   "cash": 248189.65,
-   "knockdowns": 394,
+   "balls": 2647,
+   "cash": 191220.53,
+   "knockdowns": 348,
    "falls": 0,
-   "treasures": 4,
+   "treasures": 3,
    "rats": [
     {
      "name": "Rat3",
      "color": "#6fcf7c",
      "award": "Deepest Diver",
-     "line": "652 balls off the bottom"
+     "line": "445 balls off the bottom"
     },
     {
      "name": "Rat2",
      "color": "#f2c94c",
      "award": "Most Sprayed",
-     "line": "104 things hosed clean"
-    },
-    {
-     "name": "Rat1",
-     "color": "#4c9be8",
-     "award": "Fry Lord",
-     "line": "50 served"
+     "line": "91 things hosed clean"
     },
     {
      "name": "Rat0",
      "color": "#e8604c",
      "award": "Bucket Brigade",
-     "line": "42 buckets filled"
+     "line": "36 buckets filled"
+    },
+    {
+     "name": "Rat1",
+     "color": "#4c9be8",
+     "award": "Fry Lord",
+     "line": "40 served"
     }
    ]
   },

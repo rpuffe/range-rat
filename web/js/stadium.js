@@ -78,9 +78,9 @@ export const BOO = { EVERY: 20, EMPTY: 30, GRACE: 60 };   // GRACE: no boos in t
 // Souvenir balls: a customer ball is gold-ringed pink with CHANCE (Stadium only). Machines won't take them (b.hands):
 // a Rat picks one up (it rides in your hands, up to HANDS, outside the pocket) and walks it to the crowd rail (the
 // side nets in front of either stand). Each one delivered: +CROWD to the live mood and pays W ball-weights (fans pay
-// for them). Walk past a mate with empty hands and your souvenirs pass to them (HANDOFF_R): a relayed bundle feeds the
-// crowd ×RELAY and pays ×RELAY. Tuned so the job is ~10% of a 4P Stadium shift's income (design/round11-late.md).
-export const SOUV = { CHANCE: 0.06, HANDS: 3, CROWD: 0.07, RELAY: 2, W: 12, HANDOFF_R: 1.8, RAIL_X: 64, RAIL_Z0: -118, RAIL_Z1: -22, RAIL_R: 4 };
+// for them; council round 11 #5: W 12 -> 25 and CHANCE 0.06 -> 0.10, measured: the council's W 20 gave 13-16% at 4P). Walk past a mate with empty hands and your souvenirs pass to them (HANDOFF_R): a relayed bundle feeds the
+// crowd ×RELAY and pays ×RELAY. Tuned so the job is 18-20% of a 4P Stadium shift's income with the requests (design/round13-late.md).
+export const SOUV = { CHANCE: 0.10, HANDS: 3, CROWD: 0.07, RELAY: 2, W: 25, HANDOFF_R: 1.8, RAIL_X: 64, RAIL_Z0: -118, RAIL_Z1: -22, RAIL_R: 4 };
 export const atRail = (x, z) => z >= SOUV.RAIL_Z0 - SOUV.RAIL_R && z <= SOUV.RAIL_Z1 + SOUV.RAIL_R && Math.abs(x) >= SOUV.RAIL_X - SOUV.RAIL_R;
 // The rail point nearest a spot (the tip's arrow, the bot).
 export const railPoint = (x, z) => ({ x: (x < 0 ? -1 : 1) * (SOUV.RAIL_X - 1), z: Math.max(SOUV.RAIL_Z0, Math.min(SOUV.RAIL_Z1, z)) });
@@ -95,3 +95,35 @@ export function booOut(mat, now, empty = BOO.EMPTY) {
   mat.noBefore = Math.max(mat.noBefore ?? 0, now + empty);
   return [{ t: 'refuse', mat: mat.i, cust: mat.cust, why: 'boo' }];
 }
+
+// ---- council round 11 #5: souvenir requests, "WE WANT A BALL!" -------------------------------------------------------
+// One rail section at a time lights up (a gold ring, its fans stand and wave, a world banner) for SECS s, from FROM s into
+// the shift until TO s before the bell, one every EVERY[n] s (n = Rats online). A souvenir delivered there while it's lit:
+// +CROWD (plus SOUV.CROWD for each extra ball in the bundle), and it pays ×PAY (the relay's ×2 doesn't stack: ×3 is the
+// best). It goes out unanswered: -MISS (solo -MISS_SOLO), a boo, a feed line. No centre text: the Board says it.
+// Six sections of LEN m: A B C down the left rail (x < 0), D E F down the right, in ORDER (no RNG: the seam's draws
+// stay as they were).
+export const REQ = { FROM: 30, TO: 60, EVERY: [90, 75, 60, 45], SECS: 30, CROWD: 0.15, PAY: 3, MISS: 0.06, MISS_SOLO: 0.03, LEN: 16, ORDER: [2, 4, 0, 5, 1, 3] };
+const SEC_Z = [-30, -70, -110];   // each side's three section centres along the rail (SOUV.RAIL_Z0..RAIL_Z1)
+export const SECTIONS = Object.freeze([0, 1, 2, 3, 4, 5].map(i => Object.freeze({
+  i, name: 'ABCDEF'[i], side: i < 3 ? -1 : 1, z0: SEC_Z[i % 3] - REQ.LEN / 2, z1: SEC_Z[i % 3] + REQ.LEN / 2, zc: SEC_Z[i % 3] })));
+export const reqEvery = n => REQ.EVERY[Math.max(1, Math.min(4, n | 0 || 1)) - 1];
+// Is a new request due? t: seconds of working shift; left: seconds to the bell; last: the last one's start (null: none
+// yet); live: one is lit now.
+export const reqDue = ({ t, left, last = null, n = 4, live = false }) =>
+  !live && t >= REQ.FROM && left > REQ.TO && (last == null || t - last >= reqEvery(n));
+export const reqSection = k => SECTIONS[REQ.ORDER[((k | 0) % REQ.ORDER.length + REQ.ORDER.length) % REQ.ORDER.length]];
+// Standing at the rail inside section sec (with the rail's own reach on either end).
+export const inSection = (sec, x, z) => !!sec && atRail(x, z) && Math.sign(x) === sec.side && z >= sec.z0 - SOUV.RAIL_R && z <= sec.z1 + SOUV.RAIL_R;
+// What a delivery pays (ball-weights) and does to the crowd: lit (req) beats the relay, never both.
+export const souvPay = (n, relayed, req = false) => n * SOUV.W * (req ? REQ.PAY : relayed ? SOUV.RELAY : 1);
+export const reqCrowd = n => REQ.CROWD + Math.max(0, (n | 0) - 1) * SOUV.CROWD;
+export const reqMiss = n => ((n | 0) <= 1 ? REQ.MISS_SOLO : REQ.MISS);
+// The Board's crowd-gauge line while one is lit (builder 4's board.js): "SECTION C WANTS A BALL · 0:18".
+export const reqLine = req => {
+  if (!req) return null;
+  const s = Math.max(0, Math.ceil(req.left ?? 0));
+  return `SECTION ${req.sec ?? SECTIONS[req.i]?.name ?? '?'} WANTS A BALL · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+// The carry prompt (C #11: ≤ 8 words): "Souvenirs ×2 → crowd rail", or the lit section.
+export const carryLine = (n, req = null) => `Souvenir${n === 1 ? '' : 's'} ×${n} → ${req ? `Section ${req.sec}, lit!` : 'crowd rail'}`;

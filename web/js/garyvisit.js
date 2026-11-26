@@ -33,6 +33,9 @@ export function garyNext(day, seed = 1) {
 }
 // The morning's check: a missed visit (a day he couldn't come) comes today; one on a venue's first day (a promotion's
 // reveal morning) slips to its second. An old save with no garyDay gets today (from day 4).
+// Council round 11 #1 (builder 1): the boss owns its day. A visit due on a boss morning (MOW-E at the Club, MOW-E 2.0 at
+// the Stadium) slips to the next day, as one on a reveal morning does.
+export const bossSlip = (garyDay, day, boss = false) => (boss && garyDay === day ? day + 1 : garyDay);
 export function garyMorning(garyDay, day, reveal = false) {
   let g = garyDay == null ? Math.max(day, GARY.FROM_DAY) : garyDay;
   if (g < day) g = day;

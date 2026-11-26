@@ -86,7 +86,7 @@ export const HINTS = Object.freeze({
   green: { kb: 'Land a crew ball on a green: Hustle.', pad: 'Land a crew ball on a green: Hustle.' },   // council round 10 #6 (builder 2)
   drones: { kb: 'Drones! Hold F on foot: "Drones, here!"', pad: 'Drones! Hold Ⓨ on foot: "Drones, here!"' },   // playthrough 5 C4
   souvenir: { kb: 'Pink souvenir balls: carry them to the crowd rail.', pad: 'Pink souvenir balls: carry them to the crowd rail.' },   // round 11 (expert #9)
-  hazard: { kb: 'Green hazard ball: spray it, then bag it.', pad: 'Green hazard ball: spray it, then bag it.' },             // round 11 (expert #9)
+  hazard: { kb: 'Green hazard ball: spray it, then bag it.', pad: 'Green hazard ball: spray it, then bag it.', again: true },   // round 11 (expert #9); council round 11 #2: re-arms after a hazard DENIED
   bays: { kb: 'New bays built. More golfers, more mud.', pad: 'New bays built. More golfers, more mud.' },                 // round 11 (owner): Build more bays
 });
 // Context-driven hints (council round 4, §4.2): fires when its condition holds, once ever.
@@ -133,6 +133,15 @@ export function loadSeen(storage = store()) {
 export function saveSeen(seen, storage = store()) {
   try { storage.setItem(HINTS_KEY, JSON.stringify([...new Set(seen)])); return true; } catch { return false; }
 }
+// Council round 11 #2: a hint with `again` can be shown once more (a County DENIED caused by hazards re-arms the
+// hazard tip for the next morning). It drops out of the stored seen list and out of every live hinter's.
+const hinters = new Set();
+export function armAgain(id, storage = store()) {
+  if (!HINTS[id]?.again) return false;
+  saveSeen(loadSeen(storage).filter(x => x !== id), storage);
+  for (const h of hinters) h.again(id);
+  return true;
+}
 // Which hint (if any) is due now. playSecs: seconds actually playing this page load.
 // ctx.bought: the tip of something just bought (BOUGHT_HINT), shown first, whatever the gap.
 export function nextHint({ seen, playSecs, venue = 0, sinceLast = Infinity, ...ctx }) {
@@ -158,7 +167,7 @@ export function hintText(id, pad) { return HINTS[id]?.[pad ? 'pad' : 'kb'] ?? ''
 // One ticker for main.js: call tick(dt, { playing, venue, pad, show }) every frame.
 export function createHinter({ storage } = {}) {
   let seen = loadSeen(storage), playSecs = 0, sinceLast = Infinity, bought = null;   // bought: { id, left }
-  return {
+  const h = {
     tick(dt, { playing, venue = 0, pad = false, show, ...ctx }) {
       if (bought && (bought.left -= dt) <= 0) bought = null;
       if (!playing) return null;
@@ -175,7 +184,10 @@ export function createHinter({ storage } = {}) {
     // Round 11, skip ahead (test): the tips a crew at the starting point would already have seen (web/js/skip.js tipsFor).
     markSeen(ids) { const add = (ids ?? []).filter(id => id in HINTS && !seen.includes(id)); if (add.length) { seen = [...seen, ...add]; saveSeen(seen, storage); } },
     get seen() { return seen; },
+    again(id) { if (HINTS[id]?.again && seen.includes(id)) seen = seen.filter(x => x !== id); },   // council round 11 #2 (armAgain)
   };
+  hinters.add(h);
+  return h;
 }
 
 // ---- the panel -------------------------------------------------------------------

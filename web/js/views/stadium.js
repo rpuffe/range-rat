@@ -2,7 +2,11 @@
 // (CROWD ♥, PING!, KNOCKDOWN CAM) and the ambience crowd level. The rules live in ../stadium.js.
 import * as THREE from 'three';
 import { MAP } from '../map.js';
-import { bobFor, ambFor, waving, bored } from '../stadium.js';
+import { bobFor, ambFor, waving, bored, carryLine } from '../stadium.js';
+import { createSouvReq } from './souvreq.js';   // council round 11 #5: WE WANT A BALL!
+
+// C #8: is a story card up? (storycard.js's #story-card.on): the lap feed line stands down under one.
+const storyUp = () => typeof document !== 'undefined' && !!document.getElementById('story-card')?.classList.contains('on');
 
 const CW = 512, CH = 300;
 
@@ -67,10 +71,12 @@ export default {
 
     let warn = false;                     // round 7 #7: the Three-Minute Warning is up (round 11: T-3:00; the server's mods.stadium.w)
     let hands = 0, booSaid = false, venue = 3;   // round 11: my souvenirs (negative: relayed), the first boo of the shift
+    const sreq = createSouvReq(ctx, group); let req = null;   // council round 11 #5: the lit section (mods.stadium.req)
     return {
       banner: () => (warn ? { text: 'THREE-MINUTE WARNING', bg: '#d98a12', fg: '#1a1203' } : null),   // the Board, T-3:00 to Last Call (T-2:30)
       show(on) {
         group.visible = on;
+        if (!on) { sreq.hide(); req = null; }
         if (!on && ctx.venues) ctx.venues.crowdBob = 0.15;
       },
       onSnapshot(_snap, mine) {
@@ -78,6 +84,8 @@ export default {
         venue = _snap?.venue ?? venue;
         hands = mine?.hands?.[ctx.me?.id] ?? 0;
         if (_snap?.phase !== 'shift') booSaid = false;
+        req = venue === 3 && _snap?.phase === 'shift' ? mine?.req ?? null : null;
+        sreq.set(req);
         if (!mine) return;
         s = mine.s; laps = mine.laps; knocks = mine.knocks;   // the jumbotron keeps the live mood (the Board grades k)
         if (bored(s) && !boredSaid) { boredSaid = true; ctx.toast?.('THE CROWD IS BORED', 3); }
@@ -93,11 +101,16 @@ export default {
           ctx.SFX?.boo?.();   // sfx.js boo(): the crowd's low "ooo" (throttled)
           return;
         }
+        // Council round 11 #5: a section lights up (the Board and the world say it; the feed notes it), goes unanswered (a
+        // boo, a feed line, no centre text), or is answered (confetti in the section, the chant).
+        if (e.kind === 'req') { ctx.feed?.(`Section ${e.sec} wants a ball!`, '#ffd36b'); return; }
+        if (e.kind === 'reqmiss') { ctx.feed?.(`Section ${e.sec} wanted a ball.`); ctx.SFX?.boo?.(); return; }
+        if (e.kind === 'souv' && e.req) { ctx.feed?.(`${who(e.by)}: souvenir to Section ${e.req}! Triple!`, '#ffd36b'); sreq.puff('ABCDEF'.indexOf(e.req)); ctx.SFX?.jackpot?.(); ctx.SFX?.bell?.(784); return; }
         if (e.kind === 'souv') { ctx.feed?.(`${who(e.by)}: ${e.n} souvenir${e.n === 1 ? '' : 's'} to the crowd${e.relay ? '. Relay, double!' : '!'}`); if (e.by === ctx.me?.id) ctx.SFX?.jackpot?.(); return; }
         if (e.kind === 'relay') { if (e.to === ctx.me?.id || e.by === ctx.me?.id) ctx.feed?.(`Hand-off! ${e.to === ctx.me?.id ? 'Run it to the rail' : 'Your mate runs it'}: double.`); return; }
         if (e.kind === 'ping') ping = { text: e.name ?? 'CART', until: now + 3 };
         else if (e.kind === 'knock') knock = { text: (e.name ?? 'A RAT').toUpperCase(), n: e.n, until: now + 5 };
-        else if (e.kind === 'lap') ctx.feed?.('A lap of the Track! The crowd approves.');
+        else if (e.kind === 'lap' && venue === 3 && !storyUp()) ctx.feed?.('A lap of the Track! The crowd approves.');   // C #8: the Stadium only, never under a story card
       },
       tick(dt, t) {
         now = t;
@@ -109,12 +122,13 @@ export default {
           v.crowdBob = bored(s) ? 0.05 : bobFor(s) * w;
         }
         draw();
+        sreq.tick(dt, t);
       },
       // Round 11: carrying souvenirs, the HUD says where they go.
       prompt() {
         if (venue !== 3 || !hands) return null;
         const n = Math.abs(hands);
-        return `Souvenir ×${n}: to the crowd rail (side nets)${hands < 0 ? ', relayed ×2' : ', pass to a mate ×2'}`;
+        return carryLine(n, req);   // C #11: 'Souvenirs ×2 → crowd rail' (≤ 8 words), or the lit section
       },
       amb: snap => (snap?.phase === 'shift' ? { crowd: ambFor(s) } : {}),
       reportLines: () => ctx.crew?.()?.venue !== 3 ? [] : [`Crowd now ${Math.round(s * 100)}% ♥, ${laps} laps, ${knocks} knockdowns`],

@@ -152,3 +152,30 @@ export function pipsOf(fixtures, nMats = 10) {
 export const signedMoney = v => ((v ?? 0) < 0 ? '−' : '+') + money(Math.abs(v ?? 0));
 // A4: the report's stamp says "daily target", the card's word for it (it said QUOTA).
 export const targetStamp = q => (q?.hit ? 'DAILY TARGET HIT' : q?.idle ? 'DAILY TARGET MISSED: nothing was banked' : 'DAILY TARGET MISSED');
+
+// Council round 11 8.8 (builder 4): a landed piece of debris (the EVA's bag, the winch) floats what it brings home.
+export const debrisHomeText = (n, perPiece = 10) => `+${commas0(Math.max(0, n | 0) * perPiece)} balls home`;
+const commas0 = n => String(Math.round(n)).replace(/B(?=(d{3})+(?!d))/g, ',');
+
+// Council round 11, 8.1 (builder 4): the jumbotron flip. A field's split-flap restarts only when its text's *skeleton*
+// changes (digits replaced by '#'), so countdowns and BV ticks redraw in place with no scramble. The price never flips
+// on a change under 1 % (e.g. $999 → $1,000). board.js also never restarts a flip that is already running.
+export const skeleton = t => String(t ?? '').replace(/\d/g, '#');
+export function shouldFlip(prevText, nextText, prevNum = null, nextNum = null) {
+  if (prevText === nextText || skeleton(prevText) === skeleton(nextText)) return false;
+  if (Number.isFinite(prevNum) && Number.isFinite(nextNum) && Math.abs(nextNum - prevNum) < 0.01 * Math.max(Math.abs(prevNum), 1e-9)) return false;
+  return true;
+}
+// Council round 11 (items 2, 5 → 8.1): the venue gauge's live note. The County's `mods.county.label` ("7 HAZARDS")
+// and the Stadium's request (`mods.stadium.req`: a string, { label }, or { sec, t }) → "SECTION C WANTS A BALL · 0:18".
+export function kpiNoteOf(mods) {
+  const c = mods?.county?.label; if (c) return String(c);
+  const r = mods?.stadium?.req; if (!r) return null;
+  if (typeof r === 'string') return r;
+  if (r.label) return String(r.label);
+  if (r.sec != null) {
+    const t = Math.max(0, Math.ceil(r.t ?? r.left ?? 0));
+    return `SECTION ${r.sec} WANTS A BALL · ${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+  }
+  return null;
+}

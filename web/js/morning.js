@@ -7,6 +7,7 @@ import { FIXTURE_BY_ID, FRIES, POND, SIM, BUCKETS, BAYS } from './sim.js';
 import { GOALS, dealGoal, dealLine } from './goals.js';   // council round 10 #1: the goal card joins the deal
 import { MAP } from './map.js';
 import { FILL_POINT } from './layout.js';
+import { bossLive } from './mowe.js';   // council round 11 8.5: the deal stands down while the boss is live
 
 export const MORNING = {
   SECS: 45,       // the line goes after 45 s of working time (counted from NUDGE.WAIT, like the day-2 deal)
@@ -107,6 +108,12 @@ export function morningPool(venue) {
   return pool;
 }
 export const morningJobs = v => morningPool(v.venue ?? 0).filter(id => morningShort(id, v));
+
+// Council round 11 8.5 (C #4): at the game's climax and during the boss, nobody is told to fill the basket. The morning
+// deal, the day's suggestions and their re-deals stand down while Ball No. 1 is down, carried or in the huddle, and
+// while MOW-E's boss fight is live (warn → plug). Gary's own lines are never stood down (he never visits then).
+export const LB_LIVE = ['down', 'carried', 'huddle'];
+export const standDown = ({ lastBucket = null, mower = null } = {}) => LB_LIVE.includes(lastBucket?.phase) || bossLive(mower);
 
 // Deal jobs round the crew, nearest first: the closest (Rat, job) pair, then the next closest among the rest, until
 // every job has a Rat; more Rats than jobs go round the jobs again (nearest). rats: [{ id, x, z }]. { ratId: jobId }.

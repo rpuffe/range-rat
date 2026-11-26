@@ -7,14 +7,14 @@
 // a venue-0 module runs everywhere), and the Muni's day-3 rhythm line ("Keep the mats clean." at half-shift).
 import { NUDGE, DAY3, dealFor, nudgeDay, nudgeDone, redealGary, GARY_SPOTLESS, GARY_EXTRA, GARY_LINE_HOLD } from '../../web/js/nudge.js';
 import { FRIES, GARY, activeMats, pondClarity } from '../../web/js/sim.js';
-import { MORNING, morningJobs, morningDone, dealMorning, goalJob, goalNudgeId, GOAL_AT } from '../../web/js/morning.js';   // owner playtest 3 §3.4; round 10 #1 the goal deal
+import { MORNING, morningJobs, morningDone, dealMorning, goalJob, goalNudgeId, GOAL_AT, standDown } from '../../web/js/morning.js';   // owner playtest 3 §3.4; round 10 #1 the goal deal
 
 const todoOpen = crew => !!crew.todo && !(crew.todo.pick && crew.todo.bank && crew.todo.sign && crew.todo.buy);
 const baseOf = p => ({ banked: p.shift?.banked ?? 0, washAt: p.washAt ?? 0, crankAt: p.crankAt ?? 0 });
 const MATS_AT = GARY.STOPS.find(s => s.id === 'mats');
 
 function deal(crew, st) {
-  if (!nudgeDay(crew) || crew.phase !== 'shift' || todoOpen(crew) || crew.lastCall?.()) return;   // Last Call is the rally's (playtest round 2 #7)
+  if (!nudgeDay(crew) || crew.phase !== 'shift' || todoOpen(crew) || crew.lastCall?.() || standDown(crew)) return;   // council round 11 8.5; Last Call is the rally's (playtest round 2 #7)
   for (const p of crew.online()) {
     if (st.by[p.id] || (st.am?.by?.[p.id] && !st.am.by[p.id].done)) continue;   // the morning deal goes first (owner playtest 3 §3.4)
     const { id, used } = dealFor(st.dealt, p, crew.up);    // skip what this Rat already does (the host always got "hose")
@@ -39,7 +39,7 @@ export function morningView(crew) {
 }
 // Deal at the morning (and to a late joiner while the deal is still up): each Rat one job, nearest first.
 function dealAm(crew, st) {
-  if (crew.phase !== 'shift' || crew.endless || todoOpen(crew) || crew.lastCall?.()) return;
+  if (crew.phase !== 'shift' || crew.endless || todoOpen(crew) || crew.lastCall?.() || standDown(crew)) return;   // council round 11 8.5
   st.am ??= { by: {} };
   if (amOver(crew)) return;                                              // the morning is over
   const free = crew.online().filter(p => !(p.id in st.am.by));
@@ -201,6 +201,10 @@ export default {
   snapshot(crew, st) {
     if (crew.phase !== 'shift') return undefined;
     const out = {};
+    if (standDown(crew)) {   // council round 11 8.5: only Gary's lines survive (he never visits then)
+      for (const [id, stop] of Object.entries(st.gary?.by ?? {})) out[id] = 'gary:' + stop;
+      return Object.keys(out).length ? out : undefined;
+    }
     const rows = Object.values(st.am?.by ?? {}).some(n => n.goal && !n.done) ? crew.goalRows?.() ?? [] : null;
     for (const [id, n] of Object.entries(st.am?.by ?? {})) if (!n.done) out[id] = n.goal ? goalNudgeId(rows.find(r => r.id === n.goal)) ?? 'am:goal:' + n.goal + ':0' : 'am:' + n.id;   // owner playtest 3 §3.4; round 10 #1 'am:goal:hotdogs:12'
     if (nudgeDay(crew)) for (const [id, n] of Object.entries(st.by)) if (!n.done) out[id] = n.id;

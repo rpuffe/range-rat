@@ -125,7 +125,7 @@ function tone(c, { freq, endFreq, type = 'sine', t = 0, dur = 0.2, vol = 0.2, at
 }
 
 // Filtered noise burst. `fEnd` sweeps the filter frequency over the burst.
-function burst(c, { t = 0, dur = 0.05, vol = 0.2, type = 'bandpass', f = 2000, fEnd, q = 1, attack = 0.002 }) {
+function burst(c, { t = 0, dur = 0.05, vol = 0.2, type = 'bandpass', f = 2000, fEnd, q = 1, attack = 0.002, dest }) {
   const t0 = c.currentTime + t;
   const s = c.createBufferSource();
   const flt = c.createBiquadFilter();
@@ -138,7 +138,7 @@ function burst(c, { t = 0, dur = 0.05, vol = 0.2, type = 'bandpass', f = 2000, f
   g.gain.setValueAtTime(0.0001, t0);
   g.gain.linearRampToValueAtTime(vol, t0 + attack);
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-  s.connect(flt).connect(g).connect(master);
+  s.connect(flt).connect(g).connect(dest || master);
   s.onended = () => { s.disconnect(); flt.disconnect(); g.disconnect(); };
   s.start(t0, Math.random() * 0.5);
   s.stop(t0 + dur + 0.02);
@@ -455,3 +455,132 @@ export function droneBuzz(count = 0) {
 // Hand the live context and buses to other audio modules. `master` is where ambience plugs in (it is
 // ducked along with the SFX); `pa` bypasses the duck (the PA chime itself).
 export function audioHandle() { return ctx && master ? { ctx, master: duckG, pa: out, isMuted, duck } : null; }
+
+// ---- Council round 11 #1 (builder 1): MOW-E the boss -----------------------------------------------------------------
+// The engine: a sibling of cartEngine. Two detuned saws at 50 → 120 Hz on speed, a lowpass 300 → 800 Hz, a tanh drive
+// of 2.5; gain 0.03 / (1 + distance / 15), so you hear it coming. A stall idles it at 45 Hz with a rattle (the tremolo
+// LFO deepens); cough() is a 0.4 s noise cough and a 30 % pitch dip; unplug() glides to 20 Hz over 1.2 s, then silence.
+export const MOWE_ENGINE = Object.freeze({ F0: 50, F1: 120, IDLE: 45, LP0: 300, LP1: 800, DRIVE: 2.5, GAIN: 0.03, FALLOFF: 15, DETUNE: 9, GLIDE: 0.2, QUIET: 0.5 });
+// Pure: the engine at a speed (0..1) and a distance (m). quiet: the tame pet and the legacy pass (half as loud).
+// out: an object to fill (the engine passes its own, so a frame allocates nothing).
+export function moweEngineParams(speed01, dist = 0, stall = false, quiet = false, out = {}) {
+  const s = Math.min(1, Math.max(0, Number(speed01) || 0)), E = MOWE_ENGINE;
+  const near = 1 / (1 + Math.max(0, Number(dist) || 0) / E.FALLOFF);
+  out.freq = stall ? E.IDLE : E.F0 + (E.F1 - E.F0) * s; out.lowpass = E.LP0 + (E.LP1 - E.LP0) * s;
+  out.gain = E.GAIN * near * (quiet ? E.QUIET : 1) * (stall || s > 0 ? 1 : 0.6); out.rattle = stall ? 1 : 0;
+  return out;
+}
+export function moweEngine() {
+  let n = null, stopped = false, dipUntil = 0, dead = false;
+  const p = {};
+  function build() {
+    const c = live();
+    if (!c) return false;
+    const a = c.createOscillator(), b = c.createOscillator();
+    a.type = b.type = 'sawtooth'; a.frequency.value = b.frequency.value = MOWE_ENGINE.F0;
+    a.detune.value = -MOWE_ENGINE.DETUNE; b.detune.value = MOWE_ENGINE.DETUNE;
+    const flt = c.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = MOWE_ENGINE.LP0; flt.Q.value = 0.9;
+    const sat = c.createWaveShaper(); sat.curve = tanhCurve(MOWE_ENGINE.DRIVE); sat.oversample = '2x';
+    const trem = c.createGain(); trem.gain.value = 0.85;
+    const lfo = c.createOscillator(); lfo.type = 'square'; lfo.frequency.value = 9;
+    const lfoG = c.createGain(); lfoG.gain.value = 0;
+    const gain = c.createGain(); gain.gain.value = 0;
+    a.connect(flt); b.connect(flt); flt.connect(sat).connect(trem).connect(gain).connect(master);
+    lfo.connect(lfoG).connect(trem.gain);
+    for (const o of [a, b, lfo]) o.start();
+    n = { a, b, flt, sat, trem, lfo, lfoG, gain };
+    return true;
+  }
+  const ok = () => !stopped && (n || build());
+  return {
+    set(speed01 = 0, dist = 0, stall = false, quiet = false) {
+      if (dead) return;
+      try {
+        if (!ok()) return;
+        const t = ctx.currentTime, G = MOWE_ENGINE.GLIDE;
+        moweEngineParams(speed01, dist, stall, quiet, p);
+        const f = p.freq * (performance.now() < dipUntil ? 0.7 : 1);
+        n.a.frequency.setTargetAtTime(f, t, G); n.b.frequency.setTargetAtTime(f, t, G);
+        n.flt.frequency.setTargetAtTime(p.lowpass, t, G);
+        n.gain.gain.setTargetAtTime(p.gain, t, G);
+        n.lfoG.gain.setTargetAtTime(p.rattle * 0.35, t, 0.05);
+      } catch { /* ignore */ }
+    },
+    cough() {   // a hit: a 0.4 s noise cough and a 30 % pitch dip
+      const c = live(); if (!c) return;
+      dipUntil = performance.now() + 400;
+      burst(c, { dur: 0.4, vol: 0.12, type: 'lowpass', f: 900, fEnd: 200, q: 0.8, attack: 0.01 });
+      burst(c, { t: 0.12, dur: 0.22, vol: 0.07, type: 'bandpass', f: 400, q: 1.2 });
+    },
+    choke() {   // HP 0: it sputters
+      const c = live(); if (!c) return;
+      for (let i = 0; i < 4; i++) burst(c, { t: i * 0.18, dur: 0.12, vol: 0.09, type: 'lowpass', f: 600, q: 0.7 });
+    },
+    unplug() {  // the plug: a 1.2 s glide down to 20 Hz, then silence (the jackpot follows)
+      dead = true;
+      try {
+        if (!n) return; const t = ctx.currentTime;
+        n.a.frequency.exponentialRampToValueAtTime(20, t + 1.2); n.b.frequency.exponentialRampToValueAtTime(20, t + 1.2);
+        n.gain.gain.setTargetAtTime(0, t + 1.0, 0.08);
+      } catch { /* ignore */ }
+    },
+    stop() {
+      stopped = true;
+      if (!n) return;
+      try {
+        const t = ctx.currentTime, k = n;
+        k.gain.gain.setTargetAtTime(0, t, 0.05);
+        for (const o of [k.a, k.b, k.lfo]) o.stop(t + 0.3);
+        k.a.onended = () => { for (const v of Object.values(k)) { try { v.disconnect(); } catch { /* ignore */ } } };
+      } catch { /* ignore */ }
+      n = null;
+    },
+  };
+}
+
+// The boss loop: a 4-bar ostinato. A square-wave bass on A–C–E–G (one note a bar, in 8ths) and noise hats on the 8ths;
+// 112 BPM in the harvest, 128 in the hunt, 144 at the plug (the bass drops out: hats and a heartbeat kick). Gain 0.03 on
+// the SFX bus (so the PA ducks it, audiomix). stop(fade): dead on a win, a 1.5 s fade on a loss. A look-ahead
+// scheduler on a 50 ms timer (it keeps time with no rAF, so a background tab doesn't stutter it).
+export const BOSS_LOOP = Object.freeze({ BPM: { harvest: 112, hunt: 128, plug: 144 }, BASS: [110, 130.81, 164.81, 196], GAIN: 0.03, AHEAD: 0.2 });
+export const bossTempo = phase => BOSS_LOOP.BPM[phase] ?? BOSS_LOOP.BPM.harvest;
+export function bossLoop() {
+  let phase = 'harvest', step = 0, next = 0, timer = null, bus = null, stopped = false;
+  function ensure() {
+    const c = live();
+    if (!c) return null;
+    if (!bus) { bus = c.createGain(); bus.gain.value = BOSS_LOOP.GAIN / 0.2; bus.connect(master); next = c.currentTime + 0.05; }   // tone()'s vol 0.2 = the loop's 0.03
+    return c;
+  }
+  function schedule() {
+    const c = ensure(); if (!c || stopped) return;
+    const eighth = 60 / bossTempo(phase) / 2;
+    while (next < c.currentTime + BOSS_LOOP.AHEAD) {
+      const t = next - c.currentTime, bar = Math.floor(step / 8) % 4, beat = step % 8;
+      burst(c, { t, dur: 0.035, vol: beat % 2 ? 0.05 : 0.08, type: 'highpass', f: 7000, q: 0.7, dest: bus });
+      if (phase !== 'plug') tone(c, { freq: BOSS_LOOP.BASS[bar] * (beat === 3 || beat === 7 ? 2 : 1), type: 'square', t, dur: eighth * 0.8, vol: 0.2, dest: bus });
+      else if (beat === 0 || beat === 1) tone(c, { freq: 60, endFreq: 38, t, dur: 0.16, vol: 0.5, dest: bus });   // the heartbeat: lub-dub
+      next += eighth; step++;
+    }
+  }
+  return {
+    set(p) {
+      if (stopped) return;
+      phase = BOSS_LOOP.BPM[p] ? p : phase;
+      if (!timer) { schedule(); timer = setInterval(schedule, 50); }
+    },
+    stop(fade = false) {
+      stopped = true; clearInterval(timer); timer = null;
+      try { if (bus) { const b = bus; b.gain.setTargetAtTime(0, ctx.currentTime, fade ? 0.5 : 0.01); setTimeout(() => { try { b.disconnect(); } catch { /* ignore */ } }, fade ? 2500 : 200); } } catch { /* ignore */ }
+      bus = null;
+    },
+  };
+}
+
+// The pond: a low gurgle and three bubble pops (noise through a resonant bandpass).
+export function gurgle() {
+  const c = live();
+  if (!c) return;
+  burst(c, { dur: 1.4, vol: 0.12, type: 'bandpass', f: 180, fEnd: 90, q: 6, attack: 0.15 });
+  [0.5, 0.85, 1.25].forEach((t, i) => tone(c, { freq: 420 + i * 90, endFreq: 900 + i * 120, t, dur: 0.09, vol: 0.08 }));
+}

@@ -16,7 +16,7 @@ import { garyParked, garyPlate, chatBit, CHAT_END, CHAT_FEED, SEAL_LINE } from '
 import { createBayLine } from './bayline.js';                                          // round 11 (owner): Build more bays
 import { fixtureBuilt } from './bays.js';
 import { SIM, MATS, LINE, advanceBall, atStand, clampToField, SHOP, nextPrice, shopShows, tierLock, shopDay, priceScale, perks,
-  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB,
+  CART, BAYS, atBay, underReels, stepCart, gearPerks, WASH, money, SPRINT, sprintSecs, FIXTURES, FIXTURE_BY_ID, POND, inPond, onDock, FRIES, atShed, KIND_NAMES, KIND_BLURB, debutFloat, lobbyTagline,
   VENUE_RULES, GARY, BANK, BUCKETS } from './sim.js';
 import { createBallReturn, createFieldReturns } from './ballreturn.js';   // owner layout: the pipe from the return to the bank, the basket
 import { atFieldReturn, FILL_POINT } from './layout.js';   // council round 10 §C: the field ball returns
@@ -27,14 +27,14 @@ import * as SFX from './sfx.js';
 import { createSweep } from './sweep.js';
 import { worldVday } from './clubdays.js';   // round 11: stagger the Club, one idea a day   // round 11 (builder "feel", expert #4): picking juice
 import { createBoard } from './board.js';
-import { sharedConfetti } from './confetti.js';   // round 6: one pooled confetti Points, shared (#3 bell, #5 huddle)
+import { sharedConfetti, confettiCount } from './confetti.js';   // round 6: one pooled confetti Points, shared (#3 bell, #5 huddle)
 import * as AMB from './ambience.js';
 import * as SET from './settings.js';
 import { createSwing, strikeToLaunch } from './swing.js';
 import { createScenery } from './scenery.js';
 import { createKitchen } from './kitchen.js';
 import { createMower } from './mower.js';
-import { mowerBoard, laneName } from './mowe.js';
+import { moweBoard, laneName, BOSS_LINES, inRing as moweRing, behind as moweBehind, bossFighting } from './mowe.js';   // council round 11 #1: the boss
 import { menuFor, GARY_LINE } from './menu.js';
 import { setupRound2 } from './round2.js';
 import { garyCountdown } from './huddlerules.js';   // round 6 #5: the Board's GARY 3 · 2 · 1
@@ -54,17 +54,19 @@ import { setHeavyRate } from './venues.js';
 import { createProps } from './props.js';
 import { tipCtx, createTipPointer, tipsAllowed, emptyBasketRat, withBasketAlarm } from './tips.js'; const tipPointer = createTipPointer();   // owner notes: a tip per new thing, and the arrow
 import { PAYFLOAT, payRoute, createRoller } from './payfloat.js';   // council round 6 #7: only your own cash floats over you
-import { bvLine, ceilingOf, priceOf, popupLine, reportRow, sealRow, gainText, signedMoney, targetStamp } from './bvtext.js';
+import { bvLine, ceilingOf, priceOf, popupLine, reportRow, sealRow, gainText, signedMoney, targetStamp, kpiNoteOf, debrisHomeText } from './bvtext.js';
 import { spotlessRow } from './dayend.js';   // round 11: the SPOTLESS RANGE stamp on the report   // owner playtest 3 §1 (builder 1): Ball Value in one look
 import { atFill, siloFill } from './basket.js';   // owner playtest 3 §3.3: the bucket basket (builder 2)
 import { nudgeLine, nudgeTarget, GARY_STALLED, garyExtra } from './nudge.js';    // council round 6 #10 / round 7 #4: day 2, Gary's dealt stops, day 3
 import { createStoryCard } from './storycard.js';         // round 12: the story beats' card overlay
 import { garyHello, garyBye } from './story.js';           // round 12: Gary's lines change with the venue
-import { createSay } from './say.js';                     // council round 7 #3: the one centre-text queue
+import { createSay, SAY } from './say.js';                     // council round 7 #3: the one centre-text queue
 import { DECKCAM, CUT_LABEL, cutPlan, skips, cutAt } from './deckcam.js';   // council round 10 #4: the Deck Cam
 import { AUTO } from './autopilot.js';                     // council round 10 §D: Ⓨ held at an autopilot cart
 import { DISPATCH } from './county.js';                    // council round 10 §D: Ⓨ held on foot at the County
-import { cardHtml, LAST_CARD } from './goals.js';         // council round 10 #1: the pause menu's Goals panel
+import { cardHtml, LAST_CARD } from './goals.js';
+import { debrisBalls, LIFT } from './orbit.js';
+import { createFallAgg } from './feedagg.js';                // council round 11 8.10: helper falls, one feed line a minute             // council round 11 8.8: "+10 balls home" over a landed piece         // council round 10 #1: the pause menu's Goals panel
 import { SIGN_BY_ID, yawOf, tagSign } from './signs.js';   // sign facings (test/signs.test.mjs; ?signs checks the meshes)
 import { createDusk } from './duskview.js';                // end of the day: the overhead walk-off between the stamp and the report
 import { actPick } from './actpick.js';                    // playthrough 4 C1: Ball No. 1 before a full pocket
@@ -473,12 +475,21 @@ const ballM = new THREE.Matrix4(), ballQ = new THREE.Quaternion(), ballP = new T
 const beaconMesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.35, 9, 10, 1, true).translate(0, 4.5, 0),
   new THREE.MeshBasicMaterial({ color: 0xffd54a, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }), 8);
 beaconMesh.frustumCulled = false; beaconMesh.count = 0; scene.add(beaconMesh);
+// Council round 11 8.11 (A #9): balls vanished at dusk. From T−90 a resting ball past DUSK_BALL.FAR m from the camera
+// draws ×1.25, and the ball material gets an emissive lift of 0.35 (material-wide: no new draw call, no per-instance
+// shader), so the closing scramble is a hunt you can see.
+const DUSK_BALL = { FROM: 90, FAR: 15, SCALE: 1.25, LIFT: 0.35 };
+let duskLift = -1;
 function drawBalls() {
   let i = 0, g = 0, q = 0, beacons = 0;
+  const dusk = crew?.phase === 'shift' && (crew.shiftSecs ?? 0) - (crew.shiftT ?? 0) <= DUSK_BALL.FROM;
+  if ((dusk ? 1 : 0) !== duskLift) { duskLift = dusk ? 1 : 0; ballMesh.material.emissive.setScalar(dusk ? DUSK_BALL.LIFT : 0); squareMesh.material.emissive.setScalar(dusk ? DUSK_BALL.LIFT : 0); }
+  const cx = camera.position.x, cz = camera.position.z, far2 = DUSK_BALL.FAR * DUSK_BALL.FAR;
   for (const b of balls.values()) {
     if (b.hidden || b.kind === 'one' || i >= ballMesh.instanceMatrix.count) continue;   // Ball No. 1 is drawn by ending.js
     // A real ball is sub-pixel past ~40 m; grow far ones so the field reads as dots.
-    const s = Math.max(1, Math.hypot(b.x - me.x, b.z - me.z) / 25) * (b.kind === 'glow' ? 1.3 : 1);
+    const s = Math.max(1, Math.hypot(b.x - me.x, b.z - me.z) / 25) * (b.kind === 'glow' ? 1.3 : 1)
+      * (dusk && b.rest && (b.x - cx) * (b.x - cx) + (b.z - cz) * (b.z - cz) > far2 ? DUSK_BALL.SCALE : 1);
     ballM.compose(ballP.set(b.x, b.y, b.z), ballQ, ballS.set(s, s, s));
     if (b.kind === 'glow') glowMesh.setMatrixAt(g++, ballM);
     else if (b.kind === 'square') { if (q < squareMesh.instanceMatrix.count) squareMesh.setMatrixAt(q++, ballM); }
@@ -696,12 +707,15 @@ function onEvent(e) {
       break;
     }
     case 'mower':
-      if (e.phase === 'warn') { SFX.horn('mower'); say('ALERT', `MOW-E mows ${laneName(e.lane)} in 12 s. Move!`); }
+      if (!e.boss && e.phase === 'warn' && e.lane != null) { SFX.horn('mower'); say('ALERT', `MOW-E mows ${laneName(e.lane)} in 12 s. Move!`); }   // the legacy pass (BOSS.ON = 0)
+      mowe.event(e); moweEvent(e);   // council round 11 #1 (builder 1): the boss's phases (one centre line each, once a fight)
       break;
+    case 'moweHit': case 'moweShove': case 'moweTarget': mowe.event(e); break;
+    case 'moweBank': SFX.scoop(); break;   // the tame pet banks at a return: THUNK (the Board said BRINGING n HOME)
     case 'rake':
       for (const m of e.moves ?? []) { const b = balls.get(m.id); if (b) { b.x = m.x; b.z = m.z; b.y = SIM.BALL_R; b.vx = b.vy = b.vz = 0; b.rest = true; } }
       break;
-    case 'honk': SFX.horn('mower'); break;
+    case 'honk': if (!e.tame || Math.hypot((crew.mower?.x ?? 1e3) - me.x, (crew.mower?.z ?? 1e3) - me.z) < 25) SFX.horn('mower'); break;   // the tame pet's beep is a local one
     case 'garyFed': (e.by === me.id ? toast : feed)(GARY_LINE, 3); break;
     case 'freehelper': feed(`${e.name} has clocked in to pick up balls. Paid in pizza.`); break;
     case 'custwait': if (playing()) feed(`A customer is waiting for a clean mat (Mat ${e.mat + 1}).`); break;
@@ -737,7 +751,7 @@ function onEvent(e) {
     case 'board': break;
     case 'gary':
       // Playthrough 4 A17: no seconds in the warning (solo's is longer), and no "stay out of his way" while stall lines are up.
-      if (e.phase === 'warn') { SFX.horn('gary'); say('ALERT', "Gary's coming: clean up, then huddle.", { key: 'gary' }); garySays = { text: garyHello(crew.venue), t: 6 }; }   // round 12: his hello, in his bubble
+      if (e.phase === 'warn') { SFX.horn('gary'); say('ALERT', "Gary's coming: clean up, then huddle.", { key: 'gary' }); garySays = { text: garyHello(crew.venue), t: Infinity, near: false, pop: 0 }; }   // round 12: his hello, in his bubble (council round 11 8.9: his whole wait)
       else say('ALERT', Object.values(crew.mods?.nudge ?? {}).includes('gary:stall') ? "Gary's driving. Ping him or huddle." : 'Gary is inspecting. Stay out of his way.', { key: 'gary' });
       break;
     case 'garyChat':   // §6.3: no PA, no centre text: the chatter's feed line, and his "Right, then." when it ends
@@ -770,13 +784,18 @@ function onEvent(e) {
     case 'fries':
       if (e.by === me.id) { SFX.scoop(); toast(`A basket of fries (${e.stock}/${FRIES.MAX})`, 1.2, 'fries'); }
       break;
-    case 'debut':
+    case 'debut':   // council round 11 #3: the morning memo said it; the first ball only floats "NEW ×1.5" (no memo)
       SFX.jackpot();
-      showMemo(`NEW: the ${KIND_NAMES[e.kind] ?? e.kind}. ${KIND_BLURB[e.kind] ?? ''}`, null, 5);
+      debutFloatOn(e.id, debutFloat(e.kind, e.told !== false), e.x, e.z);
       break;
+    case 'landed': case 'winch': {   // council round 11 8.8: what a piece of debris brings home (only the Orbital's climb counts it)
+      const n = e.t === 'winch' ? 1 : e.n ?? 0;
+      if (n > 0 && crew?.venue === 5 && !crew.endless) board.floatText(LIFT.x, 3.2, LIFT.z, debrisHomeText(n, debrisBalls(1, crew.goals?.crew ?? crew.players.filter(p => p.online).length)), '#9fe8ff');
+      break;
+    }
     case 'kick': { const b = balls.get(e.id); if (b) Object.assign(b, { x: e.x, y: e.y, z: e.z, vx: e.vx, vy: e.vy, vz: e.vz, rest: false, acc: 0 }); break; }
     case 'memo':
-      if (!e.quiet) showMemo(e.text, e.target, 7, e.today ? 'TODAY · ' + e.today : e.flavor);   // round 11: Today's line takes the flavour's slot   // a PA line in the same tick still goes first (PA outranks MEMO)
+      if (!e.quiet) showMemo(e.text, e.target, e.story ? SAY.STORY_MEMO : SAY.SECS.MEMO, e.today ? 'TODAY · ' + e.today : e.flavor);   // council round 11 #3: 5 s on a story morning   // round 11: Today's line takes the flavour's slot   // a PA line in the same tick still goes first (PA outranks MEMO)
       break;
     case 'rally': rallyLine(e); break;   // the gauge slipped, or the 30 s re-check (the bell lock drops it after the bell)
     case 'lastcall': {   // the Closing Bell (round 6 #3): the horn, then the server's one-line rally (null when endless)
@@ -814,7 +833,10 @@ function onEvent(e) {
       SFX.bonk();
       const how = e.by === 'cart' ? 'got run over by the cart' : e.by === 'gary' ? 'got run over by Gary from Regional' : 'got knocked flat';
       if (e.id === me.id) toast(e.by === 'cart' ? 'You got run over by the cart.' : e.by === 'gary' ? 'Gary ran you over. He did not slow down.' : e.by === 'mower' ? 'MOW-E mowed you. It has been trained on your movements.' : 'BONK. You got knocked flat.', 2.4);
-      else feed(`${nameOf(e.id) === 'Someone' ? crew.helpers?.find(h => h.id === e.id)?.name ?? 'Someone' : nameOf(e.id)} ${how}`);
+      else if (nameOf(e.id) === 'Someone' && crew.helpers?.some(h => h.id === e.id)) {   // council round 11 8.10: helper falls aggregate, one feed line a minute
+        const line = helperFalls.add(`${crew.helpers.find(h => h.id === e.id).name} ${how}`);
+        if (line) feed(line); else if (!helperFallsT) helperFallsT = setTimeout(function due() { const l = helperFalls.due(); if (l) feed(l); helperFallsT = helperFalls.held ? setTimeout(due, 1000) : 0; }, Math.max(0, helperFalls.until - performance.now() / 1000) * 1000 + 50);
+      } else feed(`${nameOf(e.id)} ${how}`);
       break;
     }
     case 'join': if (e.id !== me.id) { feed(`${e.name} joined the crew`); if (crew.phase === 'shift') toast(`${e.name} joined mid-shift`, 2.2); } break;
@@ -850,7 +872,13 @@ function floatPay(e) {
   const pl = popupLine(e), col = crew.players.find(p => p.id === me.id)?.color ?? '#ffd54a';
   board.floatText(at.x, 2.4, at.z, [[pl.base, col], ...(pl.wash ? [[' + wash', '#9fe8ff']] : []), ...(pl.boots ? [[' · muddy boots', '#c89a6a']] : [])], col);
 }
-// Memos (the morning memo, ball debuts, reveal cards) are MEMO items in the queue: they wait their turn, never knock.
+// Council round 11 #3: a kind's first ball wears a world float once it lands (polled, ≤ 6 s; no per-frame work).
+function debutFloatOn(id, text, x, z, n = 0) {
+  const b = id != null ? balls.get(id) : null;
+  if (b && !b.rest && n < 40) { setTimeout(() => debutFloatOn(id, text, x, z, n + 1), 150); return; }
+  board.floatText(b?.x ?? x ?? SIM.STAND.x, (b?.y ?? 0) + 1.4, b?.z ?? z ?? SIM.STAND.z, text, '#ffd54a');
+}
+// Memos (the morning memo, reveal cards) are MEMO items in the queue: they wait their turn, never knock.
 function showMemo(text, target, secs = 7, flavor = '') {
   // Owner playtest 3 §1.2: the memo's target is the bar's % ("Today: 60% clean by the bell." already says it).
   say('MEMO', text, { secs, data: { flavor: flavor ?? '', target: target != null && !text.includes(target + '%') ? `TARGET  ${target}%` : '' } });
@@ -887,7 +915,7 @@ function applySnapshot(s) {
   paintFixtures(s.fixtures);
   const v = s.value ?? {};
   board.update({ bv: v.bv, rate: v.rate, upkeep: v.upkeep, hustle: v.hustle, curb: v.curb, pond: s.pond?.unlocked ? v.pond ?? 0 : null, fries: s.fries?.open ? v.fries ?? 0 : null,
-    kpiLabel: VENUE_RULES[s.venue ?? 0]?.kpi ?? null, kpi: v.kpi ?? null, slogan: views?.banner(s) ?? null,   // round 4: the venue's own gauge
+    kpiLabel: VENUE_RULES[s.venue ?? 0]?.kpi ?? null, kpi: v.kpi ?? null, kpiNote: kpiNoteOf(s.mods), slogan: views?.banner(s) ?? null,   // round 4: the venue's own gauge
     quota: s.quota?.target ?? null, pace: s.pace ?? null, outstanding: s.outstanding, lastCall: s.lastCall, title: s.title, silo: siloFill(s.silo, s.filled), live: s.phase === 'shift',
     // Owner playtest 3 §1.1/§6.4 (builder 1): the price, the bar's ceiling and target share, the pips, the Seal, the banner.
     price: priceOf(v, s.seal ?? v.seal ?? 1), seal: s.seal ?? v.seal ?? 1, ceiling: ceilingOf(v), q: s.quota?.q ?? null, venue: s.venue ?? 0,
@@ -895,7 +923,7 @@ function applySnapshot(s) {
     // Council round 10 (builder 1): the goal strip (goals.js strip), the FED chip and its ring.
     goals: s.goals?.strip ?? null, fed: v.fed ?? 1, fedLeft: s.fedRing ?? 0,
     today: s.phase === 'shift' ? s.today?.chip ?? null : null, stars: s.endless ? s.stars ?? 0 : null,   // round 11 (builder "today"): the Board's TODAY chip, endless stars
-    gary: s.gary?.phase === 'warn' ? `GARY FROM REGIONAL · 0:${String(Math.ceil(s.gary.t)).padStart(2, '0')}` : s.gary?.phase === 'drive' ? garyCountdown(s.gary) ?? 'GARY IS INSPECTING' : mowerBoard(s.mower) });
+    gary: s.gary?.phase === 'warn' ? `GARY FROM REGIONAL · 0:${String(Math.ceil(s.gary.t)).padStart(2, '0')}` : s.gary?.phase === 'drive' ? garyCountdown(s.gary) ?? 'GARY IS INSPECTING' : moweBoard(s.mower) });   // council round 11 #1: the boss, the tame pet
   // Owner playtest 3 §6: he's on show through his warning too (parked at the gate, where you can chat to him), and
   // on the once-ever drive-by (s.garyIntro).
   // Round 11: on Promotion Day he rides along again once his verdict is in (s.garyIntro.ride).
@@ -1144,7 +1172,27 @@ const kitchen = createKitchen({
 });
 function openKitchen() { releaseMouse(); keys.clear(); kitchen.open({ menu: menuFor(crew.venue ?? 0) }); }
 // MOW-E, the Club's mower: it rakes a lane of balls into a tidy row and flattens Rats.
-const mowe = createMower({ scene });
+const mowe = createMower({ scene, confetti });
+mowe.setTargets(id => id === me.id ? me : others.get(id)?.g.position ?? null);
+// Council round 11 #1 (builder 1): the boss. One plug hold (Ⓐ / Space / Click held in the ring at its back); one centre
+// line per phase, once a fight (the build-up's is the PA caption); the win's STAMP and cannons; a loss only feeds.
+let plugging = false, moweFront = -1e9, moweSaid = new Set();
+const canPlug = () => playing() && me.down <= 0 && !driving() && !me.diving && crew.mower?.kind === 'boss' && crew.mower.phase === 'plug' && moweRing(crew.mower, me);
+function moweEvent(e) {
+  if (!e.boss) return;
+  const pad = document.body.classList.contains('pad');
+  if (e.phase === 'warn') moweSaid = new Set();
+  const once = (k, text) => { if (!moweSaid.has(k)) { moweSaid.add(k); say('ALERT', text, { key: 'mowe' }); } };   // one key: a new phase's line replaces the last
+  if (e.phase === 'tamed' || e.phase === 'fled') sayer.forget('mowe');   // the stamp (or the quiet loss) never shares the screen with a phase line
+  if (e.phase === 'harvest') once('loose', BOSS_LINES.loose);
+  else if (e.phase === 'hunt') once('hunt', BOSS_LINES.hunt);
+  else if (e.phase === 'plug') once('plug', BOSS_LINES.plug(pad ? GLYPH.A : 'Space'));
+  else if (e.phase === 'tamed') {
+    say('STAMP', BOSS_LINES.stamp, { secs: 3, data: { show: () => { mowe.stamp(true); SFX.jackpot(); }, hide: () => mowe.stamp(false) } });
+    for (const dx of [-2.5, 2.5]) confetti.burst(SIM.STAND.x + dx, 1.2, SIM.STAND.z, { n: confettiCount(140, perf.low, 70), secs: 2.5, speed: 5, up: 11 });
+    if (e.n) feed(`MOW-E's catcher: ${e.n} balls home.`);
+  } else if (e.phase === 'fled') feed(BOSS_LINES.kept(e.kept ?? 0));
+}
 let pumping = false;
 // Owner playtest 3 §6.3: hold Ⓐ / Click / Space within GARY.CHAT_R of a parked Gary to keep him talking (it comes
 // before picking up). The server checks the reach, the budget and that he's parked; this only decides the press.
@@ -1156,6 +1204,7 @@ let filling = false;
 const canFill = () => playing() && crew.phase === 'shift' && me.down <= 0 && !driving() && !me.diving && !me.wand && atFill(me);
 function pressAct(fromPad = false) {
   SFX.unlock();
+  if (canPlug()) { plugging = true; link.act({ t: 'hold', on: true }); return; }   // council round 11 #1: pull MOW-E's plug
   if (canChat()) { chatting = true; link.act({ t: 'chat', on: true }); return; }
   if (canFill()) { filling = true; link.act({ t: 'fill', on: true }); return; }
   if (fromPad && r2?.unlatch()) return;                  // a latched crank or pump: this tap lets go
@@ -1172,6 +1221,7 @@ function pressAct(fromPad = false) {
 }
 function releaseAct(fromPad = false) {
   spraying = false;
+  if (plugging) { plugging = false; link?.act({ t: 'hold', on: false }); }   // council round 11 #1
   if (chatting) { chatting = false; link?.act({ t: 'chat', on: false }); }
   if (filling) { filling = false; link?.act({ t: 'fill', on: false }); }
   if (fromPad && r2?.latched()) return;                  // latched: the crank or pump stays on until Ⓐ or Ⓑ is tapped
@@ -1294,7 +1344,7 @@ function renderLobby() {
   $('lobby').querySelector('.shop')?.classList.toggle('hidden', (crew.day ?? 1) <= 1 && (crew.venue ?? 0) === 0);   // no shop before there is money
   $('lobby').querySelector('.shop-toggle')?.classList.toggle('hidden', (crew.day ?? 1) <= 1 && (crew.venue ?? 0) === 0);
   const goal = $('lobby').querySelector('.goal-line');   // playtest round 2 #15: day 1 has no target
-  if (goal) goal.textContent = (crew.day ?? 1) <= 1 && !crew.endless ? 'Pick up balls. Bank them.' : 'Pick up balls. Bank them. Hit the target.';
+  if (goal) goal.textContent = lobbyTagline(crew.venue ?? 0, !!crew.endless, crew.day ?? 1);   // council round 11 8.13: one per venue
 }
 function copyJoinLink() {
   const url = NET.joinLink($('code').textContent);
@@ -1328,7 +1378,7 @@ function showPhase() {
       ${report.unwashed > 0 ? `<p>Unwashed at the bell: ${report.unwashed} <b>(missed washer bonus ${money(report.lostPremium ?? 0)})</b></p>` : ''}
       <p>In the bank <b id="report-bank">${money(crew.promotedTo ? crew.cash : report.bank)}</b></p>
       ${report.quota ? `<p class="stamp ${report.quota.hit ? 'hit' : 'miss'}">${targetStamp(report.quota)} <b${!report.quota.hit && (report.quota.need != null ? report.quota.clean >= report.quota.need : report.quota.bv >= report.quota.target) ? ' class="pass"' : ''}>${report.quota.need != null ? reportRow(report.quota) : `BV ${money(report.quota.bv >= 100 ? Math.round(report.quota.bv) : report.quota.bv)} / ${money(report.quota.target >= 100 ? Math.round(report.quota.target) : report.quota.target)}`}${report.quota.hit ? ` · bonus ${money(report.quota.bonus)}` : ''}</b></p>` : ''}
-      ${report.quota?.gauge != null ? `<p${report.quota.gaugeOk ? '' : ' class="stamp miss"'}>${crew.venue === 3 ? 'Crowd (last 2 min)' : 'Venue gauge at the bell'} <b>${Math.round(report.quota.gauge * 100)}% · ${report.quota.gaugeOk ? 'held' : report.quota.why ?? 'under 50%'}</b></p>` : ''}
+      ${report.quota?.gauge != null ? `<p${report.quota.gaugeOk ? '' : ' class="stamp miss"'}>${crew.venue === 3 ? 'Crowd (last 2 min)' : crew.venue === 4 ? 'Zoning at the bell' : 'Venue gauge at the bell'} <b>${Math.round(report.quota.gauge * 100)}% · ${report.quota.gaugeOk ? 'held' : report.quota.out ?? report.quota.why ?? 'under 50%'}</b></p>` : ''}
       ${report.sealCash > 0 ? `<p>${sealRow(report.sealCash).replace(': ', ': <b>')}</b></p>` : ''}
       ${report.spotless ? `<p class="stamp hit"><b>${spotlessRow(report.spotless, money)}</b></p>` : ''}
       ${report.tomorrow ? `<p class="dim">${report.tomorrow}</p>` : ''}`;
@@ -1548,6 +1598,8 @@ function toast(msg, secs = 2.5, key) { say('TOAST', msg, { secs: Math.min(4, sec
 // The checklist and the nudge slot step aside while the PA card, a memo or the stamp holds the centre (owner playtest).
 const textBusy = () => sayer.busy('PA', 'MEMO', 'STAMP') || storyCard.up;   // round 12: and the story card
 // Other Rats' news: a quiet 3-line feed on the left, 3 s a line (council round 3).
+const helperFalls = createFallAgg({ now: () => performance.now() / 1000 });   // council round 11 8.10
+let helperFallsT = 0;
 function feed(msg, color) {
   const el = $('feed'); if (!el) return;
   const line = document.createElement('div'); line.textContent = msg; if (typeof color === 'string') line.style.color = color; el.appendChild(line);
@@ -1658,12 +1710,18 @@ function hud(dt = 0) {
   if (mc) {
     const load = (mc.load ?? 0) + pendingCart.size;
     $('pocket').textContent = `Cart ${load} / ${my.cartCap}${(mc.boost ?? 0) > 0 ? `  TURBO ${Math.ceil(mc.boost)}s` : ''}`;
-  } else $('pocket').textContent = cap <= 8 ? '●'.repeat(Math.min(n, cap)) + '○'.repeat(Math.max(0, cap - n)) : `${n} / ${cap}`;
+  } else {   // council round 11 8.12 (C #11): the pocket is the server's pocket (a souvenir or hazard in hand is not in it)
+    let pn = me.pocket; for (const id of pending) { const k = balls.get(id)?.kind; if (k !== 'souvenir' && k !== 'hazard' && k !== 'hazwet') pn++; }
+    const sv = Math.abs(crew.mods?.stadium?.hands?.[me.id] ?? 0);   // souvenirs in hand: their own ×2 chip by the pocket
+    $('pocket').textContent = (cap <= 8 ? '●'.repeat(Math.min(pn, cap)) + '○'.repeat(Math.max(0, cap - pn)) : `${pn} / ${cap}`) + (sv ? `  ★${sv} ×2` : '');
+  }
   const left = Math.max(0, crew.shiftSecs - crew.shiftT);
   $('clock').textContent = crew.phase === 'shift' ? `Day ${crew.day} · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}` : `Day ${crew.day}`;
   const load = (mc?.load ?? 0) + pendingCart.size;
   $('prompt').textContent = !playing() || r2?.cctvOn || sayer.busy() || crew.phase !== 'shift' || dusk.active ? ''   // ambient: it hides while any centre item shows (round 7 #3), and in the walk-off (playthrough 5 A9: a stale "Full")
     : me.down > 0 ? 'Seeing stars…'
+    : canPlug() || plugging ? BOSS_LINES.prompt(pad ? GLYPH.A : 'Space')   // council round 11 #1: the plug
+    : me.wand && performance.now() - moweFront < 600 ? BOSS_LINES.back
     : crew.lastBucket?.phase === 'huddle' ? ''          // round 6 #5: the banner says HOLD Ⓐ TOGETHER (one text)
     : me.one ? ''   // the Last Bucket banner says it
     : nearestBall()?.kind === 'one' ? `${btn}  Pick up Ball No. 1`
@@ -1754,8 +1812,10 @@ function updateSpray(dt, now) {
     for (const [id, o] of others) if (!o.helper && o.g.visible) consider('p:' + id, o.g.position.x, 1.0, o.g.position.z, 0.6);   // Hose a Friend
     for (const fx of FIXTURES) if (fixtureBuilt(fx.id, crew?.nMats ?? 10)) consider(fx.id, fx.x, fx.id === 'sign' ? 2.0 : fx.id === 'stand' ? 0.6 : 0.1, fx.z, fx.r);   // round 11: no unbuilt bay
     if (crew?.venue === 4) for (const b of balls.values()) if (b.rest && (b.kind === 'hazard' || b.kind === 'hazwet')) consider('h:' + b.id, b.x, 0.1, b.z, 0.7);   // round 11: County hazards
+    if (bossFighting(crew?.mower)) consider('mower', crew.mower.x, 0.9, crew.mower.z, 1.5);   // council round 11 #1: MOW-E (the server checks its back)
     if (me.pitch < -1.0 && (me.grime ?? 0) > 0) best = 'self';   // looking down at your boots: the server rinses a layer every 1.5 s
     if (best) { if (washTarget !== best) { flushWash(now); washTarget = best; } washSecs += dt; }
+    if (best === 'mower' && !moweBehind(crew.mower, me)) moweFront = now;   // council round 11 #1: hosing its nose, the prompt says where the grille is
     sprayStats.frames++; if (best) sprayStats.hits++;
   }
   if (washSecs > 0 && now - washSent > 250) flushWash(now);
@@ -1955,6 +2015,7 @@ function frame(now) {
     const creek = !drivingNow && creekDiving(me), under = (wetPond(me) && !drivingNow) || creek;
     // eyeY follows the bed down into the Deep End; in the creek the eye sits BED + 0.55 (council round 10 #5)
     camera.position.set(me.x, creek ? CREEK_DIVE.BED + CREEK_DIVE.EYE : under ? eyeY(me.x, me.z) : EYE - fall * (EYE - 0.25), me.z);
+    if (crew.phase === 'lobby' && (crew.venue ?? 0) >= 2) camera.position.z += 6;   // council round 11 8.15 (C #9): the lobby view clears the deck's pillars
     if (under !== !!scene.userData.under) {    // murky green, a flashlight, the surface overhead
       scene.userData.under = under;
       // Owner (Xbox): after leaving the pond everything stayed faded. The fog's distances were set for the
@@ -1990,7 +2051,7 @@ function frame(now) {
     ...tipCtx(crew, me) });   // owner notes: up, myDive, mats' mud (tips.js)
   board.tick(dt);
   confetti.tick(dt);        // the shared confetti pool (round 6: the bell's stamp, the huddle)
-  mowe.update(crew.mower ?? null); mowe.tick(dt, sceneT);
+  mowe.update(crew.mower ?? null, me.id); mowe.tick(dt, sceneT, me);
   kitchen.tick(dt);
   if (kitchen.isOpen && (!atShed(me) || me.down > 0)) kitchen.close();
   scenery.tick(dt, sceneT += dt, crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);
@@ -2023,6 +2084,10 @@ function frame(now) {
     if (ch) { garyView.chatT = (garyView.chatT ?? garyView.to.chatT ?? 0) + dt; garyView.bubble.set(chatBit(garyView.chatT)); }
     else { garyView.chatT = null; if (garyView.bubbleEnd > 0) garyView.bubble.set(CHAT_END); else if (garySays?.t > 0) garyView.bubble.set(garySays.text); }
     if (garySays) { garySays.t -= dt; if (garySays.t <= 0 || garyView.to.phase !== 'warn') garySays = null; }   // round 12: his hello, only while he waits at the gate
+    // Council round 11 8.9 (A #7): easy to miss. It stays up for his whole wait, and says it again (a 0.5 s pop) once,
+    // when a Rat first comes within 8 m.
+    if (garySays && !garySays.near && Math.hypot(garyPose.x - me.x, garyPose.z - me.z) < 8) { garySays.near = true; garySays.pop = 0.5; }
+    { const k = 2.6 * (1 + 0.25 * Math.sin(Math.PI * Math.min(1, (garySays?.pop ?? 0) / 0.5))); if (garySays?.pop > 0) garySays.pop = Math.max(0, garySays.pop - dt); garyView.bubble.sprite.scale.set(k, k * 64 / 512, 1); }   // textSprite's 2.6 × 64/512
     garyView.bubble.sprite.visible = !!ch || garyView.bubbleEnd > 0 || !!garySays;
     if (garyView.bubble.sprite.visible) {   // playthrough 5 A7: in chat reach (1-2.5 m) a bubble at 3.15 m sat off the top of the screen
       const d = Math.hypot(garyPose.x - camera.position.x, garyPose.z - camera.position.z);

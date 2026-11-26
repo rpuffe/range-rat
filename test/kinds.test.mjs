@@ -286,14 +286,18 @@ test('debut: the first spawn of each non-range kind emits one debut event, never
   const { crew, run } = makeCrew({ day: 7, venue: 1 });
   crew.startShift();
   for (const m of crew.mats) m.next = 0;
-  assert.equal(crew.debuts.size, 0);
+  // Council round 11 #3: the morning memo tells the kinds opening today, so they join debuts at the morning; the first
+  // hit of each still emits one debut event (told: true: the client floats "NEW ×1.5", no memo).
+  const told = [...crew.debuts].sort();
+  assert.ok(told.includes('square') && told.includes('splitter') && told.includes('bouncy'), `told in the morning: ${told}`);
   const seen = debutsOver(crew, run);
   for (const k of ['square', 'splitter', 'bouncy']) assert.equal(seen.filter(x => x === k).length, 1, `${k} debuts once`);
   assert.ok(seen.filter(x => x === 'gold').length <= 1, 'gold debuts at most once (it is rare)');
   assert.equal(new Set(seen).size, seen.length, 'no kind debuts twice');
   assert.ok(!seen.includes('range'), 'range never debuts');
   for (const k of ['square', 'splitter', 'bouncy']) assert.ok(seen.includes(k), `${k} appeared`);
-  assert.deepEqual([...crew.debuts].sort(), [...seen].sort());
+  assert.deepEqual([...crew.debuts].sort(), told, 'nothing joins debuts mid-shift');
+  for (const k of seen) assert.ok(told.includes(k));
 });
 
 test('debut: day 1 customers never debut anything', () => {
@@ -311,10 +315,10 @@ test('debuts round-trip through toSave: a loaded crew does not repeat a debut', 
   const seen = debutsOver(first.crew, first.run, 200);
   assert.ok(seen.length >= 3, `some kinds debuted: ${seen}`);
   const save = JSON.parse(JSON.stringify(first.crew.toSave()));
-  assert.deepEqual([...save.debuts].sort(), [...seen].sort());
+  for (const k of seen) assert.ok(save.debuts.includes(k), `${k} saved`);   // council round 11 #3: plus the kinds told but not yet hit
 
   const second = makeCrew(save, 100000, 3);
-  assert.deepEqual([...second.crew.debuts].sort(), [...seen].sort());
+  assert.deepEqual([...second.crew.debuts].sort(), [...save.debuts].sort());
   second.crew.startShift();
   for (const m of second.crew.mats) m.next = 0;
   const again = debutsOver(second.crew, second.run, 200);

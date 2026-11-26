@@ -14,6 +14,8 @@ import { diveTiers } from '../dive.js';
 import { perks } from '../sim.js';
 import { createEva } from '../scuba.js';
 import * as SET from '../settings.js';
+import { SIM } from '../sim.js';
+import { createGaryCameo, returnSpot } from './garycameo.js';   // council round 11 #7: Gary in the Lift, Gary at the return
 
 const PH = ['up', 'out', 'down'];
 const SPACE_TOP = new THREE.Color(0x00020a), SPACE_MID = new THREE.Color(0x070618), SPACE_HORIZON = new THREE.Color(0x5a3552);
@@ -98,6 +100,17 @@ export default {
     const clip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffe9b0 })); clip.visible = false; root.add(clip);
 
     const eva = createEva({ audio: ctx.SFX?.audioHandle });
+    // Council round 11 #7: Gary in the world. The story card's events (storycard.js 'rr-story') start him: the Orbital's
+    // promotion beat puts him on the Lift car's roof for one ride; the epilogue stands him at the return all shift.
+    const cameo = createGaryCameo(scene);
+    const cameoLift = { x: LIFT.x, z: LIFT.z, carY: 1.5 }, cameoRats = [];
+    const onStory = ev => {
+      const d = ev?.detail;
+      if (d?.phase !== 'card' || d.index !== 0) return;
+      if (d.id === 'promo:5') cameo.ride();
+      else if (d.id === 'epilogue') cameo.stand(returnSpot(SIM.STAND));
+    };
+    if (typeof window !== 'undefined') window.addEventListener('rr-story', onStory);
     const tmp = { m: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1, 1), p: new THREE.Vector3(), e: new THREE.Euler(),
       a: new THREE.Vector3(), b: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), c: new THREE.Color() };
 
@@ -150,6 +163,7 @@ export default {
         else if (e.t === 'reel' && e.id === me.id) { ctx.toast('The tether reels you in.', 3); ctx.SFX?.bonk?.(); }
         else if (e.t === 'landed' && e.id === me.id) ctx.toast(e.n > 0 ? `Back on the grass: ${e.n} debris in your pocket` : 'Back on the grass. Empty-handed.', 3);
         else if (e.t === 'winch') ctx.SFX?.ping?.();
+        else if (e.t === 'shift' && e.phase === 'report') cameo.stand(null);   // Gary's shift at the return ends with ours
       },
 
       prompt(btn, ibtn) {
@@ -207,7 +221,16 @@ export default {
           const hh = id === me.id && riding ? h : rideHeight(PH[r[0]], r[1]);
           want = Math.max(want, hh - 0.2);
         }
+        if (cameo.riding) want = Math.max(want, 1.5 + cameo.rideY());   // council round 11 #7: Gary's ride
         carY += (want - carY) * (want > carY ? Math.min(1, dt * 14) : Math.min(1, dt * 14));
+        if (cameo.riding || cameo.standing) {
+          cameoLift.carY = carY;
+          const ps = ctx.crew()?.players ?? [];
+          cameoRats.length = 0;
+          cameoRats.push(me);
+          for (const p of ps) if (p.id !== me.id && p.online) cameoRats.push(p);
+          cameo.tick(dt, { lift: cameoLift, rats: cameoRats });
+        }
         if (ctx.venues) ctx.venues.carY = carY;
         // Playthrough 4 C5: the tower and its lights would cut across the end-of-day overhead; they step aside under it.
         if (ctx.venues?.tower) { const show = !ctx.dusking?.(); ctx.venues.tower.visible = show; if (ctx.venues.blinkers) ctx.venues.blinkers.visible = show; }

@@ -71,12 +71,13 @@ export function paceAt(records, shiftT, shiftSecs) {
 }
 
 // ---- racing yesterday (council round 8 #3) -----------------------------------------------------------------------
-// The endless Board races yesterday's shift (its cash and its curve), not the all-time record; an old save with no
-// yesterday yet races the record. Returns { cash, curve?, vs: 'yesterday'|'record' }, or null with nothing to race.
+// The endless Board races yesterday's shift (its cash and its curve), not the all-time record.
+// Council round 11 #6: with no yesterday (endless day 1, the Owners' first) there is no race: the Orbital's debris-fed
+// record is out of reach, and a first report that reads as a loss to your own ghost is no way to start.
+// Returns { cash, curve?, vs: 'yesterday' }, or null with nothing to race.
 export function yesterdayPace(records) {
   const y = records?.yesterday;
   if (y && +y.cash > 0) return { cash: +y.cash, ...(cleanCurve(y.curve) ? { curve: y.curve } : {}), vs: 'yesterday' };
-  if (+records?.cash > 0) return { cash: +records.cash, ...(cleanCurve(records.curve) ? { curve: records.curve } : {}), vs: 'record' };
   return null;
 }
 // A saved yesterday, or undefined.
@@ -86,16 +87,43 @@ export function cleanYesterday(y) {
   const c = cleanCurve(y.curve);
   return c ? { cash, curve: c } : { cash };
 }
-// At an endless bell: today against yesterday (or the record, before there is a yesterday). Returns the records' new
-// yesterday and streak, and the report's result { beat, streak, by }. Pure: crew.mjs assigns it.
+// At an endless bell: today against yesterday. Returns the records' new yesterday and streak, and the report's result
+// { beat, streak, by }. Pure: crew.mjs assigns it. Council round 11 #6: no yesterday yet (endless day 1): no race, the
+// result is { first: true, target } (today's cash: tomorrow's to beat) and the streak starts at 0.
 export function raceYesterday(records, dayCash, curve) {
-  const cash = Math.max(0, +dayCash || 0), target = yesterdayPace(records)?.cash ?? 0;
-  const beat = cash > target;
-  const streak = beat ? Math.max(0, (records?.streak | 0)) + 1 : 0;
+  const cash = Math.max(0, +dayCash || 0), y = yesterdayPace(records);
   const c = cleanCurve(curve);
-  return { yesterday: c ? { cash, curve: c } : { cash }, streak,
-    result: { beat, streak, by: Math.round(Math.abs(cash - target) * 100) / 100, vs: target } };
+  const yesterday = c ? { cash, curve: c } : { cash };
+  if (!y) return { yesterday, streak: 0, result: { first: true, target: Math.round(cash * 100) / 100 } };
+  const target = y.cash, beat = cash > target;
+  const streak = beat ? Math.max(0, (records?.streak | 0)) + 1 : 0;
+  return { yesterday, streak, result: { beat, streak, by: Math.round(Math.abs(cash - target) * 100) / 100, vs: target } };
 }
+
+// ---- council round 11 #6: the Owners keep their own book ----------------------------------------------------------
+// records.owner = { cash }: the best endless shift. The Orbital's records.cash stays the report's 'Best ever'. The first
+// endless bell opens the book (no NEW); from then on beating it is the record (the PA, the report's 'Record shift!').
+// Returns { owner, record } (record: { cash, was, owner: true } or null).
+export function ownerRecord(records, dayCash) {
+  const cash = Math.max(0, +dayCash || 0), was = cleanOwner(records?.owner);
+  if (!was) return { owner: { cash }, record: null };
+  if (cash > was.cash) return { owner: { cash }, record: { cash, was: was.cash, owner: true } };
+  return { owner: was, record: null };
+}
+// A saved owner book, or undefined.
+export function cleanOwner(o) {
+  if (o == null) return undefined;
+  const cash = Number(o.cash);
+  return Number.isFinite(cash) && cash >= 0 ? { cash } : undefined;
+}
+// Banking Ball No. 1 opens the Owners' book (builder 2's depositOne): yesterday, the streak and the owner record go.
+export function ownerBook(records) {
+  const { yesterday, streak, owner, ...rest } = records ?? {};
+  return rest;
+}
+
+// The Orbital's sky phase waiting on the winch (builder 4's strip, huddlerules.js): "SKY CLEAR · WINCH $13.2M · YOU HAVE $9.1M".
+export const winchLine = (price, cash) => `SKY CLEAR · WINCH ${shortMoney(price)} · YOU HAVE ${shortMoney(cash)}`;
 // "$2.1M", "$850K", "$900": the report's short money.
 export function shortMoney(v) {
   const a = Math.abs(+v || 0), r1 = x => (Math.round(x * 10) / 10).toString();
@@ -105,8 +133,10 @@ export function shortMoney(v) {
   return '$' + Math.round(a).toLocaleString('en-US');
 }
 // The endless report's first line: "Beat yesterday · 4 in a row." or "Short of yesterday by $2.1M."
+// Council round 11 #6: endless day 1 reads "Day 1 as Owners. Beat $70.8M tomorrow."
 export function streakLine(res) {
   if (!res) return '';
+  if (res.first) return `Day 1 as Owners. Beat ${shortMoney(res.target)} tomorrow.`;
   if (res.beat) return res.streak > 1 ? `Beat yesterday · ${res.streak} in a row.` : 'Beat yesterday.';
   return 'Short of yesterday by ' + shortMoney(res.by) + '.';
 }

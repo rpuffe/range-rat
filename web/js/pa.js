@@ -13,7 +13,11 @@ export const PA_LINES = {
   bouncy: { line: 'The members have requested a livelier ball. Please do not chase it. It can tell.', caption: 'A livelier ball. Do not chase it.' },
   gary: { line: 'Gary from Regional is on site. Look busy. Then be busy.', caption: 'Gary from Regional is on site.' },
   garyIntro: { line: 'This is Gary. Gary is the Regional Manager. Gary has a clipboard, and Gary is not afraid to use it.', caption: 'Gary. Regional Manager. He has a clipboard.' },   // owner playtest 3 §6.1: the drive-by, once ever
-  mower: { line: 'Corporate has deployed an autonomous mower. It has been trained on your movements.', caption: 'A robot mower. Trained on your movements.' },
+  mower: { line: 'Corporate has deployed an autonomous mower. It has been trained on your movements.', caption: 'A robot mower. Trained on your movements.' },   // the legacy pass (BOSS.ON = 0) only
+  // Council round 11 #1 (builder 1): MOW-E Goes Rogue (the build-up), MOW-E 2.0 at the Stadium, and the win's pond.
+  rogue: { line: 'Corporate has pushed an update to MOW-E. It has learned your movements. Please stand back.', caption: 'MOW-E updated itself. Please stand back.' },
+  rogue2: { line: 'Corporate has pushed MOW-E two point oh. Now with stadium mode.', caption: 'MOW-E 2.0. The crowd is thrilled.' },
+  pond: { line: 'MOW-E has been retired to the pond. Corporate thanks it for its service. And you, slightly.', caption: 'MOW-E is in a better place. The pond.' },
   treasure: { line: 'An item has been recovered from the pond. Corporate will be keeping it in a glass case. Corporate keeps everything in a glass case.', caption: 'Recovered from the pond. Now in a case.' },
   huddle: { line: 'Gary from Regional is satisfied. Gary has never been satisfied.', caption: 'Gary is satisfied. Gary is never satisfied.' },
   cart: { line: 'Corporate has issued you a vehicle. Corporate has not issued you a license.', caption: 'You have a cart. Not a license.' },

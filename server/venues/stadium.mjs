@@ -2,8 +2,13 @@
 // The crowd's mood is this venue's KPI. Pings, laps, targets and knockdowns feed it; time drains it.
 import { onTrack, cartSpeedAt } from '../../web/js/map.js';
 import { CROWD, gateAt, newLap, stepLap, stepSentiment, bump, pingDelta, newWindow, pushSample, windowMean,
-  CROWD_LINE, crowdDecay, BOO, SOUV, atRail, souvCrowd, booOut } from '../../web/js/stadium.js';
+  CROWD_LINE, crowdDecay, BOO, SOUV, atRail, souvCrowd, booOut,
+  REQ, SECTIONS, reqDue, reqSection, inSection, souvPay, reqCrowd, reqMiss } from '../../web/js/stadium.js';
 import { AUTO, newAuto, stepAutopilot, nextMode } from '../../web/js/autopilot.js';
+import { bossLive } from '../../web/js/mowe.js';   // council round 11 §2.7: MOW-E 2.0, the encore (builder 1)
+
+// Council round 11 §2.7: while MOW-E 2.0 is a live boss the crowd doesn't drain; each hit +HIT; a win fills it.
+export const BOSS_CROWD = { HIT: 0.08, WIN: 1 };
 import { SIM, CART, WASH, KIND_W, underReels } from '../../web/js/sim.js';
 
 // Round 7 #7: st.s is the live mood (the jumbotron, the bob, the ambience); the gauge the Board shows and the bell grades
@@ -11,7 +16,8 @@ import { SIM, CART, WASH, KIND_W, underReels } from '../../web/js/sim.js';
 // One lap tracker per cart (the fleet: two drivers can race). `lap` is the first cart's, kept for old readers.
 const fresh = () => { const lapBy = [newLap(), newLap()]; return { s: CROWD.START, laps: 0, knocks: 0, lapBy, lap: lapBy[0], t: 0, lastKnock: null, lastPing: null, win: newWindow(), acc: 0,
   auto: [], autoLaps: 0,   // council round 10 §D: each cart's autopilot (autopilot.js), and its half-credit laps
-  hands: {}, booT: 0, boos: 0, souv: 0, sv: false }; };   // round 11: souvenirs in hands ({ [player id]: { n, relay } }), the boo clock
+  hands: {}, booT: 0, boos: 0, souv: 0, sv: false,
+  req: null, reqN: 0, reqLast: null, reqHit: 0, reqMissed: 0, bossHits: 0, bossWon: false }; };   // council round 11 #5: the lit section ({ i, sec, left }), how many so far, the last start   // round 11: souvenirs in hands ({ [player id]: { n, relay } }), the boo clock
 
 // Council round 10 §D: the cart row's tier 4. An undriven cart drives itself during the shift (it laps, or harvests
 // after someone holds Ⓨ at it); c.auto is its mode while it does ('lap' | 'harvest', null when driven or parked), which
@@ -65,12 +71,14 @@ function souvenirs(crew, st) {
     if (atRail(p.x, p.z)) {                                           // delivered: the crowd, and the pay
       delete st.hands[id];
       if (!crew.working()) continue;
-      st.s = bump(st.s, souvCrowd(h.n, h.relay)); st.souv += h.n;
+      const lit = !!st.req && inSection(SECTIONS[st.req.i], p.x, p.z);   // council round 11 #5: the lit section pays x3
+      st.s = bump(st.s, lit ? reqCrowd(h.n) : souvCrowd(h.n, h.relay)); st.souv += h.n;
       crew.stats.souvenirs = (crew.stats.souvenirs ?? 0) + h.n;
       const c0 = crew.stats.cash;
-      crew.bank(h.n, p.id, null, h.n * SOUV.W * (h.relay ? SOUV.RELAY : 1), null, { souv: h.n, ...(h.relay ? { relay: true } : {}) });
+      crew.bank(h.n, p.id, null, souvPay(h.n, h.relay, lit), null, { souv: h.n, ...(lit ? { req: true } : h.relay ? { relay: true } : {}) });
       crew.stats.souvCash = Math.round(((crew.stats.souvCash ?? 0) + crew.stats.cash - c0) * 100) / 100;   // the report (and the bot): what the job paid
-      crew.events.push({ t: 'crowd', kind: 'souv', by: p.id, name: p.name, n: h.n, ...(h.relay ? { relay: true } : {}) });
+      crew.events.push({ t: 'crowd', kind: 'souv', by: p.id, name: p.name, n: h.n, ...(lit ? { req: st.req.sec } : h.relay ? { relay: true } : {}) });
+      if (lit) { st.req = null; st.reqHit++; crew.stats.reqHit = (crew.stats.reqHit ?? 0) + 1; }
       crew.dirty = true;
       continue;
     }
@@ -84,6 +92,23 @@ function souvenirs(crew, st) {
       break;
     }
   }
+}
+// ---- council round 11 #5: souvenir requests. One section lit at a time; answered in souvenirs(), missed here. -------
+function requests(crew, st, dt) {
+  const n = crew.onlineCount();
+  if (st.req) {
+    if ((st.req.left -= dt) > 0) return;
+    const sec = st.req.sec; st.req = null; st.reqMissed++;
+    st.s = bump(st.s, -reqMiss(n));
+    crew.events.push({ t: 'crowd', kind: 'reqmiss', sec });
+    crew.dirty = true;
+    return;
+  }
+  if (!reqDue({ t: st.t, left: crew.shiftSecs - crew.shiftT, last: st.reqLast, n })) return;
+  const sec = reqSection(st.reqN++);
+  st.req = { i: sec.i, sec: sec.name, left: REQ.SECS }; st.reqLast = st.t;
+  crew.events.push({ t: 'crowd', kind: 'req', sec: sec.name, i: sec.i, secs: REQ.SECS });
+  crew.dirty = true;
 }
 // A knocked-down Rat's souvenirs go everywhere (still souvenirs).
 function dropHands(crew, st, p) {
@@ -106,8 +131,15 @@ export default {
   tick(crew, st, dt) {
     if (!crew.working()) return;
     st.t += dt;
-    st.s = stepSentiment(st.s, dt, crowdDecay(crew.onlineCount()));   // round 11 (expert #6): the drain grows with the crew
-    if (crew.venue === 3) { boo(crew, st, dt); souvenirs(crew, st); }
+    const boss = crew.venue === 3 && crew.mower?.kind === 'boss' ? crew.mower : null;   // council round 11 §2.7: the encore
+    if (boss) {
+      const h = boss.hits | 0;
+      if (h > st.bossHits) st.s = bump(st.s, BOSS_CROWD.HIT * (h - st.bossHits));
+      st.bossHits = h;
+      if (boss.phase === 'tamed' && !st.bossWon) { st.bossWon = true; st.s = BOSS_CROWD.WIN; }
+    }
+    if (!bossLive(boss)) st.s = stepSentiment(st.s, dt, crowdDecay(crew.onlineCount()));   // round 11 (expert #6): the drain grows with the crew
+    if (crew.venue === 3) { boo(crew, st, dt); souvenirs(crew, st); if (!crew.endless) requests(crew, st, dt); }
     st.acc += dt;
     while (st.acc >= 1 - 1e-9) { st.acc -= 1; pushSample(st.win, st.s); }
     const carts = crew.carts ?? (crew.cart ? [crew.cart] : []);
@@ -186,5 +218,6 @@ export default {
     ...(crew.perks?.autopilot ? { auto: (crew.carts ?? []).map((c, i) => st.auto[i]?.mode ?? 'lap'), autoLaps: st.autoLaps } : {}),
     ...(crew.warned && !crew.lastCall() ? { w: 1 } : {}),
     ...(Object.keys(st.hands ?? {}).length ? { hands: Object.fromEntries(Object.entries(st.hands).map(([id, h]) => [id, h.relay ? -h.n : h.n])) } : {}),   // round 11: n (negative: relayed)
-    ...(st.sv ? { sv: 1 } : {}), ...(st.boos ? { boos: st.boos } : {}) }),
+    ...(st.sv ? { sv: 1 } : {}), ...(st.boos ? { boos: st.boos } : {}),
+    ...(st.req ? { req: { i: st.req.i, sec: st.req.sec, left: Math.round(st.req.left * 10) / 10 } } : {}) }),   // council round 11 #5 (board.js: reqLine)
 };

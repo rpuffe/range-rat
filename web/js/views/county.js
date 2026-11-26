@@ -3,7 +3,8 @@
 // server/venues/county.mjs; the numbers are web/js/county.js.
 import * as THREE from 'three';
 import { MAP } from '../map.js';
-import { DRONES, VAN } from '../county.js';
+import { DRONES, VAN, vanToast } from '../county.js';
+import { armAgain } from '../settings.js';
 
 const Y = MAP.YARDS;
 const mat = (color, o = {}) => new THREE.MeshLambertMaterial({ color, ...o });
@@ -141,6 +142,7 @@ export default {
       },
       onEvent(e) {
         if (e.t === 'buy' && e.id === 'drones') { ctx.SFX.jackpot?.(); ctx.toast?.('Drones deployed. The crowd goes mild.', 3); }
+        else if (e.t === 'quota' && e.venue === 4 && !e.hit && e.cause === 'haz') armAgain('hazard');   // council round 11 #2: the tip comes back tomorrow
         else if (e.t === 'hazard') setKind(e.id, 'hazard');
         else if (e.t === 'hazwet') setKind(e.id, 'hazwet');
         else if (e.t === 'hazgone') setKind(e.id, 'range');
@@ -149,7 +151,7 @@ export default {
           ctx.feed?.(`${who} bagged a hazard${e.team ? ' (team job)' : ''}. Zoning approves.`);
           if (e.by === ctx.me?.id) ctx.SFX?.glint?.();
         } else if (e.t === 'van') {
-          if (!vanSaid) { vanSaid = true; ctx.toast?.(`Zoning's van towed ${e.n} balls.`, 3); }
+          if (!vanSaid) { vanSaid = true; ctx.toast?.(vanToast(e.n), 3); }   // council round 11 #2: the first tow says why
           else ctx.feed?.(`Zoning towed ${e.n} more balls. Bag the hazards!`);
         }
       },

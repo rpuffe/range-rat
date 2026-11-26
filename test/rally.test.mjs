@@ -10,7 +10,7 @@ const val = (upkeep, extra = {}) => ({ bv: upkeep, rate: 1, curb: 1, pond: null,
 test('only the gauge short: the venue\'s line', () => {
   assert.equal(shortfall({ value: val(2.5), quota: { q: 0.5 }, kpi: 0.4, fixtures: clean, venue: 2 }), RALLY_LINES.gauge[2]);
   assert.equal(shortfall({ value: val(2.5), quota: { q: 0.5 }, kpi: 0.2, fixtures: clean, venue: 3 }), 'The crowd is bored. Lap the Track!');
-  assert.equal(shortfall({ value: val(2.5), quota: { q: 0.5 }, kpi: 0.49, fixtures: clean, venue: 4 }), 'Strays in the Yards. Go get them!');
+  assert.equal(shortfall({ value: val(2.5), quota: { q: 0.5 }, kpi: 0.49, fixtures: clean, venue: 4 }), "Zoning's low! Bag hazards, fetch strays!");   // council round 11 #2: names both terms
   assert.equal(shortfall({ value: val(2.5), quota: { q: 0.5 }, kpi: 0, fixtures: clean, venue: 5 }), 'Debris overhead. Everyone up the Lift!');
 });
 

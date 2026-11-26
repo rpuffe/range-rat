@@ -1175,3 +1175,43 @@ Then the existing PA: "Under New Management. Approved by nobody."
 | County | Right. Let's see the county. | You'd have liked 1987. |
 
 **Treasures, reworded** (ids and mechanics unchanged): the waterlogged memo, "Stamped URGENT, 1958. One word survives: UP."; the VHS, "Ball Retrieval Training (1987). Starring a young Gary."; the Dimples pin, "From before the monocle. Dimples has forgiven you." The trophy ("Engraved: GARY.") and the 1958 scorecard keep their lines.
+
+## Council round 11 (builder 2): the note at the huddle, and show, don't tell
+
+- **The note moves into the huddle.** `story.js` splits the old epilogue: `note` is one card (INSIDE BALL No. 1 · 1958,
+  "Whoever finds this: the range is yours.", the note style: Ⓐ after 2 s, at least 5 s, on by itself at 7 s), and
+  `epilogue` is the other three (Gary's bucket, Dimples retiring, the sign). An old save that saw the epilogue counts
+  the note as seen; a save that banked but reloaded before the note gets it first on the first endless morning.
+- **The bank** (`round2.js`, `story.js BANK_SEQ`): confetti + roar at 0 s → the hush at 1.2 s (floods off, ambience
+  ducked) → Ball No. 1 cracks open on the return's lip at 2.0 s (`ending.crack()`: two gold halves hinge apart over
+  0.6 s, a curl of paper rises 0.4 m, a warm light) → the note card at 2.8 s with one bell strike → when the note's beat
+  ends, the $∞ / BALL scramble → the PA "No more balls. Every ball mattered." → the end card, which waits on the
+  finale's promise (no fixed 7 s). Server: `depositOne` emits `banked` → `story note` → `pa last`.
+- **The first endless morning holds its clock** for `EPILOGUE_HOLD` (14 s: 3 cards × 4 s + 2) on the reveal's held
+  clock (`revealT`): no shift time, no customers, no Today while the epilogue plays.
+- **The founder, drawn** (`founder.js`): the Muni mid photo card shows a 160 × 100 sepia photo of the 1958 swing; the
+  Orbital mid card shows it with the ball circled in red pencil. On the Stadium's promotion morning the Board plays a
+  12 s newsreel (`drawNewsreel` through `board.overlay`) from the beat's first card.
+- **Story edits:** Stadium promo: GARY "Nice jumbotron. Don't get a big head." and MEMO "Site 13 sells tickets to its
+  jumbotron." ("The founder swings…" cut: the jumbotron shows it). County promo: Gary's confession goes first (5 s min).
+- **Gary in the world** (`views/garycameo.js`, driven by `views/orbit.js` from the story card's `rr-story` events):
+  he rides the Lift car's roof up and back once (30 s, 26 m) on the Orbital's promotion morning, tie flapping; on the
+  first endless morning he stands at the return all shift with a blue bucket, and the first Rat within 3 m gets his
+  bubble "Where do these go, boss?".
+
+## Council round 11 (builder 1): MOW-E Goes Rogue, the tame pet, MOW-E 2.0
+
+The full record is `design/round13-mowe.md`; the rules are `web/js/mowe.js` (pure), the view and its sound `mower.js`.
+- **When.** Club venue day 3 at 30 % of the shift (the rematch on the next Club day, HP −1; two losses and he's tamed
+  anyway), and the encore "MOW-E 2.0" on the first Stadium day ≥ 2 (HP +1, speeds +10 %). Never in endless or on
+  Promotion Day. The boss owns its day: Gary slips a day and no Today is dealt.
+- **The fight.** 15 s build-up (the PA, `MOW-E · ROGUE · 0:15`, the striped near lanes, beeps that speed up), then
+  the harvest (it heads for the richest spot in its arena, eating resting balls within 3 m into a catcher of 30), the
+  hunt from half HP or 40 s (the nearest Rat on foot, re-aimed every 3 s, a red scan line and a red screen edge), and
+  the plug at HP 0 (hold Use in the ring at its back: 2.4 s ÷ min(3, holders); 10 s idle reboots it at 1 HP, +15 s).
+  Hits: 2.0 s of spray ÷ washRate from its rear arc, halved while a cart stalls it (6 s, then a 4 m shove, 8 s
+  cooldown). After a hit the grille vents (6 s + 2 s a Rat past the first: one pip a stall) and in the harvest it bolts.
+- **Win:** the STAMP, cannons, eaten ×2 banked, a gold ball a Rat, 10 × BV, +1 commendation, then it limps into the
+  pond. **Loss** (the 100 s cap, or the bell): the eaten balls are gone, the feed says so, "Employee of the Month".
+- **The pet:** from the next day, two passes a shift (25 %, 60 %): the richest old lane, gathered and banked at the
+  nearest owned return; it stops short of Rats and beeps. The Board: `MOW-E · BRINGING 24 HOME`.

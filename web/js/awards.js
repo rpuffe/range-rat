@@ -5,11 +5,12 @@
 
 // The counters a night keeps per Rat (each a p.shift key the server already counts, or one round 11 adds:
 // picked, dealt, gary (seconds chatting to Gary), treasures).
-export const NIGHT_KEYS = ['banked', 'cash', 'picked', 'knockdowns', 'dealt', 'cooked', 'dived', 'hosed', 'scrubbed', 'buckets', 'pings', 'gary', 'treasures', 'mowed'];
+export const NIGHT_KEYS = ['banked', 'cash', 'picked', 'knockdowns', 'dealt', 'cooked', 'dived', 'hosed', 'scrubbed', 'buckets', 'pings', 'gary', 'treasures', 'mowed', 'moweHits'];   // council round 11 #1: moweHits (hits on the boss's grille)
 
 // One award per Rat, in this order: each goes to the best Rat not yet awarded with a count over 0.
 // [title, key, unit line]
 export const AWARDS = [
+  ['MOW-E Wrangler', 'moweHits', n => `${n} hits on the grille`],   // council round 11 #1: the Rat who landed the most hits
   ['Most Knockdowns Dealt', 'dealt', n => `${n} Rats flattened`],
   ['Fry Lord', 'cooked', n => `${n} served`],
   ['Deepest Diver', 'dived', n => `${n} balls off the bottom`],

@@ -53,7 +53,13 @@ export function tipsFor(save) {
 // A quiet "Skip ahead (test)" button under Start a crew; it unfolds one button per starting point. Every control is a
 // plain <button>, so the pad's menu focus (menufocus.js, pad.js navTargets) walks them like any other.
 // onPick(id) starts the crew (main.js). Shown only when this page's host passes the gate.
-export function initSkip({ doc = globalThis.document, host = globalThis.location?.host, onPick } = {}) {
+// Council round 11 8.14 (C #10): the title rejoined the last crew after a skip preset. Picking one clears the seat
+// (net.js keeps it in sessionStorage as 'range-rat.seat'), so the title can't rejoin the crew you skipped away from.
+export const SEAT_KEY = 'range-rat.seat';
+export function clearSeat(storage = globalThis.sessionStorage) {
+  try { storage?.removeItem(SEAT_KEY); return true; } catch { return false; }
+}
+export function initSkip({ doc = globalThis.document, host = globalThis.location?.host, onPick, storage = globalThis.sessionStorage } = {}) {
   const box = doc?.getElementById('skip');
   if (!box || !skipHostOk(host)) return false;
   const toggle = doc.getElementById('skip-toggle'), list = doc.getElementById('skip-list');
@@ -66,7 +72,7 @@ export function initSkip({ doc = globalThis.document, host = globalThis.location
   });
   list.addEventListener('click', e => {
     const id = e.target?.closest?.('[data-skip]')?.dataset.skip;
-    if (id) onPick?.(id);
+    if (id) { clearSeat(storage); onPick?.(id); }
   });
   return true;
 }

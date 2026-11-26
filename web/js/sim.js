@@ -414,14 +414,56 @@ export const KIND_W = { range: 1, glow: 2, lead: 3, square: 2, gold: 10, splitte
 // bouncy at the Club (venue 1+). The foam ball was cut in round 3.
 // Round 11 (clubdays.js): at the Club the kinds stagger by Club day (vday): square day 1, gold day 2 (with the pond's
 // lead), bouncy day 3. One rng() draw either way, so the stream only moves where a kind is held back.
+// Council round 11 #3 (builder 4): the splitter is a Club-staggered kind too (Club day 4, with the bouncy ball).
+export function kindOpen(kind, day, venue, vday = null) {
+  const club = (venue ?? 0) === 1 && vday != null;
+  switch (kind) {
+    case 'gold': return club ? clubOpen('gold', venue, vday) : day >= 3;
+    case 'splitter': return club ? clubOpen('splitter', venue, vday) : day >= 7;
+    case 'bouncy': return (venue ?? 0) >= 1 && clubOpen('bouncy', venue, vday);
+    case 'square': return club ? clubOpen('square', venue, vday) : day >= 5;
+    case 'lead': return (venue ?? 0) >= 1 && clubOpen('lead', venue, vday);   // the pond's (crew.pondOpen: POND.FROM_VENUE, Club day 2)
+    default: return false;
+  }
+}
 export function pickKind(day, venue, rng, vday = null) {
   const r = rng();
-  const club = (venue ?? 0) === 1 && vday != null;
-  if ((club ? clubOpen('gold', venue, vday) : day >= 3) && r < 0.005) return 'gold';
-  if (day >= 7 && r < 0.045) return 'splitter';
-  if (venue >= 1 && clubOpen('bouncy', venue, vday) && r < 0.10) return 'bouncy';
-  if ((club ? clubOpen('square', venue, vday) : day >= 5) && r < 0.15) return 'square';      // round 6 #8: fewer (was 0.28), worth ×2, and the reels can't take them
+  if (kindOpen('gold', day, venue, vday) && r < 0.005) return 'gold';
+  if (kindOpen('splitter', day, venue, vday) && r < 0.045) return 'splitter';
+  if (kindOpen('bouncy', day, venue, vday) && r < 0.10) return 'bouncy';
+  if (kindOpen('square', day, venue, vday) && r < 0.15) return 'square';      // round 6 #8: fewer (was 0.28), worth ×2, and the reels can't take them
   return 'range';
+}
+// Council round 11 #3 (builder 4): ball kinds are announced in the morning, never mid-shift. The kinds that are open
+// this morning and haven't debuted (`seen`: crew.debuts), in the memo's order. Glow is Last Call's (its PA is the cue).
+export const MORNING_KINDS = ['square', 'lead', 'gold', 'bouncy', 'splitter'];
+export const kindsOpening = (day, venue, vday = null, seen = []) => {
+  const has = seen instanceof Set ? k => seen.has(k) : k => seen.includes(k);
+  return MORNING_KINDS.filter(k => !has(k) && kindOpen(k, day, venue, vday));
+};
+// The kind's NEW line (one kind), or the pair's ("NEW: bouncy balls ×1.5 and splitters."). Every one is ≤ 8 words.
+export const KIND_NEW = {
+  square: "NEW: square balls. ×2. They don't roll.",
+  gold: 'NEW: gold balls. ×10. Dimples watches.',
+  lead: "NEW: lead balls. ×3. The pond's a department.",
+  splitter: 'NEW: splitters. Pick one up, get three.',
+  bouncy: "NEW: bouncy balls. ×1.5. Don't chase them.",
+};
+const KIND_SHORT = { square: 'square balls ×2', gold: 'gold balls ×10', lead: 'lead balls ×3', splitter: 'splitters', bouncy: 'bouncy balls ×1.5' };
+export function kindNewLine(kinds) {
+  const k = (kinds ?? []).filter(x => KIND_NEW[x]);
+  if (!k.length) return null;
+  if (k.length === 1) return KIND_NEW[k[0]];
+  return 'NEW: ' + k.slice(0, -1).map(x => KIND_SHORT[x]).join(', ') + ' and ' + KIND_SHORT[k.at(-1)] + '.';
+}
+// The world float over the first ball of a kind: "NEW ×1.5" when the memo told it, "NEW: square ×2" when it didn't.
+export const debutFloat = (kind, told = true) => (told ? 'NEW' : 'NEW: ' + (KIND_NAMES[kind] ?? kind).replace(/ ball$/i, '')) + (KIND_W[kind] > 1 ? ' ×' + KIND_W[kind] : '');
+// The memo's second line (≤ 8 words), by priority: Today's modifier, a NEW line, a MOW-E line, the flavour.
+// Returns { today, line, lost }: `lost` is a NEW line that lost to Today (it shows as the first hit's float instead).
+export function memoSecond({ today = null, venueNew = null, kindNew = null, mowe = null, flavor = '' } = {}) {
+  const fresh = venueNew ?? kindNew ?? null;
+  if (today) return { today, line: null, lost: fresh };
+  return { today: null, line: fresh ?? mowe ?? flavor ?? '', lost: null };
 }
 export const KIND_NAMES = { range: 'range ball', glow: 'glow ball', lead: 'lead ball', square: 'square ball', gold: 'GOLD BALL', splitter: 'splitter', bouncy: 'super-bouncy ball', debris: 'orbital debris' };
 export const KIND_BLURB = {
@@ -487,19 +529,25 @@ export const QUOTA_KPI = 0.5;
 // ---- promotion and the venue ladder (council round 2, §4.1–4.2) -------------
 export const VENUE_RULES = [
   { name: 'Muni Range', title: 'Range Rat' },
-  { name: 'Range Club', title: 'Club Retrieval Associate', fee: 2500, writeOff: 1_200_000_000, memo: "1,200,000,000 balls have been reclassified as members' property.", pa: 'club', eatEvery: 8 },
-  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 50000, writeOff: 1_500_000_000, memo: '1,500,000,000 balls have been reclassified as experiential.', pa: 'tiered', eatEvery: 8,
+  { name: 'Range Club', title: 'Club Retrieval Associate', fee: 2500, writeOff: 1_200_000_000, memo: 'NEW: the kitchen. Fries raise every ball.', pa: 'club', eatEvery: 8 },
+  { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 50000, writeOff: 1_500_000_000, memo: 'NEW: target greens. Land a crew ball there.', pa: 'tiered', eatEvery: 8,
     kpi: 'BAY UTILIZATION', howto: 'New: Target Greens. Balls in a cup block the sensors. Bay Utilization is now on the Board. The Upper Deck is now serving.' },
-  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 600000, writeOff: 800_000_000, memo: '800,000,000 balls have been sold to fans as souvenirs.', pa: 'stadium', eatEvery: 8,
+  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 600000, writeOff: 800_000_000, memo: 'NEW: the Ping Track. Keep the crowd happy.', pa: 'stadium', eatEvery: 8,
     kpi: 'CROWD SENTIMENT', howto: 'New: the Ping Track. The crowd grades you now. The crowd has never played golf.' },
-  { name: 'County Range', title: 'County Retrieval Director', fee: 3_000_000, writeOff: 712_000_000, memo: '712,000,000 balls have been reclassified as the county.', pa: 'county', eatEvery: 8,
+  { name: 'County Range', title: 'County Retrieval Director', fee: 3_000_000, writeOff: 712_000_000, memo: 'NEW: the Yards. Spray green hazards, then bag.', pa: 'county', eatEvery: 8,
     kpi: 'ZONING COMPLIANCE', howto: 'New: the Yards. Your customers now hit into the county. The county has noticed.' },
-  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 12_500_000,   /* round 11: 15M -> 12.5M, so the County's 2 good days are its 2 shifts */ writeOff: 'rest', memo: 'Earth has been fully retrieved. 1,958 balls remain. They are all in orbit.', pa: 'orbital', eatEvery: 8,
+  { name: 'Orbital Range', title: 'Orbital Retrieval Officer', fee: 12_500_000,   /* round 11: 15M -> 12.5M, so the County's 2 good days are its 2 shifts */ writeOff: 'rest', memo: 'NEW: the Lift. 1,958 balls are in orbit.', pa: 'orbital', eatEvery: 8,
     kpi: 'ORBITAL DEBRIS', howto: 'The Lift is open. Keep the sky clear.' },
 ];
-// Round 4: VENUE_RULES[v].kpi is the Board's fourth gauge label (only the current venue's KPI is graded),
-// and .howto is the reveal's second memo card.
-export const revealCards = (venue, memo) => [memo, VENUE_RULES[venue]?.howto].filter(Boolean);
+// Round 4: VENUE_RULES[v].kpi is the Board's fourth gauge label (only the current venue's KPI is graded).
+// Council round 11 #3 (builder 4): .memo is the venue's NEW line, the reveal morning's memo second line (≤ 8 words),
+// and the reveal plays no memo cards of its own any more (.howto stays as the venue's longer help text).
+export const revealCards = () => [];
+// Council round 11 8.13 (B #9): the lobby's tagline, one per venue (≤ 8 words); index 6 is endless.
+export const LOBBY_TAGLINE = ['Pick up balls. Bank them. Hit the target.', 'Fry, dive and hose. The members are watching.',
+  'Land crew balls on the greens. Pour.', 'Lap the Ping Track. Keep the crowd happy.', 'Bag the hazards. Sweep the Yards.',
+  'Ride the Lift. Bring the sky down.', 'Range Rats LLC. The balls keep coming.'];
+export const lobbyTagline = (venue = 0, endless = false, day = 1) => (endless ? LOBBY_TAGLINE[6] : (venue ?? 0) === 0 && (day ?? 1) <= 1 ? 'Pick up balls. Bank them.' : LOBBY_TAGLINE[Math.max(0, Math.min(5, venue | 0))]);
 export const ONE_YEAR = 1958;
 // Quota from the Club on: a share of the headroom, growing with days at the venue.
 // Softened from the council's 0.45..0.8 so a casual crew makes quota without every chore covered.

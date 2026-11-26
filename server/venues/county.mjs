@@ -1,8 +1,9 @@
 // The County (venue 4): customers slice into the Yards, Zoning Compliance counts the strays, drones fetch them.
 // Council round 4, section 3.3. Pure rules live in web/js/county.js; the look is web/js/views/county.js.
-import { SIM, KIND_W, WASH } from '../../web/js/sim.js';
+import { SIM, KIND_W, WASH, QUOTA_KPI } from '../../web/js/sim.js';
 import { SLICE, ZONING, DRONES, DISPATCH, strayCount, zoning, droneCount, droneTarget, droneStep, newZone, zoneLive,
-  HAZ, VAN, hazChance, inHazZone, hazardCount, zoningWith, vanTow, vanPick } from '../../web/js/county.js';
+  HAZ, VAN, hazChance, inHazZone, hazardCount, zoningWith, vanTow, vanPick, hazDealDue, hazPair, zoningLabel } from '../../web/js/county.js';
+import { RALLY_LINES } from '../../web/js/rally.js';
 import { nearestReturn } from '../../web/js/layout.js';
 import { tubeFeed } from '../../web/js/dive.js';
 
@@ -123,6 +124,21 @@ function van(crew, st, dt) {
   crew.dirty = true;
 }
 
+// ---- council round 11 #2: the live hazard deal (two Rats: a sprayer and a bagger), at most every HAZ_DEAL.EVERY s ------
+// Last Call's own rally deals first; the hazard deal then goes out on the same tick to the two nearest the hazards.
+function hazDeal(crew, st, dt) {
+  st.dealT = (st.dealT ?? Infinity) + dt;
+  if (crew.lastCall?.() && !st.dealLC) { st.dealLC = true; st.dealT = Infinity; }   // Last Call re-deals at once
+  if (!hazDealDue({ haz: st.haz, kpi: st.kpi, line: QUOTA_KPI, since: st.dealT })) return;
+  const rats = crew.online().map(p => ({ id: p.id, x: p.x, z: p.z, wand: !!p.wand }));
+  const hz = [];
+  for (const b of crew.balls.values()) if (b.kind === 'hazard' && b.rest) hz.push(b);
+  const ids = hazPair(rats, hz);
+  if (!ids.length) return;
+  st.dealT = 0; st.deals = (st.deals ?? 0) + 1;
+  crew.events.push({ t: 'rally', needs: Object.fromEntries(ids.map(id => [id, RALLY_LINES.hazards])), haz: st.haz });
+}
+
 export default {
   id: 'county',
   venue: 4,
@@ -130,7 +146,7 @@ export default {
   init() { return { drones: [], strays: 0, z: 0, kpi: 1, said: false, haz: 0, hz: false, vanT: 0, vans: 0, towed: 0, bagged: 0 }; },
 
   startShift(crew, st) {
-    st.z = 0; st.strays = 0; st.kpi = 1; st.zone = null; st.haz = 0; st.hz = false; st.vanT = 0; st.vans = 0; st.towed = 0; st.bagged = 0; st.van = null;
+    st.z = 0; st.strays = 0; st.kpi = 1; st.zone = null; st.haz = 0; st.hz = false; st.vanT = 0; st.vans = 0; st.towed = 0; st.bagged = 0; st.van = null; st.dealT = Infinity; st.dealLC = false; st.deals = 0;
     for (const d of st.drones) { d.x = SIM.STAND.x; d.z = SIM.STAND.z + 1.5; d.y = DRONES.ALT; d.pocket = 0; d.pocketW = 0; d.target = null; }
   },
 
@@ -146,6 +162,7 @@ export default {
       st.kpi = zoningWith(st.strays, st.haz);
     }
     if (crew.venue === 4) van(crew, st, dt);
+    if (crew.venue === 4 && !crew.endless && crew.working()) hazDeal(crew, st, dt);   // council round 11 #2 (the cleanup too: hazards count at the bell)
   },
 
   // Round 11 (expert #9): a County customer ball that rests inside the hose's reach turns hazard with HAZ.CHANCE.
@@ -198,6 +215,7 @@ export default {
     strays: st.strays, kpi: r2(st.kpi),
     ...(st.zone ? { zone: { x: r2(st.zone.x), z: r2(st.zone.z), r: st.zone.r, left: r2(st.zone.until - (st.t ?? 0)) } } : {}),
     drones: st.drones.map(d => ({ id: d.id, x: r2(d.x), y: r2(d.y), z: r2(d.z), yaw: r2(d.yaw), n: d.pocket })),
+    ...(crew.venue === 4 ? { label: zoningLabel(st.kpi, st.haz) } : {}),   // council round 11 #2: the Board's Zoning line (board.js, builder 4)
     ...(st.hz ? { hz: 1, haz: st.haz, wet: wetIds(crew) } : {}), ...(st.van ? { van: r2(VAN.SECS - st.van.left) } : {}), ...(st.vans ? { vans: st.vans, towed: st.towed } : {}),
   }),
 };

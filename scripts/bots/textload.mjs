@@ -1,0 +1,124 @@
+// Council round 11 #3 (builder 4): text load, measured. Replays every morning's events through the client's own
+// centre-text queue (say.js createSayModel) and story card (storycard.js createStoryCard, 4 s a card), the way main.js
+// and round2.js wire them, along a 4P ladder: Muni days 1–5 (fresh crew), Club days 1–5 (club1 preset), each later
+// promotion morning (tiered1, stadium1, county1, orbital1) and its next morning, the Last Bucket morning, and endless
+// days 1–2. Seeds 7 / 11 / 23. Rats stand still (text load doesn't depend on play; the days advance on idle shifts).
+//
+// A morning's text block: from the shift's start, centre text back to back (gaps under 1.5 s merge). Reported: its
+// seconds, its centre items (a story beat counts once; its cards are listed), and when the memo (the day's target) shows.
+//
+// usage: node scripts/bots/textload.mjs [seeds=7,11,23] [N=4]     env REPO=<a checkout> measures another tree (a baseline)
+//        env V=1 prints each morning's item timeline
+import { readFileSync } from 'node:fs';
+const REPO = process.env.REPO ? new URL('file:///' + process.env.REPO.replace(/\\/g, '/').replace(/\/?$/, '/')).href : new URL('../../', import.meta.url).href;
+const { Crew } = await import(REPO + 'server/crew.mjs');
+const SAYM = await import(REPO + 'web/js/say.js');
+const { createStoryCard } = await import(REPO + 'web/js/storycard.js');
+const { PA_LINES } = await import(REPO + 'web/js/pa.js');
+const S = await import(REPO + 'web/js/sim.js');
+const presetDir = new URL('server/presets/', REPO);
+
+const SEEDS = (process.argv[2] ?? '7,11,23').split(',').map(Number), N = +(process.argv[3] ?? 4), V = process.env.V === '1';
+const DT = 0.1, WINDOW = 120, MERGE = 1.5;
+const paSecs = line => (Math.max(4000, line.split(/\s+/).filter(Boolean).length * 380 + 1000) + 700) / 1000;   // pa.js secsFor
+const preset = id => { const j = JSON.parse(readFileSync(new URL(id + '.json', presetDir), 'utf8')); return j.save ?? j; };
+
+function makeCrew(save, seed) {
+  const clock = { t: 0 };
+  const crew = new Crew('TXLD', save ? structuredClone(save) : null, { now: () => clock.t * 1000, seed });
+  const rats = Array.from({ length: N }, (_, i) => { const p = crew.join('Rat' + i); crew.connect(p); return p; });
+  return { crew, rats, clock };
+}
+const keepAlive = (crew, rats, clock) => { for (const p of rats) { p.seenAt = clock.t * 1000; p.movedAt = clock.t * 1000; } };
+
+// Start the next morning (everyone readies up) and replay its first WINDOW seconds of centre text.
+function morning(env, tag) {
+  const { crew, rats, clock } = env;
+  crew.flush();
+  for (const p of rats) crew.readyUp(p);
+  if (crew.phase !== 'shift') return null;
+  let t = 0;
+  const sayer = SAYM.createSayModel({ now: () => t });
+  const card = createStoryCard({ sayer, now: () => t, tick: 0 });
+  const later = [], log = [];
+  const memoSecs = e => (e.story && SAYM.SAY.STORY_MEMO ? SAYM.SAY.STORY_MEMO : 7);
+  const feed = (e, at) => {
+    switch (e.t) {
+      case 'pa': if (PA_LINES[e.id]) sayer.say('PA', PA_LINES[e.id].caption, { secs: paSecs(PA_LINES[e.id].line), data: { id: e.id } }); break;
+      case 'memo': if (!e.quiet) sayer.say('MEMO', e.text, { secs: memoSecs(e), data: { memo: true, second: e.today ? 'TODAY · ' + e.today : e.flavor } }); break;
+      case 'debut': if (e.told === undefined) sayer.say('MEMO', `NEW: the ${S.KIND_NAMES[e.kind] ?? e.kind}.`, { secs: 5, data: { debut: e.kind } }); break;   // the old client's debut memo
+      case 'reveal':
+        if (e.venue !== 6) later.push({ at: at + 3, fn: () => S.revealCards(e.venue, e.memo).forEach((text, i) => sayer.say('MEMO', text, { secs: i ? 10 : 9, data: { reveal: true } })) });
+        later.push({ at: at + 6, fn: () => sayer.say('TOAST', 'Day · venue · you are a …', { secs: 4 }) });
+        break;
+      case 'story': card.add(e.id); break;
+    }
+  };
+  const busy = [];   // [t, what] samples
+  let prevVis = null, prevCard = null;
+  const shown = [];
+  for (; t <= WINDOW; t = Math.round((t + DT) * 1000) / 1000) {
+    for (const e of crew.flush().ev ?? []) feed(e, t);
+    for (let i = later.length - 1; i >= 0; i--) if (later[i].at <= t) { later[i].fn(); later.splice(i, 1); }
+    sayer.update(); card.step();
+    const vis = sayer.visible, c = card.card;
+    if (vis && vis !== prevVis) shown.push({ t, kind: vis.kind, text: vis.text, data: vis.data });
+    if (c && card.beat && c !== prevCard) shown.push({ t, kind: 'CARD', text: c.line, beat: card.beat.id });
+    prevVis = vis; prevCard = c;
+    busy.push(vis || c ? 1 : 0);
+    keepAlive(crew, rats, clock);
+    clock.t += DT; crew.tick(DT);
+  }
+  // The first block of back-to-back centre text.
+  let end = 0, gap = 0, started = false;
+  for (let i = 0; i < busy.length; i++) {
+    const ti = i * DT;
+    if (busy[i]) { started = true; end = ti + DT; gap = 0; }
+    else if (started) { gap += DT; if (gap > MERGE) break; }
+  }
+  const inBlock = shown.filter(s => s.t < end);
+  const beats = new Set(inBlock.filter(s => s.kind === 'CARD').map(s => s.beat));
+  const items = inBlock.filter(s => s.kind !== 'CARD').length + beats.size;
+  const memos = inBlock.filter(s => s.kind === 'MEMO').length;
+  const memoAt = inBlock.find(s => s.kind === 'MEMO' && s.data?.memo)?.t ?? null;
+  return { tag, day: crew.day, venue: crew.venue, vday: crew.venueDay, secs: +end.toFixed(1), items, memos, cards: inBlock.filter(s => s.kind === 'CARD').length, memoAt, shown: inBlock };
+}
+// Play out the rest of the shift idle (to the bell and the report) so the next morning can start.
+function finishShift(env) {
+  const { crew, rats, clock } = env;
+  let guard = 0;
+  while (crew.phase === 'shift' && guard++ < 20000) { keepAlive(crew, rats, clock); clock.t += 0.25; crew.tick(0.25); }
+  crew.flush();
+}
+
+const results = [];
+function run(label, save, seed, days, promo = []) {
+  const env = makeCrew(save, seed);
+  for (let d = 0; d < days; d++) {
+    const r = morning(env, `${label}${days > 1 ? ' #' + (d + 1) : ''}`);
+    if (!r) break;
+    r.seed = seed; r.promo = promo.includes(d); r.label = label; r.i = d;
+    results.push(r);
+    finishShift(env);
+  }
+}
+for (const seed of SEEDS) {
+  run('muni', null, seed, 5);
+  run('club', preset('club1'), seed, 5, [0]);
+  for (const v of ['tiered1', 'stadium1', 'county1', 'orbital1']) run(v.replace('1', ''), preset(v), seed, 2, [0]);
+  run('lastbucket', preset('lastbucket'), seed, 1);
+  run('endless', preset('endless'), seed, 2);
+}
+
+const pad = (s, n) => String(s).padEnd(n);
+console.log(`text load (${N}P, seeds ${SEEDS.join('/')}${process.env.REPO ? ', REPO ' + process.env.REPO : ''})`);
+console.log(pad('morning', 16) + pad('seed', 6) + pad('day', 5) + pad('v/vd', 7) + pad('secs', 7) + pad('items', 7) + pad('memos', 7) + pad('cards', 7) + 'memo at');
+for (const r of results) {
+  console.log(pad(r.tag + (r.promo ? ' *' : ''), 16) + pad(r.seed, 6) + pad(r.day, 5) + pad(`${r.venue}/${r.vday}`, 7) + pad(r.secs, 7) + pad(r.items, 7) + pad(r.memos, 7) + pad(r.cards, 7) + (r.memoAt ?? '-'));
+  if (V) for (const s of r.shown) console.log(`      ${s.t.toFixed(1).padStart(5)} ${pad(s.kind, 6)} ${s.text}${s.kind === 'MEMO' && s.data?.second ? '  / ' + s.data.second : ''}`);
+}
+const promos = results.filter(r => r.promo), club = results.filter(r => r.label === 'club' && r.i < 4);
+const max = (a, k) => Math.max(...a.map(r => r[k]));
+console.log(`\npromotion mornings: max ${max(promos, 'secs')} s, max ${max(promos, 'items')} items  (target ≤ 28 s, ≤ 3 items)`);
+console.log(`Club days 1–4: max ${max(club, 'secs')} s  (target ≤ 22 s)`);
+console.log(`mornings with two or more memos: ${results.filter(r => r.memos > 1).length} of ${results.length}  (target 0)`);

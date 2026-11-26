@@ -47,7 +47,7 @@ export function createConfetti(scene, { max = CONFETTI.MAX } = {}) {
   const tmp = new THREE.Color();
   let head = 0, alive = 0;
 
-  function burst(x, y, z, { n = 160, secs = 2, speed = 7, up = 6 } = {}) {
+  function burst(x, y, z, { n = 160, secs = 2, speed = 7, up = 6, tint = null } = {}) {   // tint: one colour (council round 11 #1: MOW-E's smoke)
     const r = claimSlots(head, n, max); head = r.head;
     for (const i of r.slots) {
       if (life[i] <= 0) alive++;
@@ -55,7 +55,7 @@ export function createConfetti(scene, { max = CONFETTI.MAX } = {}) {
       pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
       vel[i * 3] = Math.cos(a) * s; vel[i * 3 + 1] = up * (0.6 + Math.random() * 0.7); vel[i * 3 + 2] = Math.sin(a) * s;
       life[i] = secs * (0.75 + Math.random() * 0.25); spin[i] = Math.random() * 10;
-      tmp.setHex(CONFETTI.COLORS[(Math.random() * CONFETTI.COLORS.length) | 0]);
+      tmp.setHex(tint ?? CONFETTI.COLORS[(Math.random() * CONFETTI.COLORS.length) | 0]);
       col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
     }
     pts.visible = alive > 0;

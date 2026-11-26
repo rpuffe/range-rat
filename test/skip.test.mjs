@@ -116,3 +116,20 @@ test('route: prod host refused (404), dev and localhost make a NEW test crew at 
   const j = await req('POST', `/api/crew/${a.body.code}/join`, 'range-rat-dev.fd.robertpuffe.com', { name: 'Pal' });
   assert.equal(j.status, 200);
 });
+
+// Council round 11 8.14 (builder 4): picking a skip preset clears the saved seat (no rejoin of the last crew).
+test('8.14: picking a skip-ahead preset clears range-rat.seat first', async () => {
+  const { initSkip, clearSeat, SEAT_KEY } = await import('../web/js/skip.js');
+  assert.equal(SEAT_KEY, 'range-rat.seat');
+  const store = new Map([[SEAT_KEY, '{"code":"OLD"}']]);
+  const storage = { removeItem: k => store.delete(k) };
+  const els = {}, listeners = {};
+  const el = id => (els[id] ??= { id, innerHTML: '', classList: { remove() {}, toggle: () => false }, setAttribute() {}, querySelector: () => null,
+    addEventListener: (t, f) => { listeners[id + ':' + t] = f; } });
+  const doc = { getElementById: el };
+  let picked = null;
+  assert.equal(initSkip({ doc, host: 'localhost:8091', storage, onPick: id => { picked = id; assert.equal(store.has(SEAT_KEY), false, 'cleared before the pick'); } }), true);
+  listeners['skip-list:click']({ target: { closest: () => ({ dataset: { skip: 'club1' } }) } });
+  assert.equal(picked, 'club1');
+  assert.equal(clearSeat({ removeItem() { throw new Error('blocked'); } }), false, 'blocked storage never throws');
+});

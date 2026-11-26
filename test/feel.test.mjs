@@ -217,7 +217,7 @@ test('creek: after a creek dive, walking refills air x3; standing refills at the
 
 // ---- #5 the Club, one idea a day ---------------------------------------------------------------------------------
 test('club days: the pond and gold day 2; the creek dive, the Back return, MOW-E and bouncy day 3', () => {
-  assert.deepEqual([CLUB_DAY.pond, CLUB_DAY.creekDive, CLUB_DAY.back, CLUB_DAY.mower, CLUB_DAY.square, CLUB_DAY.gold, CLUB_DAY.bouncy], [2, 3, 3, 3, 1, 2, 3]);
+  assert.deepEqual([CLUB_DAY.pond, CLUB_DAY.creekDive, CLUB_DAY.back, CLUB_DAY.mower, CLUB_DAY.square, CLUB_DAY.gold, CLUB_DAY.bouncy], [2, 3, 3, 3, 1, 2, 4]);   // council round 11 #3: bouncy moved to Club day 4
   assert.ok(!clubOpen('pond', 1, 1)); assert.ok(clubOpen('pond', 1, 2)); assert.ok(clubOpen('pond', 2, 1), 'Tiered: open');
   assert.ok(clubOpen('pond', 1, undefined), 'no vday: open');
   assert.equal(worldVday(1, 0), 1); assert.equal(worldVday(1, 4), 4); assert.equal(worldVday(2, 4), undefined); assert.equal(worldVday(1, 1, true), undefined);
@@ -230,12 +230,13 @@ test('club days: the pond and gold day 2; the creek dive, the Back return, MOW-E
   assert.ok(mowerDue({ venue: 1, venueDay: 3, shiftT: 300, shiftSecs: 420, mower: null }));
 });
 
-test('club days: kinds stagger (square day 1, gold day 2, bouncy day 3) with one rng draw', () => {
+test('club days: kinds stagger (square day 1, gold day 2, bouncy day 4) with one rng draw', () => {
   const at = (r, vday) => pickKind(4, 1, () => r, vday);
   assert.equal(at(0.001, 1), 'square', 'gold held back on day 1: the draw falls to square');
   assert.equal(at(0.001, 2), 'gold');
   assert.equal(at(0.08, 2), 'square', 'bouncy held back on day 2');
-  assert.equal(at(0.08, 3), 'bouncy');
+  assert.equal(at(0.08, 3), 'square', 'council round 11 #3: Club day 3 belongs to MOW-E');
+  assert.equal(at(0.08, 4), 'bouncy');
   assert.equal(at(0.12, 1), 'square', 'square from Club day 1 even on global day 4');
   assert.equal(pickKind(4, 0, () => 0.12), 'range', 'the Muni is unchanged');
   assert.equal(pickKind(4, 1, () => 0.001), 'gold', 'no vday: as before');
