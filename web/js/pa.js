@@ -53,7 +53,7 @@ const CSS = `
 #pa-card .pa-text { margin: 0.4em 0 0; font-weight: 600; font-size: clamp(1em, 2.4vh, 1.4em); line-height: 1.3; }
 `;
 
-function drawSeal(canvas) {
+export function drawSeal(canvas) {
   const g = canvas.getContext('2d');
   if (!g) return;
   const S = 96;

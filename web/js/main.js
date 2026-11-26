@@ -58,6 +58,8 @@ import { bvLine, ceilingOf, priceOf, popupLine, reportRow, sealRow, gainText, si
 import { spotlessRow } from './dayend.js';   // round 11: the SPOTLESS RANGE stamp on the report   // owner playtest 3 §1 (builder 1): Ball Value in one look
 import { atFill, siloFill } from './basket.js';   // owner playtest 3 §3.3: the bucket basket (builder 2)
 import { nudgeLine, nudgeTarget, GARY_STALLED, garyExtra } from './nudge.js';    // council round 6 #10 / round 7 #4: day 2, Gary's dealt stops, day 3
+import { createStoryCard } from './storycard.js';         // round 12: the story beats' card overlay
+import { garyHello, garyBye } from './story.js';           // round 12: Gary's lines change with the venue
 import { createSay } from './say.js';                     // council round 7 #3: the one centre-text queue
 import { DECKCAM, CUT_LABEL, cutPlan, skips, cutAt } from './deckcam.js';   // council round 10 #4: the Deck Cam
 import { AUTO } from './autopilot.js';                     // council round 10 §D: Ⓨ held at an autopilot cart
@@ -77,6 +79,9 @@ const $ = id => document.getElementById(id);
 // ?debug warns on lines over 8 words; window.rr.say shows the queue and its dropped count.
 const sayer = createSay({ $, dev: new URLSearchParams(location.search).has('debug') });
 const say = sayer.say;
+// Round 12: the story card takes its turn from the same queue (nothing else draws centre text while it's up).
+const storyCard = createStoryCard({ sayer, keys: () => (document.body.classList.contains('pad') ? { next: GLYPH.A, skip: GLYPH.B } : { next: 'Space', skip: 'Esc' }) });
+let garySays = null;   // round 12: { text, t } his venue's hello in the bubble while he waits at the gate
 const sweep = createSweep({ root: document.getElementById('crosshair')?.parentElement ?? document.body, sfx: SFX });   // round 11: the sweep
 
 // ---------------------------------------------------------------- scene
@@ -636,6 +641,7 @@ function feelEvent(e) {
 function onEvent(e) {
   r2?.onEvent(e);
   views?.onEvent(e);
+  if (e.t === 'story') storyCard.add(e.id);   // round 12: once per crew, the server decides when
   feelEvent(e);
   if (e.t === 'deckFall') onDeckFall(e);   // council round 10 #4: the Deck Cam (views/deck.js plays the fall)
   if (e.t === 'tube' && e.at) { fieldReturns.thunk(); fieldReturns.whoosh(e.at, e.n ?? 8, camera.position); }   // round 11: the batch whooshes home   // council round 10 §C: a pocket went in a field return
@@ -731,7 +737,7 @@ function onEvent(e) {
     case 'board': break;
     case 'gary':
       // Playthrough 4 A17: no seconds in the warning (solo's is longer), and no "stay out of his way" while stall lines are up.
-      if (e.phase === 'warn') { SFX.horn('gary'); say('ALERT', "Gary's coming: clean up, then huddle.", { key: 'gary' }); }
+      if (e.phase === 'warn') { SFX.horn('gary'); say('ALERT', "Gary's coming: clean up, then huddle.", { key: 'gary' }); garySays = { text: garyHello(crew.venue), t: 6 }; }   // round 12: his hello, in his bubble
       else say('ALERT', Object.values(crew.mods?.nudge ?? {}).includes('gary:stall') ? "Gary's driving. Ping him or huddle." : 'Gary is inspecting. Stay out of his way.', { key: 'gary' });
       break;
     case 'garyChat':   // §6.3: no PA, no centre text: the chatter's feed line, and his "Right, then." when it ends
@@ -749,6 +755,7 @@ function onEvent(e) {
     }
     case 'verdict':
       if (e.gained) SFX.jackpot();
+      garySays = null; setTimeout(() => feed('Gary: “' + garyBye(crew.venue) + '”'), 4200);   // round 12: his sign-off (the feed: edge text), after his verdict line
       if (e.huddle && garyView) garyView.salute = 1;   // round 6 #5: hat up, arm up (round2.js adds the confetti puff)
       say('ALERT', e.seal ? SEAL_LINE   // owner playtest 3 §6.4: a sealed huddle (replaces the verdict line, never stacks)
         : e.gained   // playtest round 2 #11: 8 words or fewer
@@ -1361,6 +1368,8 @@ addEventListener('keydown', e => {
   if (typing()) return;
   if (kitchen.isOpen) { if (kitchen.handleKey('down', e)) e.preventDefault(); if (!kitchen.isOpen && crew.phase === 'shift') lockMouse(); return; }
   if (deckCam.on && !e.repeat) { deckCamEnd(); e.preventDefault(); return; }   // council round 10 #4: any key skips the Deck Cam
+  // Round 12: a story card up (and no menu): Space / Enter next, Esc skips the beat. Nothing else sees the key.
+  if (storyCard.up && !menuOpen() && ['Space', 'Enter', 'Escape'].includes(e.code)) { if (!e.repeat) (e.code === 'Escape' ? storyCard.skip() : storyCard.press()); e.preventDefault(); return; }
   SFX.unlock();
   keys.add(e.code);
   if (e.code === 'Space' && !e.repeat) pressAct();
@@ -1389,6 +1398,7 @@ addEventListener('pointermove', e => { if (kitchen.isOpen) kitchen.handlePointer
 addEventListener('pointerup', e => { if (kitchen.isOpen) kitchen.handlePointer('up', e); else if (swing.enabled) swing.pointerUp(e); });
 canvas.addEventListener('mousedown', e => {
   if (deckCam.on) { deckCamEnd(); return; }   // council round 10 #4: a click skips the Deck Cam
+  if (storyCard.up && e.button === 0) { storyCard.press(); return; }   // round 12: a click moves the story card on
   if (e.button !== 0 || !playing()) return;
   if (document.pointerLockElement !== canvas) lockMouse();
   pressAct();
@@ -1506,6 +1516,10 @@ function pollPad(dt) {
     return [0, 0];
   }
   if (pad.pressed.some(Boolean)) SFX.unlock();
+  if (storyCard.up) {   // round 12: Ⓐ next card, Ⓑ skip the beat (eaten here: no pick-up, no unlatch); you can still walk
+    if (pad.pressed[BTN.A]) { storyCard.press(); pad.pressed[BTN.A] = false; }
+    if (pad.pressed[BTN.B]) { storyCard.skip(); pad.pressed[BTN.B] = false; }
+  }
   if (deckCamPad(pad)) { rtSpray = false; return [0, 0]; }   // council round 10 #4: the cut eats the pad (and a press skips it)
   if (pad.pressed[BTN.A]) pressAct(true);
   if (pad.pressed[BTN.B]) { r2?.unlatch(); views?.unlatch(); }
@@ -1532,7 +1546,7 @@ function pollPad(dt) {
 // Your own feedback: a TOAST in the queue (3 s to live: stale feedback is dropped, never shown late). `key` updates in place.
 function toast(msg, secs = 2.5, key) { say('TOAST', msg, { secs: Math.min(4, secs ?? 2.5), key }); }
 // The checklist and the nudge slot step aside while the PA card, a memo or the stamp holds the centre (owner playtest).
-const textBusy = () => sayer.busy('PA', 'MEMO', 'STAMP');
+const textBusy = () => sayer.busy('PA', 'MEMO', 'STAMP') || storyCard.up;   // round 12: and the story card
 // Other Rats' news: a quiet 3-line feed on the left, 3 s a line (council round 3).
 function feed(msg, color) {
   const el = $('feed'); if (!el) return;
@@ -2007,8 +2021,9 @@ function frame(now) {
     const ch = garyView.to.chat;
     garyView.bubbleEnd = Math.max(0, garyView.bubbleEnd - dt);
     if (ch) { garyView.chatT = (garyView.chatT ?? garyView.to.chatT ?? 0) + dt; garyView.bubble.set(chatBit(garyView.chatT)); }
-    else { garyView.chatT = null; if (garyView.bubbleEnd > 0) garyView.bubble.set(CHAT_END); }
-    garyView.bubble.sprite.visible = !!ch || garyView.bubbleEnd > 0;
+    else { garyView.chatT = null; if (garyView.bubbleEnd > 0) garyView.bubble.set(CHAT_END); else if (garySays?.t > 0) garyView.bubble.set(garySays.text); }
+    if (garySays) { garySays.t -= dt; if (garySays.t <= 0 || garyView.to.phase !== 'warn') garySays = null; }   // round 12: his hello, only while he waits at the gate
+    garyView.bubble.sprite.visible = !!ch || garyView.bubbleEnd > 0 || !!garySays;
     if (garyView.bubble.sprite.visible) {   // playthrough 5 A7: in chat reach (1-2.5 m) a bubble at 3.15 m sat off the top of the screen
       const d = Math.hypot(garyPose.x - camera.position.x, garyPose.z - camera.position.z);
       garyView.bubble.sprite.position.y = Math.max(2.3, Math.min(3.15, camera.position.y + 0.45 * d));   // ≤ ~29° above level

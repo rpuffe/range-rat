@@ -26,6 +26,14 @@ export function wordCount(text) {
 // now(): seconds. warn(text, n): called once per over-long text (dev only; the adapter decides).
 export function createSayModel({ now = () => Date.now() / 1000, warn = null } = {}) {
   let queue = [], visible = null, lastHide = -Infinity, seq = 0, lock = 'open', dropped = 0, holdUntil = -Infinity;
+  // Round 12: the story card's turn (storycard.js). 'off'; 'want' (only a PA may still show: the queue drains to it);
+  // 'on' (the card owns the centre: nothing shows but the bell's stamp, which preempts as ever).
+  let gate = 'off';
+  const paBlocks = t => queue.some(i => i.kind === 'PA' && lock === 'open' && t >= holdUntil);
+  function tryGrant(t) {
+    if (gate === 'want' && !visible && t >= lastHide + SAY.GAP && !paBlocks(t)) gate = 'on';
+    return gate === 'on';
+  }
   const warned = new Set();
 
   function hide(t) { visible = null; lastHide = t; }
@@ -68,9 +76,11 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
     const t = now();
     if (visible && t >= visible.until) hide(t);
     drop(i => SAY.TTL[i.kind] != null && t - i.at > SAY.TTL[i.kind]);
-    if (visible || t < lastHide + SAY.GAP) return visible;
+    if (gate === 'want') tryGrant(t);
+    if (gate === 'on' || visible || t < lastHide + SAY.GAP) return visible;
     let best = null;
     for (const i of queue) {
+      if (gate === 'want' && i.kind !== 'PA') continue;   // round 12: a story card waits only for the PA lines
       if ((lock !== 'open' || t < holdUntil) && HELD.has(i.kind)) continue;   // the bell lock, or a hold (the Deck Cam)
       if (i.kind === 'TIP' && t - lastHide < SAY.TIP_QUIET) continue;
       if (t - i.at < (SAY.SETTLE[i.kind] ?? 0)) continue;
@@ -111,6 +121,11 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null } = 
       if (secs > 0 && visible && HELD.has(visible.kind)) { queue.unshift({ ...visible, at: t, seq: -1 - seq++ }); hide(t); }
     },
     get held() { return now() < holdUntil; },
+    // Round 12: the story card asks for the centre (granted at once when nothing is up and no PA line is waiting),
+    // and gives it back when its beat ends. want() returns true when the turn is granted now.
+    want() { if (gate === 'off') gate = 'want'; return tryGrant(now()); },
+    release() { if (gate === 'off') return; gate = 'off'; lastHide = now(); },
+    get gate() { return gate; },
     clear() { dropped += queue.length; queue = []; if (visible) hide(now()); },
     // Playthrough 4 C6: a keyed line that stopped being true leaves (queued or showing).
     forget(key) { drop(i => i.key === key); if (visible && visible.key === key) hide(now()); },
@@ -173,6 +188,7 @@ export function createSay({ $ = id => document.getElementById(id), dev = false, 
   return {
     say: wrap(model.say),
     bell: wrap(model.bell), report: wrap(model.report), open: wrap(model.open), clear: wrap(model.clear), forget: wrap(model.forget), hold: wrap(model.hold),
+    want: wrap(model.want), release: wrap(model.release), get gate() { return model.gate; },   // round 12: the story card's turn
     get held() { return model.held; },
     get up() { return [...up]; },
     busy: model.busy,

@@ -236,9 +236,9 @@ export const TREASURE = [
   { id: 'club',      mesh: 'club',      name: 'A golf club',                      minVenue: 1, fee: 200, blurb: 'Thrown in anger, 1991. The anger remains.' },
   { id: 'cone',      mesh: 'cone',      name: 'A traffic cone',                   minVenue: 1, fee: 200, blurb: 'Nobody knows. Corporate has stopped asking.' },
   { id: 'tyre',      mesh: 'tyre',      name: 'A tyre',                           minVenue: 1, fee: 200, blurb: 'From a cart that is no longer with us.' },
-  { id: 'pin',       mesh: 'pin',       name: 'A Dimples lapel pin',              minVenue: 1, fee: 200, blurb: 'One eye scratched out. Dimples has forgiven you.' },
-  { id: 'memo',      mesh: 'memo',      name: 'A waterlogged memo',               minVenue: 1, fee: 200, blurb: 'Stamped URGENT. Unreadable. Corporate confirms it was important.' },
-  { id: 'vhs',       mesh: 'vhs',       name: 'A VHS tape',                       minVenue: 1, fee: 200, blurb: 'Ball Retrieval Training (1979). You are already doing it wrong.' },
+  { id: 'pin',       mesh: 'pin',       name: 'A Dimples lapel pin',              minVenue: 1, fee: 200, blurb: 'From before the monocle. Dimples has forgiven you.' },   // round 12: the Dimples rebrands
+  { id: 'memo',      mesh: 'memo',      name: 'A waterlogged memo',               minVenue: 1, fee: 200, blurb: 'Stamped URGENT, 1958. One word survives: UP.' },   // round 12: the founder thread
+  { id: 'vhs',       mesh: 'vhs',       name: 'A VHS tape',                       minVenue: 1, fee: 200, blurb: 'Ball Retrieval Training (1987). Starring a young Gary.' },   // round 12: Gary was a Rat
   { id: 'scorecard', mesh: 'scorecard', name: 'The 1958 scorecard',               minVenue: 4, fee: 200, blurb: 'Hole 1: LOST BALL. Signed by the founder.' },
 ];
 export const TREASURE_BY_ID = Object.fromEntries(TREASURE.map(t => [t.id, t]));

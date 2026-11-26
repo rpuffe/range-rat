@@ -1101,3 +1101,77 @@ The fix pass for design/playtest-round5.md, in two halves built at once (server 
 **Look.** The Last Call floodlights no longer decay with distance: 0.7 each (it was 420 with decay, ~6× the sun on the near grass: the neon lime from 1:30) (A8). The Club's two flags stand 4.6 m out along the Board's width, behind its face, flying outward (B6). The HUD cash is set from every snapshot, so a rejoin shows it at once (B9). A stale code on the title says "That crew has closed. Start a new one?", clears the code and focuses Start a crew.
 
 **The shop.** Maxed rows sort last (endless's Owner rows still first); a row an open buy goal names wears "✦ GOAL".
+
+## Round 12: story beats
+
+Two threads run up the ladder, told in short story cards (`web/js/story.js`, shown by `web/js/storycard.js`):
+
+1. **The heart: Gary and Ball No. 1.** Gary from Regional was a Range Rat at Site 12 in 1987 (the Club Champion trophy in the pond is his). Over the venues the clipboard tyrant becomes a quiet ally. In 1958 FHI's founder hit Ball No. 1 and it never came down; each venue turns up one clue.
+2. **The comedy: Corporate.** The memos escalate. A rival crew, **Site 13**, always posts better numbers, until FHI acquires Site 13 at the County. Dimples is rebranded, then rebranded again.
+
+**How it plays.** The server decides when (each beat plays **once per crew**: the save's `story` list) and sends `{t:'story', id}`, so every Rat sees the same beat at the same moment. The card asks the centre-text queue (say.js) for its turn. It waits for a PA line or memo already up, then holds everything else until the beat ends: one text at a time. Ⓐ / Space / a click shows the next card; Ⓑ / Esc skips the beat; with no press a card moves on after 4 s. It never pauses the sim and never touches full screen or the pointer lock. A skip-ahead test crew sees the beats of the venue it starts at, never the cold open.
+
+**When.**
+- **Cold open:** day 1 at the Muni, as the first shift opens (before the welcome PA).
+- **Promotion:** a venue's reveal morning, after the reveal's PA line.
+- **Mid-venue:** the first morning from the venue's second that is not Promotion Day, has no Today modifier (the memo already carries Today's line), and is not the Last Bucket's morning. A crew promoted before one comes skips it; the promotion beats stand on their own.
+- **Epilogue:** the first Under New Management morning (after "Clock in tomorrow" on the end card), before its PA line, as the sign flips.
+- **Gary's visits:** his hello in his bubble while he waits at the gate, and a sign-off in the feed after his verdict. Both change with the venue. No new mechanic.
+
+### The beat sheet
+
+| Trigger | Speaker | Line |
+| --- | --- | --- |
+| **Cold open** (Muni day 1) | MEMO | Welcome to Site 12. You are on probation. |
+| | MEMO | Every ball hit since 1958 is outstanding. |
+| | MEMO | Site 13 is already ahead of you. Somehow. |
+| **Muni, mid** | caption | Found behind the shed: a photo, 1958. |
+| | caption | The founder, mid-swing. The ball never landed. |
+| | MEMO | Site 13 doubled you. Be more Site 13. |
+| **Promoted: Range Club** | GARY | "The Club. I raked this pond once." |
+| | MEMO | Site 13 made the Club last week. |
+| | MEMO | Dimples now wears a monocle. For the members. |
+| **Club, mid** | caption | Club minutes, 1958: the founder's ball, still airborne. |
+| | GARY | "Don't dive the north end. Just don't." |
+| | MEMO | Site 13's fries are crispier. We checked. |
+| **Promoted: Tiered** | caption | Corporate archive: Ball Retrieval Training, 1987. |
+| | caption | The Rat on the tape looks like Gary. |
+| | MEMO | Dimples is now dimpl. Lowercase. Experiential. |
+| **Tiered, mid** | GARY | "That tape is not me. Watch your bays." |
+| | MEMO | Site 13 reports 140% Bay Utilization. |
+| | MEMO | Corporate did not know that was possible. |
+| **Promoted: Stadium** | caption | The jumbotron plays a 1958 newsreel. By mistake. |
+| | caption | The founder swings. The camera never finds it. |
+| | MEMO | Site 13 has two jumbotrons. Do better. |
+| **Stadium, mid** | GARY | "Off the record? That was a good lap." |
+| | MEMO | Dimples now has a mascot. It is Dimples. |
+| **Promoted: County** | MEMO | FHI has acquired Site 13. Welcome, colleagues. |
+| | MEMO | Their numbers were, it turns out, estimates. |
+| | GARY | "I was a Range Rat. Here. 1987." |
+| **County, mid** | caption | County records, 1958: "small, dimpled, still rising." |
+| | GARY | "Club Champion, '87. Then came the clipboard." |
+| | MEMO | Dimples has been rezoned. Dimples is a park. |
+| **Promoted: Orbital** | GARY | "I always wanted to see it." |
+| | caption | Gary rides the Lift. Tie flapping. |
+| | MEMO | Dimples has been rebranded as a moon. |
+| **Orbital, mid** | caption | Up here, one ball glints: FHI · 1958. |
+| | GARY | "He hit it so we'd keep looking." |
+| | MEMO | Former Site 13 asks to borrow the Lift. |
+| **Epilogue** (after Ball No. 1 and the $∞ finale) | note (INSIDE BALL No. 1 · 1958) | "Whoever finds this: the range is yours." |
+| | caption | Gary loosens his tie. He grabs a bucket. |
+| | MEMO | Dimples is retiring. He finally makes eye contact. |
+| | caption | The sign is repainted. Under New Management. |
+
+Then the existing PA: "Under New Management. Approved by nobody."
+
+**Gary's visit lines** (hello in his bubble at the gate / sign-off in the feed after his verdict):
+
+| Venue | Hello | Sign-off |
+| --- | --- | --- |
+| Muni | Clipboard's ready. Are you? | Noted. Everything is noted. |
+| Club | Mind the pond. Things sink. | Not bad. Don't tell Regional. |
+| Tiered | Experiential. Right. Show me. | Back in my day: one mat. |
+| Stadium | The crowd's watching. So am I. | Good crew. Better than mine was. |
+| County | Right. Let's see the county. | You'd have liked 1987. |
+
+**Treasures, reworded** (ids and mechanics unchanged): the waterlogged memo, "Stamped URGENT, 1958. One word survives: UP."; the VHS, "Ball Retrieval Training (1987). Starring a young Gary."; the Dimples pin, "From before the monocle. Dimples has forgiven you." The trophy ("Engraved: GARY.") and the 1958 scorecard keep their lines.

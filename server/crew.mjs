@@ -50,6 +50,7 @@ import { printCard, printOver, cleanCard, migrateV4, rowsOf, cardDone, doneCount
 import { todayFor, todayMemo, todayChip, todayName, todayReport, todayKind, todayShot, ballMul, mudMul, basketCap, orderBoost,
   juniorDay, hash32, contractsFor, contractMet, newlyUnlocked, canWear, cleanLooks, swingMul } from '../web/js/today.js';
 import { addNight, nightCard, cleanCard as cleanNightCard } from '../web/js/awards.js';
+import { cleanStory, coldDue, midDue, beatFor } from '../web/js/story.js';   // round 12: the story beats
 import { isPromotionDay, PROMO_DAY, promoDue, promoQ, promoStrip, newRide, stepRide } from '../web/js/promoday.js';   // round 11 (builder "pacing")
 
 export const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // no I or O: codes get read aloud
@@ -173,6 +174,7 @@ export class Crew {
     this.endless = !!save?.endless;
     this.test = save?.test === true;   // round 11: a skip-ahead test crew (server/skip.mjs)
     this.debuts = new Set(Array.isArray(save?.debuts) ? save.debuts.filter(k => typeof k === 'string').slice(0, 20) : []);
+    this.story = new Set(cleanStory(save?.story));   // round 12: the story beats this crew has seen (once each; an old save: none)
     this.voiced = new Set(Array.isArray(save?.voiced) ? save.voiced.filter(k => typeof k === 'string').slice(0, 40) : []);
     // Round 11 (builder "today"): today's modifier ({ id, bay?, wind? } or null) and its counters; the endless
     // contracts (offers for the next morning, the crew's pick, today's), the lifetime stars and the cosmetics (looks by
@@ -320,6 +322,15 @@ export class Crew {
     this.voiced.add(id); this.dirty = true;
     if (!big) { this.paShift++; this.paAt = now; }
     this.events.push({ t: 'pa', id });
+    return true;
+  }
+
+  // ---- the story beats (round 12, web/js/story.js) --------------------------------
+  // Once per crew: the client's story card shows the beat's cards. Draws no RNG and touches no sim state.
+  storyBeat(id) {
+    if (!id || this.story.has(id)) return false;
+    this.story.add(id); this.dirty = true;
+    this.events.push({ t: 'story', id });
     return true;
   }
 
@@ -1152,18 +1163,24 @@ export class Crew {
     }
     this.rollTreasureToday();
     this.revealT = 0;
+    const revealMorning = !!this.pendingReveal || !!this.endlessFresh;   // round 12: no mid-venue beat on a reveal morning
     if (this.pendingReveal) {        // a promotion: the next morning plays the reveal
       const v = this.pendingReveal;
       this.pendingReveal = 0; this.revealT = REVEAL_SECS;
       this.events.push({ t: 'reveal', venue: v, memo: VENUE_RULES[v].memo, title: this.title() });
       this.pa(VENUE_RULES[v].pa);
+      this.storyBeat(beatFor('promo', v)?.id);   // round 12: after the reveal's PA line (the card waits for it)
     }
     // Playthrough 4 C4: the PA card is the first endless morning's one text (the client's reveal shows no memo card for it).
+    if (this.endlessFresh) this.storyBeat('epilogue');   // round 12: before the Under New Management PA (the card goes first)
     if (this.endlessFresh) { this.endlessFresh = false; this.events.push({ t: 'reveal', venue: 6, memo: 'Under New Management.', title: 'Owner' }); this.pa('endless'); }
     // The Last Bucket that came due at the bell (or a reload saved at 1) begins this morning. A sky that wasn't
     // cleared by the bell (round 7 #5) reopens its gate: the debris was saved.
     if (this.lastBucket?.phase === 'sky') this.lastBucket = null;
     if (this.venue === 5 && !this.endless && this.outstanding <= 1 && !this.lastBucket) { this.outstanding = 1; this.beginLastBucket(); }
+    // Round 12: the cold open (day 1, before the welcome PA) and the venue's one mid-venue story morning.
+    if (coldDue(this)) this.storyBeat('cold');
+    else this.storyBeat(midDue({ venue: this.venue, venueDay: this.venueDay, endless: this.endless, promoDay: isPromotionDay(this), today: this.today, reveal: revealMorning, lastBucket: !!this.lastBucket }));
     this.dirty = true;
     this.events.push({ t: 'shift', phase: 'shift', day: this.day });
     if (this.day === 1 || !this.voiced.has('welcome')) this.pa('welcome', { once: true });   // day 1: the one voice line; the checklist waits for it
@@ -2410,7 +2427,8 @@ export class Crew {
       ...(this.promoDay != null ? { promoDay: this.promoDay } : {}), ...(this.promoTry ? { promoTry: this.promoTry } : {}),   // round 11: Promotion Day   // owner playtest 3 §6.2
       ...(this.test ? { test: true } : {}),   // round 11: a skip-ahead test crew (server/skip.mjs) stays marked
       fixtures: Object.fromEntries(Object.entries(this.fixtures).map(([k, v]) => [k, +v.toFixed(3)])),   // owner playtest 3 §3.1
-      records: this.records, voiced: [...this.voiced], debuts: [...this.debuts],   // (restored: an edit had folded them into the comment)
+      records: this.records, voiced: [...this.voiced], debuts: [...this.debuts],
+      ...(this.story.size ? { story: [...this.story] } : {}),   // round 12: the story beats seen   // (restored: an edit had folded them into the comment)
       ...(mods ? { mods } : {}),       // one key per venue module, only when one has something to keep
       // Round 11 (builder "today"): the lifetime stars and cosmetics, and the night card ("Previously on" next time).
       ...(this.stars ? { stars: this.stars } : {}), ...(Object.keys(this.looks).length ? { looks: this.looks } : {}), ...(this.cartPaint ? { cartPaint: this.cartPaint } : {}),
