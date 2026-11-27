@@ -1383,3 +1383,50 @@ The full record is `design/round13-mowe.md`; the rules are `web/js/mowe.js` (pur
   first card for the case, 3 s at most), and the camera waits on the card's end.
 - **8.1 / 8.2**: an unfinished sign step no longer mutes the empty-basket alarm (it is the checklist's next line); the
   first card of a beat takes no press for 1.2 s (the photo card 1.8 s).
+
+## Textures and preloading
+
+The second texture pass covers the rest of the world, scales by tier, and preloads so play doesn't hitch.
+The code is `web/js/texgen.js` (pixels, node-tested), `web/js/textures.js` (GPU) and `web/js/prewarm.js` (the warm).
+
+- **Nine new surfaces**, each generated once into a shared texture and drawn with world-space UVs, so every mesh
+  gets the right scale without per-mesh repeats:
+  - concrete with slab joints, stains and a hairline crack (the walk, the wash pad, the Grate's apron, the venues' slabs)
+  - asphalt (the lot) and gravel (the fence strip)
+  - creek and pond stones (the dry creek bed, the pond bottom)
+  - painted corrugated sheet (the ball washer, the Club awning, bins, stadium seats)
+  - shingles and clapboard siding (the clubhouse, the snack shed)
+  - bark and leaves (trees and bushes)
+  - steel and wood on the later venues (the jumbotron, the Lift, the County pickets)
+- **Tiers.** `TEX.configure({ low })` runs once, before the first texture is made.
+  - Low (Xbox Edge through Auto) gets every texture at half size, no bump maps, anisotropy 2: 1.7 MB of GPU memory,
+    down from 4.0 MB for the first pass's set.
+  - High gets full size (6.5 MB) and bump maps on the walk, the slabs, the roofs, the siding, the bark and the creek
+    stones. A bump map reuses the colour texture, so there is no second download.
+  - Like props.js, the tier is read at load; a Settings change applies after a reload.
+- **The warm.** Once the textures land, `prewarm()` runs behind the title card's bar (textures fill 70 % of the bar,
+  the warm the rest):
+  - it builds every venue's group, hidden (`venues.js` `prebuild`)
+  - it uploads every texture
+  - it compiles every shader with `compileAsync`
+  - it draws one ordinary frame with a throwaway shadow caster of each kind, because the instanced balls only cast in
+    a shift and their shadow-pass shaders were the first-shift hitch
+- **Never blocking.** Start and Join no longer wait for the textures (they used to). A texture still generating shows
+  its flat average colour. `?noprewarm` turns the warm off for an A/B test; `?notex` still turns the textures off.
+- **Measured** in the desktop browser pane with synchronous timed renders (render, then a 1 px readback), the same
+  checkout with and without this pass, Muni on day 5, three camera poses:
+
+  | | before | after |
+  |---|---|---|
+  | High frame (ms) | 2.8 / 3.2 / 3.5 | 2.9 / 3.4 / 3.7 (+3–6 %) |
+  | Low frame (ms) | 2.1 / 2.2 / 2.9 | 2.1 / 2.2 / 2.9 (same, within ±0.1) |
+  | First shift's worst render, High | 70.9 ms, 6 shaders compiled | 4.6 ms, none |
+  | First shift's worst render, Low | 38.1 ms, 5 shaders compiled | 4.3 ms, none |
+
+  The Orbital also compiled no shaders at shift start. Texture generation is 163 ms of work on Low and 329 ms on High,
+  in 10 ms slices. An IndexedDB cache of the pixels was considered and skipped: Low's preload is now cheaper than the
+  old set was.
+- **Still compiled on arrival:** the venue *views* (`views/*.js`), whose meshes only exist once a crew reaches the
+  venue: about a dozen shaders at the Orbital, compiled while the lobby or report is up.
+- **Screenshots:** `design/shots/tex2-before-*.jpg` and `tex2-after-*.jpg` show the Muni (the walk and the
+  clubhouse), the Club, Tiered and the Orbital. `tex2-after-muni-clubhouse-low.jpg` is the Low tier.

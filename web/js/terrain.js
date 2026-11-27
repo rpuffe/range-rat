@@ -113,7 +113,7 @@ export function createTerrain({ scene, THREE = THREE_NS } = {}) {
   root.add(bank);
 
   // the dry bed: gravel, mottled along its length
-  const gravel = new THREE.Mesh(ribbon(HW, 0.03, (s, k) => tint(0xaea288, 0.86 + 0.14 * (((k * 5) % 4) / 3))), TEX.mat('dirt', 0xffffff, { world: 0.7, mode: 'top', vertexColors: true, ...decal(3) }));
+  const gravel = new THREE.Mesh(ribbon(HW, 0.03, (s, k) => tint(0xaea288, 0.86 + 0.14 * (((k * 5) % 4) / 3))), TEX.mat('stones', 0xffffff, { world: 0.9, mode: 'top', bump: 1, vertexColors: true, ...decal(3) }));
   gravel.name = 'creek-gravel'; gravel.frustumCulled = false;
   dry.add(gravel);
   // pebbles and a few bigger cobbles, merged
@@ -201,8 +201,8 @@ export function createTerrain({ scene, THREE = THREE_NS } = {}) {
   // ---- the drained pond (Muni): a mud flat behind CLOSED tape, and its sign ----------------------------------
   {
     const { x, z, r } = MAP.POND;
-    const mud = new THREE.Mesh(flatCircle(r, 32), lambert(0x5b4630, decal(5))); mud.position.set(x, 0.05, z); dry.add(mud);
-    const dark = new THREE.Mesh(flatCircle(r * 0.55, 20), lambert(0x4b3a26, decal(6))); dark.position.set(x - 0.6, 0.055, z + 0.4); dry.add(dark);
+    const mud = new THREE.Mesh(flatCircle(r, 32), TEX.mat('dirt', 0x5b4630, { world: 1, mode: 'top', ...decal(5) })); mud.position.set(x, 0.05, z); dry.add(mud);
+    const dark = new THREE.Mesh(flatCircle(r * 0.55, 20), TEX.mat('dirt', 0x4b3a26, { world: 1, mode: 'top', ...decal(6) })); dark.position.set(x - 0.6, 0.055, z + 0.4); dry.add(dark);
     const crack = new THREE.Mesh(new THREE.RingGeometry(r * 0.78, r * 0.84, 28).rotateX(-Math.PI / 2), lambert(0x6e5a3e, decal(6))); crack.position.set(x, 0.056, z); dry.add(crack);
     // tape: posts on a ring with a yellow band between them
     const b = new Bake(), n = 14, tr = r + 0.8;
@@ -344,7 +344,7 @@ export function createTerrain({ scene, THREE = THREE_NS } = {}) {
   // ---- the Grate: a headwall and bars across the outflow's end, on a concrete apron (the cart's pile) -------------------
   {
     const G = MAP.GRATE, b = new Bake(), hw = HW + 0.4;
-    const apron = new THREE.Mesh(flatCircle(G.r + 0.4, 20), lambert(0x8d8a82, decal(5)));
+    const apron = new THREE.Mesh(flatCircle(G.r + 0.4, 20), TEX.mat('concrete', 0x8d8a82, { world: 1.5, mode: 'top', bump: 1, ...decal(5) }));
     apron.position.set(G.x - 0.4, 0.034, G.z); apron.name = 'grate-apron'; root.add(apron);
     b.box(0.7, 1.5, hw * 2 + 1.4, 0x7c7a74, [64.0, 0.75, G.z]);                     // the headwall, in front of the net
     for (let i = 0; i < 9; i++) b.cyl(0.04, 0.04, 1.1, 5, 0x3a3f44, [63.5, 0.55, G.z - hw + 0.1 + i * (hw * 2 - 0.2) / 8]);

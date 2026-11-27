@@ -83,12 +83,12 @@ export function createVenues(scene) {
     club() {
       const g = grp('club');
       // Council round 12, 4a: the awning's underside is in the sun's shade; a little emissive keeps it green, not black.
-      const green = lambert(0x1d6b3a, { emissive: 0x123a22 }), white = lambert(0xf4f1e8), dark = lambert(0x3a2f26);
+      const green = TEX.mat('paint', 0x1d6b3a, { world: 1.5, emissive: 0x123a22 }), white = lambert(0xf4f1e8), dark = lambert(0x3a2f26);
       // awning over the mat line: roof on 6 posts (back row, behind the mats)
       g.add(box(47, 0.25, 3.2, green, 0, 3.1, 0));
       g.add(box(47, 0.5, 0.12, white, 0, 2.85, -1.55));            // front valance
       const posts = []; for (let i = 0; i < 6; i++) posts.push([-22 + i * 8.8, 1.5, 1.45, 0.18, 3, 0.18]);
-      g.add(boxes(posts, lambert(0xe8e2d0), true));
+      g.add(boxes(posts, TEX.mat('metal', 0xe8e2d0, { world: 1 }), true));
       // white dividers between the mats (mats at x -18..18 step 4; dividers at +-2 offsets)
       // Round 11 (bays.js): in build order, so the drawn count follows the bays built: the old ten's eleven, then the new
       // wing's (x -28..-48: -26, -30 .. -50). live.setBays(n) shows n + 1 (n + 2 once the wing starts: the crew bay's gap).
@@ -98,7 +98,7 @@ export function createVenues(scene) {
       // the wing's own awning (the old one stops at x -23.5): one roof and valance, stretched over the wing bays built
       const wing = new THREE.Group(); g.add(wing);
       const wRoof = box(1, 0.25, 3.2, green, 0, 3.1, 0), wVal = box(1, 0.5, 0.12, white, 0, 2.85, -1.55);
-      const wPost = box(0.18, 3, 0.18, lambert(0xe8e2d0), 0, 1.5, 1.45);
+      const wPost = box(0.18, 3, 0.18, TEX.mat('metal', 0xe8e2d0, { world: 1 }), 0, 1.5, 1.45);
       wing.add(wRoof, wVal, wPost);
       live.setBays = n => {
         n = Math.max(0, n | 0);
@@ -133,7 +133,7 @@ export function createVenues(scene) {
       // The Upper Deck: x +-20 (it used to run to 23.5, over the ball washer at 21.5), z 2..6, top y 3.
       // The stairs climb from x -25 to the deck's left end at -20. The deck loungers stand at its rail (z 2.4).
       const g = grp('tiered');
-      const conc = lambert(0x8d8f96), dark = lambert(0x23252d);
+      const conc = TEX.mat('concrete', 0x8d8f96, { world: 2, bump: 1 }), dark = lambert(0x23252d);
       // Council round 12, 4a (builder 4): the black slab. The underside read as a void (black-on-black under a top-lit
       // deck), so the decking glows a warm wood (emissive, one material, no new draw call) and the back wall is a mid
       // grey. And a cutaway: while the camera is under the deck the floor fades to 35 % (DECK_CUT), set in the floor's
@@ -147,7 +147,7 @@ export function createVenues(scene) {
         if (deckMat.opacity !== o) { deckMat.opacity = o; deckMat.depthWrite = o >= 1; }
       };
       g.add(floor);
-      g.add(box(40, 3.2, 0.3, lambert(0x8a8e98, { emissive: 0x2a2c32 }), 0, 4.6, 6.1));    // back wall (was 0x23252d: the black slab's other half; its +z face is in the sun's shade)
+      g.add(box(40, 3.2, 0.3, TEX.mat('concrete', 0x8a8e98, { world: 2, emissive: 0x2a2c32 }), 0, 4.6, 6.1));    // back wall (was 0x23252d: the black slab's other half; its +z face is in the sun's shade)
       const legs = []; for (let i = 0; i <= 10; i++) legs.push([-19.6 + i * 3.92, 1.35, 3.9, 0.35, 2.7, 0.35]);
       g.add(boxes(legs, conc, true));
       // 10 bay openings: pillars between bays on the deck front, rail across the top
@@ -169,7 +169,7 @@ export function createVenues(scene) {
     },
     stadium() {
       const g = grp('stadium');
-      const conc = lambert(0x7b7f88), seat = lambert(0x37425a);
+      const conc = TEX.mat('concrete', 0x7b7f88, { world: 2.5, bump: 1 }), seat = TEX.mat('paint', 0x37425a, { world: 1.5 });
       const crowdGeo = new THREE.SphereGeometry(0.4, 6, 5);
       const per = 140;
       for (const side of [-1, 1]) {
@@ -194,7 +194,7 @@ export function createVenues(scene) {
         live.crowd.push({ im, base, side: side < 0 ? 'left' : 'right', stand: sg, m: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1.2, 1), p: new THREE.Vector3() });
       }
       // jumbotron frame behind the bank (sim.js BANK 26,6; board at z 7.2)
-      const fr = lambert(0x7d838e, { emissive: 0x1c1f24 }), j = new THREE.Group();   // council round 12, 4a: was 0x2a2d33 (A's black bar through the reveal shot)
+      const fr = TEX.mat('metal', 0x7d838e, { world: 1.5, emissive: 0x1c1f24 }), j = new THREE.Group();   // council round 12, 4a: was 0x2a2d33 (A's black bar through the reveal shot)
       for (const dx of [-5.4, 5.4]) j.add(box(0.4, 16, 0.4, fr, dx, 8, 0));
       j.add(box(11.2, 0.4, 0.6, fr, 0, 16, 0)); j.add(box(11.2, 0.4, 0.6, fr, 0, 9.6, 0));
       j.add(box(0.3, 6.4, 0.5, fr, 0, 12.8, 0));
@@ -207,7 +207,7 @@ export function createVenues(scene) {
     },
     county() {
       const g = grp('county');
-      const wood = lambert(0xf4f1e8);
+      const wood = TEX.mat('wood', 0xf4f1e8, { world: 1 });
       const pk = [], rail = [], mail = [], post = [];
       for (const side of [-1, 1]) {
         const x = side * 122;
@@ -231,9 +231,9 @@ export function createVenues(scene) {
       // which rests on the platform and rises only with riders (parts.carY; the Orbital view drives it).
       const g = grp('orbital');
       const L = MAP.LIFT, tz = L.z + 1.9;
-      const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 400, 10), lambert(0xc8ccd6));
+      const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 400, 10), TEX.mat('metal', 0xc8ccd6, { world: 2 }));
       cyl.position.set(L.x, 200, tz); g.add(cyl); live.tower = cyl;   // playthrough 4 C5: the Orbital view hides it under the dusk camera
-      g.add(new THREE.Mesh(new THREE.CylinderGeometry(L.r, L.r + 0.2, 0.3, 16), lambert(0x555a66)).translateX(L.x).translateY(0.15).translateZ(L.z));
+      g.add(new THREE.Mesh(new THREE.CylinderGeometry(L.r, L.r + 0.2, 0.3, 16), TEX.mat('concrete', 0x555a66, { world: 1.5 })).translateX(L.x).translateY(0.15).translateZ(L.z));
       const car = new THREE.Group();
       car.add(box(2, 2.4, 2, lambert(0xf4f1e8), 0, 0, 0)); car.add(box(2.1, 0.5, 2.1, lambert(0x1d6b3a), 0, 1.4, 0));
       car.position.set(L.x, live.carY, L.z); g.add(car); live.car = car;
@@ -260,6 +260,9 @@ export function createVenues(scene) {
   };
 
   function ensure(name) { if (!built[name]) { built[name] = true; builders[name](); } }
+  // Textures and preloading (prewarm.js): build every venue's group now, hidden, so its shaders compile and its
+  // textures upload behind the title card instead of on the promotion. Hidden groups cost no draw calls.
+  live.prebuild = () => { for (const k of Object.keys(builders)) ensure(k); };
 
   function setVenue(v, isEndless) {
     venue = Math.max(0, Math.min(5, v | 0)); endless = !!isEndless;

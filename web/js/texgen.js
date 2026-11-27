@@ -128,6 +128,96 @@ function sign(seed) {
   };
 }
 
+// Concrete (the wash pad, the Grate's apron, the venues' slabs and pillars): one slab a tile with a saw-cut joint
+// round its edge, soft trowel patches, aggregate grain, a couple of stains and a hairline crack.
+function concrete(seed) {
+  return (u, v, o) => {
+    const p = fbm(u, v, 4, 4, 4, seed), q = fbm(u, v, 24, 24, 2, seed + 3);
+    const agg = hash2(Math.floor(u * 128), Math.floor(v * 128), seed + 5);   // 128: one grain a texel on Low, 2×2 on High
+    let l = 0.9 + (p - 0.5) * 0.2 + (q - 0.5) * 0.1 + (agg - 0.5) * 0.06;
+    l -= smooth(0.6, 0.78, fbm(u, v, 3, 3, 3, seed + 9)) * 0.16;            // water and oil stains
+    const jd = Math.min(u, 1 - u, v, 1 - v);
+    if (jd < 0.008) l *= 0.55; else if (jd < 0.018) l *= 0.93;                // the joint and its worn lip
+    if (Math.abs(fbm(u, v, 5, 5, 3, seed + 21) - 0.5) < 0.005) l *= 0.8;      // a hairline crack
+    o[0] = l * 1.01; o[1] = l; o[2] = l * 0.96;
+  };
+}
+// Asphalt (the parking lot): aggregate, a few patched repairs (a crisper edge), tar-sealed cracks.
+function asphalt(seed) {
+  return (u, v, o) => {
+    const g = hash2(Math.floor(u * 128), Math.floor(v * 128), seed);
+    let l = 0.86 + (g - 0.5) * 0.18 + (fbm(u, v, 4, 4, 3, seed + 2) - 0.5) * 0.18;
+    l *= 1 - smooth(0.64, 0.68, fbm(u, v, 2, 2, 2, seed + 7)) * 0.14;
+    if (Math.abs(fbm(u, v, 4, 4, 4, seed + 11) - 0.5) < 0.007) l *= 0.65;
+    o[0] = l; o[1] = l; o[2] = l * 1.02;
+  };
+}
+// Pebbles in cells: gravel (small, many) and the creek / pond stones (bigger, silt and moss in the gaps).
+function pebbles(seed, N, gap, moss) {
+  return (u, v, o) => {
+    const cx = u * N, cy = v * N, ix = Math.floor(cx), iy = Math.floor(cy);
+    const h = hash2(ix, iy, seed), px = 0.35 + 0.3 * hash2(ix, iy, seed + 1), py = 0.35 + 0.3 * hash2(ix, iy, seed + 2);
+    const rx = 0.36 + 0.14 * hash2(ix, iy, seed + 3), ry = rx * (0.7 + 0.3 * hash2(ix, iy, seed + 4));
+    const dx = (cx - ix - px) / rx, dy = (cy - iy - py) / ry, d = Math.sqrt(dx * dx + dy * dy);
+    const silt = fbm(u, v, 4, 4, 3, seed + 9);
+    let l, g = 1;
+    if (d < 1) l = 0.74 + (h - 0.5) * 0.36 + (1 - d) * 0.14 + (dy < 0 ? 0.06 : -0.06);   // a stone, lit from above
+    else { l = gap * (0.9 + (silt - 0.5) * 0.4); g = 1 + moss; }                          // the gap: dark grit (or moss)
+    l *= 0.94 + (silt - 0.5) * 0.24;
+    o[0] = l * (1 + 0.04 * (h - 0.5)); o[1] = l * g; o[2] = l * (0.96 - 0.04 * (h - 0.5));
+  };
+}
+// Painted corrugated metal (the ball washer, the carts): ridges every ~8 cm, drip streaks, scuffs, a little rust.
+function paint(seed) {
+  return (u, v, o) => {
+    const ridge = 0.5 + 0.5 * Math.sin(u * Math.PI * 2 * 12);
+    const streak = vnoise(u * 48, v * 3, 48, 3, seed);
+    const scuff = smooth(0.66, 0.86, fbm(u, v, 4, 4, 3, seed + 4));
+    const rust = smooth(0.8, 0.92, fbm(u, v, 8, 4, 2, seed + 9));
+    const l = 0.88 + (ridge - 0.5) * 0.12 + (streak - 0.5) * 0.08 - scuff * 0.14;
+    o[0] = l * (1 + 0.1 * rust); o[1] = l * (1 - 0.12 * rust); o[2] = l * (1 - 0.3 * rust);
+  };
+}
+// Roof shingles: 8 courses a tile, staggered tabs with their own tone, the shadow under each course.
+function shingles(seed) {
+  return (u, v, o) => {
+    const R = 8, T = 6, ri = Math.floor(v * R), rv = v * R - ri;
+    const tx = u * T + (ri % 2) * 0.5, ti = Math.floor(tx), tu = tx - ti;
+    const tone = hash2(mod(ti, T), ri, seed);
+    let l = 0.86 + (tone - 0.5) * 0.22 + (fbm(u, v, 8, 8, 2, seed + 3) - 0.5) * 0.12;
+    if (tu < 0.03 || tu > 0.97) l *= 0.62;                                    // the slot between tabs
+    l *= 0.7 + 0.3 * smooth(0, 0.3, rv);                                      // the course above overhangs
+    o[0] = l * 1.02; o[1] = l; o[2] = l * 0.97;
+  };
+}
+// Clapboard siding: 8 boards a tile (running along u), a shadow line under each lap, faint grain.
+function siding(seed) {
+  return (u, v, o) => {
+    const B = 8, bi = Math.floor(v * B), bv = v * B - bi;
+    let l = 0.82 + 0.14 * bv + (hash2(bi, 0, seed) - 0.5) * 0.06 + (vnoise(u * 4, v * 64, 4, 64, seed + 2) - 0.5) * 0.06;
+    if (bv < 0.08) l *= 0.66;                                                 // the lap's shadow
+    l -= smooth(0.7, 0.9, fbm(u, v, 3, 3, 3, seed + 5)) * 0.1;                // weathering
+    o[0] = l * 1.01; o[1] = l; o[2] = l * 0.97;
+  };
+}
+// Tree bark: wavy vertical fissures.
+function bark(seed) {
+  return (u, v, o) => {
+    const w = fbm(u, v, 2, 4, 3, seed);
+    const f = Math.abs(Math.sin((u * 8 + w * 1.6) * Math.PI));               // 0 in a fissure
+    const l = 0.55 + 0.4 * smooth(0.2, 0.75, f) + (vnoise(u * 16, v * 32, 16, 32, seed + 3) - 0.5) * 0.12;
+    o[0] = l * 1.03; o[1] = l; o[2] = l * 0.95;
+  };
+}
+// Foliage: leaf clusters, light tops and dark hollows, so a low-poly canopy reads as leaves rather than plastic.
+function leaves(seed) {
+  return (u, v, o) => {
+    const c = fbm(u, v, 6, 6, 3, seed), k = vnoise(u * 32, v * 32, 32, 32, seed + 4);
+    const l = 0.84 + (c - 0.5) * 0.4 + (k - 0.5) * 0.16;
+    o[0] = l * (1 - 0.04 * (c - 0.5)); o[1] = l; o[2] = l * (0.95 + 0.06 * (c - 0.5));
+  };
+}
+
 // ---- the set -----------------------------------------------------------------------------------------------------
 // id, size, generator, MEAN (the design-average brightness textures.js compensates for), gpu (false: canvas use only).
 export const TEX_SPECS = Object.freeze([
@@ -138,16 +228,33 @@ export const TEX_SPECS = Object.freeze([
   { id: 'wood', size: 256, mean: 0.77, gpu: true, make: () => wood(1188) },
   { id: 'metal', size: 256, mean: 0.87, gpu: true, make: () => metal(612) },
   { id: 'sign', size: 256, h: 128, mean: 0.93, gpu: false, make: () => sign(29) },
+  // The second pass (design/game-design.md, "Textures and preloading"): the rest of the world's surfaces.
+  { id: 'concrete', size: 256, mean: 0.84, gpu: true, make: () => concrete(4021) },
+  { id: 'asphalt', size: 256, mean: 0.79, gpu: true, make: () => asphalt(733) },
+  { id: 'gravel', size: 256, mean: 0.59, gpu: true, make: () => pebbles(915, 16, 0.5, 0) },
+  { id: 'stones', size: 256, mean: 0.6, gpu: true, make: () => pebbles(2207, 8, 0.48, 0.18) },
+  { id: 'paint', size: 256, mean: 0.87, gpu: true, make: () => paint(371) },
+  { id: 'shingles', size: 256, mean: 0.8, gpu: true, make: () => shingles(1460) },
+  { id: 'siding', size: 256, mean: 0.87, gpu: true, make: () => siding(88) },
+  { id: 'bark', size: 128, mean: 0.82, gpu: true, make: () => bark(5150) },
+  { id: 'leaves', size: 128, mean: 0.84, gpu: true, make: () => leaves(640) },
 ]);
+// The Low tier (Xbox Edge through Auto) generates and uploads every GPU texture at half size: a quarter of the
+// memory and of the preload's work. The generators take u, v in 0..1, so the pattern is the same, just softer.
+export const LOW_SCALE = 0.5;
+export const sizeOf = (s, scale = 1) => {
+  const k = s.gpu ? scale : 1;
+  return { w: Math.max(16, s.size * k), h: Math.max(16, (s.h ?? s.size) * k) };
+};
 export const SPEC_BY_ID = Object.freeze(Object.fromEntries(TEX_SPECS.map(s => [s.id, s])));
 export const isPow2 = n => n > 0 && (n & (n - 1)) === 0;
 // GPU bytes for a mipmapped RGBA8 texture: the full chain is 4/3 of the base level.
-export const texBytes = s => s.gpu ? Math.round(s.size * (s.h ?? s.size) * 4 * 4 / 3) : 0;
-export const totalBytes = (specs = TEX_SPECS) => specs.reduce((a, s) => a + texBytes(s), 0);
+export const texBytes = (s, scale = 1) => { const { w, h } = sizeOf(s, scale); return s.gpu ? Math.round(w * h * 4 * 4 / 3) : 0; };
+export const totalBytes = (specs = TEX_SPECS, scale = 1) => specs.reduce((a, s) => a + texBytes(s, scale), 0);
 
 // A texture being generated in slices: job.step(rows) fills the next rows of job.data (RGBA8); job.done when full.
-export function texJob(spec) {
-  const w = spec.size, h = spec.h ?? spec.size, data = new Uint8Array(w * h * 4), f = spec.make(), o = [0, 0, 0];
+export function texJob(spec, scale = 1) {
+  const { w, h } = sizeOf(spec, scale), data = new Uint8Array(w * h * 4), f = spec.make(), o = [0, 0, 0];
   const job = { spec, w, h, data, row: 0, done: false, sum: 0,
     step(rows = h) {
       const end = Math.min(h, job.row + rows);
@@ -168,4 +275,4 @@ export function texJob(spec) {
   return job;
 }
 // Whole texture at once (tests, and a canvas user that needs it before the preload got there).
-export const generate = spec => texJob(spec).step();
+export const generate = (spec, scale = 1) => texJob(spec, scale).step();

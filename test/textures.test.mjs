@@ -3,19 +3,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { TEX_SPECS, SPEC_BY_ID, isPow2, texBytes, totalBytes, texJob, generate, vnoise, hash2 } from '../web/js/texgen.js';
+import { TEX_SPECS, SPEC_BY_ID, isPow2, texBytes, totalBytes, texJob, generate, vnoise, hash2, LOW_SCALE, sizeOf } from '../web/js/texgen.js';
 
 const src = f => readFileSync(new URL('../web/js/' + f, import.meta.url), 'utf8');
 
-test('every texture is a power of two, at most 512 px, and the set stays under 5 MB of GPU memory', () => {
+test('every texture is a power of two, at most 512 px; High stays under 7 MB of GPU memory and Low (Xbox) under 2 MB', () => {
   for (const s of TEX_SPECS) {
     assert.ok(isPow2(s.size) && s.size <= 512, `${s.id} width ${s.size}`);
     assert.ok(isPow2(s.h ?? s.size) && (s.h ?? s.size) <= 512, `${s.id} height`);
   }
   assert.equal(texBytes(SPEC_BY_ID.grass), Math.round(512 * 512 * 4 * 4 / 3), 'mipmapped RGBA8');
   assert.equal(texBytes(SPEC_BY_ID.sign), 0, 'the sign layer is canvas-only');
-  assert.ok(totalBytes() < 5 * 1024 * 1024, `total ${totalBytes()}`);
-  assert.ok(TEX_SPECS.length <= 8, 'a small shared set');
+  assert.ok(totalBytes() < 7 * 1024 * 1024, `total ${totalBytes()}`);
+  // Low: every GPU texture at half size (a quarter of the bytes): less than the 4 MB the first pass cost every tier.
+  assert.ok(totalBytes(TEX_SPECS, LOW_SCALE) < 2 * 1024 * 1024, `low ${totalBytes(TEX_SPECS, LOW_SCALE)}`);
+  for (const s of TEX_SPECS.filter(t => t.gpu)) {
+    const lo = sizeOf(s, LOW_SCALE);
+    assert.ok(isPow2(lo.w) && isPow2(lo.h) && lo.w <= 256, `${s.id} low ${lo.w}x${lo.h}`);
+  }
+  assert.deepEqual(sizeOf(SPEC_BY_ID.sign, LOW_SCALE), { w: 256, h: 128 }, 'the canvas-only sign layer keeps its size');
+  assert.ok(TEX_SPECS.length <= 16, 'a small shared set');
 });
 
 test('the generated average matches each spec MEAN (materials are lifted by 1 / MEAN)', () => {
@@ -67,12 +74,13 @@ test('no per-frame work, one GPU copy per texture, mipmaps on', () => {
   assert.match(t, /map\(id\)\.clone\(\)/, 'variants clone (and so share) the base source');
 });
 
-test('main.js: the mow stripes are one mesh, the bar fills, Start waits for the textures', () => {
+test('main.js: the mow stripes are one mesh, the bar fills, Start never waits on the preload', () => {
   const m = src('main.js');
   assert.doesNotMatch(m, /new THREE\.PlaneGeometry\(128, 12\)/, 'the 16 stripe planes are merged');
   assert.match(m, /name = 'mow-stripes'/);
   assert.match(m, /TEX\.preload\(\{ renderer/);
-  assert.match(m, /if \(!TEX\.isReady\(\)\) \{[^}]*await TEX\.ready; \}/, 'enter() waits: nothing pops in mid-shift');
+  assert.doesNotMatch(m, /await TEX\.ready/, 'enter() never waits (owner: never block creating or joining a crew)');
+  assert.match(m, /TEX\.configure\(\{ low: perf\.low \}\);[^\n]*\nTEX\.setAnisotropy/, 'the tier is set before the first texture');
   const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
   const bar = html.match(/<div id="loadbar"[^>]*>/)?.[0] ?? '';
   assert.match(bar, /role="progressbar"/);
@@ -95,4 +103,32 @@ test('the ground is calm (owner: "a little too busy and a bit hard to see"): sof
   }
   const m = src('main.js');
   assert.match(m, /TEX\.mat\('grass', 0x5f8f3a, \{ world: 2\.4, mode: 'top', macro: 0\.35 \}\)/, 'big soft tiles, a gentle macro');
+});
+
+test('the Low tier: half-size pixels with the same look, and no bump maps (its shaders are the ones it had)', () => {
+  for (const s of TEX_SPECS.filter(t => t.gpu)) {
+    const hi = generate(s), lo = generate(s, LOW_SCALE);
+    assert.equal(lo.w, hi.w / 2, s.id);
+    assert.ok(Math.abs(lo.mean() - hi.mean()) < 0.02, `${s.id}: low mean ${lo.mean().toFixed(3)} vs ${hi.mean().toFixed(3)}`);
+  }
+  const t = src('textures.js');
+  assert.match(t, /scale = low \? LOW_SCALE : 1; bumpOn = !low;/);
+  assert.match(t, /if \(bump && bumpOn && 'bumpMap' in m\)/, 'bump maps only when the tier allows');
+  assert.match(t, /vBumpMapUv = vMapUv;/, 'a bump map follows the world-space uv');
+  assert.match(t, /texJob\(SPEC_BY_ID\[id\], scale\)/);
+});
+
+test('the pre-warm: every venue built hidden, every shader compiled behind the title card, never blocking a join', () => {
+  const w = src('prewarm.js');
+  assert.match(w, /renderer\.compileAsync/, 'parallel compile where the browser has it');
+  assert.match(w, /renderer\.initTexture\(t\)/, 'textures uploaded up front');
+  assert.match(w, /setTimeout\(r, 0\)/, 'yields (not rAF: it stalls when hidden)');
+  assert.doesNotMatch(w, /requestAnimationFrame|tick\(/, 'nothing per frame');
+  const v = src('venues.js');
+  assert.match(v, /live\.prebuild = \(\) => \{ for \(const k of Object\.keys\(builders\)\) ensure\(k\); \};/);
+  assert.match(v, /g\.visible = false; scene\.add\(g\)/, 'groups start hidden: prebuilt venues draw nothing until reached');
+  const m = src('main.js');
+  assert.match(m, /prewarm\(\{ renderer, scene, camera, sun: sky\.sun, build: \[r2\.venueParts\.prebuild\]/);
+  assert.match(w, /export function warmShadows/, 'and the shadow pass depth shaders (the balls cast only in a shift)');
+  assert.match(m, /TEX\.preload\(\{ renderer, onProgress: p => loadBar\(0\.7 \* p\) \}\)/, 'one bar: textures then shaders');
 });

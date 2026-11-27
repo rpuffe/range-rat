@@ -14,23 +14,34 @@
 //
 // Xbox budget: ≤ 512 px, power of two, mipmapped, one GPU copy per texture (variants share it), no per-frame work.
 import * as THREE from 'three';
-import { TEX_SPECS, SPEC_BY_ID, texJob, totalBytes } from './texgen.js';
+import { TEX_SPECS, SPEC_BY_ID, texJob, totalBytes, LOW_SCALE } from './texgen.js';
 
 const jobs = new Map();          // id -> texgen job (its .data is the texture's own pixel buffer)
 const base = new Map();          // id -> THREE.DataTexture
 const variants = new Map();      // id -> [every texture sharing that source] (all flagged when the pixels land)
 const matCache = new Map();
 let renderer = null, started = false, resolveReady, aniso = 1;
+let scale = 1, bumpOn = false;   // configure(): Low halves every texture; High alone gets bump maps
 const OFF = /[?&]notex/.test(globalThis.location?.search ?? '');
 const stats = { work: 0, slices: 0, ms: 0, bytes: totalBytes(), count: TEX_SPECS.length, done: false, t0: 0 };
 export const ready = new Promise(r => { resolveReady = r; });
 export const isReady = () => stats.done;
 export const texStats = () => ({ ...stats });
 
+// The quality tier, once, before the first texture or material is asked for (main.js, from perf.js's profile).
+// Low (Xbox Edge through Auto): half-size textures, no bump maps, so its shaders are the ones it had before.
+// High: full size, and the materials that ask for it get a bump map (the same texture, no second download).
+// Like props.js, it is read at load: switching tiers in Settings applies after a reload.
+export function configure({ low = false } = {}) {
+  if (jobs.size) return;
+  scale = low ? LOW_SCALE : 1; bumpOn = !low;
+  stats.bytes = totalBytes(TEX_SPECS, scale);
+}
+
 function job(id) {
   let j = jobs.get(id);
   if (!j) {
-    j = texJob(SPEC_BY_ID[id]);
+    j = texJob(SPEC_BY_ID[id], scale);
     const g = Math.round(j.spec.mean * 255);                     // until generated: the flat average, so no pop to black
     for (let i = 0; i < j.data.length; i += 4) { j.data[i] = j.data[i + 1] = j.data[i + 2] = g; j.data[i + 3] = 255; }
     jobs.set(id, j);
@@ -80,7 +91,11 @@ function worldUv(m, metres, mode, id, macro = 0.7) {
 #endif
   rw = modelMatrix * rw; rn = abs(mat3(modelMatrix) * rn);
   vec2 wuv = ${mode === 'top' ? 'rw.xz' : '(rn.y >= max(rn.x, rn.z)) ? rw.xz : (rn.x > rn.z ? rw.zy : rw.xy)'};
-  vMapUv = (mapTransform * vec3(wuv * uWuv, 1.0)).xy; }
+  vMapUv = (mapTransform * vec3(wuv * uWuv, 1.0)).xy;
+#ifdef USE_BUMPMAP
+  vBumpMapUv = vMapUv;
+#endif
+  }
 #endif`);
     if (mode === 'top') sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uMacroInv; uniform float uMacro;')
       .replace('#include <map_fragment>', `#include <map_fragment>
@@ -96,20 +111,22 @@ function worldUv(m, metres, mode, id, macro = 0.7) {
 export const lift = id => SPEC_BY_ID[id] ? 1 / SPEC_BY_ID[id].mean : 1;
 
 // Put texture `id` on a material: the map, the colour lifted so the average brightness stays put, world uv if asked.
-export function textured(m, id, { world = 0, mode = 'box', repeat = null, macro } = {}) {
+// bump: on High only, the same texture as a bump map at this strength (joints, laps, bark and shingles catch the sun).
+export function textured(m, id, { world = 0, mode = 'box', repeat = null, macro, bump = 0 } = {}) {
   if (!m || m.userData.rrTex || OFF) return m;
   m.map = repeat ? variant(id, repeat[0], repeat[1]) : map(id);
   m.color?.multiplyScalar(1 / SPEC_BY_ID[id].mean);
+  if (bump && bumpOn && 'bumpMap' in m) { m.bumpMap = m.map; m.bumpScale = bump; }
   if (world) worldUv(m, world, mode, id, macro);
   m.userData.rrTex = id; m.userData.rrLift = 1 / SPEC_BY_ID[id].mean;   // for code that re-sets the colour
   m.needsUpdate = true;
   return m;
 }
 // A shared textured Lambert, cached by (texture, colour, options).
-export function mat(id, color, { world = 0, mode = 'box', repeat = null, macro, ...extra } = {}) {
-  const key = `${id}|${color}|${world}|${mode}|${repeat}|${macro}|${JSON.stringify(extra)}`;
+export function mat(id, color, { world = 0, mode = 'box', repeat = null, macro, bump = 0, ...extra } = {}) {
+  const key = `${id}|${color}|${world}|${mode}|${repeat}|${macro}|${bump}|${JSON.stringify(extra)}`;
   let m = matCache.get(key);
-  if (!m) { m = textured(new THREE.MeshLambertMaterial({ color, ...extra }), id, { world, mode, repeat, macro }); matCache.set(key, m); }
+  if (!m) { m = textured(new THREE.MeshLambertMaterial({ color, ...extra }), id, { world, mode, repeat, macro, bump }); matCache.set(key, m); }
   return m;
 }
 

@@ -8,6 +8,7 @@ import { WASHER_YAW, SIGN_BY_ID, yawOf, tagSign } from './signs.js';
 import { WASHER, SILO } from './sim.js';
 import { washerBoard } from './hoppertext.js';   // round 11: the board in plain words
 import { siloLevelY } from './layout.js';        // round 11: clean balls drop to the silo's fill
+import * as TEX from './textures.js';             // painted corrugated sheet and galvanised steel
 
 export const WASHER_POS = { x: WASHER.x, z: WASHER.z };
 // Where a Rat stands to crank: about 0.9 m out from each side of the box.
@@ -93,7 +94,7 @@ export function createWasher(scene, opts = {}) {
   const out = Math.cos(WASHER_YAW) < 0 ? -1 : 1;
   scene.add(g);
 
-  const green = lambert(0x2e7d4f), darkGreen = lambert(0x1f5a38), steel = lambert(0x9aa3ad);
+  const green = TEX.mat('paint', 0x2e7d4f, { world: 0.6 }), darkGreen = TEX.mat('paint', 0x1f5a38, { world: 0.6 }), steel = TEX.mat('metal', 0x9aa3ad, { world: 0.8 });   // painted corrugated sheet (textures.js)
   const glassMat = new THREE.MeshLambertMaterial({ color: 0xbfe6f2, transparent: true, opacity: 0.35 });
 
   // Post and base plate.

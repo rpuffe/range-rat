@@ -95,7 +95,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       { p: [207.5, 0.01, 0], s: [285, 1, 700] },
     ]);
     // gravel strip under the fence (broken at the entrance gap and cart gap)
-    inst(flatPlane(), TEX.mat('dirt', 0xb7a98a, { world: 1, mode: 'top', ...decalOpts(3) }), [
+    inst(flatPlane(), TEX.mat('gravel', 0xb7a98a, { world: 0.6, mode: 'top', ...decalOpts(3) }), [
       { p: [-36.5, 0.012, 9.5], s: [57, 1, 1.5] },
       { p: [15, 0.012, 9.5], s: [26, 1, 1.5] },
       { p: [49.75, 0.012, 9.5], s: [30.5, 1, 1.5] },
@@ -156,9 +156,9 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       if ((x > -8 && x < 2) || (x > 28 && x < 34.5)) continue;
       posts.push({ p: [x, 0.6, 9.5] });
     }
-    const fenceMat = lambert(0x3f7a45);
+    const fenceMat = lambert(0x3f7a45), railMat = TEX.mat('wood', 0x3f7a45, { world: 1 });   // painted rails: the grain runs along them
     inst(new THREE.BoxGeometry(0.15, 1.2, 0.15), fenceMat, posts);
-    inst(new THREE.BoxGeometry(1, 0.08, 0.06), fenceMat, [
+    inst(new THREE.BoxGeometry(1, 0.08, 0.06), railMat, [
       { p: [-36.5, 0.95, 9.5], s: [57, 1, 1] },
       { p: [15, 0.95, 9.5], s: [26, 1, 1] },
       { p: [49.75, 0.95, 9.5], s: [30.5, 1, 1] },
@@ -209,10 +209,10 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     }
     const trunks = trees.map(t => ({ p: [t.x, 0, t.z], s: [t.s, t.trunkH, t.s] }));
     const trunkGeo = new THREE.CylinderGeometry(0.22, 0.34, 1, 6).translate(0, 0.5, 0);
-    inst(trunkGeo, lambert(0x6b4a2e), trunks);
+    inst(trunkGeo, TEX.mat('bark', 0x6b4a2e, { world: 0.8, bump: 1.5 }), trunks);
 
     // faint warm emissive = golden-hour rim lift without any lights
-    const canopyMat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true, emissive: 0x241506 });
+    const canopyMat = TEX.textured(new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true, emissive: 0x241506 }), 'leaves', { world: 1.6 });
     const coneGeo = new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0);
     const ballGeo = new THREE.IcosahedronGeometry(1, 1);
     for (const isCone of [true, false]) {
@@ -255,7 +255,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
   let setArch = () => {};   // playthrough 4 B9: section 4 fills it in (the arch sign)
   // ---------- 4. Parking lot and entrance ----------
   {
-    mesh(new THREE.PlaneGeometry(36, 22).rotateX(-Math.PI / 2), lambert(0x3a3d42, decalOpts(2)), -10, 0.01, 31);
+    mesh(new THREE.PlaneGeometry(36, 22).rotateX(-Math.PI / 2), TEX.mat('asphalt', 0x3a3d42, { world: 3, mode: 'top', ...decalOpts(2) }), -10, 0.01, 31);
     // bay lines (skip the two beside the walkway stall at x -3)
     const lines = [];
     for (let x = -25.5; x <= 7.6; x += 3) {
@@ -306,11 +306,11 @@ export function createScenery(scene, { lowDetail = false } = {}) {
       const dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz);
       segs.push({ p: [(ax + bx) / 2, 0.016, (az + bz) / 2], ry: Math.atan2(-dz, dx), s: [len + W, 1, W] });
     }
-    inst(flatPlane(), TEX.mat('dirt', 0xb9b2a0, { world: 1.5, mode: 'top', ...decalOpts(4) }), segs);
+    inst(flatPlane(), TEX.mat('concrete', 0xb9b2a0, { world: 1.1, mode: 'top', bump: 0.8, ...decalOpts(4) }), segs);   // 1.1 m slabs: two across the walk behind the mats
 
     // entrance arch (gap x -8..2, centre -3, fence line z 9.5)
     const gx = ENTRANCE.gate.x, gz = ENTRANCE.gate.z;
-    const archMat = lambert(0x2f5d3a);
+    const archMat = TEX.mat('metal', 0x2f5d3a, { world: 1.5 });   // painted steel
     inst(new THREE.BoxGeometry(0.6, 5.2, 0.6), archMat, [{ p: [gx - 4.4, 2.6, gz] }, { p: [gx + 4.4, 2.6, gz] }], { shadow: true });
     mesh(new THREE.BoxGeometry(9.8, 1.5, 0.3), archMat, gx, 5.45, gz, true);
     // Playthrough 4 B9: the arch reads the current venue (setArch redraws it on a promotion); long names shrink to fit.
@@ -347,15 +347,15 @@ export function createScenery(scene, { lowDetail = false } = {}) {
   const clubFlag = {};
   {
     const cx = 52, cz = 22;
-    const body = mesh(new THREE.BoxGeometry(14, 4.5, 8), lambert(0xd9c9a3), cx, 2.25, cz, true);
+    const body = mesh(new THREE.BoxGeometry(14, 4.5, 8), TEX.mat('siding', 0xd9c9a3, { world: 2, bump: 0.8 }), cx, 2.25, cz, true);
     body.receiveShadow = true;
     // gable roof (ridge along x)
     const roofGeo = new THREE.CylinderGeometry(1, 1, 1, 3).rotateZ(Math.PI / 2).rotateX(-Math.PI / 2);
-    const roof = mesh(roofGeo, lambert(0x8a3b2e), cx, 4.5 + 0.5 * (2.4 / 1.5), cz, true);
+    const roof = mesh(roofGeo, TEX.mat('shingles', 0x8a3b2e, { world: 2.5, bump: 1 }), cx, 4.5 + 0.5 * (2.4 / 1.5), cz, true);
     roof.scale.set(14.8, 2.4 / 1.5, 9.4 / 1.732);
     // porch
     mesh(new THREE.BoxGeometry(14, 0.3, 2.4), TEX.mat('wood', 0x9a7b52, { world: 1.5 }), cx, 0.15, cz - 5.2);
-    mesh(new THREE.BoxGeometry(14.4, 0.15, 2.9), lambert(0x7a3326), cx, 3.15, cz - 5.2, true);
+    mesh(new THREE.BoxGeometry(14.4, 0.15, 2.9), TEX.mat('shingles', 0x7a3326, { world: 2.5 }), cx, 3.15, cz - 5.2, true);
     inst(new THREE.CylinderGeometry(0.1, 0.1, 3, 6), lambert(0xeee6d0),
       [-6.8, -2.2, 2.2, 6.8].map(dx => ({ p: [cx + dx, 1.65, cz - 6.2] })));
     // windows and door
@@ -393,7 +393,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
 
     // trash cans
     const cans = [[20.5, 8.8], [-9, 8.7], [45.5, 6.5], [-16.5, 8.7]];
-    inst(new THREE.CylinderGeometry(0.3, 0.25, 0.8, 8), lambert(0x3b5a3a), cans.map(([x, z]) => ({ p: [x, 0.4, z] })));
+    inst(new THREE.CylinderGeometry(0.3, 0.25, 0.8, 8), TEX.mat('paint', 0x3b5a3a, { world: 0.6 }), cans.map(([x, z]) => ({ p: [x, 0.4, z] })));
     inst(new THREE.CylinderGeometry(0.33, 0.33, 0.06, 8), TEX.mat('metal', 0x6e747a, { world: 0.8 }), cans.map(([x, z]) => ({ p: [x, 0.83, z] })));
 
     // ball dispenser machine
@@ -504,7 +504,7 @@ export function createScenery(scene, { lowDetail = false } = {}) {
     }
     inst(new THREE.BoxGeometry(1.5, 0.5, 0.7), lambert(0x8a5a3a), planters);
 
-    inst(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true, emissive: 0x1a1006 }), bushes);
+    inst(new THREE.IcosahedronGeometry(1, 1), TEX.textured(new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true, emissive: 0x1a1006 }), 'leaves', { world: 0.8 }), bushes);
     inst(new THREE.IcosahedronGeometry(0.11, 0), new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: 0x2a1a0c }), flowers);
   }
 

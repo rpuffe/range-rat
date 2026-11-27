@@ -86,6 +86,7 @@ import { initSkip } from './skip.js';                      // round 11: skip ahe
 import { createReadyGate, READY } from './readygate.js';
 import { createEdgeChevron } from './edgechev.js';          // council round 13 8.6 (builder 4)   // council round 13 8.2/8.3 (builder 4): the Ready press
 import * as TEX from './textures.js';                      // the shared textures, preloaded behind the title card's bar
+import { prewarm } from './prewarm.js';                    // and every shader compiled behind it (Textures and preloading)
 
 const EYE = 1.65;
 const $ = id => document.getElementById(id);
@@ -114,13 +115,16 @@ const sky = createSky(scene);
 
 // Textures (textures.js): generated a slice at a time behind the title card's bar, uploaded as each lands. Materials
 // take them now; until a texture's pixels arrive it shows its plain average, so the scene never goes black.
-TEX.setAnisotropy(perf.low ? 2 : 4);
-TEX.preload({ renderer, onProgress: p => {
+// The bar: the textures fill the first 70 %, the shader pre-compile (prewarm.js, at the end of this file) the rest.
+const loadBar = p => {
   const bar = $('loadbar'); if (!bar) return;
   bar.setAttribute('aria-valuenow', String(Math.round(p * 100)));
   bar.firstElementChild.style.transform = `scaleX(${p.toFixed(3)})`;
   if (p >= 1) bar.classList.add('done');
-} });
+};
+TEX.configure({ low: perf.low });   // Low (Xbox): half-size textures and no bump maps
+TEX.setAnisotropy(perf.low ? 2 : 4);
+TEX.preload({ renderer, onProgress: p => loadBar(0.7 * p) });
 
 const lambert = color => new THREE.MeshLambertMaterial({ color });
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), TEX.mat('grass', 0x5f8f3a, { world: 2.4, mode: 'top', macro: 0.35 }));
@@ -265,7 +269,7 @@ function paintFixtures(fx) {
 const pondWater = new THREE.Mesh(new THREE.CircleGeometry(POND.r, 48),
   new THREE.MeshLambertMaterial({ color: 0x2f6f73, transparent: true, opacity: 0.78, side: THREE.DoubleSide }));
 pondWater.rotation.x = -Math.PI / 2; pondWater.position.set(POND.x, 0.03, POND.z); scene.add(pondWater);
-const pondBed = new THREE.Mesh(new THREE.CircleGeometry(POND.r, 48), TEX.mat('dirt', 0x3b3322, { world: 1.5, mode: 'top' }));
+const pondBed = new THREE.Mesh(new THREE.CircleGeometry(POND.r, 48), TEX.mat('stones', 0x3b3322, { world: 1.2, mode: 'top' }));
 pondBed.rotation.x = -Math.PI / 2; pondBed.position.set(POND.x, POND.BOTTOM - 0.06, POND.z); scene.add(pondBed);
 const pondWall = new THREE.Mesh(new THREE.CylinderGeometry(POND.r, POND.r, -POND.BOTTOM + 0.1, 48, 1, true),
   TEX.mat('dirt', 0x4a3f2a, { side: THREE.BackSide, repeat: [12, 1] }));
@@ -289,8 +293,8 @@ let treasureShown = null, lostFoundKey = '';   // what scuba.js is showing: the 
 // The snack shed: a little hut with a counter, a sack of potatoes, and a fryer.
 const shedSign = (() => {
   const g = new THREE.Group();
-  const hut = new THREE.Mesh(new THREE.BoxGeometry(3, 2.4, 2.4), lambert(0xc9b48a)); hut.position.y = 1.2; hut.castShadow = true; g.add(hut);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.4, 1, 4), lambert(0x8a3b2e)); roof.position.y = 2.9; roof.rotation.y = Math.PI / 4; g.add(roof);
+  const hut = new THREE.Mesh(new THREE.BoxGeometry(3, 2.4, 2.4), TEX.mat('siding', 0xc9b48a, { world: 2, bump: 0.8 })); hut.position.y = 1.2; hut.castShadow = true; g.add(hut);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.4, 1, 4), TEX.mat('shingles', 0x8a3b2e, { world: 2.5, bump: 1 })); roof.position.y = 2.9; roof.rotation.y = Math.PI / 4; g.add(roof);
   const counter = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 0.6), TEX.mat('wood', 0x8b6b45, { world: 1.2 })); counter.position.set(0, 1.0, -1.45); g.add(counter);
   const sack = new THREE.Mesh(new THREE.SphereGeometry(0.4, 10, 8), lambert(0x9c7b4b)); sack.scale.y = 0.8; sack.position.set(-1.6, 0.35, -1.4); g.add(sack);
   const fries = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.4, 0.4), lambert(0xf2c94c)); fries.position.set(0.7, 1.28, -1.45); g.add(fries);
@@ -330,7 +334,7 @@ for (const b of BAYS) {
 // The wash station: a pressure washer on a cart-sized concrete pad, with a hose reel.
 {
   const st = new THREE.Group();
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(5, 0.06, 4), lambert(0x9c9a93));
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(5, 0.06, 4), TEX.mat('concrete', 0x9c9a93, { world: 2.5, bump: 1 }));
   pad.position.set(-3.2, 0.03, 0); pad.receiveShadow = true; st.add(pad);
   const unit = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.8, 0.6), lambert(0x2f6fbf));
   unit.position.y = 0.4; unit.castShadow = true; st.add(unit);
@@ -1328,8 +1332,7 @@ const startShift = () => link?.act({ t: 'start' });
 
 // ---------------------------------------------------------------- joining
 async function enter(how, preset) {
-  // Nothing pops in mid-shift: a Start pressed before the textures land waits for them (textures.js, a second or so).
-  if (!TEX.isReady()) { $('join-error').textContent = 'One moment: still mowing the range…'; await TEX.ready; }
+  // Never waits on the preload (owner): a texture still generating shows its flat average until it lands.
   const name = $('name').value.trim();
   const code = $('join-code').value.trim().toUpperCase();
   $('join-error').textContent = '';
@@ -2239,6 +2242,12 @@ const dusk = createDusk({ scene, camera, me, others, balls, crew: () => crew, bu
   quiet: () => sayer.busy('STAMP', 'MEMO') || sayer.visible?.key === 'rally' });   // playthrough 5 B3: the pill steps aside
 SET.set({});   // re-apply saved settings now the PA exists
 requestAnimationFrame(frame);
+// Textures and preloading: once the textures are in, build every venue's group (hidden) and compile every shader
+// behind the title card, so the first shift and a venue's reveal don't hitch. Never blocks a join. ?noprewarm: A/B.
+if (!/[?&]noprewarm/.test(location.search)) TEX.ready.then(() => prewarm({ renderer, scene, camera, sun: sky.sun, build: [r2.venueParts.prebuild], onProgress: k => loadBar(0.7 + 0.3 * k) }))
+  .then(s => console.info(`[prewarm] ${s.programs} shaders${s.async ? ' (async)' : ''}, ${s.textures} textures, ${s.ms} ms (compile ${s.compileMs})`))
+  .catch(e => { console.warn('[prewarm]', e); loadBar(1); });
+else TEX.ready.then(() => loadBar(1));
 
 // Dev hook: /?debug exposes live state for poking at from the console.
 if (new URLSearchParams(location.search).has('debug')) window.rr = { me, balls, others, act, interact, cartPose, cartViews, pressAct, releaseAct, get crew() { return crew; }, startShift, get link() { return link; }, camera, sprayStats, todoArrow, say: sayer, ballReturn, fieldReturns, deckCam, onDeckFall, pauseGoals };
