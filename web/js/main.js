@@ -2148,7 +2148,8 @@ function frame(now) {
     ...tipCtx(crew, me) });   // owner notes: up, myDive, mats' mud (tips.js)
   board.tick(dt);
   confetti.tick(dt);        // the shared confetti pool (round 6: the bell's stamp, the huddle)
-  mowe.update(crew.mower ?? null, me.id); mowe.setPost(crew.moweWhistle > 0, crew.moweWhistle === 1, crew.moweWhistle === 3 && crew.moweWhistleBy !== me.id ? crew.moweWhistleBy : null);   // round 13 #5a: the whistle on its post, or on a mate's lanyard mowe.tick(dt, sceneT, me);
+  mowe.update(crew.mower ?? null, me.id); mowe.setPost(crew.moweWhistle > 0, crew.moweWhistle === 1, crew.moweWhistle === 3 && crew.moweWhistleBy !== me.id ? crew.moweWhistleBy : null);   // round 13 #5a: the whistle on its post, or on a mate's lanyard
+  mowe.tick(dt, sceneT, me);   // playtest round 9: this call had slipped into the comment above (MOW-E froze at the origin)
   kitchen.tick(dt);
   if (kitchen.isOpen && (!atShed(me) || me.down > 0)) kitchen.close();
   scenery.tick(dt, sceneT += dt, crew.phase === 'shift' ? crew.shiftT / crew.shiftSecs : crew.phase === 'report' ? 1 : 0);
