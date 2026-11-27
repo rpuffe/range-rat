@@ -10,7 +10,8 @@
 // he's on show. No per-frame allocation.
 import * as THREE from 'three';
 import { buildPerson, animatePerson } from '../people.js';
-import { clampBubbleY } from '../bubbleclamp.js';   // council round 12 9.5 (builder 4's hand-off): the bubble never covers the HUD
+import { clampBubbleY, clampBubbleSize } from '../bubbleclamp.js';
+import { STAR_LINE } from '../landmarks.js';   // council round 14 #5c (builder 3): with the star owned, he says it first   // council round 12 9.5 (builder 4's hand-off): the bubble never covers the HUD
 
 export const CAMEO = Object.freeze({
   RIDE_SECS: 30,          // the whole ride: board, up, the view, down, step off
@@ -57,6 +58,7 @@ function bubbleSprite(text) {
 export function createGaryCameo(scene) {
   let fig = null, tie = null, bubble = null, root = null;
   let rideT = -1, atReturn = null, bubbleT = 0, bubbled = false, clock = 0;
+  let starBubble = null, starNext = false, starSaid = false;   // council round 14 #5c: "A star. Named Gary. I'll allow it." once
   const BUBBLE_Y = 2.35, scratch = new THREE.Vector3();
   function build() {
     if (root) return;
@@ -73,10 +75,15 @@ export function createGaryCameo(scene) {
   return {
     // The Lift ride starts now (the Orbital's promotion beat).
     ride() { build(); rideT = 0; atReturn = null; fig.setCarry('none'); root.scale.setScalar(CAMEO.RIDE_SCALE); },
-    // He stands at the return (spot: {x, z}) until stand(null).
-    stand(spot) {
+    // He stands at the return (spot: {x, z}) until stand(null). star: the crew owns the star named Gary (landmark tier 5):
+    // his first bubble is the star line (once a session), then "Where do these go, boss?".
+    stand(spot, { star = false } = {}) {
       if (!spot) { atReturn = null; if (root && rideT < 0) root.visible = false; return; }
       build(); atReturn = spot; rideT = -1; bubbled = false; bubbleT = 0; fig.setCarry('bucket'); root.scale.setScalar(1);
+      if (star && !starSaid) {
+        if (!starBubble) { starBubble = bubbleSprite(STAR_LINE); starBubble.position.y = BUBBLE_Y; starBubble.visible = false; root.add(starBubble); }
+        starNext = true;
+      }
     },
     get riding() { return rideT >= 0 && rideT < CAMEO.RIDE_SECS; },
     get standing() { return !!atReturn; },
@@ -106,11 +113,18 @@ export function createGaryCameo(scene) {
       root.rotation.y = CAMEO.FACE;   // council round 12 #3d: facing the crew, beside the glass case
       tie.rotation.x = -0.35; tie.rotation.z = 0.25 + 0.04 * Math.sin(clock * 1.3);   // tie loose
       animatePerson(fig, dt, { mode: 'idle' });
-      if (!bubbled && firstNear(rats, atReturn)) { bubbled = true; bubbleT = CAMEO.BUBBLE_SECS; }
+      const near = firstNear(rats, atReturn);
+      if (!bubbled && near) { bubbled = true; bubbleT = CAMEO.BUBBLE_SECS * (starNext ? 2 : 1); }
       if (bubbleT > 0) bubbleT = Math.max(0, bubbleT - dt);
-      bubble.visible = bubbleT > 0;
+      // Council round 14 #5c: the star line for the first BUBBLE_SECS, then his usual line (one bubble at a time).
+      const starUp = starNext && bubbleT > CAMEO.BUBBLE_SECS;
+      if (starNext && bubbled && !starUp) { starNext = false; starSaid = true; }
+      if (starBubble) starBubble.visible = starUp;
+      bubble.visible = bubbleT > 0 && !starUp;
+      const shown = starUp ? starBubble : bubble;
       // At the return the root is at ground level, scale 1: the bubble's local y is its world height.
-      if (bubble.visible && camera) bubble.position.y = clampBubbleY(BUBBLE_Y, { x: atReturn.x, z: atReturn.z, half: bubble.scale.y / 2 }, camera, scratch);
+      if (shown.visible && camera) shown.position.y = clampBubbleY(BUBBLE_Y, { x: atReturn.x, z: atReturn.z, half: shown.scale.y / 2 }, camera, scratch);
+      if (shown.visible && camera) shown.material.opacity = clampBubbleSize(shown, camera, scratch, 2.6, 2.6 * 64 / 512);   // council round 14 6.2 (builder 4's hand-off): the giant bubble
     },
   };
 }

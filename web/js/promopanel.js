@@ -16,7 +16,7 @@ export const showPromo = promo => !!promo;
 export function promoPanelHtml(promo, { goals = null, cash = 0, signed = false, signedN = 0, onlineN = 1, declined = false, esc = s => String(s) } = {}) {
   if (!showPromo(promo)) return '';
   const rows = goals?.rows ?? [];
-  return '<div class="sheet promo"><h3>Goals for ' + esc(promo.next) + '</h3>' +
+  return '<div class="sheet promo"><h3>To reach ' + esc(promo.next)   /* round 14 6.9 (A #8) */ + '</h3>' +
     cardHtml(rows, { rewardNow: goals?.reward ?? 0, esc }) +
     (promo.ready ? '<button id="sign-btn"' + (signed ? '' : ' data-primary') + '>' + (signed ? 'Unsign' : 'Sign the franchise agreement') + ' (' + signedN + ' of ' + onlineN + ' signed)</button>'
         + (signed || declined ? '' : '<button id="notyet-btn" class="quiet" type="button">Not yet: one more day here</button>')
@@ -40,6 +40,7 @@ export const cardHeadline = goals => (goals?.rows?.length ? headline(goals.rows,
 // buried the tether), endless's Owner rows first, otherwise the SHOP order. maxed(item) -> bool.
 export const goalShopIds = rows => new Set((rows ?? []).filter(r => !r.done && GOALS[r.id]?.kind === 'buy').map(r => GOALS[r.id].row));
 export function shopSort(items, { endless = false, maxed = () => false } = {}) {
-  return items.map((item, i) => ({ item, i, k: (endless && item.endless ? 0 : 1) * 2 + (maxed(item) ? 1 : 0) }))
+  // council round 14 #5b (builder 3's hand-off): in endless the poach (the one daily repeatable) is listed first, above the fold
+  return items.map((item, i) => ({ item, i, k: endless && item.repeat === 'day' ? -1 : (endless && item.endless ? 0 : 1) * 2 + (maxed(item) ? 1 : 0) }))
     .sort((a, b) => a.k - b.k || a.i - b.i).map(x => x.item);
 }

@@ -18,6 +18,10 @@ export const TOURNEY = {
   FULL: 420,                    // the shift the AT times are written for (a short shift keeps the seconds-left)
   DODGE: 20,                    // s: a flight within this of a deal moves clear of it (earlier first)
   SECS: 30,                     // each ball's clock, from the drop
+  SECS_1P: 45,                  // council round 14 #3b (B #6: 2 of 12 banked solo): a solo Rat's clock
+  PAIR_1P: 30,                  // council round 14 #3b: solo, the flight's second ball lands within this of the first (the Gold Rush's rule)
+  GARY_WIN: 120, GARY_PAD: 5,   // council round 14 #3b (B #3): on a Gary day no flight lands in his warn..warn+WIN s; it moves
+                                // to the window's nearer edge ± PAD (Club Gary day: flight 2 at ~T-1:55)
   PAY: 45,                      // ball-weights a member's ball pays at a return. The council's ×25 assumed a ~$70 4P Club BV;
                                 // the bots measure ~$46 (×35 gave a 13 % share, ×50 16 %; ×45 puts a 4–6-of-6 crew at ~24 %: design/round15-club.md)
   N: [2, 2, 3, 3, 4, 4],        // balls a flight, by crew size 1..6
@@ -34,6 +38,10 @@ export const TOURNEY = {
 const clampN = n => Math.max(1, Math.min(TOURNEY.N.length, n | 0 || 1));
 export const flightN = n => TOURNEY.N[clampN(n) - 1];
 export const pondBall = n => (n | 0) >= TOURNEY.POND_FROM;
+// A ball's clock by crew size: 45 s solo, 30 s at 2P+.
+export const ballSecs = n => ((n | 0) <= 1 ? TOURNEY.SECS_1P : TOURNEY.SECS);
+// Gary's window on a Gary day, as shiftT [from, to]: his warn (GARY.AT of the shift: pass it in as `at`) to warn + GARY_WIN.
+export const garyWindow = (secs, at) => [secs * at, secs * at + TOURNEY.GARY_WIN];
 
 // Is today a Tournament day? venue 1, venueDay >= DAY, not endless, not Promotion Day, no boss today.
 export const tourneyDay = ({ venue, venueDay, endless = false, promo = false, boss = false } = {}) =>
@@ -41,15 +49,24 @@ export const tourneyDay = ({ venue, venueDay, endless = false, promo = false, bo
 
 // The flights' shiftT for a shift of `secs`, each moved clear of `deals` (shiftT of the deals: Last Call, the cleanup).
 // Written as seconds-left so a short shift keeps "T-5:00" (a shift shorter than that starts the flight at 0).
-export function flightTimes(secs = TOURNEY.FULL, deals = []) {
+// Council round 14 #3b: `gary` ([from, to] shiftT, garyWindow) on a Gary day: a flight inside it moves to the nearer edge
+// ± GARY_PAD first (the far edge if the near one is off the shift), then dodges the deals without going back inside.
+export function flightTimes(secs = TOURNEY.FULL, deals = [], gary = null) {
   const out = [];
+  const inGary = t => !!gary && t > gary[0] - TOURNEY.GARY_PAD + 1e-9 && t < gary[1] + TOURNEY.GARY_PAD - 1e-9;
+  const nearDeal = t => deals.some(d => Math.abs(t - d) < TOURNEY.DODGE - 1e-9);
   for (const at0 of TOURNEY.AT) {
     let at = Math.max(0, secs - (TOURNEY.FULL - at0));
-    const near = d => Math.abs(at - d) < TOURNEY.DODGE - 1e-9;
-    const clash = deals.find(near);
-    if (clash != null) {
+    if (inGary(at)) {
+      const early = gary[0] - TOURNEY.GARY_PAD, late = gary[1] + TOURNEY.GARY_PAD;
+      const ok = t => t >= 0 && t < secs;
+      at = (at - gary[0] <= gary[1] - at ? ok(early) : !ok(late)) ? early : late;
+    }
+    if (nearDeal(at)) {
+      const clash = deals.find(d => Math.abs(at - d) < TOURNEY.DODGE - 1e-9);
       const early = clash - TOURNEY.DODGE, late = clash + TOURNEY.DODGE;
-      at = early >= 0 && !deals.some(d => Math.abs(early - d) < TOURNEY.DODGE - 1e-9) ? early : late;
+      const good = t => t >= 0 && !nearDeal(t) && !inGary(t);
+      at = good(early) ? early : good(late) ? late : early >= 0 && !nearDeal(early) ? early : late;
     }
     out.push(at);
   }
@@ -70,11 +87,22 @@ const FALLBACK = [{ x: -30, z: -100 }, { x: 30, z: -64 }, { x: -50, z: -150 }, {
 
 // The flight's landing spots: [{ x, z, pond, side }]. The land balls alternate left (x < 0) and right, starting left, so
 // any flight has one each side; at 3P+ the last one is in the pond. hash32(day, vday, 'm', flight, j, k): no RNG draw.
+// Council round 14 #3b: solo (n 1) the second ball lands APART..PAIR_1P m from the first instead (one Rat takes both).
 export function memberSpots(day, vday, flight, n = 4) {
   const N = flightN(n), pond = pondBall(n), land = pond ? N - 1 : N, out = [];
   for (let j = 0; j < land; j++) {
     const side = j % 2 === 0 ? -1 : 1;
     let spot = null;
+    if ((n | 0) <= 1 && j > 0) {
+      const a0 = out[0];
+      for (let k = 0; k < 60 && !spot; k++) {
+        const h = hash32(day | 0, vday | 0, 'm1', flight | 0, j, k);
+        const a = (h % 3600) / 3600 * Math.PI * 2, r = TOURNEY.APART + 1 + (((h >>> 12) % 1000) / 1000) * (TOURNEY.PAIR_1P - TOURNEY.APART - 2);
+        const x = a0.x + Math.cos(a) * r, z = a0.z + Math.sin(a) * r;
+        if (z <= -TOURNEY.NEAR && z >= -TOURNEY.FAR && clearSpot(x, z)) spot = { x, z };
+      }
+      if (spot) { out.push({ x: Math.round(spot.x * 100) / 100, z: Math.round(spot.z * 100) / 100, pond: false, side: Math.sign(spot.x) || 1 }); continue; }
+    }
     for (let k = 0; k < 40 && !spot; k++) {
       const h = hash32(day | 0, vday | 0, 'm', flight | 0, j, k);
       const z = -(TOURNEY.NEAR + ((h % 1009) / 1008) * (TOURNEY.FAR - TOURNEY.NEAR));
@@ -123,7 +151,21 @@ export const BONUS_ALERT = 'Bonus flight! The bell has spoken.';
 export const flightAlert = (k, bonus = false) => (bonus ? BONUS_ALERT : FLIGHT_ALERT[Math.min(FLIGHT_ALERT.length - 1, k | 0)]);
 export const CLEAN_LINE = 'Clean flight! The members are appalled.';   // the feed (not centre text)
 export const CLAIM_LINE = 'The caddie cart took one. Kazoo.';          // the feed
-// The morning memo's second line on the first Tournament day (builder 4's memoSecond `note` slot).
+// The morning memo's second line on the first Tournament day. Council round 14 #3b (B #2): it rides memoSecond's
+// `event` slot (crew.memoEvent, builder 4), which beats the day-4 kinds line; the kinds float "NEW ×1.5" instead.
 export const TOURNEY_MEMO = "Members' Tournament today. Site 13 entered anyway.";
+// Council round 14 #3b: the eve line on the night before the first Tournament day (builder 4's tomorrowText, after the
+// MOW-E branch, before Gary's). 6 words. tourneyEveDue: tomorrow (venue, venueDay) is a Tournament day and the crew
+// has never had one (seen: the module's saved flag, set on the first Tournament morning).
+export const TOURNEY_EVE_LINE = "Tomorrow: the Members' Tournament. Bring friends.";
+export const tourneyEveDue = ({ venue, venueDay, endless = false, promo = false, boss = false, seen = false } = {}) =>
+  !seen && tourneyDay({ venue, venueDay, endless, promo, boss });
+// Council round 14 #3b (B #5): the report row (item 0's reportRows hook), ≤ 8 words before the number.
+// { text: "Members' balls 3 of 4", cash } or { text: 'The caddie took all 4. Kazoo.' }; null with no ball out.
+export function tourneyRow({ out = 0, banked = 0, cash = 0 } = {}) {
+  if (!(out > 0)) return null;
+  if (!(banked > 0)) return { text: `The caddie took all ${out}. Kazoo.` };
+  return { text: `Members' balls ${banked} of ${out}`, cash: Math.round(cash * 100) / 100 };
+}
 // The carry chip / prompt (≤ 8 words): "Member's ball ×2 → a return".
 export const carryLine = n => `Member's ball${n === 1 ? '' : 's'} ×${n} → a return`;

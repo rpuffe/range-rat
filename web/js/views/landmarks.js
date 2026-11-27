@@ -10,13 +10,14 @@
 //   5 a star named Gary: five stars spelling GARY over the Lift (over the glass case in endless). One Points draw.
 // Xbox budget: the bell 2 meshes, the wall 2, the racks 1 InstancedMesh, the sparks 1 Points, the star 1 Points.
 import * as THREE from 'three';
-import { BELL, BELL_PROMPT, LANDMARK, landmarkTier, STAR } from '../landmarks.js';
+import { BELL, BELL_PROMPT, BELL_VENUES, bellStateOf, LANDMARK, landmarkTier, STAR, STAR_CARD, STAR_TILT } from '../landmarks.js';
 import { SECTIONS } from '../stadium.js';
 import { CASE } from '../caserules.js';
 
 const SPARKS = 160, BURST = 40, BURST_SECS = 1.8;
 const RACK_X = 82, RACK_Y = 6.7;
 const near = (me, p, r) => !!me && Math.hypot(me.x - p.x, me.z - p.z) <= r;
+const bellHere = (venue, endless) => BELL_VENUES.includes(venue) && !endless;
 
 // GARY in a 5 × 7 dot font, as points (one Points draw call).
 const GLYPH = {
@@ -88,7 +89,7 @@ export default {
       wall.visible = tier >= LANDMARK.TAP && venue >= 2;          // the deck stands from Tiered
       racks.visible = tier >= LANDMARK.FIREWORKS && venue >= 3;    // and the stands from the Stadium (the County hides the right one: kept)
       star.visible = tier >= LANDMARK.STAR && venue >= 5;
-      if (endless) star.position.set(CASE.x, 34, CASE.z); else star.position.set(STAR.x, STAR.y, STAR.z);
+      if (endless) star.position.set(CASE.x, STAR_TILT.Y, CASE.z); else star.position.set(STAR.x, STAR.y, STAR.z);
     };
     const ring = () => { swingT = 0; ctx.SFX?.bell?.(523); };
 
@@ -96,13 +97,17 @@ export default {
       show(on) { root.visible = on; },
       onSnapshot(s, mine) {
         const t = landmarkTier(s?.up ?? ctx.crew?.()?.up), v = s?.venue ?? 0, e = !!s?.endless;
-        bellState = s?.mods?.tourney?.bell ?? 0;
+        bellState = bellStateOf(s);
         if (t !== tier || v !== venue || e !== endless) { tier = t; venue = v; endless = e; apply(); }
         void mine;
       },
       onEvent(e) {
-        if (e.t === 'buy' && e.id === 'landmark') { ctx.SFX?.jackpot?.(); return; }
-        if (tier >= LANDMARK.BELL && e.t === 'tourney' && e.phase === 'bell') ring();
+        if (e.t === 'buy' && e.id === 'landmark') {
+          ctx.SFX?.jackpot?.();
+          if (e.level === LANDMARK.STAR) ctx.say?.('PA', STAR_CARD, { key: 'star' });   // council round 14 #5c: Gary's line, the next centre item
+          return;
+        }
+        if (tier >= LANDMARK.BELL && (e.t === 'tourney' || e.t === 'happy') && e.phase === 'bell') ring();   // round 14 #3a: Tiered's ring is Happy Hour's
         if (tier >= LANDMARK.BELL && venue >= 2 && ((e.t === 'crowd' && e.kind === 'stretch') || (e.t === 'inspect' && e.phase === 'start'))) ring();   // the bell rings for the peak
         if (tier >= LANDMARK.FIREWORKS && e.t === 'crowd') {
           if (e.kind === 'souv' && e.stretch && e.req) rocket('ABCDEF'.indexOf(e.req));
@@ -131,10 +136,10 @@ export default {
         if (live) sgeo.attributes.position.needsUpdate = true; else sparks.visible = false;
         if (star.visible) star.material.opacity = 0.75 + 0.25 * Math.sin(t * 1.3);
       },
-      // Ⓐ at the bell, at the Club: ring a bonus flight (the server checks the window; bellState 1 = open).
-      prompt(btn) { return tier >= LANDMARK.BELL && venue === 1 && !endless && bellState === 1 && near(ctx.me, BELL.POST, BELL.R) ? BELL_PROMPT.replace('Ⓐ', btn) : null; },
+      // Ⓐ at the bell, at the Club or Tiered: ring a bonus round (the server checks the window; bellState 1 = open).
+      prompt(btn) { return tier >= LANDMARK.BELL && bellHere(venue, endless) && bellState === 1 && near(ctx.me, BELL.POST, BELL.R) ? BELL_PROMPT.replace('Ⓐ', btn) : null; },
       use() {
-        if (tier < LANDMARK.BELL || venue !== 1 || endless || bellState !== 1 || !near(ctx.me, BELL.POST, BELL.R)) return false;
+        if (tier < LANDMARK.BELL || !bellHere(venue, endless) || bellState !== 1 || !near(ctx.me, BELL.POST, BELL.R)) return false;
         ctx.act?.({ t: 'bell' });
         return true;
       },

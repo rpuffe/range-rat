@@ -174,7 +174,10 @@ export const BOSS = {
   // Corporate's bounty, 10 × BV.
   PAYX: 1.5, GOLD: 5, GOLD_R: 6, FOUNT_R: 8, BOUNTY: 10,   // council round 13 #3d: the fountain ×2 → ×1.5 (BURST_MULT)
   CATCHER_3P: 24,           // council round 13 #3d: the catcher's cap at 3P+ (4P medians were still 14 % at ×1.5)
-  PROMO_AT: 180 / 420,      // council round 13 #3c: MOW-E 2.0 crashes Promotion Day at T−4:00 (after the ceremony's morning)
+  PROMO_AT: 60 / 420,       // council round 14 #4a: MOW-E 2.0 crashes Promotion Day at T−6:00 (right after the morning), so the day runs crash → Gary → Stretch
+  SETTLE: 11,               // round 14 #4b: Gary's warn waits this long after the fight ends (bossSettled), so the loss line owns its seconds (lead: 8 -> 11 gives the full ~5 s quiet)
+  LOST_SECS: 3,             // round 14 #4b: the loss line's minimum on screen (after the stamp)
+  MOWED_GAP: 20,            // round 14 #4d: "Mowed again!" at most once per this many seconds
   STANDS_EXIT: { x: -78, z: -70 },   // ...and, lost, drives off through the left stands (it took the bunting)
   LIMP: 6, LIMP_SECS: 8.5, HOME: 5, SINK: 3, AFTER: 30,   // the outros (m/s; the limp speeds up to reach the pond in 8.5 s)
   ENCORE_HP: 1, ENCORE_SPEED: 1.1,
@@ -221,7 +224,10 @@ export const BOSS_LINES = {
   brought: n => `MOW-E brought ${n} home.`,
   // #3b, the report's Tomorrow line
   eve: 'Tomorrow: MOW-E finishes its update.',
-  rematchEve: "Tomorrow: MOW-E's rematch. Wands at the bell.",
+  rematchEve: "Tomorrow: MOW-E's rematch. Grab a wand early.",   // round 14 #4e (A #10)
+  // round 14 #4d: the knockdown line, once a fight, then the short repeat (the flash and the sound carry the rest)
+  mowed: 'Mowed. It was trained on your movements.',
+  mowedAgain: 'Mowed again!',
 };
 
 const clampN = n => Math.max(1, Math.min(6, Math.floor(Number(n) || 1)));
@@ -250,6 +256,18 @@ export const bossDue = ({ shiftT, shiftSecs, mower = null, ...day }) => !mower &
 export const isCrash = day => !!day.promo && bossDay(day) === 'encore';
 // Council round 13 #3f: the boss owns the screen from the warn to the stamp (builder 3's centre.js mutes the nags).
 export const bossOwnsScreen = s => bossLive(s);
+// Council round 14 #4b: the fight is over and has been for `secs` (since it fled or was tamed). No boss today: settled.
+// stepBoss counts s.t up from 0 in the outros (setPhase and moweLose both zero it).
+export const bossSettled = (s, secs = BOSS.SETTLE) => !s || s.kind !== 'boss' || (!bossLive(s) && (s.t ?? 0) >= secs);
+// Council round 14 #4d: the mowed line. st: { n, at } per fight (reset() on the warn); t: seconds (any clock). The first
+// knockdown in a fight gets the long line, a later one "Mowed again!" at most once per MOWED_GAP, else null.
+export function mowedLine(st, t) {
+  if (!st) return BOSS_LINES.mowed;
+  if (!(st.n > 0)) { st.n = 1; st.at = t; return BOSS_LINES.mowed; }
+  st.n++;
+  if (t - st.at < BOSS.MOWED_GAP) return null;
+  st.at = t; return BOSS_LINES.mowedAgain;
+}
 
 // The near lanes' serpentine: along -14, back along -24, along -36, back along -24, and round again.
 const WP = (() => { const [a, b, c] = BOSS.LANES, { X0, X1 } = BOSS; return [[X0, a], [X1, a], [X1, b], [X0, b], [X0, c], [X1, c], [X1, b], [X0, b]].map(([x, z]) => ({ x, z })); })();

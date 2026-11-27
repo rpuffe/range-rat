@@ -11,12 +11,15 @@ import { atFieldReturn } from '../web/js/layout.js';   // council round 10 §C: 
 import crypto from 'node:crypto';
 import { migrateBays, syncBayFixtures, fixtureBuilt, matIndex, BASE_LINE } from '../web/js/bays.js';   // round 11 (owner): Build more bays
 import { SIM, LINE, activeMats, activeUpper, mulberry32, swingGap, launch, spill, advanceBall, ballHitsPlayer, atStand, clampToField,
-  SHOP_BY_ID, nextPrice, shopDay, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
+  SHOP_BY_ID, nextPrice, shopDay, shopVday, perks, HELPER_NAMES, CART, BAYS, BAY_REACH, swingLaunch, ballHitsCart,
   gearPerks, HELPER_POCKET, WASH, ballValue, SPRINT, FIXTURES, FIXTURE_BY_ID, KIND_W, BALLS_OUTSTANDING, payFor,
   upkeepCeiling, quotaQ, LAST_CALL, CLEANUP, MAT_NIGHT_CAP, BUCKETS, GARY, POND, inPond, onDock, pondClarity, leadLaunch, FRIES, atShed, pickKind,
   VENUE_RULES, ONE_YEAR, venueQuotaF, shiftSecsFor, WASHER, WASHER_HANDLES, atHandle, gearGrimeFactor, cartGearOf, BANK } from '../web/js/sim.js';
 import { keepInField, cartBlocked, driftEvent, stepDrift, wadeFactor, cartSpeedAt, MAP, creekProject, creekPoint } from '../web/js/map.js';
 import { VenueHooks, MODULES } from './venues/index.mjs';
+import { tourneyEve } from './venues/tourney.mjs';   // council round 14 #3b (builder 3's hand-off): the Tournament's eve line
+import { RUSH_EVE } from '../web/js/goldrush.js';      // council round 14 #1 (builder 2's hand-off): the Gold Rush's eve line
+import { endingReadyFrom, ENDING_READY_SECS } from '../web/js/dayend.js';   // council round 14 6.7 (builder 4): the end card's hold
 import { halfLapPose } from '../web/js/autopilot.js';   // playthrough 5 C6
 import { debrisLeft } from './venues/orbit.mjs';
 import { ORBIT, debrisBalls, skyToClear } from '../web/js/orbit.js';
@@ -34,7 +37,7 @@ import { targetPct, memoLine, spotlessGain, reviewPcts, upkeepMet, bootsMud } fr
 import { basketMax } from '../web/js/basket.js';   // round 11 (builder "today"): Ball Shortage
 import { newBasket, takeBucket, holdFill, stepBasket, machineProgress } from '../web/js/basket.js';   // owner playtest 3 §3.3
 import { machineSecs } from '../web/js/sim.js';   // round 11: the filler row's seconds a bucket
-import { mowerDue, newMower, stepMower, BOSS, bossDay, bossDue, newBoss, stepBoss, hoseBoss, bossPayout, bossLive, BOSS_LINES, tameDue, newTame, stepTame, moweSnap, cleanMowe, updateSnap, atPost, whistleOpen,
+import { mowerDue, newMower, stepMower, BOSS, bossDay, bossDue, newBoss, stepBoss, hoseBoss, bossPayout, bossLive, bossSettled, BOSS_LINES, tameDue, newTame, stepTame, moweSnap, cleanMowe, updateSnap, atPost, whistleOpen,
   bossAt, rematchNext, lostLine, moweEve, newWhistlePass, canBlow } from '../web/js/mowe.js';   // council round 11 #1: the boss, the tame pet; round 12: the update bar, the whistle; round 13: the loss path, the crash, the aimed whistle
 import { nearestReturn } from '../web/js/layout.js';
 import { menuFor, yieldFor, garyEats, serveFloat } from '../web/js/menu.js';
@@ -574,9 +577,11 @@ export class Crew {
   // overnight it's for tomorrow (the shop's day). server/venues/poach.mjs runs the day: their bay, the target's cut.
   buyPoach(p) {
     const day = shopDay(this.phase, this.day);
-    const price = poachPrice({ endless: this.endless, records: this.records, day, poachDay: this.poachDay ?? null });
+    const weekPoaches = this.records.rival?.pw ?? 0;   // council round 14 #5a (builder 3): ×1.5 for each poach this rival week
+    const price = poachPrice({ endless: this.endless, records: this.records, day, poachDay: this.poachDay ?? null, weekPoaches });
     if (price === null || price > this.cash) return false;
     this.cash = cents(this.cash - price); this.poachDay = day; this.dirty = true;
+    if (this.records.rival) this.records.rival.pw = weekPoaches + 1;
     this.events.push({ t: 'buy', by: p.id, id: 'poach', level: 1, price, day });
     return true;
   }
@@ -586,7 +591,7 @@ export class Crew {
     if (id === 'poach') return this.buyPoach(p);   // council round 13 #4b (builder 2): a once-a-day repeatable, priced off yesterday
     const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
     if (!item) return false;
-    const price = nextPrice(id, this.up, this.onlineCount(), id === 'dive' ? p.dive : p.gear, this.venue, shopDay(this.phase, this.day), this.endless, worldVday(this.venue, shopDay(this.phase, this.venueDay), this.endless));
+    const price = nextPrice(id, this.up, this.onlineCount(), id === 'dive' ? p.dive : p.gear, this.venue, shopDay(this.phase, this.day), this.endless, worldVday(this.venue, shopVday(this.phase, this.venueDay), this.endless));
     if (price === null || price > this.cash) return false;
     if (this.todo) this.todo.buy = true;
     this.cash = cents(this.cash - price);
@@ -751,11 +756,18 @@ export class Crew {
     if (this.phase === 'lobby') return this.startShift();
     if (this.phase !== 'report') return;
     this.ready.add(p.id);
-    if (!this.readyAt) this.readyAt = this.now();
+    // Council round 14 6.7 (C #9, builder 4): on the ENDING report a press is only recorded ("3 / 4 ready") until the
+    // end card has been up ENDCARD_HOLD s (this.endingHold); the ready timer starts the 30 s countdown then.
+    const endHeld = this.endingHeld();
+    if (!this.readyAt && !endHeld) this.readyAt = this.now();
     const online = this.online();
-    this.events.push({ t: 'ready', n: this.ready.size, of: online.length, t0: READY_SECS, ...(this.promoHolds() ? { held: true } : {}) });
-    if (online.every(o => this.ready.has(o.id)) && !this.promoHolds()) this.startShift();
+    this.events.push({ t: 'ready', n: this.ready.size, of: online.length, t0: this.readySecs(), ...(this.promoHolds() || endHeld ? { held: true } : {}) });
+    if (online.every(o => this.ready.has(o.id)) && !this.promoHolds() && !endHeld) this.startShift();
   }
+
+  // Council round 14 6.7: the ending report holds Ready until the end card has had its 10 s; its countdown is 30 s.
+  endingHeld() { return this.phase === 'report' && !!this.report?.ending && this.now() < (this.endingHold ?? 0); }
+  readySecs() { return this.report?.ending ? ENDING_READY_SECS : READY_SECS; }
 
   // A promotion is ready to sign and not every online Rat has signed: { n, of }, else null.
   awaitingSignatures() {
@@ -1148,7 +1160,7 @@ export class Crew {
       p.shift = freshShift(); p.grime = 0;
       const own = this.cartOf(p); if (own) own.driver = null;
       p.diving = false; p.wand = false;
-      { const c = clockInSpot(this.venue, slot++, this.endless); p.x = c.x; p.z = c.z; p.yaw = 0; }   // council round 12, 4a (builder 4): late venues clear the deck
+      { const c = clockInSpot(this.venue, slot++, this.endless); p.x = c.x; p.z = c.z; p.yaw = c.yaw ?? 0; }   // council round 12, 4a (builder 4): late venues clear the deck; round 14 6.3: facing down-range
     }
     if (this.day > 1) { this.morningMud(); this.fries = Math.floor(this.fries / 2); }   // the fries went cold overnight
     // Round 11 (expert XS): a solo Rat who only reacts to Gary's warning must be able to pass. On a solo Gary morning the
@@ -1192,8 +1204,9 @@ export class Crew {
       kindNew: kindNewLine(opening), mowe: this.moweMemo ?? (this.bossToday() ? MEMO_LINES.moweUpdate : null), flavor: memoFlavor(this.day, this.venue, this.endless, this.rng),
       // Council round 12 (builder 4's hooks): the endless contract names itself (6c); memoNote (builder 2: the inspector)
       // and memoNews (builder 3: Site 13's week) are one-morning lines other modules set on the crew.
-      contract: this.endless && this.contract ? contractMemo(goalText(this.contract.goal)) : null, note: this.memoNote ?? null, news: this.memoNews ?? null });
-    this.moweMemo = null; this.memoNote = null; this.memoNews = null;   // builder 1's MOW-E line (Employee of the Month, sends his regards): one morning only
+      contract: this.endless && this.contract ? contractMemo(goalText(this.contract.goal)) : null, note: this.memoNote ?? null, news: this.memoNews ?? null,
+      event: this.memoEvent ?? null });   // council round 14 #0b (builder 4): today's event line (a module's startShift sets it)
+    this.moweMemo = null; this.memoNote = null; this.memoNews = null; this.memoEvent = null;   // one morning only (builder 1's MOW-E line too)
     const told = !this.pendingReveal && !second.lost;   // a kind the memo didn't name floats its name on its first hit
     this.toldKinds = new Map(opening.map(k => [k, told])); for (const k of opening) this.debuts.add(k);
     const midAM = midDue({ venue: this.venue, venueDay: this.venueDay, endless: this.endless, promoDay: isPromotionDay(this), today: this.today, reveal: !!this.pendingReveal || !!this.endlessFresh, lastBucket: lbAM || !!this.lastBucket, boss: !!this.bossToday() });
@@ -1725,7 +1738,7 @@ export class Crew {
     if (this.garyDay !== this.day) return;   // owner playtest 3 §6.2: every 2–3 days (garyDay), from Muni day 4 (the Orbital too)
     const g = this.gary;
     if (!g) {
-      if (this.shiftT >= this.shiftSecs * GARY.AT && !bossLive(this.mower)) {   // council round 13 #3c (builder 1): on the crash day his warn waits for the fight
+      if (this.shiftT >= this.shiftSecs * GARY.AT && bossSettled(this.mower)) {   // council round 13 #3c / round 14 #4b (builder 1): his warn waits for the fight, then 8 s more (the loss line's beat)
         // Playthrough 4 A18: solo, he inspects only the two muddiest mats in play (named now) and warns for longer.
         const solo = this.onlineCount() === 1;
         this.gary = { phase: 'warn', t: solo ? GARY.SOLO_WARN : GARY.WARN_SECS, x: GARY.START.x, z: GARY.START.z, yaw: Math.PI / 2, stop: 0, pause: 0, fails: 0, checks: [], stalls: 0,
@@ -2406,7 +2419,12 @@ export class Crew {
     // Rat has signed, the ones who signed carry it (one Rat gone idle at the keyboard can't stall the crew for ever);
     // with nobody signed it waits for a signature or a "Not yet".
     if (this.phase === 'report' && this.readyAt && now - this.readyAt >= READY_HOLD_SECS * 1000 && this.promoHolds() && this.signed.size > 0) this.promote();
-    if (this.phase === 'report' && this.readyAt && now - this.readyAt >= READY_SECS * 1000 && !this.promoHolds()) this.startShift();
+    // round 14 6.7: the ending's hold over, early presses start the countdown (or the shift, if everyone pressed)
+    if (this.phase === 'report' && !this.readyAt && this.ready.size && this.report?.ending && !this.endingHeld()) {
+      this.readyAt = now;
+      if (this.online().every(o => this.ready.has(o.id)) && !this.promoHolds()) this.startShift();
+    }
+    if (this.phase === 'report' && this.readyAt && now - this.readyAt >= this.readySecs() * 1000 && !this.promoHolds()) this.startShift();
     if (this.phase === 'shift' && this.clockOut?.size) this.checkClockOut();   // playthrough 5: a Rat left, or the card went undone
     if (this.phase === 'shift' && this.shiftT >= this.shiftSecs) {
       // Playthrough 3 #3: the sky gate at the bell holds the clock (the Lift and the tether keep working) so the finale
@@ -2522,15 +2540,19 @@ export class Crew {
       if (rivalRes) rivalRes.week = { wins: rb.rival.wins, days: rb.rival.days, acquired: rb.acquired };
     }
     for (const k of Object.keys(this.stats)) this.totals[k] = (this.totals[k] ?? 0) + this.stats[k];
+    const modRows = this.mods.reportRows(ending);   // council round 14 #0b (builder 4): the modules' report rows (index.mjs, ≤ 2)
     this.report = { day: this.day, ...this.stats, left: this.ballsLeft(), bank: this.cash, quota, record, ...(spotless ? { spotless } : {}), ...(race ? { race: race.result } : {}),
       ...(rivalRes ? { rival: rivalRes } : {}),   // council round 12 #8: Site 13's bell
       ...(this.moweReport?.day === this.day ? { mowe: this.moweReport } : {}),   // council round 13 #3a (builder 1): the report's MOW-E row
+      ...(modRows.length ? { rows: modRows } : {}),   // council round 14 #0b: after the MOW-E row, above the goals
       ledger: this.ledger(), promo: this.promoInfo(), venue: this.venue, title: this.title(), ...(this.earlyBell ? { early: this.earlyBell } : {}),   // playthrough 5: clocked out early (s)
       // Playthrough 4 C2: a held bell where the sky stayed up says what's left, not "more balls".
       tomorrow: this.lastBucket?.phase === 'sky' && !this.endless ? 'Tomorrow: clear the sky. Ball No. 1 waits.'
         : tomorrowText(this.day + 1, this.venue, this.endless, !!this.promoInfo()?.ready, !this.endless && this.venue !== 5 && garyMorning(this.garyDay, this.day + 1) === this.day + 1,
           this.endless ? null : tomorrowLine(this.goalRows(), this.venue), this.garyBack,
-          this.endless ? null : moweEve(bossDay({ venue: this.venue, venueDay: this.venueDay + 1, st: this.moweSt }), this.moweSt)) };   // round 13 #3b (builder 1)
+          this.endless ? null : moweEve(bossDay({ venue: this.venue, venueDay: this.venueDay + 1, st: this.moweSt }), this.moweSt),   // round 13 #3b (builder 1)
+          this.endless ? null : tourneyEve(this)) };   // round 14 #3b: after MOW-E's eve, before Gary's
+    this.endingHold = ending ? endingReadyFrom(this.now()) : 0;   // round 14 6.7: the ending report's Ready waits for the end card
     if (ending) this.report.ending = { days: this.day, banked: this.totals.deposited, commendations: this.commendations, quotas: (this.totals.reviews ?? 0) + this.reviews };
     this.settleToday(ending);   // round 11 (builder "today"): Today's line, the endless contract, the night card
     this.dirty = true;
@@ -2578,7 +2600,7 @@ export class Crew {
       ...this.mods.collect('awards')];   // venue modules' awards key off their own p.shift counters
     const award = new Map();
     for (const [name, key] of AWARDS) {
-      const best = rats.filter(r => !award.has(r.id) && (key === 'banked' || r.shift[key] > 0))
+      const best = rats.filter(r => !award.has(r.id) && r.shift[key] > 0)   // council round 14 #4e (builder 1, A #7): Employee of the Shift needs > 0 banked too
         .sort((a, b) => b.shift[key] - a.shift[key])[0];
       if (best) award.set(best.id, name);
     }
@@ -2635,7 +2657,7 @@ export class Crew {
       promo: this.promoInfo(), revealT: +this.revealT.toFixed(1),
       promotedTo: this.phase === 'report' && this.pendingReveal ? VENUE_RULES[this.pendingReveal]?.name ?? null : null,   // the report says so (playtest)
       // While the signatures hold the Ready Up timer: no countdown, and `sigWait` {n, of} ("Waiting for signatures").
-      readyIn: this.phase === 'report' && this.readyAt && !this.promoHolds() ? Math.max(0, Math.ceil(READY_SECS - (now - this.readyAt) / 1000)) : null,
+      readyIn: this.phase === 'report' && this.readyAt && !this.promoHolds() ? Math.max(0, Math.ceil(this.readySecs() - (now - this.readyAt) / 1000)) : null,
       sigWait: this.phase === 'report' && this.readyAt && this.promoHolds() ? this.awaitingSignatures() : null,
       // Playthrough 5 A1: the crew said "Not yet" to the promotion at this report (Ready then starts the day).
       ...(this.phase === 'report' && this.notYet ? { notYet: true } : {}),
@@ -2747,13 +2769,14 @@ function memoFlavor(day, venue, endless, rng) {
 // garyBack: a Gary goal is still open after his visit, so he comes back tomorrow.
 // Council round 13 #3b (builder 1): mowe is MOW-E's eve line (mowe.js moweEve: the boss eve, the rematch eve), ahead of Gary's.
 // A Promotion Day's line (promoBell, after this) still replaces it: the crash is a surprise.
-function tomorrowText(day, venue, endless, ready = false, gary = false, card = null, garyBack = false, mowe = null) {
+function tomorrowText(day, venue, endless, ready = false, gary = false, card = null, garyBack = false, mowe = null, event = null) {
   if (endless) return 'Tomorrow: Range Rats LLC opens as usual. The job never ends.';
   if (day === 2) return 'Tomorrow: a target. Hose before the bell.';
-  if (day === 3) return 'Tomorrow: the first gold balls. Worth ten.';
+  if (day === 3) return RUSH_EVE;   // council round 14 #1: "Tomorrow: a Gold Rush. Gold balls, worth ten." (was "the first gold balls")
   if (day === 4 && venue === 0) return 'Tomorrow: Gary from Regional. Clean, then huddle.';   // owner playtest 3 §6.1 (it was 13 words)
   if (ready && card) return card;
   if (mowe) return mowe;
+  if (event) return event;   // council round 14 #3b: the Tournament's eve
   if (garyBack) return 'Gary will be back tomorrow.';   // round 10 #1: a Gary goal still open
   if (gary) return 'Tomorrow: Gary visits. Clean, then huddle.';   // §6.2: a visit's eve
   if (card) return card;

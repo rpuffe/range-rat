@@ -1,0 +1,199 @@
+{
+ "id": "club4-2p",
+ "label": "Range Club · day 4 · 2P crew",
+ "made": "2026-11-27",
+ "bot": "2P seed 7, morning snap",
+ "players": 2,
+ "save": {
+  "v": 5,
+  "day": 8,
+  "cash": 34699.07,
+  "totals": {
+   "picked": 4305,
+   "deposited": 3274,
+   "cash": 88237.14,
+   "knockdowns": 132,
+   "helped": 1136,
+   "carted": 407,
+   "swings": 0,
+   "pings": 0,
+   "runOver": 36,
+   "washed": 100.6,
+   "scrubbed": 2537,
+   "unwashed": 274,
+   "lostPremium": 6531.469999999999,
+   "reviews": 3,
+   "launched": 5563,
+   "filled": 234,
+   "spotless": 65.4,
+   "rushOut": 7,
+   "rushClaimed": 7,
+   "sealCash": 2910.04,
+   "fries": 461,
+   "served": 21,
+   "dogs": 20,
+   "fedCash": 3676.46,
+   "dived": 126,
+   "snags": 51
+  },
+  "up": {
+   "gear": 3,
+   "build": 3,
+   "cart": 1,
+   "shed": 3,
+   "helpers": 3,
+   "washer": 3,
+   "wand": 2,
+   "filler": 2,
+   "ads": 2,
+   "shoes": 2,
+   "hardhat": 1,
+   "returns": 2,
+   "pond": 1,
+   "amen": 1
+  },
+  "diveByName": {
+   "Rat 1": 2,
+   "Rat 2": 2
+  },
+  "lostFound": [
+   "keys",
+   "trophy"
+  ],
+  "commendations": 7,
+  "reviews": 3,
+  "pondSunk": 60,
+  "fries": 20,
+  "goals": {
+   "venue": 1,
+   "scale": 0.6,
+   "crew": 2,
+   "need": {
+    "fed": 180,
+    "treasures": 2,
+    "reviews": 3
+   },
+   "n": {
+    "fed": 180,
+    "reviews": 3,
+    "treasures": 2,
+    "seal": 1
+   },
+   "done": [
+    "fed",
+    "seal",
+    "treasures",
+    "reviews"
+   ],
+   "who": []
+  },
+  "venue": 1,
+  "venueDay": 3,
+  "outstanding": 3013373665,
+  "pendingReveal": 0,
+  "endless": false,
+  "garyDay": 8,
+  "fixtures": {
+   "sign": 0.112,
+   "stand": 0.064,
+   "mat0": 0,
+   "mat1": 0,
+   "mat2": 0.462,
+   "mat3": 0,
+   "mat4": 0,
+   "mat5": 0,
+   "mat6": 0,
+   "mat7": 0.21,
+   "mat8": 0,
+   "mat9": 0,
+   "mat10": 0.564,
+   "mat11": 0.558,
+   "mat12": 0.588,
+   "mat13": 0.564
+  },
+  "records": {
+   "cash": 31164.87,
+   "banked": 381,
+   "day": 6,
+   "curve": [
+    0,
+    346.02,
+    1183.05,
+    2425.07,
+    3250.36,
+    4191.67,
+    13666.28,
+    18888.04,
+    21229.71,
+    21912.88,
+    22665.18,
+    24785.57,
+    26699.51,
+    31164.87
+   ]
+  },
+  "voiced": [
+   "welcome",
+   "glow",
+   "cart",
+   "garyIntro",
+   "gary",
+   "huddle",
+   "club",
+   "treasure",
+   "rogue"
+  ],
+  "debuts": [
+   "glow",
+   "gold",
+   "square",
+   "lead"
+  ],
+  "mowe": {
+   "tame": true,
+   "lost": 0,
+   "encore": false,
+   "beat": true,
+   "memo": "MOW-E sends his regards. Whistle at the post."
+  },
+  "story": [
+   "cold",
+   "mid:0",
+   "promo:1",
+   "mid:1"
+  ],
+  "mods": {
+   "deck": {
+    "last": 1
+   }
+  },
+  "night": {
+   "minutes": 21,
+   "fromDay": 5,
+   "day": 7,
+   "shifts": 3,
+   "venue": 1,
+   "title": "Club Retrieval Associate",
+   "balls": 1003,
+   "cash": 76489.44,
+   "knockdowns": 69,
+   "falls": 0,
+   "treasures": 2,
+   "rats": [
+    {
+     "name": "Rat1",
+     "color": "#4c9be8",
+     "award": "Deepest Diver",
+     "line": "126 balls off the bottom"
+    },
+    {
+     "name": "Rat0",
+     "color": "#e8604c",
+     "award": "Most Horizontal",
+     "line": "1 times flat"
+    }
+   ]
+  },
+  "test": true
+ }
+}

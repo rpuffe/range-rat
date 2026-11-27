@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { MAP } from '../map.js';
 import { bobFor, ambFor, waving, bored, carryLine, stretchLine, stretchAlert, legendLine, LEGEND_SECS } from '../stadium.js';
+import { fightMuted } from '../centrehooks.js';   // council round 14 #4c (builder 1): the boss owns the screen, the crowd's lines wait
 import { createSouvReq } from './souvreq.js';   // council round 11 #5: WE WANT A BALL!
 
 // C #8: is a story card up? (storycard.js's #story-card.on): the lap feed line stands down under one.
@@ -45,6 +46,7 @@ export default {
     let s = 0.5, laps = 0, knocks = 0, ping = null, knock = null, lastDraw = '', boredSaid = false, now = 0, wavePh = 0;
     let stretch = null, legend = null;   // council round 12 #2c/#2d: the Stretch ({ i, secs, t }), the answered request's name line
     let venue = 3;
+    let muted = false, mutedOut = 0;   // round 14 #4c: in the fight (warn to stamp); customers booed out meanwhile (one feed line after)
     const isBored = () => venue === 3 && bored(s);   // council round 12 #2f: the crowd stops at the Stadium
     const draw = () => {
       const pct = Math.round(s * 100), msg = legend && now < legend.until ? 'l' : stretch ? 's' : knock && now < knock.until ? 'k' : ping && now < ping.until ? 'p' : '';
@@ -100,13 +102,17 @@ export default {
         sreq.set(req, stretch);
         if (!mine) return;
         s = mine.s; laps = mine.laps; knocks = mine.knocks;   // the jumbotron keeps the live mood (the Board grades k)
-        if (isBored() && !boredSaid) { boredSaid = true; ctx.toast?.('THE CROWD IS BORED', 3); }
+        { const was = muted; muted = fightMuted(_snap?.mower);   // round 14 #4c: the boss's window; the summary after the stamp
+          if (was && !muted && mutedOut > 0) { ctx.feed?.(`Booed: ${mutedOut} customer${mutedOut === 1 ? '' : 's'} walked out during the fight.`); }
+          if (!muted) mutedOut = 0; }
+        if (isBored() && !boredSaid && !muted) { boredSaid = true; ctx.toast?.('THE CROWD IS BORED', 3); }
         else if (s > 0.4) boredSaid = false;
       },
       onEvent(e) {
         if (e.t !== 'crowd') return;
         // Round 11: the boo (a customer walks out), the souvenirs delivered, the hand-off.
         const who = id => (id === ctx.me?.id ? 'You' : ctx.nameOf?.(id) ?? 'A Rat');
+        if (e.kind === 'boo' && muted) { if (e.mat != null) mutedOut++; ctx.SFX?.boo?.(); return; }   // round 14 #4c: no centre or feed text in the fight
         if (e.kind === 'boo') {
           if (!booSaid) { booSaid = true; ctx.toast?.('The crowd is booing. Customers are leaving.', 3); }
           else if (e.mat != null) ctx.feed?.('Booed. A customer walked out.');

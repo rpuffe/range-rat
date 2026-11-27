@@ -1,0 +1,173 @@
+{
+ "id": "tiered1-1p",
+ "label": "Tiered · day 1 · solo crew",
+ "made": "2026-11-27",
+ "bot": "1P seed 7, morning snap",
+ "players": 1,
+ "save": {
+  "v": 5,
+  "day": 10,
+  "cash": 38089.7,
+  "totals": {
+   "picked": 5010,
+   "deposited": 3975,
+   "cash": 135243.91,
+   "knockdowns": 168,
+   "helped": 1630,
+   "carted": 384,
+   "swings": 0,
+   "pings": 0,
+   "runOver": 61,
+   "washed": 87.29999999999998,
+   "scrubbed": 3297,
+   "unwashed": 245,
+   "lostPremium": 3745.32,
+   "reviews": 8,
+   "launched": 6840,
+   "filled": 292,
+   "spotless": 65.4,
+   "rushOut": 7,
+   "rushClaimed": 7,
+   "sealCash": 1750.28,
+   "fries": 784,
+   "served": 16,
+   "dogs": 15,
+   "fedCash": 1421.31,
+   "dived": 249,
+   "snags": 115,
+   "memberOut": 8,
+   "memberClaimed": 8
+  },
+  "up": {
+   "gear": 3,
+   "build": 3,
+   "cart": 1,
+   "shed": 3,
+   "helpers": 3,
+   "washer": 3,
+   "wand": 2,
+   "filler": 2,
+   "ads": 2,
+   "shoes": 2,
+   "hardhat": 1,
+   "returns": 2,
+   "pond": 2,
+   "amen": 1
+  },
+  "diveByName": {
+   "Rat 1": 2
+  },
+  "lostFound": [
+   "keys",
+   "trophy"
+  ],
+  "commendations": 7,
+  "reviews": 0,
+  "pondSunk": 0,
+  "fries": 20,
+  "venue": 2,
+  "venueDay": 0,
+  "outstanding": 1513372964,
+  "pendingReveal": 2,
+  "endless": false,
+  "garyDay": 12,
+  "fixtures": {
+   "sign": 0.293,
+   "stand": 0.239,
+   "mat0": 0.204,
+   "mat1": 0.189,
+   "mat2": 0.174,
+   "mat3": 0.186,
+   "mat4": 0.177,
+   "mat5": 0.192,
+   "mat6": 0.156,
+   "mat7": 0.165,
+   "mat8": 0.189,
+   "mat9": 0.186,
+   "mat10": 0.126,
+   "mat11": 0.15
+  },
+  "records": {
+   "cash": 33297.3,
+   "banked": 353,
+   "day": 7,
+   "curve": [
+    0,
+    1296.12,
+    2207.72,
+    13246.47,
+    14575.77,
+    16153.38,
+    18322.53,
+    23669.47,
+    24980.89,
+    26673.25,
+    27927.04,
+    30192.14,
+    31231.18,
+    33297.3
+   ]
+  },
+  "voiced": [
+   "welcome",
+   "glow",
+   "cart",
+   "garyIntro",
+   "gary",
+   "huddle",
+   "club",
+   "treasure",
+   "rogue"
+  ],
+  "debuts": [
+   "glow",
+   "gold",
+   "square",
+   "lead",
+   "bouncy",
+   "splitter"
+  ],
+  "mowe": {
+   "tame": true,
+   "lost": 0,
+   "encore": false,
+   "beat": false
+  },
+  "story": [
+   "cold",
+   "mid:0",
+   "promo:1",
+   "mid:1"
+  ],
+  "mods": {
+   "deck": {
+    "last": 1
+   },
+   "tourney": {
+    "seen": 1
+   }
+  },
+  "night": {
+   "minutes": 35,
+   "fromDay": 5,
+   "day": 9,
+   "shifts": 5,
+   "venue": 2,
+   "title": "Experiential Retrieval Lead",
+   "balls": 1704,
+   "cash": 123496.21,
+   "knockdowns": 105,
+   "falls": 0,
+   "treasures": 2,
+   "rats": [
+    {
+     "name": "Rat0",
+     "color": "#e8604c",
+     "award": "Deepest Diver",
+     "line": "249 balls off the bottom"
+    }
+   ]
+  },
+  "test": true
+ }
+}

@@ -209,3 +209,12 @@ test('8.2: the first card of a beat takes no press for 1.2 s (the photo card 1.8
   assert.notEqual(card.card, first);
   assert.equal(CARD_GRACE.PHOTO, 1.8);
 });
+
+test('council round 14 #0d: the centre zone on screen (inCentreBox)', async () => {
+  const { inCentreBox, CENTRE: C } = await import('../web/js/centre.js');
+  assert.ok(inCentreBox({ x0: 0.45, x1: 0.55, y0: 0.3, y1: 0.35 }), 'a bubble mid-screen');
+  assert.ok(!inCentreBox({ x0: 0.02, x1: 0.15, y0: 0.02, y1: 0.08 }), 'the cash HUD corner');
+  assert.ok(!inCentreBox({ x0: 0.4, x1: 0.6, y0: 0.8, y1: 0.9 }), 'low on the screen');
+  assert.ok(!inCentreBox(null));
+  assert.ok(C.BOX.x0 < 0.5 && C.BOX.x1 > 0.5 && C.BOX.y0 < 0.5 && C.BOX.y1 > 0.5);
+});

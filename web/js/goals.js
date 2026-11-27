@@ -270,5 +270,5 @@ export function cardHtml(rows, { rewardNow = 0, esc = s => String(s) } = {}) {
   return '<ul class="goal-card">' + rows.map(r =>
     '<li class="' + (r.done ? 'done' : 'open') + (r.fresh ? ' fresh' : '') + '"><span class="tick">' + (r.done ? '✓' : '○') + '</span> ' +
     esc(goalLine(r).replace(/ · ✓$/, '')) +
-    (r.reward ? ' <b class="reward">✦ ' + (r.done && !r.fresh ? 'paid' : '+' + money(r.pay ?? rewardNow)) + '</b>' : '') + '</li>').join('') + '</ul>';
+    (r.reward ? ' <b class="reward">✦ ' + (r.done && !r.fresh ? 'paid' : (r.done ? '+' : '≈ +') + money(r.pay ?? rewardNow)) + '</b>' : '') + '</li>').join('') + '</ul>';   // round 14 6.12 (A #9): an open row's pay is an estimate (the BV moves before it lands)
 }

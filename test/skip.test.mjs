@@ -32,7 +32,7 @@ test('every starting point has a preset that loads through the save path into a 
       assert.equal(crew.venue, def.venue, `${def.id} venue`);
       assert.equal(crew.endless, !!def.endless, `${def.id} endless`);
       assert.ok(crew.cash >= 0 && Number.isFinite(crew.cash), `${def.id} cash`);
-      assert.ok(crew.day >= 4, `${def.id} day ${crew.day}`);
+      assert.ok(crew.day >= (def.id === 'muni3' ? 3 : 4), `${def.id} day ${crew.day}`);   // round 14 #0d: muni3 is day 3
       const rats = [];
       for (let i = 0; i < n; i++) { const p = crew.join(i === 0 ? '' : `Tester${i}`); testJoin(crew, p); crew.connect(p); rats.push(p); }
       if (def.venue >= 2) assert.ok(rats.every(p => p.dive >= 1), `${def.id}: every Rat gets the crew's dive gear`);

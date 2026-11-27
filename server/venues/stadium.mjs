@@ -100,6 +100,7 @@ function souvenirs(crew, st) {
 // ---- council round 11 #5: souvenir requests. One section lit at a time; answered in souvenirs(), missed here. -------
 function requests(crew, st, dt) {
   const n = crew.onlineCount();
+  if (bossLive(crew.mower?.kind === 'boss' ? crew.mower : null)) return;   // council round 14 #4c (builder 1): the crowd waits out the boss: a lit section's clock holds, none lights
   if (st.req) {
     if ((st.req.left -= dt) > 0) return;
     const sec = st.req.sec; st.req = null; st.reqMissed++;

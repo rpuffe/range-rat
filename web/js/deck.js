@@ -37,6 +37,7 @@ export const DECK = {
   STAIRS_X: -27.5,              // a new lounger comes up the stairs from here
   FROM_VENUE: 2,
   LOOK_SECS: 3,                 // council round 10 #4: after a fall, 3 s with no ball hits on foot and no customer swing
+  HAPPY_X: 1.5,                 // council round 14 #2a: a Happy Hour order (o.happy) pays its tab x1.5 (happyhour.js)
 };
 
 const clampDrinks = n => Math.max(0, Math.min(DECK.MAX, n));
@@ -131,6 +132,27 @@ export function stepDeck(d, dt, seats) {
   return out;
 }
 
+// Council round 14 #2a: Happy Hour. The queue fills at once (to DECK.QUEUE: the head plus two), round robin over the bays in
+// play as stepDeck raises them, and every open order is a Happy Hour order (o.happy: its tab pays x HAPPY_X). Returns the
+// orders it raised. The order clock restarts, so the next ordinary order waits its usual 20-30 s.
+export function happyFill(d, seats) {
+  d.queue ??= [];
+  const raised = [], s = seatsOf(seats);
+  while (openCount(d) < DECK.QUEUE) {
+    const k = s.findIndex(i => i >= (d.oseat ?? 0)), seat = s[k < 0 ? 0 : k];
+    d.oseat = (seat + 1) % DECK.SEATS.length;
+    d.norders = (d.norders ?? 0) + 1;
+    const o = { seat, left: DECK.ORDER_OPEN, n: d.norders, ...(isRoundOrder(d.norders, d.drinks) ? { round: true } : {}) };   // n: its place in the shift's orders (the Tap Wall)
+    if (d.order) d.queue.push(o); else d.order = o;
+    raised.push(o);
+  }
+  for (const o of openOrders(d)) o.happy = true;
+  d.orderT = 0;
+  return raised;
+}
+// While Happy Hour is on, every open order (one raised mid-window too) is a Happy Hour order.
+export function markHappy(d) { for (const o of openOrders(d)) o.happy = true; }
+
 // What one serve does to the Drinks count. A burnt (or unknown) serve changes nothing.
 export function serveEffect(item, quality) {
   if (quality !== 'perfect' && quality !== 'good') return 0;
@@ -140,7 +162,7 @@ export function serveEffect(item, quality) {
 // Does this serve pay the deck's bar tab?
 export const paysTab = (item, quality) => item === 'beer' && (quality === 'perfect' || quality === 'good');
 // ordered: false (an unordered beer), true or an order (a filled order), or an order with round: true (a round).
-export const tabFor = (bv, ordered = false) => (ordered?.round ? DECK.ROUND_TAB : ordered ? DECK.ORDER_TAB : DECK.TAB) * Math.max(0, bv);
+export const tabFor = (bv, ordered = false) => (ordered?.round ? DECK.ROUND_TAB : ordered ? DECK.ORDER_TAB : DECK.TAB) * (ordered?.happy ? DECK.HAPPY_X : 1) * Math.max(0, bv);   // round 14 #2a: Happy Hour x1.5
 // A paying beer fills the open order (the head, the oldest), if there is one. Returns the filled order (or null) and
 // closes it; round 11: the next queued order moves up.
 export function fillOrder(d, item, quality) {

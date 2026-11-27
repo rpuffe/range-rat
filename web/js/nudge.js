@@ -130,3 +130,37 @@ export const GARY_SPOTLESS = 0.1;
 // still dealt. Returns { [ratId]: stopId | 'stall' | 'meet' } (round 8 #2: a Rat with no stop left stalls Gary, or
 // meets him at the stand when nothing fails).
 export const redealGary = (stops, rats, held = []) => dealGary(stops.filter(s => !held.includes(s.id)), rats, stops.length > 0);
+
+// Council round 14 6.4 (A #3, builder 4): ONE Gary line at a time, and no churn. Day 4 at the Muni flipped between
+// the stop line, "Keep Gary talking", "Stall Gary" and "Gary is inspecting" five times in a minute. The client's gate
+// (main.js's checklist gate asks it each frame what the Gary line is):
+//   - a stop line ("Gary checks the mats. Hose them!") holds ≥ HOLD s once it is up, whatever the server wants next;
+//   - the stall and chat lines show ONCE a visit each, only after his first failed check, and never within EXTRA_GAP s
+//     of another Gary line;
+//   - "Gary is inspecting. Stay out of his way." only when it can hold INSPECT_HOLD s (main.js: nothing at ALERT
+//     queued or up), else it is skipped.
+// Pure: `now` in seconds. pick(want, now) -> the line id to show, or null.
+export const GARY_LINES = Object.freeze({ HOLD: 4, EXTRA_GAP: 6, INSPECT_HOLD: 3 });
+const EXTRA_IDS = new Set(['gary:stall', 'gary:chat']);
+export function createGaryLineGate() {
+  let shown = null, shownAt = -1e9, lastUp = -1e9, failed = false;
+  const used = new Set();
+  return {
+    get failed() { return failed; },
+    failedCheck() { failed = true; },
+    reset() { shown = null; shownAt = -1e9; lastUp = -1e9; failed = false; used.clear(); },   // a new visit
+    pick(want, now) {
+      const garyWant = typeof want === 'string' && want.startsWith('gary:') ? want : null;
+      if (shown && shown !== garyWant && now - shownAt < GARY_LINES.HOLD) { lastUp = now; return shown; }   // the hold
+      if (shown && shown !== garyWant) shown = null;
+      if (!garyWant) return null;
+      if (EXTRA_IDS.has(garyWant) && shown !== garyWant) {
+        if (!failed || used.has(garyWant) || now - lastUp < GARY_LINES.EXTRA_GAP) return null;
+        used.add(garyWant);
+      }
+      if (shown !== garyWant) { shown = garyWant; shownAt = now; }
+      lastUp = now;
+      return shown;
+    },
+  };
+}

@@ -15,7 +15,8 @@ import { perks } from '../sim.js';
 import { createEva } from '../scuba.js';
 import * as SET from '../settings.js';
 import { SIM } from '../sim.js';
-import { createGaryCameo, returnSpot } from './garycameo.js';   // council round 11 #7: Gary in the Lift, Gary at the return
+import { createGaryCameo, returnSpot } from './garycameo.js';
+import { landmarkTier, LANDMARK } from '../landmarks.js';   // council round 14 #5c: the star line at the case   // council round 11 #7: Gary in the Lift, Gary at the return
 
 const PH = ['up', 'out', 'down'];
 const SPACE_TOP = new THREE.Color(0x00020a), SPACE_MID = new THREE.Color(0x070618), SPACE_HORIZON = new THREE.Color(0x5a3552);
@@ -104,13 +105,14 @@ export default {
     // promotion beat puts him on the Lift car's roof for one ride; the epilogue stands him at the return all shift.
     const cameo = createGaryCameo(scene);
     const cameoLift = { x: LIFT.x, z: LIFT.z, carY: 1.5 }, cameoRats = [];
+    const starOwned = () => landmarkTier(ctx.crew?.()?.up) >= LANDMARK.STAR;
     let storyUp = false;   // council round 13 #2d (builder 3): his bubble waits for the story card (one centre element)
     const onStory = ev => {
       const d = ev?.detail;
       if (d) storyUp = d.phase === 'card';
       if (d?.phase !== 'card' || d.index !== 0) return;
       if (d.id === 'promo:5') cameo.ride();
-      else if (d.id === 'epilogue') cameo.stand(returnSpot(SIM.STAND));
+      else if (d.id === 'epilogue') cameo.stand(returnSpot(SIM.STAND), { star: starOwned() });
     };
     if (typeof window !== 'undefined') window.addEventListener('rr-story', onStory);
     const tmp = { m: new THREE.Matrix4(), q: new THREE.Quaternion(), s: new THREE.Vector3(1, 1, 1), p: new THREE.Vector3(), e: new THREE.Euler(),
@@ -148,7 +150,7 @@ export default {
 
       onSnapshot(s, m) {
         snap = m ?? null;
-        if (s?.firstOwnerDay && !cameo.standing && !cameo.riding) cameo.stand(returnSpot(SIM.STAND));   // council round 12 #3d: a rejoin
+        if (s?.firstOwnerDay && !cameo.standing && !cameo.riding) cameo.stand(returnSpot(SIM.STAND), { star: landmarkTier(s.up) >= LANDMARK.STAR });   // council round 12 #3d: a rejoin
         sky = s?.phase === 'shift' && s?.lastBucket?.phase === 'sky' ? s.lastBucket.debris ?? ids.length : null;
         ids = m?.d ?? [];
         const r = m?.r?.[me.id];

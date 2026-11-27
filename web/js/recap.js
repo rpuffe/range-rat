@@ -17,6 +17,17 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const safeColor = c => (/^#[0-9a-f]{3,8}$/i.test(c) ? c : '#fff8ec');
 const money = n => '$' + Math.round(Number(n) || 0).toLocaleString('en-US');
 
+// Council round 14 #0b (builder 4): the venue modules' report rows (crew.mjs report.rows, ≤ 2: the Tournament, the Gold
+// Rush, Happy Hour, the poach). Drawn after the MOW-E row, above the goals. A row's text says it all ("Members' balls 3
+// of 4 · +$7,363"); `cash` is added as the bold right-hand value only when the text has no "$" of its own.
+export function reportRowsHtml(rows) {
+  if (!Array.isArray(rows)) return '';
+  return rows.filter(r => r && typeof r.text === 'string' && r.text.trim()).slice(0, 2).map(r => {
+    const cash = Number.isFinite(r.cash) && !r.text.includes('$') ? ` <b>${r.cash >= 0 ? '+' : '−'}${money(Math.abs(r.cash))}</b>` : '';
+    return `<p class="modrow">${esc(r.text)}${cash}</p>`;
+  }).join('');
+}
+
 const CSS = `
 #recapcard { z-index: 86; background: linear-gradient(rgba(14, 12, 28, 0.84), rgba(14, 12, 28, 0.96)); }
 #recapcard .sheet { min-width: min(calc(100vw - 32px), 30em); max-width: calc(100vw - 32px); }

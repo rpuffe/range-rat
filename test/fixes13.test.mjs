@@ -30,7 +30,7 @@ test('8.4: a buy goal\'s ✦ shows the reward at the Ball Value after the buy la
   const out = withBuyPay(rows, { washer: 0 }, up => (up.washer ? 54.88 : 27.44));
   assert.equal(out[0].pay, 54.88);
   assert.equal(out[1].pay, undefined);
-  assert.match(cardHtml(out, { rewardNow: 27.44 }), /✦ \+\$54\.88/);
+  assert.match(cardHtml(out, { rewardNow: 27.44 }), /✦ ≈ \+\$54\.88/);   // round 14 6.12: an open row's pay is an estimate
   // the live crew: day 1's washer goal pays (and shows) more than today's BV reward, at exactly what it then pays
   let t = 0;
   const c = new Crew('WASH', null, { seed: 7, now: () => t * 1000 });

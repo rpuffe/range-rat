@@ -5,8 +5,8 @@ import { PAYFLOAT, payRoute, createRoller } from '../web/js/payfloat.js';
 
 test('your banks are yours, other Rats\' are theirs, machinery rolls up', () => {
   const ids = ['me', 'pat'];
-  assert.equal(payRoute({ by: 'me', kind: null }, 'me', ids), 'mine');
-  assert.equal(payRoute({ by: 'me', kind: 'cart' }, 'me', ids), 'mine', 'the cart you drove');
+  assert.equal(payRoute({ by: 'me', kind: null }, 'me', ids), 'hud', 'round 14 6.5: your own banks pop by the cash HUD');
+  assert.equal(payRoute({ by: 'me', kind: 'cart' }, 'me', ids), 'hud', 'the cart you drove');
   assert.equal(payRoute({ by: 'pat', kind: null }, 'me', ids), 'rat');
   assert.equal(payRoute({ by: 'pat', kind: 'cart' }, 'me', ids), 'rat');
   for (const e of [{ by: 'h1', kind: 'helper' }, { by: 'night', kind: 'helper' }, { by: 'gutter', kind: 'gutter' },

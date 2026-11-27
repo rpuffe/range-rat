@@ -329,6 +329,10 @@ export function tierLock(item, lvl, venue = 0, day = Infinity, vday = null) {
 }
 // The day the shop is shopping for: overnight (the report) it is tomorrow.
 export const shopDay = (phase, day) => (phase === 'report' ? day + 1 : day);
+// Council round 14 #0b (B #4): the VENUE day the shop sells for. Overnight (the report) and in the lobby it is the coming
+// venue day: in the lobby `day` already is the coming day, but `venueDay` only increments in startShift. Pass the raw
+// venueDay; worldVday (clubdays.js) maps it for the world.
+export const shopVday = (phase, vday) => (phase === 'report' || phase === 'lobby' ? vday + 1 : vday);
 
 // Crew upgrades scale with crew size (balanced for 4): ×1 solo, ×2.2 for four.
 // Personal gear (only the dive gear now, §5.2) doesn't: everyone buys their own at the catalog price.
@@ -472,18 +476,31 @@ export const debutFloat = (kind, told = true) => (told ? 'NEW' : 'NEW: ' + (KIND
 // corner is ≥ 59° left of a Rat facing the field (outside the 43° half-FOV at 4:3) and the awning is at most a corner.
 // Council round 13 #6 (builder 3): LATE_FROM 3 → 1, so the Club and Tiered clock in on the late row too (the Club spawn
 // looked at the covered-bay roof, Tiered at the deck's underside). The Muni keeps the old row (its seam golden holds).
-export const CLOCK_IN = { X: 18, STEP: 2.4, Z: 4, LATE_FROM: 1, LATE_XS: [24.6, 25.8, 29.4, 30.6, 31.8, 33.0] };
+// Council round 14 6.1 (C #2, builder 4): endless has its own row, ENDLESS_XS. Late slot 0 (24.6, 4) was 1 m from the
+// glass case (caserules.js CASE, 24.4, 5.0), where Gary stands all of endless day 1: Rat 1 spawned inside him.
+// 6.3 (A #4, B #9): from the Club on, a Rat clocks in facing down-range (yaw aimed at AIM, (0, −80)), not the walkway.
+// The Muni keeps yaw 0 (no `yaw` field: its seam golden holds).
+export const CLOCK_IN = { X: 18, STEP: 2.4, Z: 4, LATE_FROM: 1, LATE_XS: [24.6, 25.8, 29.4, 30.6, 31.8, 33.0],
+  ENDLESS_XS: [29.4, 30.6, 31.8, 33.0, 34.2, 35.4], AIM: { x: 0, z: -200 } };   // 6.3: far down the centre line (at (0, −80) the right-hand slots turned 20° into the return's glass)
+// a walker's yaw facing (x, z) → (tx, tz): crew.mjs's convention, yaw = atan2(−dx, −dz)
+export const yawToward = (x, z, tx, tz) => Math.atan2(-(tx - x), -(tz - z));
 export function clockInSpot(venue = 0, slot = 0, endless = false) {
   const late = endless || (venue ?? 0) >= CLOCK_IN.LATE_FROM, k = (slot | 0) % 6;
-  return late ? { x: CLOCK_IN.LATE_XS[k], z: CLOCK_IN.Z } : { x: CLOCK_IN.X + k * CLOCK_IN.STEP, z: CLOCK_IN.Z };
+  if (!late) return { x: CLOCK_IN.X + k * CLOCK_IN.STEP, z: CLOCK_IN.Z };
+  const x = (endless ? CLOCK_IN.ENDLESS_XS : CLOCK_IN.LATE_XS)[k], z = CLOCK_IN.Z;
+  return { x, z, yaw: yawToward(x, z, CLOCK_IN.AIM.x, CLOCK_IN.AIM.z) };
 }
 // Council round 12 (builder 4, the hand-off hooks): `news` (a one-morning headline: Site 13's acquisition, builder 3)
 // beats everything; `contract` (the endless contract, contractMemo) takes Today's slot and shows as the line itself;
 // `note` (a one-morning flavour override: the inspector, builder 2) takes the flavour's place.
-export function memoSecond({ today = null, venueNew = null, kindNew = null, mowe = null, flavor = '', contract = null, news = null, note = null } = {}) {
+// Council round 14 #0b (B #2): `event` (crew.memoEvent, set by a module's startShift: the Tournament, a Gold Rush) is
+// today's event line. It beats the NEW line and Today (Today's chip stays on the Board); the kinds it pushes out go to
+// `lost` and float "NEW ×1.5" on their first hit. news and the contract still beat it.
+export function memoSecond({ today = null, venueNew = null, kindNew = null, mowe = null, flavor = '', contract = null, news = null, note = null, event = null } = {}) {
   const fresh = venueNew ?? kindNew ?? null;
   if (news) return { today: null, line: news, lost: fresh };
   if (contract) return { today: null, line: contract, lost: fresh };
+  if (event) return { today: null, line: event, lost: fresh };
   if (today) return { today, line: null, lost: fresh };
   return { today: null, line: fresh ?? mowe ?? note ?? flavor ?? '', lost: null };
 }
@@ -577,7 +594,7 @@ export const VENUE_RULES = [
   { name: 'Range Club', title: 'Club Retrieval Associate', fee: 2500, writeOff: 1_200_000_000, memo: 'NEW: the kitchen. Fries raise every ball.', pa: 'club', eatEvery: 8 },
   { name: 'Tiered Entertainment Range', title: 'Experiential Retrieval Lead', fee: 50000, writeOff: 1_500_000_000, memo: 'NEW: target greens. Land a crew ball there.', pa: 'tiered', eatEvery: 8,
     kpi: 'BAY UTILIZATION', howto: 'New: Target Greens. Balls in a cup block the sensors. Bay Utilization is now on the Board. The Upper Deck is now serving.' },
-  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 600000, writeOff: 800_000_000, memo: 'NEW: the Ping Track. Keep the crowd happy.', pa: null /* council round 12, 4c: was 'stadium' (four jumbotron jokes in 20 s) */, eatEvery: 8,
+  { name: 'Stadium Range', title: 'Stadium Retrieval Captain', fee: 600000, writeOff: 800_000_000, memo: 'NEW: the Ping Track.' /* round 14 6.10: the Board's gauge says the rest */, pa: null /* council round 12, 4c: was 'stadium' (four jumbotron jokes in 20 s) */, eatEvery: 8,
     kpi: 'CROWD SENTIMENT', howto: 'New: the Ping Track. The crowd grades you now. The crowd has never played golf.' },
   { name: 'County Range', title: 'County Retrieval Director', fee: 3_000_000, writeOff: 712_000_000, memo: 'NEW: the Yards. Spray green hazards, then bag.', pa: 'county', eatEvery: 8,
     kpi: 'ZONING COMPLIANCE', howto: 'New: the Yards. Your customers now hit into the county. The county has noticed.' },

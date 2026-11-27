@@ -290,7 +290,10 @@ export function createMower({ scene, confetti = null }) {
         el.textContent = text;
         el.style.color = lost ? '#fff6e6' : '#d0202a'; el.style.background = lost ? 'rgba(196,22,32,.94)' : 'rgba(255,250,235,.85)'; el.style.borderColor = lost ? '#fff6e6' : '#d0202a';
       }
-      el.style.opacity = on ? '1' : '0';
+      // Council round 14 #4b: off in one step (no 0.2 s fade), so the line queued after it ("It took the bunting.")
+      // never draws over a fading stamp (pt9-C: toast 0.32 + mowe-stamp 1.00).
+      if (!on) { el.style.transition = 'none'; el.style.opacity = '0'; if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(() => { el.style.transition = 'opacity .2s'; })); }
+      else el.style.opacity = '1';
       const r = lost ? 8 : -8;
       if (on) el.animate?.([{ transform: `translate(-50%,-50%) rotate(${r * 1.5}deg) scale(2.4)`, opacity: 0 }, { transform: `translate(-50%,-50%) rotate(${r}deg) scale(0.94)`, opacity: 1, offset: 0.55 },
         { transform: `translate(-50%,-50%) rotate(${r}deg) scale(1)`, opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.2,.8,.3,1)' });

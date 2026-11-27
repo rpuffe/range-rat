@@ -1384,6 +1384,116 @@ The full record is `design/round13-mowe.md`; the rules are `web/js/mowe.js` (pur
 - **8.1 / 8.2**: an unfinished sign step no longer mutes the empty-basket alarm (it is the checklist's next line); the
   first card of a beat takes no press for 1.2 s (the photo card 1.8 s).
 
+## Council round 14 (builder 1): the crash day untangled, the punchline's beat, the boss leftovers
+
+- **The crash moves to T−6:00** (`BOSS.PROMO_AT` 60/420), right after the Promotion Day morning. The fight (15 s warn +
+  100 s cap) ends by T−4:05, so the day runs **crash → Gary → Stretch → bell**, three peaks at their own times. The
+  Board's update bar runs to the new time; the PA is unchanged.
+- **The punchline owns its seconds.** Gary's warn waits for `bossSettled(mower, 8)`: no live boss, and 8 s since it fled
+  or was tamed (every boss day, the Club rematch too). The loss line queues straight after the red stamp at ALERT
+  priority (3.5 s, ≥ `BOSS.LOST_SECS`), and the stamp now leaves in one step, so the line never draws over a fading
+  stamp: "MOW-E 2.0 WINS" → "MOW-E 2.0 left. It took the bunting." (3.5 s alone) → ~2.4 s of nothing → Gary's warn.
+- **The crowd waits out the boss** (`bossOwnsScreen`, warn to stamp): no decay (already), no souvenir request lights
+  and a lit one's clock holds; "THE CROWD IS BORED" and the boo lines are muted, with one feed line after the stamp
+  ("Booed: 2 customers walked out during the fight.") when anyone walked out.
+- **The mowed line, once a fight**: the first knockdown by MOW-E says "Mowed. It was trained on your movements.", then
+  "Mowed again!" at most once per 20 s (`mowedLine`); otherwise the flash and the sound carry it.
+- **Employee of the Shift needs > 0 banked**: a $0 shift skips it. **The rematch eve**: "Tomorrow: MOW-E's rematch. Grab
+  a wand early."
+
+## Council round 14 (builder 2): the Gold Rush, Happy Hour, the Bell's bonus round at Tiered, the solo bowls read
+
+- **The Gold Rush** (`web/js/goldrush.js`, `server/venues/goldrush.mjs`, `web/js/views/goldrush.js`). Muni day 3 (not a
+  Gary day) at T-2:45, moved 20 s clear of Last Call (so T-2:50), and Club day 2 at T-3:00. Club day 2 is usually Gary's
+  (a visit due on the reveal morning slips a day), so there the wave runs ahead of his warn instead: its clocks run out
+  5 s before it. Never endless, a boss day, Promotion Day or a reveal morning. Site 13's red van backs up to the left
+  net and tips a crate over it: 3 gold balls at 1–3P, 4 at 4P+ (`RUSH.N`; the council's 1P 2 measured 0.71 calls a
+  minute against a 0.8 bar), 45–110 m out, alternating sides; solo, all within 30 m of the first; at the Club at 3P+ one
+  lands in the pond (the diver's bag pays it as the gold ball it is). Spots are `hash32(day, vday, 'rush', j, k)`: no RNG
+  draw. Each ball has a short gold beam and a 30 s clock (40 s solo); then Site 13's cart (the caddie cart's shape,
+  white under a red "13" canopy) hums out from the gate and takes it ("Site 13 took 2. For research.", merged within
+  3 s). Picked up into your hands (`b.hands`, `b.rush`), it banks at any return as an ordinary gold ball (×10, no new pay
+  rule). Every ball taken: "Clean sweep. Site 13 is furious." One centre ALERT: "Gold Rush! Beat Site 13's cart!". The
+  report row: "Gold Rush: 3 of 4 · +$214" or "Site 13 took all 4. For research." Events carry `call: 'gold'` (one call a
+  ball) and `answer: 'gold'` on a take.
+- **Happy Hour** (`web/js/happyhour.js`, `server/venues/happyhour.mjs`, `web/js/views/happyhour.js`, `deck.js`
+  `happyFill`). Every Tiered shift but Promotion Day, T-4:00 for 60 s (T-5:30 solo, so the one Rat is back on the bowls
+  before the T-3:00 rally). The upper bays' golfers are the loungers: for the window they rest their clubs, so the bowls
+  don't fill while the crew fetches. The deck's queue fills at once to 3, and every order open in the window is a Happy Hour order (`o.happy`: its tab pays ×1.5;
+  `tabFor`). The loungers chip their own balls onto the target greens: 1 at 1P (always green A, the nearest), 2 at 2P,
+  3 at 3P+, one per green, off the cup, under a pink-and-cyan neon beam with a 30 s clock (40 s solo). Fetched to a
+  return, each pays ×20 Ball Value; lapsed: "The lounger shrugs. Experiential." One ALERT: "Happy Hour! Drinks, and
+  fetch the greens!". The report row: "Happy Hour: 3 pours, 2 of 3 greens · +$41k". `call: 'lounger'`.
+- **The Members' Bell at Tiered** (council round 14 #3a; builder 3's `bellOpen` admits venue 2): Ⓐ at the bell rings a
+  bonus Happy Hour, once a shift, T-6:00..T-1:30, never inside a live one or so close that it would run into today's
+  (`bonusClear`). ALERT: "Bonus round! The bell has spoken." The Tournament's bell handler now answers only at the Club.
+- **The solo bowls read** (`rally.js` `bowlsPass`, applied by `happyhour.mjs` after `tiered.mjs` freezes its Last Call
+  read): at 1P the bowls pass when they hold ≤ 50 % of their load at the T-3:00 rally, at 2P ≤ 25 %; 3P+ keep the plain
+  read. It only adds a pass.
+
+## Council round 14 (builder 3): the Bell where you buy it, the Tournament announced and scored, the poach tuned
+
+- **The Members' Bell** costs $10k base ($22k at 4P) and rings a bonus round once a shift, T−6:00..T−1:30: a
+  Tournament flight at the Club, a Happy Hour at Tiered (`bellOpen` admits venue 2; `bellStateOf` reads
+  `s.mods.tourney.bell` or `s.mods.happyhour.bell`). From the Stadium it rings itself for the peak, as before. The shop
+  sells it in the Club day-4 lobby (`buy()` uses `shopVday`). At Tiered the Tournament module leaves Ⓐ at the bell to
+  Happy Hour.
+- **The Tournament, announced and scored.** The first Tournament morning writes `crew.memoEvent` (the memo's event
+  slot), so "Members' Tournament today. Site 13 entered anyway." shows. The night before reads "Tomorrow: the Members'
+  Tournament. Bring friends." (`tourneyEve`, for `tomorrowText`). The report row is "Members' balls 3 of 4 · +$7,363"
+  or "The caddie took all 4. Kazoo." On a Gary day no flight lands inside his warn..warn+120 s: it moves to the nearer
+  edge ± 5 s, then dodges the deals. Solo, a member ball has 45 s, and the flight's second ball lands 16–30 m from
+  the first.
+- **The County's second inspection goes somewhere else.** It takes the busiest hazard ≥ 22.5 m from the first patch.
+  With none there, it takes one of six anchors on the hose's ground, picked by `hash32(day, vday, 'insp', 2)`.
+- **The poach is a weekly bet.** One poached win a rival week counts double (`rival.dbl`). The price is 25 % of
+  yesterday's bank × 1.5 for each poach already made this week (`rival.pw`). Both reset with the week. The fastest
+  acquisition is the third race day.
+- **The poach is visible.** Three Site 13 regulars in red stand at their bay (x 22) and swing on its launches. 9 s into
+  the shift (after the memo), the PA card says "Site 13 lost a regular. To you." The report row says "Poached a
+  regular · Site 13 −5 %", and the snapshot's `dbl` gives the shop its "Counts double today".
+- **The star lines, wired.** Buying the star shows "Gary: 'A star. Named Gary. I'll allow it.'". On the first endless
+  morning, with the star owned, Gary's cameo bubble says the star line before "Where do these go, boss?". The case's
+  plaque ends "A star named Gary". The epilogue's case shot tilts up to the star for 2 s. "Hustle days beat Site 13."
+  is a report row, once ever, the first time a Hustle contract day beats Site 13.
+
+## Council round 14 (builder 4): the no-silent-regression gates, the hooks, the polish pack
+
+- **The gates.**
+  - `test/maincalls.test.mjs` checks every per-frame call that was live in `main.js` at 097c941 (28 of them, listed
+    in the test). A call found only after a `//` fails it.
+  - `test/nocodeincomments.test.mjs`: in `main.js`, `crew.mjs` and `venues/index.mjs`, no `//` comment may end in a
+    call statement. Both tests are red on round 9's line.
+  - `test/wired.test.mjs`: every exported `*_LINE` / `*_PLAQUE` / `*_HINT` / `*_MEMO` string in `web/js` must be
+    imported by another file. `ALLOW` lists the exceptions, each with a reason.
+- **The hooks.**
+  - A module's `reportRows(crew, st, ending) -> [{ text, cash? }]`: at most 2 rows, put on `report.rows` and drawn
+    after the MOW-E row.
+  - `crew.memoEvent`, set in a module's startShift: today's event line. It beats the NEW kinds line and Today; the
+    kinds it pushes out float "NEW ×1.5".
+  - `shopVday(phase, vday)`: the coming venue day, in the lobby and overnight.
+- **The ruler** prints calls offered / answered a minute. A call is answered when a Rat takes its prize or reaches its
+  place, or a module tags `answer:`. The bars stay on offered.
+- **Presets** come per crew size (`club4-1p`, `club4-2p`, `tiered1-1p`), plus three new ones: `muni3`, `club2` and
+  `lastbucket-4p`.
+- **The `?debug` counter**: `__centre` also counts Gary's bubble and the pay floats when they sit in `CENTRE.BOX`.
+- **The smoke run** (`scripts/smoke.mjs`) drives one headful browser seat through five beats on the live client: the
+  boss moves, the Gold Rush ALERT is alone, Happy Hour fires, the crash line holds ≥ 2.5 s, and the bank to the end card
+  has 0 overlaps with the card up ≥ 10 s. It exits 1 on any failure.
+- **The polish pack.**
+  - Endless clocks in on its own row (`ENDLESS_XS`), clear of the case and Gary.
+  - From the Club on, the clock-in faces down-range.
+  - Gary's bubble is at most 9 % of the screen tall, and it fades out inside 2.5 m.
+  - One Gary line at a time (`nudge.js createGaryLineGate`).
+  - Your own banks pop by the cash HUD, counting up, never in the centre.
+  - The $∞ flash follows the note card, and the end card waits out a PA card.
+  - Pay floats hide at once in a priority 0–1 beat.
+  - The final report's Ready waits until the end card has been up 10 s (`dayend.js ENDCARD_AT`), then counts 30 s.
+  - The card heading reads "To reach …". The Stadium memo drops its tail.
+  - "Lowered graphics" shows once a session, and Auto steps at most once a minute.
+  - An open ✦ row reads "≈ +$56".
+  - The Board shows GOLD RUSH and HAPPY HOUR, and the poach's red "−5 %".
+
 ## Textures and preloading
 
 The second texture pass covers the rest of the world, scales by tier, and preloads so play doesn't hitch.

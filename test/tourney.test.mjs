@@ -62,7 +62,8 @@ test('memberSpots: one each side of centre, one in the pond at 3P+, clear of the
     const s = memberSpots(day, vday, f, n);
     assert.equal(s.length, flightN(n));
     const land = s.filter(o => !o.pond);
-    assert.ok(land.some(o => o.x < 0) && land.some(o => o.x > 0), `both sides d${day} v${vday} f${f} n${n}`);
+    if (n >= 2) assert.ok(land.some(o => o.x < 0) && land.some(o => o.x > 0), `both sides d${day} v${vday} f${f} n${n}`);
+    else { const d = Math.hypot(land[0].x - land[1].x, land[0].z - land[1].z); assert.ok(d >= TOURNEY.APART && d <= TOURNEY.PAIR_1P, `round 14 #3b: the solo pair ${d.toFixed(1)} m apart`); }
     assert.equal(s.filter(o => o.pond).length, n >= 3 ? 1 : 0);
     for (const o of land) {
       assert.ok(o.z <= -TOURNEY.NEAR + 1e-6 && o.z >= -TOURNEY.FAR - 1e-6 || [-100, -64, -150, -140].includes(o.z), `60-140 m out: ${o.z}`);
@@ -100,14 +101,16 @@ test('no flight before Club day 4, on a boss day, or on Promotion Day; the Club 
 });
 
 test('two flights at 120 / 250 s; each ball claimed by the caddie cart at 30 s', () => {
-  const { crew, run, ev } = clubCrew({ n: 2 });
+  const { crew, run, ev, st } = clubCrew({ n: 2 });
   run(119.9); assert.equal(T(ev, 'flight').length, 0);
   run(0.2); assert.equal(T(ev, 'flight').length, 1);
   assert.equal(T(ev, 'flight')[0].n, 2);
   run(29.5); assert.equal(T(ev, 'claim').length, 0, 'still on the clock at 29.6 s');
   run(1); assert.equal(T(ev, 'claim').length, 2, 'claimed at 30 s');
   assert.ok(ev.some(e => e.t === 'gone' && e.by === 'caddie'));
-  run(130); assert.equal(T(ev, 'flight').length, 2);
+  const at2 = st().at[1];   // council round 14 #3b: day 12 is a Gary day here, so flight 2 dodges his window
+  run(at2 - crew.shiftT + 0.2); assert.equal(T(ev, 'flight').length, 2);
+  run(31);
   assert.equal(crew.stats.memberClaimed, 4);
 });
 

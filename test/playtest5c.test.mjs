@@ -24,8 +24,8 @@ test('A1: a done, unsigned card: Sign is the primary, Next waits ("Sign to move 
   assert.doesNotMatch(promoPanelHtml(promo(), { goals: { rows: [] }, declined: true }), /notyet-btn/);
 });
 
-test('B10: the card heading names the venue it is for: "Goals for Tiered"', () => {
-  assert.match(promoPanelHtml(promo(false), { goals: { rows: [] } }), /<h3>Goals for Tiered<\/h3>/);
+test('B10: the card heading names the venue it is for: "To reach Tiered" (round 14 6.9)', () => {
+  assert.match(promoPanelHtml(promo(false), { goals: { rows: [] } }), /<h3>To reach Tiered<\/h3>/);
 });
 
 test('B7 / A4: "−$3,800" (not "+$-3,800"), and the stamp says DAILY TARGET', () => {

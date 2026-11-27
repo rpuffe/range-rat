@@ -44,15 +44,19 @@ function morning(env, tag) {
   const { crew, rats, clock } = env;
   crew.flush();
   for (const p of rats) crew.readyUp(p);
+  // council round 14 6.7: the ending report holds Ready until the end card has had its 10 s
+  for (let g = 0; g < 600 && crew.phase === 'report' && crew.report?.ending; g++) { keepAlive(crew, rats, clock); clock.t += DT; crew.tick(DT); }
   if (crew.phase !== 'shift') return null;
   // Council round 13 #2 (builder 3): also the Tournament days (the Club from day 4) and the Last Bucket (the bank, the
   // note, the epilogue), and the queue is say.js on centre.js: the model and the client run the same arbiter.
-  const whole = process.env.FULL === '1' || !!crew.bossToday?.() || (!crew.endless && (crew.venue === 3 || crew.venue === 4 || (crew.venue === 1 && (crew.venueDay ?? 0) >= 4))) || !!crew.lastBucket || tag.startsWith('lastbucket');
+  // council round 14 (builder 4): the peaks' windows too: Muni day 3 and Club day 2 (the Gold Rush), Tiered (Happy Hour)
+  const peakDay = !crew.endless && ((crew.venue === 0 && crew.day === 3) || (crew.venue === 1 && crew.venueDay === 2) || crew.venue === 2);
+  const whole = process.env.FULL === '1' || peakDay || !!crew.bossToday?.() || (!crew.endless && (crew.venue === 3 || crew.venue === 4 || (crew.venue === 1 && (crew.venueDay ?? 0) >= 4))) || !!crew.lastBucket || tag.startsWith('lastbucket');
   const WIN = whole ? Math.max(WINDOW, crew.shiftSecs ?? 420) : WINDOW;
   let t = 0;
   const sayer = SAYM.createSayModel({ now: () => t });
   const card = createStoryCard({ sayer, now: () => t, tick: 0 });
-  const later = [], log = [];
+  const later = [], log = [], peaks = [];
   const memoSecs = e => (e.story && SAYM.SAY.STORY_MEMO ? SAYM.SAY.STORY_MEMO : 7);
   const feed = (e, at) => {
     switch (e.t) {
@@ -64,6 +68,10 @@ function morning(env, tag) {
         later.push({ at: at + 6, fn: () => sayer.say('TOAST', 'Day · venue · you are a …', { secs: 4 }) });
         break;
       case 'story': card.add(e.id); break;
+      // council round 14: the peaks' start ALERTs, as their views say them (views/goldrush.js, happyhour.js, tourney.js)
+      case 'rush': if (e.phase === 'drop') { peaks.push({ key: 'goldrush', at }); sayer.say('ALERT', "Gold Rush! Beat Site 13's cart!", { key: 'goldrush' }); } break;
+      case 'happy': if (e.phase === 'start') { peaks.push({ key: 'happyhour', at }); sayer.say('ALERT', e.bonus ? 'Bonus round! The bell has spoken.' : 'Happy Hour! Drinks, and fetch the greens!', { key: 'happyhour' }); } break;
+      case 'tourney': if (e.phase === 'flight') { peaks.push({ key: 'tourney', at }); sayer.say('ALERT', "Members' Tournament! Grab their balls first!", { key: 'tourney' }); } break;
     }
   };
   const busy = [];   // [t, what] samples
@@ -75,7 +83,8 @@ function morning(env, tag) {
     for (let i = later.length - 1; i >= 0; i--) if (later[i].at <= t) { later[i].fn(); later.splice(i, 1); }
     sayer.update(); card.step();
     const vis = sayer.visible, c = card.card;
-    if (vis && vis !== prevVis) { shown.push({ t, kind: vis.kind, text: vis.text, data: vis.data }); if (vis.kind === 'ALERT') alerts++; }
+    if (vis && vis !== prevVis) { shown.push({ t, kind: vis.kind, text: vis.text, data: vis.data }); if (vis.kind === 'ALERT') alerts++;
+      for (const pk of peaks) if (!pk.shownAt && vis.kind === 'ALERT' && vis.key === pk.key) pk.shownAt = t; }
     const both = !!(vis && vis.kind !== 'STAMP' && c && card.up);   // two centre items at once
     if (both) { overlapT += DT; if (!inOverlap) { overlaps++; if (V) console.log(`      !! overlap at ${t.toFixed(1)}: ${vis.kind} "${vis.text}" under "${c.line}"`); } }
     inOverlap = both;
@@ -98,7 +107,7 @@ function morning(env, tag) {
   const memos = inBlock.filter(s => s.kind === 'MEMO').length;
   const memoAt = inBlock.find(s => s.kind === 'MEMO' && s.data?.memo)?.t ?? null;
   return { tag, day: crew.day, venue: crew.venue, vday: crew.venueDay, secs: +end.toFixed(1), items, memos, cards: inBlock.filter(s => s.kind === 'CARD').length, memoAt, shown: inBlock,
-    overlaps, overlapT: +overlapT.toFixed(1), alerts, win: whole ? 'shift' : WINDOW + ' s', epilogue: shown.some(s => s.beat === 'epilogue') };
+    overlaps, overlapT: +overlapT.toFixed(1), alerts, peaks: peaks.map(p => ({ key: p.key, at: +p.at.toFixed(1), shown: p.shownAt != null, wait: p.shownAt != null ? +(p.shownAt - p.at).toFixed(1) : null })), win: whole ? 'shift' : WINDOW + ' s', epilogue: shown.some(s => s.beat === 'epilogue') };
 }
 // Play out the rest of the shift idle (to the bell and the report) so the next morning can start.
 function finishShift(env) {
@@ -140,5 +149,8 @@ console.log(`\npromotion mornings: max ${max(promos, 'secs')} s, max ${max(promo
 console.log(`Club days 1–4: max ${max(club, 'secs')} s  (target ≤ 22 s)`);
 console.log(`mornings with two or more memos: ${results.filter(r => r.memos > 1).length} of ${results.length}  (target 0)`);
 console.log(`overlaps (two centre items at once): ${results.reduce((a, r) => a + r.overlaps, 0)} in ${results.filter(r => r.overlaps).length} of ${results.length} watched windows  (target 0)`);
+{ const pk = results.flatMap(r => (r.peaks ?? []).map(p => ({ ...p, tag: r.tag, seed: r.seed })));   // council round 14 (builder 4)
+  const lost = pk.filter(p => !p.shown);
+  console.log(`peak ALERTs shown: ${pk.length - lost.length} of ${pk.length}; max wait ${pk.length ? Math.max(0, ...pk.filter(p => p.shown).map(p => p.wait)) : '-'} s  (target: all)${lost.length ? '  LOST: ' + lost.map(p => `${p.key} ${p.tag} s${p.seed} @${p.at}`).join(', ') : ''}`); }
 const ep = results.filter(r => r.label === 'endless' && r.i === 0);
 console.log(`the first endless morning plays the epilogue: ${ep.filter(r => r.epilogue).length} of ${ep.length}; max ${ep.length ? max(ep, 'secs') : '-'} s  (target ≤ 28 s)`);

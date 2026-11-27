@@ -9,6 +9,7 @@
 // and "Passed Site 13." with the Board's one flash (no centre text).
 import * as THREE from 'three';
 import { CASE, plaqueLines } from '../caserules.js';
+import { landmarkTier, LANDMARK } from '../landmarks.js';   // council round 14 #5c: "A star named Gary" on the plaque
 
 const PW = 1024, PH = 512;   // the plaque canvas; the corner 0..32 px is solid wood (the plinth's other faces)
 const W = 0.9, H = 1.0, D = 0.6;   // the plinth (m)
@@ -24,7 +25,8 @@ function drawPlaque(g, lines) {
   g.font = 'italic 700 40px Georgia, serif'; g.fillText(names ?? '', PW / 2, 180, PW - 140);
   g.fillRect(PW / 2 - 200, 222, 400, 3);
   g.font = '600 36px Georgia, serif';
-  rec.forEach((l, i) => g.fillText(l, PW / 2, 272 + i * 48, PW - 160));
+  const step = rec.length > 4 ? 38 : 48;   // council round 14 #5c: four record days and the star still fit the plate
+  rec.forEach((l, i) => g.fillText(l, PW / 2, 266 + i * step, PW - 160));
 }
 
 export default {
@@ -61,11 +63,11 @@ export default {
       root.add(glass);
       ctx.scene.add(root);
     }
-    function paint(gc) {
-      const k = JSON.stringify(gc);
+    function paint(gc, star) {
+      const k = JSON.stringify(gc) + (star ? '*' : '');
       if (k === key) return;
       key = k;
-      drawPlaque(plaqueG, plaqueLines(gc));
+      drawPlaque(plaqueG, plaqueLines(gc, { star }));
       plaqueTex.needsUpdate = true;
     }
     return {
@@ -75,7 +77,7 @@ export default {
         if (!gc) { if (root) root.visible = false; return; }
         if (!root) build();
         root.visible = true;
-        paint(gc);
+        paint(gc, landmarkTier(s.up) >= LANDMARK.STAR);
         if (s.phase !== 'shift') { lost = false; passed = false; }
       },
       onEvent(e) {

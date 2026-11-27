@@ -231,8 +231,11 @@ test('poach: a poached win counts 2 of the 4 of 7; a poached loss counts nothing
   assert.equal(rivalBell13(r0, 40, 50, false).rival.wins, 1);
   assert.equal(rivalBell13(r0, 60, 50, true).rival.wins, 0);
   assert.equal(rivalBell13(r0, 40, 50, true).result.poached, true);
-  let r = r0;                                          // 2 poached wins = the 4: acquired by day 7
+  let r = r0;                                          // council round 14 #5a: 2 poached wins = 3 (one double a week): no acquisition
   for (let d = 0; d < 7; d++) r = rivalBell13(r, 40, d < 2 ? 50 : 30, d < 2).rival;
+  assert.equal(r.acquired, 0);
+  r = r0;                                              // a double + 2 plain wins = the 4
+  for (let d = 0; d < 7; d++) r = rivalBell13(r, 40, d < 3 ? 50 : 30, d === 0).rival;
   assert.equal(r.acquired, 1);
 });
 
@@ -259,10 +262,12 @@ test('poach: the shop reads today\'s price from s.mods.poach (null once bought)'
   assert.equal(crew.snapshot().mods.poach.price, null);
 });
 
-test('round 13 #4b: the 4th win clinches the week at once (two poached wins by day 2)', () => {
+test('round 13 #4b: the 4th win clinches the week at once (round 14 #5a: a double and two wins, by day 3)', () => {
   let r = { week: 1, wins: 0, days: 0, last: [50], acquired: 0 };
-  const a = rivalBell13(r, 40, 50, true); assert.equal(a.acquired, false); r = a.rival;
-  const b = rivalBell13(r, 40, 50, true); assert.equal(b.acquired, true); assert.equal(b.rival.acquired, 1);
+  const a = rivalBell13(r, 40, 50, true); assert.equal(a.acquired, false); assert.equal(a.result.double, true); r = a.rival;
+  const a2 = rivalBell13(r, 40, 50, true); assert.equal(a2.acquired, false, 'the second poached win counts 1'); assert.equal(a2.result.double, undefined); r = a2.rival;
+  const b = rivalBell13(r, 40, 50, false); assert.equal(b.acquired, true); assert.equal(b.rival.acquired, 1);
+  assert.equal(b.rival.dbl, 0, 'a new week: the double is back'); assert.equal(b.rival.pw, 0);
   assert.equal(b.rival.week, 2); assert.equal(b.rival.days, 0);
   let c = { week: 1, wins: 0, days: 0, last: [50], acquired: 0 };   // no poach: 3 wins in 7 days is still a lost week
   for (let d = 0; d < 7; d++) c = rivalBell13(c, 40, d < 3 ? 50 : 30, false).rival;

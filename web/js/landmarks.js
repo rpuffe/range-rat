@@ -3,7 +3,8 @@
 //
 // One crew row, one tier per venue, bought in order (the Club's before the Tiered one). Each is a visible build that
 // stays at every later venue, like the bays, and most of them add a call:
-//   1 Club     The Members' Bell     ring it (Ⓐ) for a bonus Tournament flight, once a shift, T-6:00..T-1:30
+//   1 Club     The Members' Bell     ring it (Ⓐ) for a bonus round, once a shift, T-6:00..T-1:30: a Tournament flight
+//                                    at the Club, a Happy Hour at Tiered (council round 14 #3a); sound only from the Stadium
 //   2 Tiered   The dimpl Tap Wall    every third deck order pours itself
 //   3 Stadium  Stretch fireworks     the Stretch lights one more section; all answered: GRAND SLAM (+0.10 crowd)
 //   4 County   Site 13's inspector   a second Inspection Hour at T-5:30 (45 s, ×4 in his patch)
@@ -15,7 +16,8 @@ export const LANDMARK = { BELL: 1, TAP: 2, FIREWORKS: 3, INSPECTOR: 4, STAR: 5 }
 export const LANDMARK_ROW = {
   id: 'landmark', title: 'Range landmarks', minVenue: 1, club: 'tourney', tiers: [
     { name: 'No landmarks', desc: 'The range is a range. Corporate likes it that way.' },
-    { name: "The Members' Bell", cost: 15_000, minVenue: 1, club: 'tourney', desc: 'A brass bell by the return. Ring it (Ⓐ) for a bonus Tournament flight, once a shift. Later it rings for the big moments.' },
+    // Council round 14 #3a (builder 3): $15k -> $10k base ($22k at 4P), so it fits Club day 4's last-bell surplus more often.
+    { name: "The Members' Bell", cost: 10_000, minVenue: 1, club: 'tourney', desc: 'A brass bell by the return. Ring it for a bonus round, once a shift. Later it rings for the big moments.' },
     { name: 'The dimpl Tap Wall', cost: 200_000, minVenue: 2, desc: 'A neon tap wall on the deck. Every third deck order pours itself, so the cook can step away.' },
     { name: 'Stretch fireworks', cost: 5_000_000, minVenue: 3, desc: 'Launch racks on the stand roof. The Stretch lights one more section, and every answer fires a rocket. All of them: GRAND SLAM.' },
     { name: "Site 13's inspector", cost: 20_000_000, minVenue: 4, desc: 'On retainer, still in their jacket. A second Inspection Hour at T-5:30: 45 s, ×4 in his patch.' },
@@ -27,12 +29,18 @@ export const hasLandmark = (up, tier) => landmarkTier(up) >= tier;
 
 // ---- 1. the Members' Bell -----------------------------------------------------------------------------------------
 // A brass bell on a post by the return. At the Club, Ⓐ within R rings a bonus flight, once a shift, while the shift has
-// FROM..TO s left and no flight is out. At later venues it rings itself (sound only) for the venue's peak and at the bank.
+// FROM..TO s left and no flight is out. Council round 14 #3a: at Tiered (venue 2) it rings a bonus Happy Hour on the same
+// window (server/venues/happyhour.mjs; `live`: a Happy Hour is on). From the Stadium it rings itself (sound only) for the
+// venue's peak and at the bank.
 export const BELL = { POST: { x: 21.5, z: 6.6 }, R: 2.2, FROM: 360, TO: 90 };
 export const atBell = p => !!p && Math.hypot(p.x - BELL.POST.x, p.z - BELL.POST.z) <= BELL.R;
-// Can the bell be rung now? left: seconds to the bell; rung: already rung this shift; live: a flight is out.
+// Can the bell be rung now? left: seconds to the bell; rung: already rung this shift; live: a flight (or Happy Hour) is out.
+export const BELL_VENUES = [1, 2];                                // where Ⓐ rings it for a bonus round
 export const bellOpen = ({ left, rung = false, live = false, venue = 1, endless = false }) =>
-  venue === 1 && !endless && !rung && !live && left <= BELL.FROM && left >= BELL.TO;
+  BELL_VENUES.includes(venue) && !endless && !rung && !live && left <= BELL.FROM && left >= BELL.TO;
+// Council round 14 #3a: the bell's state on the wire (1 open, 2 rung, 0 shut) from the venue's bonus-round module: the
+// Tournament at the Club (s.mods.tourney.bell), Happy Hour at Tiered (s.mods.happyhour.bell, the same shape).
+export const bellStateOf = s => (s?.venue === 2 ? s?.mods?.happyhour?.bell : s?.venue === 1 ? s?.mods?.tourney?.bell : 0) ?? 0;
 export const BELL_PROMPT = 'Ⓐ: ring the Members\' Bell';          // 4 words + the glyph
 export const BELL_WAIT = 'The bell rings once a shift.';         // 6 words (the prompt after it's rung)
 
@@ -59,6 +67,12 @@ export const INSPECTOR_MEMO = "Site 13's inspector works for us now.";   // 7 wo
 export const STAR = { x: -44, y: 150, z: 5 };                     // over the Lift (MAP.LIFT), above the car's 120 m
 export const STAR_LINE = "A star. Named Gary. I'll allow it.";    // Gary's next bubble (7 words)
 export const STAR_PLAQUE = 'A star named Gary';                    // endless: the glass case's plaque line
+// Council round 14 #5c (builder 3): the card on the tier-5 buy (priority 2, the next centre item): 8 words with his name.
+export const STAR_CARD = `Gary: '${STAR_LINE}'`;
+// The endless case shot tilts up to the star over the case (views/landmarks.js puts it at y STAR_TILT.Y in endless) and
+// back: from AT s into the case shot (just after its 1.5 s move), UP s up, HOLD, UP s down: 2 s in all, inside the
+// shot's 7.5 s floor (revealclock.js). round2.js; caserules.js starTiltWeight.
+export const STAR_TILT = Object.freeze({ Y: 34, AT: 1.6, UP: 0.6, HOLD: 0.8 });
 
 // ---- the money check (council round 13 §4 verify, the bots) --------------------------------------------------------
 // "Nothing worth buying": no unbought, unlocked tier anywhere costs ≤ SHIFTS shifts of income.

@@ -51,6 +51,8 @@ import glasscase from './glasscase.js';   // council round 12 #3d (builder 3): B
 import tourney from './tourney.js';
 import landmarks from './landmarks.js';   // council round 13 #4 (builder 2): the Range landmarks   // council round 13 #1 (builder 2): the Members' Tournament
 import greens from './greens.js';   // council round 10 #6: the landing marker at every venue, ON THE GREEN!   // endless (round 7 #9): crew colours and the statue
+import goldrush from './goldrush.js';   // council round 14 #1 (builder 2): the Gold Rush's van, beams and Site 13's cart
+import happyhour from './happyhour.js';   // council round 14 #2a (builder 2): Happy Hour's neon beams on the greens
 
 export const VIEWS = [
   tiered,
@@ -72,6 +74,10 @@ export const VIEWS = [
   tourney,
   //
   landmarks,
+  //
+  goldrush,
+  //
+  happyhour,
 ];
 
 // main.js: createViews(ctx) runs the list above (views/registry.js has the runner; tests use it directly).

@@ -25,7 +25,9 @@
    "reviews": 0,
    "launched": 1771,
    "filled": 80,
-   "spotless": 65.4
+   "spotless": 65.4,
+   "rushOut": 4,
+   "rushClaimed": 4
   },
   "up": {
    "gear": 3,

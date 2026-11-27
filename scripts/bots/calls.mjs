@@ -48,11 +48,28 @@ export function eventCall(e) {
   return null;
 }
 
+// Council round 14 #0c (builder 4): the "answered" column. A call is ANSWERED when a Rat reaches its place or takes
+// its prize before it lapses: a member/gold ball taken, a Stretch section or a lit request delivered to, an order
+// poured, the inspector met (a hazard bagged), a treasure carried. Modules tag their own: `answer: '<kind>'` (and `n`)
+// on the event, e.g. { t: 'goldrush', phase: 'take', answer: 'gold' }. State calls (a dirty fixture, a low basket or
+// fryer) are answered when the state clears. Per kind, answered never exceeds offered. The bars stay on offered.
+export function eventAnswer(e) {
+  if (!e || typeof e !== 'object') return null;
+  if (typeof e.answer === 'string') return [e.answer, Math.max(1, e.n | 0 || 1)];
+  if (e.t === 'tourney' && e.phase === 'take') return 'member';
+  if (e.t === 'crowd' && e.kind === 'souv' && e.stretch) return 'stretch';
+  if (e.t === 'crowd' && e.kind === 'souv' && e.req) return 'request';
+  if (e.t === 'inspect' && e.phase === 'done' && e.bagged > 0) return 'inspector';
+  if (e.t === 'deckTab' && e.order) return 'deckOrder';
+  if (e.t === 'treasure' && e.phase === 'carried') return 'treasure';
+  return null;
+}
+
 export const venueName = crew => (crew.endless ? 'Endless' : VENUES[crew.venue] ?? 'v' + crew.venue);
 
 export class CallTally {
   constructor(n = 4) { this.n = n; this.rows = []; this.reset(); }
-  reset() { this.secs = 0; this.kinds = {}; this.last = {}; this.edge = {}; this.armed = {}; this.venue = null; this.vd = null; this.bossLater = 0; }
+  reset() { this.secs = 0; this.kinds = {}; this.answered = {}; this.open = {}; this.last = {}; this.edge = {}; this.armed = {}; this.venue = null; this.vd = null; this.bossLater = 0; }
   hit(kind, now, n = 1) {
     const gap = GAPS[kind] ?? MERGE;
     if (n === 1 && now - (this.last[kind] ?? -1e9) < gap) return false;   // several places at once (a Stretch) never merge
@@ -60,11 +77,16 @@ export class CallTally {
     this.kinds[kind] = (this.kinds[kind] ?? 0) + n;
     return true;
   }
+  answer(kind, n = 1) {
+    const room = (this.kinds[kind] ?? 0) - (this.answered[kind] ?? 0);
+    if (room > 0) this.answered[kind] = (this.answered[kind] ?? 0) + Math.min(n, room);
+  }
   // a state call: counts when it becomes true (a rising edge), merged like the rest
   // falling: the state must have been off earlier this shift (the morning's empty basket is the fill chore, not a call)
   level(kind, on, now, falling = false) {
     if (!on) this.armed[kind] = true;
-    if (on && !this.edge[kind] && (!falling || this.armed[kind])) this.hit(kind.split(':')[0], now);
+    if (on && !this.edge[kind] && (!falling || this.armed[kind]) && this.hit(kind.split(':')[0], now)) this.open[kind] = true;
+    if (!on && this.edge[kind] && this.open[kind]) { this.open[kind] = false; this.answer(kind.split(':')[0]); }   // round 14 #0c: the state cleared
     this.edge[kind] = on;
   }
   step(crew, dt) {
@@ -77,6 +99,7 @@ export class CallTally {
       const hit = Array.isArray(k) ? this.hit(k[0], now, k[1]) : this.hit(k, now);
       if (hit && k === 'boss' && e.phase !== 'warn') this.bossLater++;
     }
+    for (const e of crew.events) { const a = eventAnswer(e); if (Array.isArray(a)) this.answer(a[0], a[1]); else if (a) this.answer(a); }
     if (!crew.working?.()) return;
     const ws = crew.whistleState?.();
     this.level('whistle', ws === 1, now);
@@ -88,9 +111,10 @@ export class CallTally {
   endShift(crew, extraFields = {}) {
     const n = Object.values(this.kinds).reduce((a, b) => a + b, 0), mins = this.secs / 60;
     // r8: the same shift on playtest round 8's (B's) kinds: no Gary visit, no basket, the boss's warn only. For continuity.
+    const ans = Object.values(this.answered).reduce((a, b) => a + b, 0);
     const r8 = n - (this.kinds.gary ?? 0) - (this.kinds.basket ?? 0) - this.bossLater;
     const rec = { venue: this.venue ?? venueName(crew), vd: this.vd ?? crew.venueDay, day: crew.day, players: this.n, mins: +mins.toFixed(2), n,
-      perMin: mins > 0 ? +(n / mins).toFixed(2) : 0, r8, kinds: { ...this.kinds }, ...extraFields };
+      perMin: mins > 0 ? +(n / mins).toFixed(2) : 0, ans, ansPerMin: mins > 0 ? +(ans / mins).toFixed(2) : 0, r8, kinds: { ...this.kinds }, answered: { ...this.answered }, ...extraFields };
     this.rows.push(rec);
     if (process.env.CALLS_JSON) appendFileSync(process.env.CALLS_JSON, JSON.stringify(rec) + '\n');
     this.reset();
@@ -105,7 +129,7 @@ export class CallTally {
   }
 }
 
-export const fmtRow = r => `CALLS ${r.venue.padEnd(8)} ${r.players}P shifts ${String(r.shifts).padStart(2)} calls/min ${r.perMin.toFixed(2)} (${r.min.toFixed(2)}–${r.max.toFixed(2)}) r8 ${r.r8PerMin.toFixed(2)} | ${Object.entries(r.kinds).map(([k, v]) => `${k} ${v}`).join(' ')}`;
+export const fmtRow = r => `CALLS ${r.venue.padEnd(8)} ${r.players}P shifts ${String(r.shifts).padStart(2)} calls/min ${r.perMin.toFixed(2)} (${r.min.toFixed(2)}–${r.max.toFixed(2)}) offered/answered ${r.perMin.toFixed(2)} / ${r.ansPerMin.toFixed(2)} r8 ${r.r8PerMin.toFixed(2)} | ${Object.entries(r.kinds).map(([k, v]) => `${k} ${v}`).join(' ')}`;
 
 // rows: endShift records (from any number of runs). Time-weighted: all calls / all minutes, per venue and crew size.
 export function summarise(rows) {
@@ -113,13 +137,13 @@ export function summarise(rows) {
   const all = [...rows, ...rows.filter(r => r.venue === 'Club' && r.vd >= 4).map(r => ({ ...r, venue: 'Club d4+' }))];
   for (const r of all) {
     const k = r.venue + '|' + r.players;
-    const a = by.get(k) ?? { r8: 0, venue: r.venue, players: r.players, shifts: 0, n: 0, mins: 0, min: Infinity, max: -Infinity, kinds: {} };
-    a.shifts++; a.n += r.n; a.r8 += r.r8 ?? r.n; a.mins += r.mins; a.min = Math.min(a.min, r.perMin); a.max = Math.max(a.max, r.perMin);
+    const a = by.get(k) ?? { r8: 0, ans: 0, venue: r.venue, players: r.players, shifts: 0, n: 0, mins: 0, min: Infinity, max: -Infinity, kinds: {} };
+    a.shifts++; a.n += r.n; a.ans += r.ans ?? 0; a.r8 += r.r8 ?? r.n; a.mins += r.mins; a.min = Math.min(a.min, r.perMin); a.max = Math.max(a.max, r.perMin);
     for (const [kk, v] of Object.entries(r.kinds)) a.kinds[kk] = (a.kinds[kk] ?? 0) + v;
     by.set(k, a);
   }
   const order = v => (v === 'Club d4+' ? 1.5 : VENUES.indexOf(v));
-  return [...by.values()].map(a => ({ ...a, perMin: a.mins > 0 ? a.n / a.mins : 0, r8PerMin: a.mins > 0 ? a.r8 / a.mins : 0 }))
+  return [...by.values()].map(a => ({ ...a, perMin: a.mins > 0 ? a.n / a.mins : 0, r8PerMin: a.mins > 0 ? a.r8 / a.mins : 0, ansPerMin: a.mins > 0 ? a.ans / a.mins : 0 }))
     .sort((a, b) => order(a.venue) - order(b.venue) || a.players - b.players);
 }
 

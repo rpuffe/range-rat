@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { BEATS, BEAT_BY_ID, BEAT_IDS, STORY, WHO, beatFor, cleanStory, coldDue, midDue, createStoryModel, GARY_HELLO, GARY_BYE, garyHello, garyBye } from '../web/js/story.js';
 import { createSayModel, wordCount } from '../web/js/say.js';
 import { Crew } from '../server/crew.mjs';
+import { ENDCARD_AT, ENDCARD_HOLD } from '../web/js/dayend.js';   // round 14 6.7
 
 const storyEvents = crew => crew.events.filter(e => e.t === 'story').map(e => e.id);
 function crewAt(save, { test: isTest = false } = {}) {
@@ -316,7 +317,7 @@ for (const n of [1, 2, 4]) {
   test(`the first endless morning at ${n}P: the clock holds ${EPILOGUE_HOLD} s while the epilogue plays; no customer swings`, () => {
     const m = lastBucket(n);
     bank(m);
-    m.run(2);
+    m.run(ENDCARD_AT + ENDCARD_HOLD + 0.5);   // round 14 6.7: the ending report's Ready waits for the end card's 10 s
     const { c, ps, run, log } = m;
     assert.equal(c.phase, 'report');
     log.length = 0;

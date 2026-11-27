@@ -249,3 +249,26 @@ first hour" (A). The weak middle moved: the Club's fee-only days 4–5 and Tiere
 Tiered spawns look at a roof. Text load holds at 7.3, but the late mornings still leak PA cards, tips and cash pops
 under story cards (C). Look & feel and Polish dip on the roof views and the boss's leftover lines. Whole game at 4P
 (bots): 2 h 08–2 h 37 to the ending; the Club and Tiered are about half of it.
+
+## Round 9 (2026-11-27, build cee02b3: council round 13 built) · standard split (B from Club day 4)
+
+| Metric | A | B | C | **Avg** | R8 | R1 | Δ vs R8 |
+|---|---|---|---|---|---|---|---|
+| Fun | 6 | 7 | 7.5 | **6.8** | 7.0 | 6.0 | −0.2 |
+| Clarity | 6 | 6.5 | 7 | **6.5** | 6.7 | 5.7 | −0.2 |
+| Text load | 7.5 | 7.5 | 7.5 | **7.5** | 7.3 | 4.0 | +0.2 |
+| Pacing | 6.5 | 6.5 | 7.5 | **6.8** | 6.7 | 5.0 | +0.1 |
+| Co-op | 6.5 | 7 | 7 | **6.8** | 6.8 | 6.0 | 0 |
+| Meaningful features | 6.5 | 6.5 | 6.5 | **6.5** | 6.3 | 4.7 | +0.2 |
+| Look & feel | 6 | 7 | 7 | **6.7** | 6.8 | 7.0 | −0.1 |
+| Polish | 4.5 | 6.5 | 6.5 | **5.8** | 6.3 | 4.7 | −0.5 |
+| One more shift | 7 | 6.5 | 7 | **6.8** | 6.7 | 6.0 | +0.1 |
+| Decision density | 5.5 | 6.5 | 6.5 | **6.2** | 5.8 | — | +0.4 |
+| **Overall** | **6.2** | **6.8** | **7.1** | **6.7** | 6.8 | 5.5 | −0.1 |
+
+**Read:** B (+0.3) and C (7.1, the best slice yet) rose: the Members' Tournament, the landmarks and one centre text
+landed, Decision density met 6.5 in both, Text load holds 7.5. A fell to 6.2 on one merge bug: `mowe.tick` slipped
+into a comment, so MOW-E was invisible all fight (fixed in 097c941 with a guard test; A expects ~7.0 with it).
+Remaining gaps: Muni day 3 is dead air (0.43 calls a minute), solo Tiered drags 5–9 shifts, the Members' Bell is
+never rung, the first Tournament day isn't announced, MOW-E 2.0's loss line is eaten by Gary's warn, Rat 1 spawns
+inside Gary and the glass case on the first endless morning, and the Site 13 poach is too easy.

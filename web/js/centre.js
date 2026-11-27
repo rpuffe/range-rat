@@ -33,6 +33,9 @@ export const CENTRE = {
   ZONE: ['story-card', 'pa-card', 'memo', 'hint', 'todo', 'toast', 'bell-stamp', 'mowe-stamp', 'endcard', 'ending-flash'],
   SAMPLE: 0.1,
   OPACITY: 0.3,
+  // Council round 14 #0d (C #12): the centre zone on screen, as viewport fractions (x0, y0 top-left .. x1, y1). A world
+  // text sprite (Gary's bubble, the pay floats) whose screen box meets it counts as a centre item in the counter.
+  BOX: { x0: 0.2, y0: 0.12, x1: 0.8, y1: 0.72 },
 };
 export const LEVELS = 6;
 
@@ -159,6 +162,8 @@ export function createCentre({ now = defaultNow, eligible = null, onDrop = null 
 
 // The ?debug overlap counter's pure half: given the centre zone's samples ([{ id, text, opacity }]), is this an
 // overlap frame (two or more up over CENTRE.OPACITY)? Returns the up elements, or null.
+// Council round 14 #0d: does a screen box (viewport fractions { x0, y0, x1, y1 }) meet the centre zone?
+export const inCentreBox = (b, z = CENTRE.BOX) => !!b && b.x1 > z.x0 && b.x0 < z.x1 && b.y1 > z.y0 && b.y0 < z.y1;
 export function overlapOf(samples, cut = CENTRE.OPACITY) {
   let n = 0;
   for (const s of samples) if (s.opacity > cut) n++;

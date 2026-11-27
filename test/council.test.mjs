@@ -883,7 +883,7 @@ test('the report says what is coming tomorrow', () => {
   }
   assert.equal(tomorrow[0], 'Tomorrow: a target. Hose before the bell.', 'council round 6 #1');
   assert.ok(tomorrow[0].split(/s+/).length <= 8);
-  assert.match(tomorrow[1], /gold/, 'day 3 brings gold');
+  assert.match(tomorrow[1], /gold/i, 'day 3 brings gold (round 14: "a Gold Rush")');
   assert.match(tomorrow[2], /Gary from Regional/, 'Gary inspects on day 4 (playtest)');
   assert.ok(new Set(tomorrow).size >= 3);
 });

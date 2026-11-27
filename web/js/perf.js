@@ -12,6 +12,7 @@ export const AUTO_P95_MS = 22;        // Auto steps down when p95 stays above th
 export const AUTO_HOLD_S = 10;        // ...for this long
 export const AUTO_SETTLE_S = 6;       // ignore the first seconds (shader compiles) and the seconds after a step
 export const AUTO_MAX_STEPS = 3;
+export const AUTO_GAP_S = 60;         // round 14 6.11 (A): at most one step a minute ("Lowered graphics" came every ~14 s)
 export const isXbox = ua => /Xbox/i.test(ua || '');
 
 // Which base tier a setting means on this device.
@@ -67,7 +68,7 @@ export function summarize(values) {
 
 // Auto mode's decision: feed it (p95, seconds since last call); it says true when it's time
 // to step down. Sustained pressure only: one good reading resets the hold.
-export function createAuto({ limit = AUTO_P95_MS, hold = AUTO_HOLD_S, settle = AUTO_SETTLE_S, max = AUTO_MAX_STEPS } = {}) {
+export function createAuto({ limit = AUTO_P95_MS, hold = AUTO_HOLD_S, settle = AUTO_SETTLE_S, max = AUTO_MAX_STEPS, gap = AUTO_GAP_S } = {}) {
   let over = 0, quiet = settle, steps = 0;
   return {
     get steps() { return steps; },
@@ -75,7 +76,7 @@ export function createAuto({ limit = AUTO_P95_MS, hold = AUTO_HOLD_S, settle = A
       if (steps >= max) return false;
       if (quiet > 0) { quiet -= dt; over = 0; return false; }
       over = p95 > limit ? over + dt : 0;
-      if (over >= hold) { steps++; over = 0; quiet = settle; return true; }
+      if (over >= hold) { steps++; over = 0; quiet = Math.max(settle, gap); return true; }
       return false;
     },
     reset() { over = 0; quiet = settle; steps = 0; },
@@ -89,7 +90,7 @@ export function createPerf({ renderer, ua = '', graphics = 'auto', search = '', 
   const overlayAllowed = params.has('perf');
   let setting = graphics, profile = profileFor(baseTier(setting, ua), 0);
   const auto = createAuto();
-  let hooks = null, frameN = 0, lastT = 0;
+  let hooks = null, frameN = 0, lastT = 0, toasted = false;   // round 14 6.11: the toast once a session
   let w = 0, h = 0;
 
   // ring buffer of the last few seconds of frame times
@@ -170,7 +171,7 @@ export function createPerf({ renderer, ua = '', graphics = 'auto', search = '', 
         if (auto.update(p95, 1)) {
           profile = profileFor(baseTier(setting, ua), auto.steps);
           apply();
-          hooks?.toast?.('Lowered graphics to keep it smooth');
+          if (!toasted) { toasted = true; hooks?.toast?.('Lowered graphics to keep it smooth'); }
           if (overlayAllowed) console.log(`[perf] auto step ${auto.steps}: p95 ${p95.toFixed(1)} ms`, profile);
         }
       }

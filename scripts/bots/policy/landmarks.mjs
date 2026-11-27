@@ -13,9 +13,26 @@ if (!S.SHOP_BY_ID.landmark) { S.SHOP.push(LM.LANDMARK_ROW); S.SHOP_BY_ID.landmar
 export default function make(ctx, value = '1') {
   const { crew, rats } = ctx;
   const bought = [], dry = [], lastBell = {};
+  const bell = { owned: 0, rung: 0 };   // council round 14 #3a: shifts with the bell owned at the Club or Tiered, and rung
   const price = () => S.nextPrice('landmark', crew.up, crew.onlineCount(), 0, crew.venue, S.shopDay(crew.phase, crew.day), crew.endless,
-    S.shopDay(crew.phase, crew.venueDay));
+    (S.shopVday ?? S.shopDay)(crew.phase, crew.venueDay));   // council round 14 #3a: the lobby shops for the coming day
+  // Council round 14 #3a: ring the bell when it's open, at the Club or Tiered (any free Rat walks over). The server
+  // checks the window; this only reads its state (bellStateOf: the snapshot's 1 open) once a second.
+  let open = 0, look = 0;
   return {
+    step(dt) {
+      if (crew.endless || (crew.venue !== 1 && crew.venue !== 2) || !LM.hasLandmark(crew.up, LM.LANDMARK.BELL)) return null;
+      if (crew.gary && crew.gary.phase !== 'done') return null;
+      if ((look -= dt) <= 0) { look = 1; open = LM.bellStateOf({ venue: crew.venue, mods: crew.mods.snapshot() }); }
+      if (open !== 1) return null;
+      const p = rats.find(r => !r.diving && !(r.down > 0) && !crew.driving?.(r)) ?? null;
+      if (!p) return null;
+      if ((ctx.walkTo?.(p, LM.BELL.POST.x, LM.BELL.POST.z) ?? true) || LM.atBell(p)) {
+        if (!LM.atBell(p)) Object.assign(p, LM.BELL.POST);
+        crew.mods.first('input', p, { t: 'bell' }); look = 0;
+      }
+      return [p];
+    },
     buy() {
       const pr = price();
       if (pr == null || pr > crew.cash) return;
@@ -34,11 +51,16 @@ export default function make(ctx, value = '1') {
       }
       if (!worth) dry.push(`d${crew.day} v${crew.endless ? 'E' : crew.venue}`);
       lastBell[crew.endless ? 'E' : crew.venue] = Math.round(crew.cash);
+      if (!crew.endless && (crew.venue === 1 || crew.venue === 2) && LM.hasLandmark(crew.up, LM.LANDMARK.BELL)) {
+        bell.owned++;
+        if ((report?.bellRung ?? crew.stats?.bellRung ?? 0) > 0 || crew.mods.state('happyhour')?.bell) bell.rung++;
+      }
       return { landmark: crew.up.landmark ?? 0, worth: worth ? 1 : 0 };
     },
     summary() {
       return [`LANDMARKS bought: ${bought.join(' | ') || 'none'}`, `LANDMARKS shifts with nothing worth buying: ${dry.length} ${dry.join(' ')}`,
-        `LANDMARKS cash at each venue's last bell: ${JSON.stringify(lastBell)}`];
+        `LANDMARKS cash at each venue's last bell: ${JSON.stringify(lastBell)}`,
+        `LANDMARKS bell rung in ${bell.rung} of ${bell.owned} owned Club/Tiered shifts`];
     },
   };
 }

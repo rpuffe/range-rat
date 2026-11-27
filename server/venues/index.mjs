@@ -25,7 +25,15 @@
 //     snapshot(crew, st)                   -> JSON         sent every tick as s.mods[id] (keep it small)
 //     toSave(crew, st)                     -> JSON | undefined   kept as save.mods[id]; undefined = nothing to keep
 //     take(crew, st, p, b)                 -> true     round 11: a Rat picks up a Rats-only ball (b.hands); true = taken
+//     reportRows(crew, st, ending)         -> [{ text, cash? }]   council round 14 #0b: rows on today's report, after
+//                                                      the MOW-E row, above the goals. At most REPORT_ROWS (2) from all
+//                                                      modules, in MODULES order. Called in endShift after every
+//                                                      module's endShift. text: ≤ 8 words before any number.
 //   }
+//
+// Council round 14 #0b, the morning memo: a module that has an EVENT today (the Tournament, a Gold Rush ...) sets
+// `crew.memoEvent = '<line>'` in its startShift. That line takes the memo's second line ahead of the NEW kinds line
+// (sim.js memoSecond `event`); the kinds it pushes out float "NEW ×1.5" on their first hit. One morning only.
 //
 // Every hook is optional. `st` is whatever init returned (an object; {} if there is no init). Hooks run in
 // MODULES order. Nothing here keeps module-level state: one Node process runs many crews.
@@ -41,10 +49,18 @@ import county from './county.mjs';
 //
 import orbit from './orbit.mjs';
 //
-import nudge from './nudge.mjs';
-import tourney from './tourney.mjs';
-import poach from './poach.mjs';   // council round 13 #4b (builder 2): poach a Site 13 regular (endless)   // council round 13 #1 (builder 2): the Members' Tournament (venue 1), and the Members' Bell
-import greens from './greens.mjs';   // council round 10 #6: on the green (venues 0-1; Tiered on, tiered.mjs's TARGET)   // council round 6 #10: the Muni day-2 suggestions (venue 0)
+import nudge from './nudge.mjs';     // council round 6 #10: the Muni day-2 suggestions (venue 0)
+//
+import tourney from './tourney.mjs';  // council round 13 #1 (builder 2): the Members' Tournament (venue 1), and the Members' Bell
+//
+import poach from './poach.mjs';      // council round 13 #4b (builder 2): poach a Site 13 regular (endless)
+//
+import greens from './greens.mjs';    // council round 10 #6: on the green (venues 0-1; Tiered on, tiered.mjs's TARGET)
+//
+import goldrush from './goldrush.mjs';   // council round 14 #1 (builder 2): the Gold Rush (Muni day 3, Club day 2)
+//
+import happyhour from './happyhour.mjs';   // council round 14 #2 (builder 2): Happy Hour on the Tiered deck, the bell's bonus one, the solo bowls read
+//
 
 export const MODULES = [
   tiered,
@@ -64,10 +80,15 @@ export const MODULES = [
   tourney,
   //
   poach,
+  //
+  goldrush,
+  //
+  happyhour,
 ];
 
 export const HOOKS = ['init', 'startShift', 'tick', 'endShift', 'serve', 'ping', 'knockDown', 'input', 'launchMod', 'onRest',
-  'clamp', 'inspect', 'signal', 'awards', 'kpi', 'snapshot', 'toSave', 'take'];
+  'clamp', 'inspect', 'signal', 'awards', 'kpi', 'snapshot', 'toSave', 'take', 'reportRows'];
+export const REPORT_ROWS = 2;   // council round 14 #0b: the most module rows a report shows
 const ID_RE = /^[a-z][a-z0-9]{0,15}$/;
 const clamp01 = v => Math.max(0, Math.min(1, v));
 
@@ -133,6 +154,14 @@ export class VenueHooks {
     const out = [];
     for (const e of this.active()) if (e.m[name]) out.push(...(e.m[name](this.crew, e.st, ...args) ?? []));
     return out;
+  }
+  // Council round 14 #0b: today's report rows from the modules ({ text, cash? }), the first REPORT_ROWS in MODULES order.
+  // A malformed row (no text) is dropped, so a module can't put a blank line on the report.
+  reportRows(...args) {
+    return this.collect('reportRows', ...args)
+      .filter(r => r && typeof r.text === 'string' && r.text.trim())
+      .slice(0, REPORT_ROWS)
+      .map(r => (Number.isFinite(r.cash) ? { text: r.text, cash: r.cash } : { text: r.text }));
   }
   // Cross-module messages: e.g. Tiered signals 'target' and the Stadium's crowd cheers.
   signal(name, data) { this.call('signal', name, data); }

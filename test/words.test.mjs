@@ -154,3 +154,27 @@ test('round 13 builder 3: the fight summary and the checklist basket line are 8 
   f.step(fight); for (let i = 0; i < 12; i++) f.refuse(fight);
   assert.deepEqual(over([['fight', f.step({ kind: 'boss', phase: 'tamed' })], ['basket', '↑ ' + MORNING_TEXT.basket]]), []);
 });
+
+// ---- council round 14, builder 2 (peaks): the Gold Rush, Happy Hour
+test('round 14 builder 2: the Gold Rush and Happy Hour lines are 8 words or fewer (report rows: before the number)', async () => {
+  const G = await import('../web/js/goldrush.js');
+  const H = await import('../web/js/happyhour.js');
+  const pre = s => s.split(/ · |\d/)[0];
+  assert.deepEqual(over([['rush', G.RUSH_ALERT], ['claim1', G.rushClaimLine(1)], ['claim2', G.rushClaimLine(2)], ['sweep', G.RUSH_SWEEP_LINE],
+    ['eve', G.RUSH_EVE], ['carry', G.rushCarryLine(2)], ['rowAll', G.rushRow({ n: 4 }).text], ['row', pre(G.rushRow({ n: 4, got: 3, cash: 214 }).text)],
+    ['happy', H.HAPPY_ALERT], ['bonus', H.HAPPY_BONUS_ALERT], ['lapse', H.HAPPY_LAPSE_LINE], ['hcarry', H.happyCarryLine(1)],
+    ['hrow', pre(H.happyRow({ pours: 3, got: 2, n: 3, cash: 41000 }).text)]]), []);
+});
+
+// ---- council round 14, builder 3 (tourney): the star card, the poach card and rows, the Tournament's eve and rows
+test('round 14 builder 3: the star card, the poach card, the eve line and the report rows are 8 words or fewer', async () => {
+  const LM = await import('../web/js/landmarks.js'), O = await import('../web/js/owner.js'), T = await import('../web/js/tourney.js');
+  assert.deepEqual(over([['starCard', LM.STAR_CARD], ['poachCard', O.POACH_FEED], ['poachRow', O.POACH_ROW_LINE], ['double', O.POACH_DOUBLE_TAG],
+    ['eve', T.TOURNEY_EVE_LINE], ['rowNone', T.tourneyRow({ out: 4 }).text], ['rowSome', T.tourneyRow({ out: 12, banked: 9, cash: 1 }).text]]), []);
+});
+
+// ---- council round 14, builder 1 (MOW-E): the mowed line once a fight, the rematch eve
+test('round 14 builder 1: the mowed lines and the rematch eve are 8 words or fewer', async () => {
+  const { BOSS_LINES: L } = await import('../web/js/mowe.js');
+  assert.deepEqual(over([['mowed', L.mowed], ['mowedAgain', L.mowedAgain], ['rematchEve', L.rematchEve]]), []);
+});

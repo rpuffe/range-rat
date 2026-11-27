@@ -112,6 +112,17 @@ export const RALLY_PICK = 30;
 export const RALLY_AT = Object.freeze({ 2: 180, 3: 180 });
 export const rallyAt = venue => RALLY_AT[venue] ?? LAST_CALL.SECS;
 
+// Council round 14 #2b (the solo Tiered fix): the bowls read at Last Call scales by crew size. A small crew passes when
+// it has shot the bowls down to this share of their load at the rally's start (T-3:00): half at 1P, a quarter at 2P.
+// 3P+ keep the plain read (the gauge at or over QUOTA_KPI). It only ever adds a pass: the plain read still counts.
+export const BOWLS_EASE = Object.freeze({ 1: 0.5, 2: 0.25 });
+export const bowlsEase = n => BOWLS_EASE[Math.max(1, n | 0)] ?? null;
+// load0: the bowls' load at the rally's start; load: at Last Call (both in cup weights, tiered.mjs st.cups summed).
+export function bowlsPass({ n = 4, load0 = 0, load = 0 } = {}) {
+  const k = bowlsEase(n);
+  return k != null && load0 > 0 && load <= load0 * k + 1e-9;
+}
+
 // ---- Round 7 #4: dealt jobs. The ranked shortfalls, dealt round the crew by distance: no roles, only nudges. ----------
 // Where each job is. The gauge's place is per venue: the worst bowl (Tiered), the Track (Stadium), Yard 2 (County),
 // the Lift (Orbital).

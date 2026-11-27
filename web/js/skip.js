@@ -5,15 +5,21 @@
 // The starting points, in game order. Each has a preset save in server/presets/<id>.json, made by a bot crew
 // playing the real game (node scripts/make-presets.mjs).
 export const PRESETS = Object.freeze([
+  { id: 'muni3', label: 'Muni · day 3 (Gold Rush)', venue: 0 },   // council round 14 #0d (builder 4)
   { id: 'muni4', label: 'Muni · day 4 (Gary)', venue: 0 },
   { id: 'club1', label: 'Range Club · day 1', venue: 1 },
+  { id: 'club2', label: 'Range Club · day 2 (Gold Rush)', venue: 1 },   // council round 14 #0d
   { id: 'club4', label: 'Range Club · day 4 (MOW-E tame)', venue: 1 },   // council round 13 #0d: the Tournament's day
+  { id: 'club4-1p', label: 'Range Club · day 4 · solo crew', venue: 1, players: 1 },   // council round 14 #0d (B #11)
+  { id: 'club4-2p', label: 'Range Club · day 4 · 2P crew', venue: 1, players: 2 },
   { id: 'tiered1', label: 'Tiered · day 1', venue: 2 },
+  { id: 'tiered1-1p', label: 'Tiered · day 1 · solo crew', venue: 2, players: 1 },
   { id: 'stadium1', label: 'The Stadium · day 1', venue: 3 },
   { id: 'stadiumPromo', label: 'The Stadium · Promotion Day', venue: 3 },   // council round 13 #0d: MOW-E 2.0's crash
   { id: 'county1', label: 'The County · day 1', venue: 4 },
   { id: 'orbital1', label: 'The Orbital · day 1', venue: 5 },
   { id: 'lastbucket', label: 'The Last Bucket (finale)', venue: 5 },
+  { id: 'lastbucket-4p', label: 'The Last Bucket · 4P crew (smoke run)', venue: 5, players: 4 },   // council round 14 #0d
   { id: 'endless', label: 'Endless (Range Rats LLC)', venue: 5, endless: true },
 ]);
 export const presetById = id => PRESETS.find(p => p.id === id) ?? null;

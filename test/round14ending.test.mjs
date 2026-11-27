@@ -1,6 +1,7 @@
 // Council round 12, builder 3 ("ending"): the ending on camera (#3), endless contracts you can see and win (#6),
 // Site 13 the live endless rival (#8). design/round14-ending.md.
 import test from 'node:test';
+import { ENDCARD_AT, ENDCARD_HOLD } from '../web/js/dayend.js';   // round 14 6.7
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Crew } from '../server/crew.mjs';
@@ -87,7 +88,7 @@ test('#3d: the bank builds the case FOUND BY the crew; the first Owners\' mornin
   assert.deepEqual(c.glassCase.names, ['R1', 'R0'], 'the carrier first');
   assert.deepEqual(c.snapshot().glassCase.names, ['R1', 'R0']);
   for (const p of ps) c.readyUp(p);
-  run(0.5);
+  run(ENDCARD_AT + ENDCARD_HOLD + 0.5);   // round 14 6.7: the ending report holds Ready until the end card has had 10 s
   assert.equal(c.snapshot().firstOwnerDay, true, 'a rejoin restores Gary at the return');
   const save = JSON.parse(JSON.stringify(c.toSave()));
   assert.deepEqual(new Crew('CASE', save).glassCase, c.glassCase);

@@ -3,7 +3,7 @@
 // for any Rat underneath, and Gary's kitchen stop fails. Active at Tiered and every later venue; the rules are pure
 // (web/js/deck.js).
 import { DECK, newDeck, stepDeck, applyServe, afterIncident, paysTab, tabFor, fillOrder, fineFor, landingSpot, hitByFall,
-  pourAhead, coldFill } from '../../web/js/deck.js';
+  pourAhead, coldFill, happyFill } from '../../web/js/deck.js';
 import { UPPER, fellOff } from '../../web/js/customers.js';
 import { LANDMARK, hasLandmark, tapPours } from '../../web/js/landmarks.js';   // council round 13 #4 (builder 2): the Tap Wall
 
@@ -66,13 +66,25 @@ export default {
     if (applyServe(st.deck, item, quality, null, seatsOf(crew)).incident) incident(crew, st, p);
   },
 
+  // Council round 14 #2a: Happy Hour (server/venues/happyhour.mjs signals it): the queue fills at once, each new ticket
+  // is a deckOrder (the Tap Wall still pours every third order placed).
+  signal(crew, st, name) {
+    if (name !== 'happyhour') return;
+    for (const o of happyFill(st.deck, seatsOf(crew))) {
+      crew.events.push({ t: 'deckOrder', seat: o.seat, happy: true, ...(o.round ? { round: true } : {}) });
+      tapWall(crew, st, o);
+    }
+    crew.dirty = true;
+  },
+
   inspect(crew, st, stopId) { if (stopId === 'kitchen' && st.garyFail) return false; },   // somebody fell off on his watch
 
   awards: () => [['Last Orders', 'lastOrders']],
   snapshot: (crew, st) => ({ drinks: st.deck.drinks, mugs: st.deck.mugs, last: st.last, today: st.today,
     order: st.deck.order ? { seat: st.deck.order.seat, left: Math.max(0, Math.round(st.deck.order.left * 10) / 10), ...(st.deck.order.round ? { round: true } : {}) } : null,
     // Round 11: how many orders wait behind the head, and the cold mugs on the bar.
-    queue: st.deck.queue?.length ?? 0, cold: st.deck.cold?.length ?? 0 }),
+    queue: st.deck.queue?.length ?? 0, cold: st.deck.cold?.length ?? 0,
+    ...(st.deck.order?.happy ? { happy: 1 } : {}) }),   // council round 14 #2a: the head ticket is a Happy Hour order
   toSave: (crew, st) => ({ last: st.last }),
 };
 
@@ -81,13 +93,20 @@ export default {
 // a second one), so the cook can leave the deck for one order in three.
 function tapWall(crew, st, o) {
   const d = st.deck;
-  if (!o || !hasLandmark(crew.up, LANDMARK.TAP) || !tapPours(d.norders)) return;
+  if (!o || !hasLandmark(crew.up, LANDMARK.TAP) || !tapPours(o.n ?? d.norders)) return;   // o.n: a Happy Hour ticket's own count
   if (d.order === o) d.order = d.queue?.length ? d.queue.shift() : null;
   else { const i = d.queue?.indexOf(o) ?? -1; if (i < 0) return; d.queue.splice(i, 1); }
   const tab = crew.payCash(tabFor(crew.valueNow().bv, o), null);
   crew.stats.tapPours = (crew.stats.tapPours ?? 0) + 1;
   crew.stats.deckOrders = (crew.stats.deckOrders ?? 0) + 1;
+  if (o.happy) happyPour(crew, tab);
   crew.events.push({ t: 'deckTab', by: null, n: tab, seat: o.seat, order: true, tap: true, ...(o.round ? { round: true } : {}) });
+}
+
+// Council round 14 #2a: a Happy Hour order poured (x1.5), for its report row (server/venues/happyhour.mjs reads the stats).
+function happyPour(crew, tab) {
+  crew.stats.happyPours = (crew.stats.happyPours ?? 0) + 1;
+  crew.stats.happyTab = Math.round(((crew.stats.happyTab ?? 0) + tab) * 100) / 100;
 }
 
 // A paying beer lands: the tab (an order 10 x BV, a round 25 x BV, unordered 5 x BV), the stats, the drink, the event,
@@ -96,9 +115,10 @@ function pour(crew, st, p, item, quality, filled, cold = false) {
   const tab = crew.payCash(tabFor(crew.valueNow().bv, filled), p?.id ?? null);
   if (filled) crew.stats.deckOrders = (crew.stats.deckOrders ?? 0) + 1;
   if (filled?.round) crew.stats.deckRounds = (crew.stats.deckRounds ?? 0) + 1;
+  if (filled?.happy) happyPour(crew, tab);
   const r = applyServe(st.deck, item, quality, filled, seatsOf(crew));
   // Round 10 #3: the event names the seat the mug flies to (the beer line, views/deck.js), so the tab floats there.
-  if (tab) crew.events.push({ t: 'deckTab', by: p?.id ?? null, n: tab, seat: r.seat, ...(filled ? { order: true } : {}), ...(filled?.round ? { round: true } : {}), ...(cold ? { cold: true } : {}) });
+  if (tab) crew.events.push({ t: 'deckTab', by: p?.id ?? null, n: tab, seat: r.seat, ...(filled ? { order: true } : {}), ...(filled?.round ? { round: true } : {}), ...(cold ? { cold: true } : {}), ...(filled?.happy ? { happy: true } : {}) });
   if (r.incident) incident(crew, st, p);
   crew.dirty = true;
 }

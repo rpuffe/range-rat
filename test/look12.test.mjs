@@ -115,12 +115,12 @@ test('4a: from the Stadium on, every clock-in spot is clear of the deck and its 
   for (const v of [3, 4, 5]) for (let k = 0; k < 6; k++) {
     const c = clockInSpot(v, k);
     assert.ok(c.x > 20.5, `venue ${v} slot ${k} x ${c.x} is past the deck's right end`);
-    const ang = Math.atan2(c.x - 20, c.z - 2);   // the deck's front corner (20, z 2), seen facing -z
+    const ang = Math.atan2(c.x - 20, c.z - 2) - Math.abs(c.yaw ?? 0);   // the deck's front corner (20, z 2), seen facing -z turned by the clock-in yaw (round 14 6.3)
     assert.ok(ang > half, `slot ${k}: the deck corner is ${(ang * 180 / Math.PI).toFixed(0)}° off, outside the view`);
   }
   assert.deepEqual(clockInSpot(0, 1), { x: CLOCK_IN.X + CLOCK_IN.STEP, z: CLOCK_IN.Z }, 'the Muni is unchanged (goldens)');
-  assert.deepEqual(clockInSpot(2, 0), { x: CLOCK_IN.LATE_XS[0], z: 4 }, 'council round 13 #6: the Club and Tiered use the late row too');
-  assert.equal(clockInSpot(1, 0, true).x, CLOCK_IN.LATE_XS[0], 'endless clocks in on the late row');
+  assert.deepEqual({ ...clockInSpot(2, 0), yaw: undefined }, { x: CLOCK_IN.LATE_XS[0], z: 4, yaw: undefined }, 'council round 13 #6: the Club and Tiered use the late row too');
+  assert.equal(clockInSpot(1, 0, true).x, CLOCK_IN.ENDLESS_XS[0], 'round 14 6.1: endless clocks in on its own row');
   for (let k = 0; k < 6; k++) { const x = clockInSpot(3, k).x; assert.ok(x > 23.5 && !(x > 25.9 && x < 29.1), `slot ${k} x ${x}: past the awning, off the washer`); }
 });
 

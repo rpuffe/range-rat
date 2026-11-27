@@ -22,7 +22,8 @@ import { sharedConfetti, confettiCount } from './confetti.js';
 import { BANK_SEQ } from './story.js';                                         // council round 11 #4: the note at the huddle
 import { drawNewsreel, NEWSREEL } from './founder.js';                         // council round 11 #7: the jumbotron's newsreel
 import { MAP } from './map.js';                                                 // council round 12 #3c: the Lift's spot
-import { CASE, HUSH, hushWeight } from './caserules.js';   // council round 12 #3b/#3d: the case, the hush
+import { CASE, HUSH, hushWeight, starTiltWeight } from './caserules.js';
+import { landmarkTier, LANDMARK, STAR_TILT } from './landmarks.js';   // council round 14 #5c (builder 3): the star in frame   // council round 12 #3b/#3d: the case, the hush
 import { washerTipOk } from './centrehooks.js';                                // council round 13 #2b: the washer tip's gate
 import { PRI } from './centre.js';
 import { newReveal, revealStep, revealStory as revealStoryOf, cueReady as cueReadyOf } from './revealclock.js';   // council round 13 #7b: one clock
@@ -65,6 +66,7 @@ export function setupRound2(ctx) {
   // (storycard's 'rr-story' event) starts the finale; the end card waits on the finale's promise, not a fixed 7 s.
   let bank = null;   // { timers, note: the note is coming, finale: started, done: Promise, resolve }
   const BANK_PA_GAP = 600, END_PA_WAIT = 2;   // council round 12 4c: ms after the fade; the end card's PA-idle cap (s)
+  const NOTE_CAP = 20;   // smoke, loop 4: s past BANK_SEQ.WAIT a coming note may still hold the $∞ flash
   // Council round 12 #3b (builder 3): the hush frames the crack. From the bank to the note's end every Rat within
   // HUSH.NEAR m of the return eases (0.8 s) to look at the hopper lip from 1 m further back and 0.3 m higher, and
   // main.js hides the carried bucket and wand (r2.hushing). A look-at, not a cut: walking still works; it lets go.
@@ -95,7 +97,11 @@ export function setupRound2(ctx) {
     // Council round 12 #3b: lifted clear of the chute's glass (y HUSH.LIP_Y), opening toward this Rat's camera.
     at(BANK_SEQ.CRACK, () => { ending.crack(SIM.STAND.x, HUSH.LIP_Y, SIM.STAND.z, Math.atan2(-(camera.position.z - SIM.STAND.z), camera.position.x - SIM.STAND.x)); SFX.bonk?.(); });
     at(BANK_SEQ.NOTE + 0.3, () => { if (!b.note) bankFinale(); });                           // no note (seen): straight on
-    at(BANK_SEQ.NOTE + BANK_SEQ.WAIT, () => bankFinale());                                   // never stuck behind a card
+    // Never stuck behind a card, but never under it either (smoke, loop 4): a note that is coming (its turn held by a
+    // PA line) keeps the $∞ flash waiting, NOTE_CAP s at most past WAIT; its 'end' starts the finale itself.
+    const late = () => (b.note && bank === b && !b.finale && performance.now() - b.t0 < (BANK_SEQ.NOTE + BANK_SEQ.WAIT + NOTE_CAP) * 1000) ? at(1, late) : bankFinale();
+    b.t0 = performance.now();
+    at(BANK_SEQ.NOTE + BANK_SEQ.WAIT, late);
   }
   function bankFinale() {
     const b = bank;
@@ -308,6 +314,9 @@ export function setupRound2(ctx) {
     } else {
       shotPos.set(CASE.x, 0, CASE.z).add(REVEAL_POSE.CASE_OFF);
       shotLook.set(CASE.x + 0.1, 1.2, CASE.z - 0.95);   // between Gary and the case
+      // Council round 14 #5c: with the star named Gary owned, the shot tilts up 2 s to the star over the case, then back.
+      const tw = r.shotAt != null && landmarkTier(crew()?.up) >= LANDMARK.STAR ? starTiltWeight(r.t - r.shotAt) : 0;
+      if (tw > 0) { shotLook.x += (CASE.x - shotLook.x) * tw; shotLook.y += (STAR_TILT.Y - shotLook.y) * tw; shotLook.z += (CASE.z - shotLook.z) * tw; }
     }
     tmpM.lookAt(shotPos, shotLook, camera.up); shotQ.setFromRotationMatrix(tmpM);
   }

@@ -5,6 +5,22 @@ import * as THREE from 'three';
 
 export const FINAL_MEMO = 'There are no more balls. Site 12 belongs to the Range Rats. Every Ball Mattered.™';
 
+// Council round 14 6.6 (C #7, builder 4): the bank's two overlaps. The $∞ flash is a follow AFTER the note card (it
+// waits while the story card is up), and the end card waits for a PA card that is still up (the bank's "No more
+// balls" PA sat under it). Each wait is capped (FOLLOW_CAP s), so nothing can hold the ending for ever.
+export const ENDING_FOLLOW = { CAP: 12, POLL: 0.1 };
+const FLASH_FADE_MS = 700;   // the flash's 0.6 s opacity fade, and a frame
+// (smoke, loop 4: the story card's class drops at its 'end' but say.js fades it out after; wait on what is visible.)
+const upNow = id => { const el = document.getElementById(id); if (!el) return false;
+  for (let e = el; e && e.nodeType === 1; e = e.parentElement) { const cs = getComputedStyle(e); if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity || '1') < 0.3) return false; }
+  return !!(el.textContent ?? '').trim(); };
+function whenClear(ids, cap = ENDING_FOLLOW.CAP) {
+  return new Promise(res => { const t0 = performance.now(); const go = () => { if (!ids.some(upNow) || performance.now() - t0 > cap * 1000) res(); else setTimeout(go, ENDING_FOLLOW.POLL * 1000); }; go(); });
+}
+// Council round 14 6.7: ENDCARD_AT (the cinematic's length, bank to end card) and ENDCARD_HOLD live in dayend.js (no
+// THREE, so the server can read them); re-exported here, where the cinematic is.
+export { ENDCARD_AT, ENDCARD_HOLD, ENDING_READY_SECS } from './dayend.js';
+
 const TRAIL_N = 48;
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const safeColor = c => (/^#[0-9a-f]{3,8}$/i.test(c) || /^[a-z]+$/i.test(c) ? c : '#fff8ec');
@@ -157,9 +173,10 @@ export function createEnding({ scene, root, camera }) {
   // ---- finale ----
   let flashEl = null, glowEl = null, glowT = 0, finaleTimers = [];
   // afterFlash: called once the digits fade (playthrough 4 C3: the last PA card queues there, never on top of them).
-  function finale(stats = {}, afterFlash = null) {
+  async function finale(stats = {}, afterFlash = null) {
     ensureStyle(); huddle(null);
     finaleTimers.forEach(clearTimeout); finaleTimers = [];
+    await whenClear(['story-card', 'pa-card']);   // round 14 6.6: the flash follows the note card (and any PA card: smoke, loop 4), never under it
     const after = (ms, fn) => finaleTimers.push(setTimeout(fn, ms));
     if (!flashEl) { flashEl = document.createElement('div'); flashEl.id = 'ending-flash'; flashEl.setAttribute('aria-live', 'polite'); document.body.appendChild(flashEl); }
     if (!glowEl) { glowEl = document.createElement('div'); glowEl.id = 'ending-glow'; document.body.appendChild(glowEl); }
@@ -181,7 +198,9 @@ export function createEnding({ scene, root, camera }) {
     return new Promise(resolve => {
       after(1600, () => {
         flashEl.style.opacity = '0';
-        afterFlash?.();
+        // smoke, loop 4: the PA follows only once the digits are GONE (hidden after the 0.6 s fade), not on the fade's
+        // first frame: on a slow frame the fade lags and the PA card landed on the digits
+        after(FLASH_FADE_MS, () => { if (flashEl) flashEl.classList.add('hidden'); afterFlash?.(); });
         const memo = document.getElementById('memo'), txt = document.getElementById('memo-text'), tgt = document.getElementById('memo-target');
         // One text at a time (playtest 2): the PA card speaks the final line; no memo on top of it.
         void txt; void tgt;
@@ -215,6 +234,8 @@ export function createEnding({ scene, root, camera }) {
       <div class="zero">Balls Outstanding: 0.</div>
     </div>
     <div class="row"><button type="button" id="clock-in">Clock in tomorrow</button></div>`;
+    // round 14 6.6: a PA card still up (the bank's last line): the end card shows once it's gone (capped)
+    if (upNow('pa-card')) { cardEl.style.visibility = 'hidden'; whenClear(['pa-card']).then(() => { if (cardEl) cardEl.style.visibility = ''; }); }
     document.body.appendChild(cardEl);
     const btn = cardEl.querySelector('#clock-in');
     btn.addEventListener('click', () => { if (typeof onClockIn === 'function') onClockIn(); });

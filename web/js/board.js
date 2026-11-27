@@ -108,6 +108,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
   const cross = { above: null, at: -Infinity }, flash = { t: 0, up: true };   // round 6 #3: the crossing flash
   let stampT = 0, stampNow = null, stampEl = null, clock = 0;
   let key = '';
+  let rivalMark = '', rivalMarkT = 0;   // council round 14 #5b / 6.13: the poach's red "−5 %" beside SITE 13 for 3 s
   let flipT = 0, flipAcc = 0;
   let overlayFn = null, overlayT = 0, overlayAcc = 0;   // council round 11: board.overlay (the Stadium newsreel)
   let shoutText = '', shoutT = 0;                        // council round 12: board.shout (the jumbotron's LEGEND line)
@@ -141,7 +142,8 @@ export function createBoard(scene, { x, z, onCross = null }) {
     g.fillText(ct && s?.stars != null ? 'TODAY · ★' + s.stars : 'TODAY', 44, 316);
     // Item 8: Site 13's live number under ours ("SITE 13 $41.8M (est.)"): the total shrinks a little to make room.
     g.fillStyle = '#f5e6b8'; g.font = `700 ${rv ? 54 : 64}px ${MONO}`; g.fillText(dollars(pace.cash), 40, rv ? 350 : 360);
-    if (rv) { g.fillStyle = '#e39a9a'; g.font = `700 19px ${SANS}`; g.fillText(rv, 44, 384); }
+    if (rv) { g.fillStyle = '#e39a9a'; g.font = `700 19px ${SANS}`; g.fillText(rv, 44, 384);
+      if (rivalMark) { const w = g.measureText(rv + '  ').width; g.fillStyle = '#ff4a3a'; g.font = `800 19px ${SANS}`; g.fillText(rivalMark, 44 + w, 384); } }
     g.textAlign = 'right'; g.fillStyle = '#7d8594'; g.font = `600 22px ${SANS}`;
     // Council round 8 #3: the bar races yesterday (pace.vs); the all-time BEST moves to a small line under it.
     const vsYday = pace.vs === 'yesterday';
@@ -449,7 +451,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
     const sp = new THREE.Sprite(mat);
     sp.scale.set(1.6, 0.4, 1); sp.position.set(fx, fy, fz); sp.renderOrder = 11;
     scene.add(sp);
-    floats.push({ sp, mat, map, y0: fy, t: 0 });
+    floats.push({ sp, mat, map, y0: fy, t: 0, text: t });
   }
 
   // ---------- API ----------
@@ -501,6 +503,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
 
   function tick(dt) {
     clock += dt;
+    if (rivalMarkT > 0 && (rivalMarkT -= dt) <= 0) { rivalMarkT = 0; rivalMark = ''; if (s) draw(); }
     if (flash.t > 0) {                         // fade the flash at the flip's 20 Hz, not every frame
       flash.t = Math.max(0, flash.t - dt); flash.acc = (flash.acc ?? 0) + dt;
       if (flipT <= 0 && (flash.acc >= FLIP_STEP || flash.t === 0)) { flash.acc = 0; draw(); }
@@ -594,5 +597,13 @@ export function createBoard(scene, { x, z, onCross = null }) {
     if (s) draw();
   }
   function flashOnce(up = true) { flash.t = BELL.FLASH_SECS; flash.up = !!up; if (s) draw(); }
-  return { update, floatText, tick, stamp, attach, frameColor, overlay, shout, flash: flashOnce, dims: { BW, BH, BOTTOM } };
+  // Council round 14 #0d: the live float texts for the ?debug centre counter (centrewatch.js). Debug only: allocates.
+  const floatSprites = () => floats.map(f => ({ id: 'payfloat', text: f.text, sprite: f.sp, opacity: f.mat.opacity }));
+  // the poach event: SITE 13's line wears a red mark for `secs` (main.js calls it on the 'poach' event)
+  // Council round 14 6.6 (C #7): the floats vanish AT ONCE (no fade) while a priority 0–1 centre item is up, and come
+  // back when it's gone. Per frame from main.js; no allocation.
+  let floatsHidden = false;
+  const hideFloats = on => { on = !!on; if (on === floatsHidden && !on) return; floatsHidden = on; for (let i = 0; i < floats.length; i++) floats[i].sp.visible = !on; };
+  const rivalTick = (mark = '−5 %', secs = 3) => { rivalMark = mark; rivalMarkT = secs; if (s) draw(); };
+  return { update, floatText, floatSprites, rivalTick, hideFloats, tick, stamp, attach, frameColor, overlay, shout, flash: flashOnce, dims: { BW, BH, BOTTOM } };
 }

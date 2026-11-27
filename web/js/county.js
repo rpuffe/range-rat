@@ -158,6 +158,30 @@ export function inspectPatch(hazards, r = INSPECT.R) {
   }
   return best ? { x: best.x, z: best.z, r } : { x: INSPECT.CENTRE.x, z: INSPECT.CENTRE.z, r };
 }
+// Council round 14 #3c (builder 3; C #10: both visits went to the same "NEAR MIDDLE"): the shift's SECOND inspection (the
+// retainer's at T-5:30 comes first, then the regular one) picks a different patch: the busiest hazard at least APART m
+// from the first patch's centre; with none out there, one of the ANCHORS on the hose's ground (inside HAZ's zone round the
+// washer), from `h` (hash32(day, vday, 'insp', 2): no RNG draw), stepping on past any within APART of the first.
+export const PATCH2 = { APART: 22.5, ANCHORS: [{ x: -2, z: -30 }, { x: 20, z: -25 }, { x: 45, z: -20 }, { x: 10, z: -50 }, { x: 30, z: -55 }, { x: 50, z: -45 }] };
+export function secondPatch(hazards, first, h = 0, r = INSPECT.R) {
+  if (!first) return inspectPatch(hazards, r);
+  const far = (hazards ?? []).filter(b => Math.hypot(b.x - first.x, b.z - first.z) >= PATCH2.APART);
+  if (far.length) {
+    let best = null, bn = -1;
+    for (const a of far) {
+      let n = 0;
+      for (const b of hazards) if (Math.hypot(a.x - b.x, a.z - b.z) <= r) n++;
+      if (n > bn) { bn = n; best = a; }
+    }
+    return { x: best.x, z: best.z, r };
+  }
+  const A = PATCH2.ANCHORS;
+  for (let k = 0; k < A.length; k++) {
+    const a = A[((h >>> 0) + k) % A.length];
+    if (Math.hypot(a.x - first.x, a.z - first.z) >= PATCH2.APART) return { x: a.x, z: a.z, r };
+  }
+  return inspectPatch(hazards, r);
+}
 // Zoning with the noted hazards counted twice and the shift's inspection adjustments (adj: +bonuses, -notes).
 export const zoningInspected = (strays, hazards = 0, noted = 0, adj = 0) =>
   Math.max(0, Math.min(1, zoningWith(strays, hazards + noted) + adj));

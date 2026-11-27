@@ -9,11 +9,11 @@ import { BONUS_ALERT } from '../web/js/tourney.js';
 import { wordCount } from '../web/js/say.js';
 import { Crew } from '../server/crew.mjs';
 
-test('the row: five tiers, one per venue, in order; prices ×2.2 at 4P ($33k / $440k / $11M / $44M / $132M)', () => {
+test('the row: five tiers, one per venue, in order; prices ×2.2 at 4P ($22k / $440k / $11M / $44M / $132M)', () => {
   const t = LANDMARK_ROW.tiers;
   assert.equal(t.length, 6);
   assert.deepEqual(t.slice(1).map(x => x.minVenue), [1, 2, 3, 4, 5], 'one a venue, sequential');
-  assert.deepEqual(t.slice(1).map(x => Math.round(x.cost * priceScale(4))), [33_000, 440_000, 11_000_000, 44_000_000, 132_000_000]);
+  assert.deepEqual(t.slice(1).map(x => Math.round(x.cost * priceScale(4))), [22_000, 440_000, 11_000_000, 44_000_000, 132_000_000]);
   assert.equal(landmarkTier({ landmark: 9 }), 5); assert.equal(landmarkTier({}), 0);
   assert.ok(hasLandmark({ landmark: 3 }, LANDMARK.TAP) && !hasLandmark({ landmark: 1 }, LANDMARK.TAP));
 });
@@ -35,7 +35,9 @@ test('the bell: by the return, once a shift, T-6:00..T-1:30, never with a flight
   assert.ok(atBell(BELL.POST) && !atBell({ x: BELL.POST.x + 3, z: BELL.POST.z }));
   assert.equal(bellOpen({ left: 361 }), false); assert.equal(bellOpen({ left: 360 }), true); assert.equal(bellOpen({ left: 90 }), true);
   assert.equal(bellOpen({ left: 89 }), false); assert.equal(bellOpen({ left: 200, rung: true }), false); assert.equal(bellOpen({ left: 200, live: true }), false);
-  assert.equal(bellOpen({ left: 200, venue: 2 }), false, 'only the Club rings for a flight');
+  assert.equal(bellOpen({ left: 200, venue: 2 }), true, 'council round 14 #3a: Tiered rings a bonus Happy Hour');
+  assert.equal(bellOpen({ left: 200, venue: 3 }), false, 'from the Stadium: sound only');
+  assert.equal(bellOpen({ left: 200, venue: 2, endless: true }), false);
   const clock = { t: 1e6 };
   const crew = new Crew('BELL', { venue: 1, day: 12, venueDay: 4, up: { landmark: 1, gear: 3 }, mowe: { tame: true } }, { seed: 7, now: () => clock.t });
   crew.up.landmark = 1;   // (a save's up.landmark needs LANDMARK_ROW in SHOP: builder 4's sim.js line)

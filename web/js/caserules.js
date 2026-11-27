@@ -5,6 +5,7 @@
 // "BALL No. 1 · 1958–2026 · FOUND BY" and the crew's names; each Owners' record day adds a line ("Day 4 · $91.2M"),
 // and the plaque shows the newest four. Saved as `glassCase` ({ names, year, from, lines }).
 import { SIM } from './sim.js';
+import { STAR_PLAQUE, STAR_TILT } from './landmarks.js';   // council round 14 #5c (builder 3): the star on the plaque and in frame
 
 // The hush (round2.js): within NEAR m of the return the camera eases over EASE s to look at the hopper lip (LIP_Y, where
 // the crack opens) from BACK m further back and UP m higher, and eases back when the note's beat ends.
@@ -36,10 +37,17 @@ export function addRecordLine(c, day, cash) {
   const n = Math.max(1, (day | 0) - (c.from | 0));
   return { ...c, lines: [...(c.lines ?? []), `Day ${n} · ${caseMoney(cash)}`].slice(-CASE.KEEP) };
 }
-// The plaque's lines, top to bottom: the head, the names, then the newest MAX_LINES record lines.
-export function plaqueLines(c) {
+// The plaque's lines, top to bottom: the head, the names, then the newest MAX_LINES record lines. Council round 14 #5c:
+// with the star named Gary owned (star: true), STAR_PLAQUE is the last line.
+export function plaqueLines(c, { star = false } = {}) {
   if (!c) return [];
-  return [PLAQUE_HEAD, (c.names ?? []).join(' · '), ...(c.lines ?? []).slice(-CASE.MAX_LINES)];
+  return [PLAQUE_HEAD, (c.names ?? []).join(' · '), ...(c.lines ?? []).slice(-CASE.MAX_LINES), ...(star ? [STAR_PLAQUE] : [])];
+}
+// Council round 14 #5c: the case shot's tilt up to the star, 0..1 at t s into the shot (0 outside it). Smooth up, hold, down.
+export function starTiltWeight(t) {
+  const { AT, UP, HOLD } = STAR_TILT, x = t - AT;
+  if (!(x > 0) || x >= UP * 2 + HOLD) return 0;
+  return x < UP ? smooth(x / UP) : x < UP + HOLD ? 1 : 1 - smooth((x - UP - HOLD) / UP);
 }
 // A saved case, or null.
 export function cleanCase(c) {

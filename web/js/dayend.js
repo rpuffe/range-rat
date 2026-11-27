@@ -4,6 +4,15 @@
 //   T−2:00  the last customer walks out: two minutes of cleanup (no customer ball, no scuffing).
 // The windows are for a full 420 s shift and scale with a shorter one, so day 2 (360 s) keeps its hitting time.
 import { LAST_CALL, CLEANUP } from './sim.js';
+import { BANK_SEQ } from './story.js';
+
+// Council round 14 6.7 (C #9, builder 4): anyone's Ready cut the final report short. On the ENDING report the Ready
+// presses only start the countdown once the end card has been up ENDCARD_HOLD s. The server knows when that is: the
+// bell (endShift(ending)) + ENDCARD_AT, the cinematic's longest run (round2.js: the note's latest end at BANK_SEQ.NOTE +
+// WAIT, the $∞ flash 1.6 s and its 6 s hold, the PA-idle cap 2 s) + ENDCARD_HOLD. Then the countdown is
+// ENDING_READY_SECS. A normal report is unchanged.
+export const ENDCARD_AT = BANK_SEQ.NOTE + BANK_SEQ.WAIT + 1.6 + 6 + 2, ENDCARD_HOLD = 10, ENDING_READY_SECS = 30;
+export const endingReadyFrom = endedAt => endedAt + (ENDCARD_AT + ENDCARD_HOLD) * 1000;   // ms (crew.now())
 
 export const endScale = secs => Math.max(0, Math.min(1, (Number(secs) || 0) / LAST_CALL.FULL));
 // Seconds before the bell each phase starts: { taper, glow, cleanup }.

@@ -8,6 +8,8 @@
 //   The tick   = q / (ceiling − 1): today's target on the same bar ("TARGET 60%").
 import { upkeepCeiling, money, SIM } from './sim.js';
 import { tourneyLine } from './tourney.js';   // council round 13 #1 (builder 2's line; builder 4 shows it)
+import { rushLine } from './goldrush.js';     // council round 14 6.13: GOLD RUSH · ●●○ · 0:22 (builder 2's line)
+import { happyLine } from './happyhour.js';   // council round 14 6.13: HAPPY HOUR · ORDERS 3 · ●●○ · 0:41 (builder 2's line)
 
 const clamp01 = v => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
 const c2 = v => Math.round(v * 100) / 100;
@@ -209,6 +211,8 @@ export function kpiNoteOf(mods) {
   const ins = mods?.county?.inspect;
   // council round 13 #7a/#4: "INSPECTION · FAR LEFT · 0:45"; the retainer's visit is "INSPECTOR (EX-SITE 13) · ..."
   if (ins) return `${ins.who ?? 'INSPECTION'} · ${ins.where ?? 'YARD ' + ins.yard} · ${clockOf(ins.t ?? ins.left)}`;
+  const rl = rushLine(mods?.goldrush); if (rl) return rl;     // round 14 6.13
+  const hl = happyLine(mods?.happyhour); if (hl) return hl;   // round 14 6.13
   const tl = tourneyLine(mods?.tourney); if (tl) return tl;   // council round 13 #1: MEMBERS' TOURNAMENT · ●●○ · 0:22   // b2: hazards lie short of the kerb, so his patch has a count, not a Yard
   const c = mods?.county?.label; if (c) return String(c);
   const r = mods?.stadium?.req; if (!r) return null;

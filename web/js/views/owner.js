@@ -6,7 +6,8 @@
 import * as THREE from 'three';
 import { SIM } from '../sim.js';
 import { BOARD_YAW } from '../signs.js';
-import { hasPaint, hasStatue, crewStripes } from '../owner.js';
+import { hasPaint, hasStatue, crewStripes, POACH_CARD, POACH_BAY, regularsShown } from '../owner.js';
+import { buildPerson, animatePerson, SWING_SECS } from '../people.js';   // council round 14 #5b: Site 13's regulars
 
 const STATUE = { x: 29.6, z: 5.4 };   // east of the stand, short of the cart park (CART.PARK 31, 10)
 const BRONZE = 0x8c5a2b, BRONZE_DARK = 0x6b4220, STONE = 0x8d8a83, BALL = 0xf4f1e8;
@@ -141,9 +142,52 @@ export default {
       }
     }
 
+    // Council round 14 #5b (builder 3; C #4: the poach was invisible): on a poach day three Site 13 regulars in red
+    // jackets stand at their bay (POACH_BAY); the front one swings on each of their launches, then they rotate. Built on
+    // the first poach day only (people.js: merged per limb, shared materials; no per-frame allocation).
+    let regs = null, regOn = false, regK = 0;
+    const REG_SPOTS = [{ x: 0, z: 0.6 }, { x: 0.9, z: 2.0 }, { x: -0.9, z: 2.1 }];
+    function buildRegs() {
+      regs = new THREE.Group(); regs.name = 'site13-regulars'; ctx.scene.add(regs);
+      regs.position.set(POACH_BAY.x, 0, POACH_BAY.z);
+      regs.userData.list = REG_SPOTS.map((o, i) => {
+        const p = buildPerson({ seed: 'site13-reg' + i, shirt: POACH_CARD.RED, pants: 0x2a2a30, hat: i === 1 ? POACH_CARD.RED : false });
+        p.root.traverse(m => { if (m.isMesh) m.castShadow = false; });
+        p.setClub(true, 'driver');
+        regs.add(p.root);
+        return { p, swingT: -1 };
+      });
+      placeRegs();
+    }
+    function placeRegs() {   // the hitter on the mat, the other two waiting behind it
+      regs.userData.list.forEach((r, i) => { const o = REG_SPOTS[(i - regK + REG_SPOTS.length) % REG_SPOTS.length]; r.p.root.position.set(o.x, 0, o.z); r.p.root.rotation.y = o.z < 1 ? 0 : Math.PI * 0.9; });
+    }
+
     return {
-      show(on) { if (!on) { clearPaint(); key = ''; if (statue) statue.visible = false; } },
+      show(on) { if (!on) { clearPaint(); key = ''; if (statue) statue.visible = false; if (regs) regs.visible = false; } },
+      // The regulars' swings (the poach morning's PA card is the server's: poach.mjs crew.pa('poach')).
+      onEvent(e) {
+        if (e.t === 'spawn' && regOn && regs && Math.abs(e.x - POACH_BAY.x) < 0.3 && Math.abs(e.z - POACH_BAY.z) < 0.6) {
+          const r = regs.userData.list[regK];
+          if (r.swingT >= 0) { regK = (regK + 1) % regs.userData.list.length; placeRegs(); }
+          regs.userData.list[regK].swingT = 0;
+        }
+      },
+      tick(dt) {
+        if (!regs || !regs.visible) return;
+        for (const r of regs.userData.list) {
+          if (r.swingT >= 0) {
+            r.swingT += dt;
+            const k = r.swingT / SWING_SECS;
+            if (k >= 1) { r.swingT = -1; animatePerson(r.p, dt, { mode: 'idle' }); }
+            else animatePerson(r.p, dt, { mode: 'swing', k });
+          } else animatePerson(r.p, dt, { mode: 'idle' });
+        }
+      },
       onSnapshot(s) {
+        regOn = regularsShown(s, s?.mods?.poach);
+        if (regOn && !regs) buildRegs();
+        if (regs) regs.visible = regOn;
         const colors = hasPaint(s.up, s.endless) ? crewStripes(s.players) : [];
         const k = colors.join(',');
         if (k !== key) { key = k; paint(colors); }

@@ -13,7 +13,10 @@ export const KINDS = ['STAMP', 'ALERT', 'PA', 'MEMO', 'TIP', 'TOAST'];
 const RANK = { STAMP: PRI.STAMP, ALERT: PRI.ALERT, PA: PRI.PA, MEMO: PRI.MEMO, TIP: PRI.TIP, TOAST: PRI.TOAST };
 export const SAY = {
   SECS: { STAMP: 1.5, PA: 5, MEMO: 7, ALERT: 3.5, TOAST: 2.5, TIP: 4 },   // how long each shows (PA: the audio's length)
-  TTL: { ALERT: 15, TOAST: 3, TIP: 60 },   // seconds an item may wait in the queue; stale feedback is dropped, never late
+  TTL: { ALERT: 15, TOAST: 3, TIP: 60, PEAK: 45 },   // seconds an item may wait in the queue; stale feedback is dropped, never late
+  // Council round 14 (builder 2's bug): a peak's start ALERT (these keys) waits up to TTL.PEAK s, not 15: the Happy Hour
+  // ALERT was dropped on Tiered day 1 at 1P behind the reveal morning's cards. The peak runs 40–60 s, so it is still news.
+  PEAK_KEYS: ['goldrush', 'happyhour', 'tourney', 'coach'],
   MIN_SHOW: CENTRE.MIN_SECS,     // every item shows at least this long
   GAP: CENTRE.FADE,              // between two items (the outgoing fade)
   TIP_QUIET: 2,      // a tip fires only after this long with nothing showing (quietFor); it never queues (round 13)
@@ -77,7 +80,7 @@ export function createSayModel({ now = () => Date.now() / 1000, warn = null, onD
     const id = key != null ? kind + ':' + key : null;   // the same key updates in place (per kind)
     if (kind === 'STAMP') c.drop(i => LOW.has(i.kind));   // preempts: clears the queued alerts, toasts and tips, and whatever is up
     else if (lock === 'bell' && LOW.has(kind)) { extra++; return null; }
-    const item = c.request({ id, pri: RANK[kind], kind, text, secs, data: opts.data ?? null, ttl: SAY.TTL[kind] ?? Infinity,
+    const item = c.request({ id, pri: RANK[kind], kind, text, secs, data: opts.data ?? null, ttl: opts.ttl ?? (kind === 'ALERT' && SAY.PEAK_KEYS.includes(key) ? SAY.TTL.PEAK : SAY.TTL[kind] ?? Infinity),
       resume: HELD.has(kind), force: kind === 'STAMP', maxWait: kind === 'TIP' ? 0 : undefined });
     item.say = true; item.key = key;
     return item.state === 'dropped' ? null : item;

@@ -54,7 +54,7 @@ test('percentile and summarize', () => {
 });
 
 test('auto mode: needs sustained pressure, settles, steps at most three times', () => {
-  const a = createAuto({ settle: 2, hold: 10, max: 3, limit: 22 });
+  const a = createAuto({ settle: 2, hold: 10, max: 3, limit: 22, gap: 0 });
   for (let i = 0; i < 2; i++) assert.equal(a.update(40, 1), false);       // settling
   for (let i = 0; i < 9; i++) assert.equal(a.update(40, 1), false);
   a.update(15, 1);                                                          // one good second resets the hold
@@ -66,6 +66,13 @@ test('auto mode: needs sustained pressure, settles, steps at most three times', 
   assert.equal(steps, 3); assert.equal(a.steps, 3);
   const b = createAuto({ settle: 0, hold: 10 });
   for (let i = 0; i < 50; i++) assert.equal(b.update(18, 1), false);       // fine frames never step
+});
+
+test('round 14 6.11: auto steps at most once a minute', () => {
+  const a = createAuto({ settle: 0, hold: 10 });
+  let at = [];
+  for (let t = 1; t <= 200; t++) if (a.update(40, 1)) at.push(t);
+  assert.deepEqual(at, [10, 80, 150]);
 });
 
 test('fixtures are valid JSON saves', () => {

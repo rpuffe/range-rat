@@ -3,10 +3,11 @@
 import { SIM, KIND_W, WASH, QUOTA_KPI } from '../../web/js/sim.js';
 import { SLICE, ZONING, DRONES, DISPATCH, strayCount, zoning, droneCount, droneTarget, droneStep, newZone, zoneLive,
   HAZ, VAN, hazChance, inHazZone, hazardCount, zoningWith, vanTow, vanPick, hazDealDue, hazPair, zoningLabel,
-  INSPECT, INSPECT_MEMO, inspectSecs, inspectDue, inPatch, inspectPatch, zoningInspected, inspectWhere, CHAIN, sweepStep } from '../../web/js/county.js';
+  INSPECT, INSPECT_MEMO, inspectSecs, inspectDue, inPatch, inspectPatch, secondPatch, zoningInspected, inspectWhere, CHAIN, sweepStep } from '../../web/js/county.js';
 import { RALLY_LINES } from '../../web/js/rally.js';
 import { nearestReturn } from '../../web/js/layout.js';
 import { tubeFeed } from '../../web/js/dive.js';
+import { hash32 } from '../../web/js/today.js';   // council round 14 #3c: the second patch's fallback
 import { LANDMARK, hasLandmark, INSPECT2, inspect2Due, INSPECTOR_LABEL, INSPECTOR_MEMO } from '../../web/js/landmarks.js';   // council round 13 #4 (builder 2)
 
 const r2 = v => Math.round(v * 100) / 100;
@@ -187,7 +188,9 @@ function inspection(crew, st, dt) {
   if (second) st.ins2Done = true; else st.insDone = true;
   const hz = [];
   for (const b of crew.balls.values()) if (b.kind === 'hazard' && !b.sunk) hz.push(b);
-  const p = inspectPatch(hz);
+  // Council round 14 #3c (C #10): the shift's second visit goes somewhere else (county.js secondPatch).
+  const p = st.patch1 ? secondPatch(hz, st.patch1, hash32(crew.day, crew.venueDay, 'insp', 2)) : inspectPatch(hz);
+  st.patch1 ??= { x: p.x, z: p.z };
   const secs = second ? INSPECT2.SECS : inspectSecs(crew.onlineCount());
   st.ins = { x: p.x, z: p.z, r: p.r, left: secs, secs, bagged: 0, n: 0, pay: second ? INSPECT2.PAY : INSPECT.PAY, ...(second ? { site13: true } : {}) };
   st.ins.n = inPatchHaz(crew, st.ins);
@@ -205,7 +208,7 @@ export default {
     st.ins2Done = false;   // council round 13 #4: the retainer's visit; the first morning after buying, the memo note says so
     if (!st.retained && hasLandmark(crew.up, LANDMARK.INSPECTOR)) { st.retained = true; crew.memoNote ??= INSPECTOR_MEMO; }
     st.z = 0; st.strays = 0; st.kpi = 1; st.zone = null; st.haz = 0; st.hz = false; st.vanT = 0; st.vans = 0; st.towed = 0; st.bagged = 0; st.van = null; st.dealT = Infinity; st.dealLC = false; st.deals = 0;
-    st.ins = null; st.insDone = false; st.insNoted = 0; st.noted = new Set(); st.zAdj = 0; st.sweep = {}; st.sweeps = 0;   // council round 12 #7a/#7b
+    st.ins = null; st.patch1 = null; st.insDone = false; st.insNoted = 0; st.noted = new Set(); st.zAdj = 0; st.sweep = {}; st.sweeps = 0;   // council round 12 #7a/#7b
     for (const d of st.drones) { d.x = SIM.STAND.x; d.z = SIM.STAND.z + 1.5; d.y = DRONES.ALT; d.pocket = 0; d.pocketW = 0; d.target = null; }
   },
 

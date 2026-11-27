@@ -2,6 +2,7 @@
 // the ball washer, gear grime, the New Hire Kit, the Corporate PA, the ledger and awards,
 // crew records, the Last Bucket and endless mode, the CCTV mark, and the round-2 fixes.
 import { test } from 'node:test';
+import { ENDCARD_AT, ENDCARD_HOLD } from '../web/js/dayend.js';   // round 14 6.7
 import assert from 'node:assert/strict';
 import { Crew } from '../server/crew.mjs';
 import { SIM, CART, WASH, FRIES, POND, VENUES, VENUE_RULES, ONE_YEAR, BALLS_OUTSTANDING, WASHER, WASHER_HANDLES,
@@ -1114,14 +1115,15 @@ test('awards: the higher stat wins a shared award; unmatched Rats are Present', 
   assert.equal(ledger[3].award, 'Present');
 });
 
-test('awards: Enthusiasm goes to the most pings; Employee of the Shift is always given out', () => {
+test('awards: Enthusiasm goes to the most pings; Employee of the Shift needs > 0 banked (round 14 #4e)', () => {
   const { ledger } = ledgerCrew(3, [{ pings: 1 }, { pings: 4 }, {}]);
-  assert.equal(ledger.filter(e => e.award === 'Employee of the Shift').length, 1, 'even when nobody banked a ball');
+  assert.equal(ledger.filter(e => e.award === 'Employee of the Shift').length, 0, 'not on a shift nobody banked a ball (A #7)');
   assert.ok(ledger.some(e => e.award === 'Enthusiasm (Noted)'));
   assert.equal(ledger[1].award, 'Enthusiasm (Noted)');
   const solo = ledgerCrew(1).ledger;
   assert.equal(solo.length, 1);
-  assert.equal(solo[0].award, 'Employee of the Shift');
+  assert.equal(solo[0].award, 'Present', 'a $0 solo shift: no Employee of the Shift');
+  assert.equal(ledgerCrew(1, [{ banked: 1 }]).ledger[0].award, 'Employee of the Shift');
 });
 
 test('the report carries the venue, title and promotion info', () => {
@@ -1426,6 +1428,7 @@ test('Endless mode: a reveal, no quota, no Gary, and the first customer ball set
   act(crew, a, { t: 'hold', on: true }); act(crew, b, { t: 'hold', on: true }); m.run(3.2);   // the huddle (round 6 #5)
   crew.flush();
 
+  m.run(ENDCARD_AT + ENDCARD_HOLD + 0.5); crew.flush();   // round 14 6.7: the ending report's Ready waits for the end card
   act(crew, a, { t: 'start' }); act(crew, b, { t: 'start' });
   assert.equal(crew.phase, 'shift');
   let ev = events(crew);

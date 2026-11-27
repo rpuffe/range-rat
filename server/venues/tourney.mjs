@@ -5,12 +5,13 @@
 //
 // No RNG draw anywhere (hash32 spots): the seam's Club days 1-3 don't move. On a Tournament day the member balls take
 // ball ids, so the later stream's ids shift (an expected golden move, council round 13 §2a).
-import { SIM, POND, LAST_CALL } from '../../web/js/sim.js';
+import { SIM, POND, LAST_CALL, GARY } from '../../web/js/sim.js';
 import { nearestReturn } from '../../web/js/layout.js';
-import { bossLive } from '../../web/js/mowe.js';
+import { bossLive, bossDay } from '../../web/js/mowe.js';
 import { isPromotionDay } from '../../web/js/promoday.js';
 import { endWindows } from '../../web/js/dayend.js';
-import { TOURNEY, tourneyDay, flightTimes, memberSpots, dropShot, pondBall, TOURNEY_MEMO } from '../../web/js/tourney.js';
+import { TOURNEY, tourneyDay, flightTimes, memberSpots, dropShot, pondBall, TOURNEY_MEMO, ballSecs, garyWindow, tourneyRow,
+  tourneyEveDue, TOURNEY_EVE_LINE } from '../../web/js/tourney.js';   // council round 14 #3b (builder 3)
 import { BELL, atBell, bellOpen, hasLandmark, LANDMARK } from '../../web/js/landmarks.js';
 
 const fresh = () => ({
@@ -35,18 +36,18 @@ function addMember(crew, s) {
 
 // One flight: the members tee off. `bonus`: the bell's flight.
 function fly(crew, st, bonus = false) {
-  const f = st.flights.length, n = crew.onlineCount();
+  const f = st.flights.length, n = crew.onlineCount(), secs = ballSecs(n);   // council round 14 #3b: 45 s solo
   const spots = memberSpots(crew.day, crew.venueDay, f, n);
   st.flights.push({ k: f, bonus, n: spots.length, banked: 0, done: false });
   spots.forEach((s, j) => {
     const b = addMember(crew, { ...dropShot(s, j), kind: 'member' });
     b.hands = true; b.member = f;
-    st.balls.push({ id: b.id, f, j, st: 'air', left: TOURNEY.SECS, pond: !!s.pond, x: s.x, z: s.z, by: null });
+    st.balls.push({ id: b.id, f, j, st: 'air', left: secs, pond: !!s.pond, x: s.x, z: s.z, by: null });
     st.launched++;
   });
   crew.stats.memberOut = (crew.stats.memberOut ?? 0) + spots.length;
   crew.events.push({ t: 'tourney', phase: 'flight', call: 'member', k: f, bonus, n: spots.length,   // calls.mjs: one call a ball
-    pond: pondBall(n), main: bonus ? -1 : st.k - 1, secs: TOURNEY.SECS,
+    pond: pondBall(n), main: bonus ? -1 : st.k - 1, secs,
     spots: spots.map(s => ({ x: s.x, z: s.z, pond: s.pond })) });
   crew.dirty = true;
 }
@@ -134,9 +135,11 @@ export default {
     if (crew.venue !== 1) return;
     st.on = tourneyDay({ venue: crew.venue, venueDay: crew.venueDay, endless: crew.endless, promo: isPromotionDay(crew), boss: !!crew.bossToday?.() });
     if (!st.on) return;
-    st.at = flightTimes(crew.shiftSecs, dealsOf(crew));
-    // The morning memo's second line on the first Tournament day (memoSecond's note slot: builder 4's; only if empty).
-    if (!st.seen) { st.seen = true; crew.memoNote ??= TOURNEY_MEMO; }
+    // Council round 14 #3b (B #3): on a Gary day the flights keep out of his warn..warn+120 s.
+    st.at = flightTimes(crew.shiftSecs, dealsOf(crew), crew.garyToday?.() ? garyWindow(crew.shiftSecs, GARY.AT) : null);
+    // The morning memo's second line on the first Tournament day. Council round 14 #3b (B #2): memoSecond's `event`
+    // slot (crew.memoEvent, builder 4's), which beats the NEW kinds line; memoNote lost to it on every day-4 morning.
+    if (!st.seen) { st.seen = true; crew.memoEvent = TOURNEY_MEMO; }
   },
   tick(crew, st, dt) {
     if (crew.venue !== 1 || crew.endless || !crew.working()) return;
@@ -173,7 +176,7 @@ export default {
   // Ⓐ at the Members' Bell (landmark tier 1): a bonus flight. Council round 13 #5: MOW-E's aimed whistle fetching a
   // member's ball calls crew.mods.signal('member', { id }) and it is banked as his.
   input(crew, st, p, a) {
-    if (a.t !== 'bell') return false;
+    if (a.t !== 'bell' || crew.venue !== 1) return false;   // council round 14 #3a: at Tiered the bell is Happy Hour's (happyhour.mjs)
     if (!hasLandmark(crew.up, LANDMARK.BELL) || !atBell(p) || p.down > 0 || !crew.working()) return true;
     const boss = crew.mower?.kind === 'boss' && bossLive(crew.mower);
     if (boss || !bellOpen({ left: crew.shiftSecs - crew.shiftT, rung: st.bell, live: live(st), venue: crew.venue, endless: crew.endless })) {
@@ -224,7 +227,22 @@ export default {
     return out;
   },
   toSave: (crew, st) => (st.seen ? { seen: 1 } : undefined),
+  // Council round 14 #3b (B #5): the report row. "Members' balls 3 of 4 · +$7,363" / "The caddie took all 4. Kazoo."
+  reportRows(crew, st) {
+    if (crew.venue !== 1 || crew.endless) return [];
+    const row = tourneyRow({ out: st.launched, banked: st.banked, cash: st.cash });
+    return row ? [row] : [];
+  },
 };
+
+// Council round 14 #3b: the eve line for builder 4's tomorrowText (crew.mjs endShift): the night before the first
+// Tournament day, or null. A Promotion Day's line (promoBell) still replaces it, as for every eve line.
+export function tourneyEve(crew) {
+  const st = crew.mods?.state?.('tourney');
+  const venueDay = (crew.venueDay | 0) + 1;
+  const boss = !!bossDay({ venue: crew.venue, venueDay, endless: crew.endless, st: crew.moweSt });
+  return tourneyEveDue({ venue: crew.venue, venueDay, endless: crew.endless, boss, seen: !!st?.seen }) ? TOURNEY_EVE_LINE : null;
+}
 
 // The bell constants are re-exported for the bot and the view.
 export { BELL, SIM };

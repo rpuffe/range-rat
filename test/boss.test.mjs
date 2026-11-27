@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { BOSS, TAME, BOSS_LINES, crewHP, huntSpeed, bossDay, bossDue, newBoss, stepBoss, hoseBoss, behind, ringOf, inRing,
   bossPayout, bossBoard, bossSnap, bossLive, richest, tameDue, newTame, stepTame, tameBoard, moweSnap, moweBoard, cleanMowe, eatable, MOWER,
   meterSecs, coolLeft, updateSnap, updateBoard, WHISTLE, atPost, whistleOpen, tameRun,
-  whistleStrip, inStrip, canBlow, newWhistlePass, bossAt, isCrash, bossOwnsScreen, rematchNext, promoNear, lostLine, stampText, moweRow, moweEve, sidestep, scoreBoard, BURST_MULT } from '../web/js/mowe.js';
+  whistleStrip, inStrip, canBlow, newWhistlePass, bossAt, isCrash, bossOwnsScreen, bossSettled, mowedLine, rematchNext, promoNear, lostLine, stampText, moweRow, moweEve, sidestep, scoreBoard, BURST_MULT } from '../web/js/mowe.js';
 import { MAP } from '../web/js/map.js';
 import { WASH } from '../web/js/sim.js';
 import { PA_LINES } from '../web/js/pa.js';
@@ -610,24 +610,24 @@ test('round 13 #3b: tomorrowText says MOW-E on the boss eve and the rematch eve'
   assert.equal(crew.report.tomorrow, BOSS_LINES.eve);
 });
 
-test('round 13 #3c: MOW-E 2.0 crashes a Stadium Promotion Day: encore, warns at 180 s, a loss still promotes and sets encore', () => {
+test('round 13 #3c (round 14 #4a: at 60 s): MOW-E 2.0 crashes a Stadium Promotion Day: encore, warns at 60 s, a loss still promotes and sets encore', () => {
   const st = { tame: true, encore: false };
   assert.equal(bossDay({ venue: 3, venueDay: 2, promo: true, st }), 'encore');
   assert.equal(bossDay({ venue: 3, venueDay: 2, promo: true, st: { ...st, encore: true } }), null, 'one encore');
   assert.equal(bossDay({ venue: 3, venueDay: 2, promo: true, st: { tame: false } }), 'encore', 'as the encore: an untamed crew meets it too');
   assert.equal(bossDay({ venue: 1, venueDay: 3, promo: true, st: { tame: false } }), null, 'the Club still skips Promotion Day');
   assert.ok(isCrash({ venue: 3, venueDay: 2, promo: true, st }));
-  assert.equal(Math.round(bossAt(420, true)), 180); assert.equal(Math.round(bossAt(420)), 126);
-  assert.ok(!bossDue({ venue: 3, venueDay: 2, promo: true, st, shiftT: 179, shiftSecs: 420 }) && bossDue({ venue: 3, venueDay: 2, promo: true, st, shiftT: 180, shiftSecs: 420 }));
-  assert.match(updateBoard(updateSnap('encore', 90, 420, true)), /^PROMOTION DAY · MOW-E 2\.0 UPDATE [▓░]{3}$/);
+  assert.equal(Math.round(bossAt(420, true)), 60); assert.equal(Math.round(bossAt(420)), 126);
+  assert.ok(!bossDue({ venue: 3, venueDay: 2, promo: true, st, shiftT: 59, shiftSecs: 420 }) && bossDue({ venue: 3, venueDay: 2, promo: true, st, shiftT: 60, shiftSecs: 420 }));
+  assert.match(updateBoard(updateSnap('encore', 30, 420, true)), /^PROMOTION DAY · MOW-E 2\.0 UPDATE [▓░]{3}$/);
   assert.equal(PA_LINES.crash.caption, BOSS_LINES.crash);
   const clock = { t: 1e6 };
   const crew = new Crew('CRASH', { venue: 3, day: 21, venueDay: 1, promoDay: 21, mowe: { tame: true } }, { shiftSecs: 420, seed: 3, now: () => clock.t });
   const p = crew.join('A'); crew.connect(p);
   crew.startShift();
   assert.equal(crew.day, 21); assert.equal(crew.bossToday(), 'encore');
-  crew.shiftT = 178; crew.tick(0.05); assert.notEqual(crew.mower?.kind, 'boss', 'not before 180 s');
-  crew.shiftT = 180; crew.events = []; crew.tick(0.05);
+  crew.shiftT = 58; crew.tick(0.05); assert.notEqual(crew.mower?.kind, 'boss', 'not before 60 s');
+  crew.shiftT = 60; crew.events = []; crew.tick(0.05);
   assert.equal(crew.mower?.kind, 'boss'); assert.ok(crew.mower.crash && crew.mower.encore);
   assert.ok(crew.events.some(e => e.t === 'pa' && e.id === 'crash'));
   crew.events = []; crew.moweLose();
@@ -701,4 +701,96 @@ test('round 13, the lead\'s calls: the solo strip holds 14, the whistle pass set
   }
   assert.ok(fightEnd != null && warnAt != null && warnAt >= fightEnd, `the warn (${warnAt}) after the fight (${fightEnd})`);
   assert.ok(verdict, 'he still inspects before the bell');
+});
+
+// ---- council round 14 #4 (builder 1): the crash day untangled (crash → Gary → Stretch), the punchline's beat, the
+// crowd held through the fight, the mowed line once a fight, Employee needs > 0, the rematch eve
+// Run a whole idle Promotion Day crash (4 seats, nobody fights), logging when each beat lands.
+function crashDay(seed = 3, n = 4) {
+  const clock = { t: 1e6 };
+  const crew = new Crew('C14' + seed, { venue: 3, day: 21, venueDay: 1, promoDay: 21, mowe: { tame: true } }, { shiftSecs: 420, seed, now: () => clock.t });
+  for (let i = 0; i < n; i++) { const p = crew.join('R' + i); crew.connect(p); p.x = 30 + i; p.z = 8; }
+  crew.startShift();
+  const st = crew.mods.state('stadium');
+  const log = { warn: null, end: null, gary: null, stretch: null, crowd: [] };
+  for (let i = 0; i < 430 * 20 && crew.phase === 'shift'; i++) {
+    clock.t += 50; crew.tick(0.05);
+    if (bossLive(crew.mower) && crew.mower.phase !== 'warn') log.crowd.push(st.s);
+    for (const e of crew.events) {
+      if (e.t === 'mower' && e.boss && e.phase === 'warn') log.warn ??= crew.shiftT;
+      if (e.t === 'mower' && e.boss && (e.phase === 'fled' || e.phase === 'tamed')) log.end ??= crew.shiftT;
+      if (e.t === 'gary' && e.phase === 'warn') log.gary ??= crew.shiftT;
+      if (e.t === 'crowd' && e.kind === 'stretch') log.stretch ??= crew.shiftT;
+    }
+    crew.events = [];
+  }
+  return log;
+}
+
+test('round 14 #4a/#4b: the crash day runs crash (60 s) → Gary (≥ 8 s after) → the Stretch, at 3 seeds', () => {
+  assert.equal(BOSS.PROMO_AT * 420, 60);
+  for (const seed of [3, 7, 11]) {
+    const l = crashDay(seed);
+    assert.ok(Math.abs(l.warn - 60) < 0.2, `the crash warns at 60 s (${l.warn})`);
+    assert.ok(l.end != null && l.end <= 175.2, `the fight ends by T−4:05 (${l.end})`);
+    assert.ok(l.gary != null && l.gary >= l.end + BOSS.SETTLE - 0.1, `Gary (${l.gary}) ≥ 8 s after the fight (${l.end})`);
+    assert.ok(l.stretch != null && l.stretch > l.end, `the Stretch (${l.stretch}) after the fight`);
+    assert.ok(l.warn < l.end && l.end < l.gary && l.gary < l.stretch, 'crash → Gary → Stretch');
+  }
+});
+
+test('round 14 #4c: the Stadium crowd does not decay during the fight (an idle crew)', () => {
+  const l = crashDay(5, 2);
+  assert.ok(l.crowd.length > 100);
+  // only the knockdown cheers (+0.02 each, CROWD.KNOCK) move it: it never drains
+  for (let i = 1; i < l.crowd.length; i++) assert.ok(l.crowd[i] >= l.crowd[i - 1] - 1e-9, `the crowd fell mid-fight at sample ${i}`);
+});
+
+test('round 14 #4b: bossSettled: false while live and for 8 s after it fled or was tamed; a Club loss holds Gary too', () => {
+  assert.ok(bossSettled(null)); assert.ok(bossSettled({ kind: 'tame', phase: 'out' }));
+  const s = fight(2); assert.ok(!bossSettled(s));
+  s.ft = s.cap; step(s, 0.05); assert.equal(s.phase, 'fled'); assert.ok(!bossSettled(s));
+  step(s, BOSS.SETTLE - 0.2); assert.ok(!bossSettled(s), 'not before SETTLE'); step(s, 0.3); assert.ok(bossSettled(s));
+  // a Club loss: the fight times out after Gary's 43 % and he waits the 8 s
+  const clock = { t: 1e6 };
+  const crew = new Crew('C14CLUB', { venue: 1, day: 9, venueDay: 2, garyDay: 9 }, { shiftSecs: 420, seed: 3, now: () => clock.t });
+  const p = crew.join('A'); crew.connect(p); p.x = 30; p.z = 8;
+  crew.startShift(); crew.garyDay = crew.day;
+  for (const m of crew.mats) m.next = 1e9;
+  let end = null, gary = null;
+  for (let i = 0; i < 430 * 20 && crew.phase === 'shift'; i++) {
+    clock.t += 50; crew.tick(0.05);
+    for (const e of crew.events) {
+      if (e.t === 'mower' && e.boss && e.phase === 'fled') end ??= crew.shiftT;
+      if (e.t === 'gary' && e.phase === 'warn') gary ??= crew.shiftT;
+    }
+    crew.events = [];
+  }
+  assert.ok(end != null && end > 420 * 0.43, `the Club fight outlasts Gary's slot (${end})`);
+  assert.ok(gary != null && gary >= end + BOSS.SETTLE - 0.1, `Gary (${gary}) ≥ 8 s after the loss (${end})`);
+});
+
+test('round 14 #4d: the mowed line once a fight, then "Mowed again!" at most once per 20 s', () => {
+  const st = { n: 0, at: 0 };
+  assert.equal(mowedLine(st, 100), BOSS_LINES.mowed);
+  assert.equal(mowedLine(st, 105), null, 'not again within 20 s');
+  assert.equal(mowedLine(st, 119), null);
+  assert.equal(mowedLine(st, 121), BOSS_LINES.mowedAgain);
+  assert.equal(mowedLine(st, 130), null, 'the repeat is held 20 s too');
+  assert.equal(mowedLine(st, 141.5), BOSS_LINES.mowedAgain);
+  st.n = 0; assert.equal(mowedLine(st, 142), BOSS_LINES.mowed, 'a new fight (the warn resets n): the long line again');
+  assert.equal(wordCount(BOSS_LINES.mowed), 7); assert.equal(wordCount(BOSS_LINES.mowedAgain), 2);
+});
+
+test('round 14 #4e: Employee of the Shift needs > 0 banked; the rematch eve says grab a wand early', () => {
+  const clock = { t: 1e6 };
+  const crew = new Crew('C14EMP', { venue: 1, day: 9, venueDay: 1 }, { shiftSecs: 420, seed: 3, now: () => clock.t });
+  const a = crew.join('A'), b = crew.join('B'); crew.connect(a); crew.connect(b);
+  crew.startShift();
+  a.shift.banked = 0; b.shift.banked = 0; b.shift.knockdowns = 2;
+  assert.ok(!crew.ledger().some(e => e.award === 'Employee of the Shift'), 'a $0 shift skips it');
+  a.shift.banked = 3;
+  assert.equal(crew.ledger().find(e => e.id === a.id).award, 'Employee of the Shift');
+  assert.equal(BOSS_LINES.rematchEve, "Tomorrow: MOW-E's rematch. Grab a wand early.");
+  assert.ok(wordCount(BOSS_LINES.rematchEve) <= 8);
 });
