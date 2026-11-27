@@ -272,3 +272,65 @@ into a comment, so MOW-E was invisible all fight (fixed in 097c941 with a guard 
 Remaining gaps: Muni day 3 is dead air (0.43 calls a minute), solo Tiered drags 5–9 shifts, the Members' Bell is
 never rung, the first Tournament day isn't announced, MOW-E 2.0's loss line is eaten by Gary's warn, Rat 1 spawns
 inside Gary and the glass case on the first endless morning, and the Site 13 poach is too easy.
+
+## Round 10: the final review (2026-11-27, build f5a95a7, council round 14 built) · A 4P sofa, B solo, C 2P plus stress
+
+Whole-game cards. Each reviewer also scored three stretches (the first hour, the middle, the late game); those are in design/playtest-round10-{A,B,C}.md.
+
+| Metric | A | B | C | **Avg** | R9 | R1 | Δ vs R9 |
+|---|---|---|---|---|---|---|---|
+| Fun | 7 | 7 | 7 | **7.0** | 6.8 | 6.0 | +0.2 |
+| Clarity | 6.5 | 6.5 | 7 | **6.7** | 6.5 | 5.7 | +0.2 |
+| Text load | 6.5 | 7 | 7.5 | **7.0** | 7.5 | 4.0 | −0.5 |
+| Pacing | 6.5 | 6 | 7 | **6.5** | 6.8 | 5.0 | −0.3 |
+| Co-op | 7 | 6.5 | 6.5 | **6.7** | 6.8 | 6.0 | −0.1 |
+| Meaningful features | 7 | 6.5 | 7 | **6.8** | 6.5 | 4.7 | +0.3 |
+| Look & feel | 7 | 7 | 7.5 | **7.2** | 6.7 | 7.0 | +0.5 |
+| Polish | 6 | 6.5 | 5.5 | **6.0** | 5.8 | 4.7 | +0.2 |
+| One more shift | 7.5 | 6.5 | 7 | **7.0** | 6.8 | 6.0 | +0.2 |
+| Decision density | 6.5 | 6 | 6.5 | **6.3** | 6.2 | — | +0.1 |
+| **Overall** | **6.8** | **6.6** | **6.8** | **6.7** | 6.7 | 5.5 | 0 |
+
+Overall by stretch:
+
+| Reviewer | First hour | Middle | Late game |
+|---|---|---|---|
+| A | 6.6 | 7.0 | 7.0 |
+| B | 6.6 | 6.6 | 6.6 |
+| C | 6.6 | 7.0 | 6.6 |
+
+**Verdict: below the ship bar (§4.3).**
+- Overall is 6.7, against the bar of 7.0.
+- Polish is 6.0 for the whole game, under 6.5.
+- The first hour is under 6.5 on Decision density (5.5 for A and C) and on Pacing (6.0 for A).
+- Two High findings are open, and the throttled perf bar is missed.
+
+Per §4.3, the owner decides between shipping as is and a hotfix-only pass.
+
+**The method changed from R9.** This round played the whole game, with B at 1P (the longest path) instead of a venue split, and `__centre` now counts pay floats in the centre box. So Text load and Pacing aren't like-for-like with R9.
+
+The ending works at every crew size, with 0 overlaps from the bank to the end card:
+- the ladder: 1P, 2P and 4P on 3 seeds each;
+- the reviewers: A at 4P, B at 1P, C at 2P on 2 new seeds.
+
+The 4P co-op events are the best they have been:
+- the Gold Rush, 3 of 4;
+- Happy Hour, 3 of 3;
+- the rematch tamed in about 30 s.
+
+"MOW-E got away. Rematch tomorrow." is the hook of the game: "one more shift?" scored 8 after the first boss.
+
+The solo "Gary wall" in the ladder is a bot limit. A human passes his Muni, Club and County inspections on the first visit.
+
+**Open High findings:**
+1. **(C) A rejoin during the ending report softlocks the crew.** The seat gets no end card, no report and no Ready.
+2. **(A) At 4P, crewmates', the washer's and Gary's-check pay floats share the centre with centre text.** About 80 of 90 overlaps are these. Gary's bubble also sits over his own checklist line (A and C).
+3. **(C) Perf with the CPU throttled ×6:** p95 is 70–409 ms, against the 20 ms bar. Unthrottled, it runs at 52+ fps, p95 about 18 ms. The real Xbox numbers are still the owner's to measure.
+
+**Main Medium findings:**
+- Solo Tiered takes 9–14 shifts, because the reviews goal sticks at 2/3.
+- Muni days 1–3 and some Club shifts have 2–4 minutes with no call.
+- A lost first boss usually costs a 4P crew the Tournament.
+- Club day 2 runs the Gold Rush straight into Gary's inspection, and the crash day puts the Stretch inside it.
+- Saves restored mid-shift duplicate that shift's cash.
+- The final report shows each Rat's last shift ("0 balls · $0").
