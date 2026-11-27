@@ -17,6 +17,12 @@ const DK = await import(REPO + 'web/js/deck.js');
 const L = await import(REPO + 'web/js/layout.js');
 const CD = await import(REPO + 'web/js/creekdive.js');
 const { makeClassifier } = await import('./classify.mjs');
+// council round 13 #0: the shared calls tally, the policy hooks, the shift caps, and the boss shortcut (from pt8b-mid)
+const { CallTally } = await import('./calls.mjs');
+const { loadPolicies } = await import('./policies.mjs');
+const { capCheck } = await import('./snap.mjs');
+const MW = await import(REPO + 'web/js/mowe.js');
+const FIGHT = +(process.env.FIGHT ?? 0);   // FIGHT=secs: the crew stands still that long in the Club boss fight, then tames it (0: ignore it)
 const SKILL = +(process.env.SKILL ?? 1), FOLLOW = process.env.FOLLOW !== '0', SHOOT = process.env.SHOOT !== '0';
 const N = +(process.argv[2] ?? 4), SEED = +(process.argv[3] ?? 7), START = process.argv[4] ?? 'grad';
 const V = process.env.V === '1';
@@ -31,6 +37,8 @@ const SAVES = {
 const crew = new Crew('BOTB', startSave() ?? SAVES[START], { now: () => t * 1000, seed: SEED });
 const rats = names.map(n => { const p = crew.join(n); crew.connect(p); return p; });
 const CL = makeClassifier(crew); const NOV = [];
+const calls = new CallTally(N);
+const fightLog = []; let fightAt = null;
 const DT = 0.1;
 const W = () => crew.world();
 const STAND = S.SIM.STAND, SHED = S.FRIES.SHED, WSTN = S.WASH.STATION, DOCK = S.POND.DOCK;
@@ -135,7 +143,7 @@ function cookJob(p, dt) {
   if (!crew.perks.shed) return false;
   const deck = crew.mods.state('deck')?.deck;
   const g = crew.goalRows();
-  const dogsOpen = g.some(r => r.id === 'hotdogs' && !r.done);
+  const dogsOpen = g.some(r => r.id === 'fed' && !r.done);
   const ordersOpen = g.some(r => r.id === 'orders' && !r.done);
   const garyHungry = crew.gary && (crew.gary.phase === 'warn' || crew.gary.phase === 'drive') && !crew.gary.fed && !(crew.gary.checks || []).some(c => c.stop === 'kitchen') && crew.fries < S.FRIES.MAX * 0.5;
   const fedLow = (crew.fedSt?.fed ?? 1) < 1.2;
@@ -420,7 +428,7 @@ function ratStep(p, i, dt) {
     if (process.env.GOAL2P === '1') {
       if (p.job === 'wash' || (!p.job && dirtyFixture() && (crew.fixtures[dirtyFixture()] > (garyDay ? 0.3 : 0.7)))) { p.job = 'wash'; if (!washJob(p, dt)) p.job = null; return; }
       if (p.job === 'dive' || (!p.job && crew.treasure && open('treasures'))) { p.job = 'dive'; if (crew.treasure && !M.inPondArea(crew.treasure.x, crew.treasure.z)) p.creekMode = true; if (!diveJob(p, dt, 1) || !crew.treasure && !p.diving && !p.fromDive) { p.job = null; p.creekMode = false; } return; }
-      if ((open('hotdogs') || open('orders')) && cookJob(p, dt)) return;
+      if ((open('fed') || open('orders')) && cookJob(p, dt)) return;
     }
     if (p.job === 'wash' || (!p.job && dirtyFixture() && crew.fixtures[dirtyFixture()] > 0.45)) { p.job = 'wash'; if (!washJob(p, dt)) p.job = null; return; }
     if (p.job === 'cook' || (!p.job && crew.perks.shed)) { p.job = 'cook'; p.cookN = (p.cookN ?? 0); if (!cookJob(p, dt) || (p.cookN++ > 300 && !crew.mods.state('deck')?.deck?.order)) { p.job = null; p.cookN = 0; } else return; }
@@ -431,7 +439,7 @@ function ratStep(p, i, dt) {
   if (p.job === 'cart' && crew.cartOf(p)) {
     const c = crew.cartOf(p);
     const tm = crew.mods.state('tiered');
-    const needOut = (crew.shiftT < 90 && crew.basket.n <= 2 && !(crew.up.bucket >= 1)) || crew.fixtures.sign > 0.4 || (crew.perks.shed && crew.fries < 5 && !crew.perks.autoFry) || crew.sunkCount() > 25 || crew.treasure || (tiered && SHOOT && (tm?.cups.reduce((a, b) => a + b, 0) ?? 0) >= 8) || (crew.goalRows().some(r => r.id === 'hotdogs' && !r.done) && crew.fries > 12 && (p.dogT ?? 0) > 120) || (crew.mods.state('deck')?.deck?.order && crew.goalRows().some(r => r.id === 'orders' && !r.done));
+    const needOut = (crew.shiftT < 90 && crew.basket.n <= 2 && !(crew.up.bucket >= 1)) || crew.fixtures.sign > 0.4 || (crew.perks.shed && crew.fries < 5 && !crew.perks.autoFry) || crew.sunkCount() > 25 || crew.treasure || (tiered && SHOOT && (tm?.cups.reduce((a, b) => a + b, 0) ?? 0) >= 8) || (crew.goalRows().some(r => r.id === 'fed' && !r.done) && crew.fries > 12 && (p.dogT ?? 0) > 120) || (crew.mods.state('deck')?.deck?.order && crew.goalRows().some(r => r.id === 'orders' && !r.done));
     p.dogT = (p.dogT ?? 0) + dt;
     if (needOut && c.load === 0 && Math.hypot(c.x - STAND.x, c.z - STAND.z) < 10) { crew.leaveCart(p); p.job = null; return; }
     if (needOut && c.load > 0) p.cartHome = true;
@@ -440,7 +448,7 @@ function ratStep(p, i, dt) {
   if (fillJob(p, dt)) return;
   if (p.job === 'shoot' || (!p.job && tiered && SHOOT)) { if (shootJob(p, dt, (tot, st) => tot >= 8 || (crew.lastCallRung && st.kpi < 0.6))) { p.job = 'shoot'; return; } if (p.job === 'shoot') p.job = null; }
   if (p.job === 'wash' || (!p.job && dirtyFixture() && crew.fixtures[dirtyFixture()] > 0.5)) { p.job = 'wash'; if (!washJob(p, dt)) p.job = null; return; }
-  if (p.job === 'cook' || (!p.job && crew.perks.shed && (crew.fries < 6 || crew.goalRows().some(r => r.id === 'hotdogs' && !r.done) && (p.dogT ?? 0) > 120 || crew.mods.state('deck')?.deck?.order))) {
+  if (p.job === 'cook' || (!p.job && crew.perks.shed && (crew.fries < 6 || crew.goalRows().some(r => r.id === 'fed' && !r.done) && (p.dogT ?? 0) > 120 || crew.mods.state('deck')?.deck?.order))) {
     p.job = 'cook'; p.dogT = 0; p.cookN = (p.cookN ?? 0) + dt;
     if (p.cookN > 50 || !cookJob(p, dt)) { p.job = null; p.cookN = 0; } return;
   }
@@ -476,9 +484,11 @@ function reserve() {
   return otherOpen <= 1 ? info.fee : 0;   // save once the card is nearly done
 }
 
+const policies = await loadPolicies({ bot: 'mid', crew, rats, N, DT, now: () => t, walkTo: (p, x, z) => walkTo(p, { x, z }, DT) });
 // ---- run ---------------------------------------------------------------------------------------------------------
 const rows = [];
 let sess = 0;
+const atVenue = {};
 const evc = {};
 const goalLog = [];
 snap(crew, 'morning'); crew.readyUp(rats[0]);
@@ -491,8 +501,16 @@ for (let shift = 0; shift < 30 && crew.venue < 3; shift++) {
   for (const p of rats) { p.dealt = null; p.job = null; p.creekMode = false; }
   while (crew.phase === 'shift') {
     t += DT; secs += DT;
-    rats.forEach((p, i) => { p.seenAt = t * 1000; ratStep(p, i, DT); }); CL.step(rats, DT);
+    const mw = crew.mower, fighting = FIGHT > 0 && mw?.kind === 'boss' && MW.bossLive(mw) && mw.phase !== 'warn';
+    const held = policies.step(crew, DT);
+    if (fighting) {   // stand still for FIGHT s, then tame it (the measured 4P fight is 49-67 s)
+      fightAt ??= t;
+      for (const p of rats) { p.seenAt = t * 1000; if (crew.cartOf(p)) crew.leaveCart(p); }
+      if (t - fightAt >= FIGHT && mw.phase !== 'plug') { mw.phase = 'tamed'; mw.t = 0; crew.moweFightPhase('tamed'); fightLog.push('d' + crew.day + ' tamed@' + Math.round(t - fightAt)); fightAt = null; }
+    } else rats.forEach((p, i) => { p.seenAt = t * 1000; if (!held.has(p)) ratStep(p, i, DT); });
+    CL.step(rats, DT);
     crew.tick(DT);
+    calls.step(crew, DT);
     for (const e of crew.events) {
       evc[e.t] = (evc[e.t] ?? 0) + 1;
       if (['debut','buy','pa','reveal','garyIntro','treasure','promoted'].includes(e.t)) NOV.push(`d${crew.day} v${crew.venue} t${Math.round(crew.shiftT)} ${e.t} ${e.kind ?? e.id ?? e.line ?? e.key ?? ''}${e.tier ?? ''}`);
@@ -515,11 +533,13 @@ for (let shift = 0; shift < 30 && crew.venue < 3; shift++) {
     }
     crew.events = [];
     if (crew.working()) { X.fedSum += crew.fedSt?.fed ?? 1; X.fedN++; X.friesSum += crew.fries / S.FRIES.MAX; }
-    if (Math.round(secs * 10) % 300 === 0) tryBuy(reserve());
+    if (Math.round(secs * 10) % 300 === 0) { tryBuy(reserve()); policies.buy(); }
   }
+  atVenue[v0] = (atVenue[v0] ?? 0) + 1;
   sess += secs + 30;
   const r = crew.report, q = r.quota, v = crew.valueNow();
   const rowsG = r.goals?.rows ?? crew.goalRows();
+  const row0vd = crew.venueDay;
   const row = { day: r.day, venue: v0, vd: crew.venueDay, min: Math.round(sess / 60), income: Math.round(r.cash), banked: r.deposited,
     bvEnd: +v.bv.toFixed(1), q: q ? (q.hit ? 'HIT' : 'miss') : '-', gauge: q?.gauge, why: q?.why, reviews: crew.reviews, cash: Math.round(crew.cash), fee: r.promo?.fee,
     card: rowsG.map(g => `${g.id}:${g.have}/${g.need}${g.done ? '✓' : ''}`).join(' '), goals: X.goals.join(' '), head: crew.goalWire()?.head,
@@ -527,7 +547,8 @@ for (let shift = 0; shift < 30 && crew.venue < 3; shift++) {
     deckOrders: `${X.filled}/${X.deckOrders}`, tab: Math.round(X.tab), falls: X.falls, fallFine: Math.round(X.fallFine), floorAfterFall: X.floorAfterFall, fb: X.fb,
     targets: X.targets, tLeft: X.tLeft.join(','), verdict: X.verdict, snags: `${counters.snagBalls ?? 0}/${X.snagsMade}`, creekDunks: X.creekDunks, gasps: `${X.creekGasps}/${X.gasps}`,
     treasures: crew.lostFound.length, kd: X.kd, kb: X.kb, refused: X.refused, deals: X.deals.join(' | '), memo: X.memo, tomorrow: r.tomorrow,
-    c: Object.fromEntries(Object.entries(counters).map(([k, v]) => [k, Math.round(v)])) };
+    c: Object.fromEntries(Object.entries(counters).map(([k, v]) => [k, Math.round(v)])),
+    calls: calls.endShift(crew, { vd: row0vd }), ...policies.shiftEnd(r) };
   rows.push(row);
   if (V) console.log(JSON.stringify(row));
   tryBuy(reserve());
@@ -537,6 +558,7 @@ for (let shift = 0; shift < 30 && crew.venue < 3; shift++) {
     rows.push({ promoted: crew.venue, fee, cashBefore: Math.round(before), cashAfter: Math.round(crew.cash), atMin: Math.round(sess / 60) });
     if (V) console.log('PROMOTED', JSON.stringify(rows.at(-1)));
   }
+  if (crew.venue === v0) capCheck(crew, atVenue[v0]);
   snap(crew, 'morning'); for (const p of rats) crew.readyUp(p);
 }
 console.log(`N=${N} seed=${SEED} start=${START}`);
@@ -546,6 +568,8 @@ console.log('SUMMARY', JSON.stringify({ N, SEED, club: rows.filter(r => r.venue 
   lastGoal: [1, 2].map(v => goalLog.filter(g => g.venue === v).at(-1)?.id), goalVd: goalLog.map(g => `v${g.venue}d${g.vd}:${g.id}`).join(' ') }));
 console.log(CL.report()); console.log('NOV ' + NOV.join(' | '));
 console.log('SHOTS', JSON.stringify(shots));
+if (fightLog.length) console.log('FIGHTS', fightLog.join(' '));
+calls.print(); policies.summary();
 console.log('buys:', buys.join(' | '));
 console.log('events:', JSON.stringify(evc));
 console.log('up:', JSON.stringify(crew.up), 'dive:', rats.map(p => p.dive).join(','), 'lostFound:', crew.lostFound.join(','));

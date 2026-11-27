@@ -1,0 +1,233 @@
+{
+ "id": "stadiumPromo",
+ "label": "The Stadium · Promotion Day",
+ "made": "2026-11-27",
+ "bot": "4P seed 7, morning snap",
+ "players": 4,
+ "save": {
+  "v": 5,
+  "day": 14,
+  "cash": 11319244.9,
+  "totals": {
+   "picked": 7936,
+   "deposited": 7441,
+   "cash": 11723219.61,
+   "knockdowns": 429,
+   "helped": 2222,
+   "carted": 789,
+   "swings": 159,
+   "pings": 22,
+   "runOver": 262,
+   "washed": 413.4,
+   "scrubbed": 6596,
+   "unwashed": 329,
+   "lostPremium": 34526.72,
+   "reviews": 11,
+   "launched": 13200,
+   "filled": 480,
+   "spotless": 65.4,
+   "sealCash": 33035.68,
+   "served": 233,
+   "fries": 1558,
+   "dogs": 123,
+   "fedCash": 579869.52,
+   "dived": 564,
+   "snags": 422,
+   "memberOut": 12,
+   "memberClaimed": 10,
+   "targets": 99,
+   "beers": 62,
+   "deckOrders": 60,
+   "souvenirs": 32,
+   "souvCash": 1733748.29,
+   "reqHit": 6,
+   "refused": 5
+  },
+  "up": {
+   "gear": 3,
+   "build": 3,
+   "cart": 4,
+   "shed": 3,
+   "returns": 2,
+   "helpers": 3,
+   "washer": 3,
+   "wand": 3,
+   "filler": 2,
+   "amen": 1,
+   "pond": 2,
+   "gutters": 1,
+   "ads": 2,
+   "shoes": 2,
+   "hardhat": 1
+  },
+  "diveByName": {
+   "Rat 1": 3,
+   "Rat 2": 3,
+   "Rat 3": 3,
+   "Rat 4": 3
+  },
+  "lostFound": [
+   "keys",
+   "trophy",
+   "shades",
+   "duck"
+  ],
+  "commendations": 10,
+  "reviews": 1,
+  "pondSunk": 0,
+  "fries": 20,
+  "goals": {
+   "venue": 3,
+   "scale": 1,
+   "crew": 4,
+   "need": {
+    "requests": 6,
+    "pings": 12,
+    "reviews": 2
+   },
+   "n": {
+    "pings": 12,
+    "requests": 6,
+    "reviews": 1
+   },
+   "done": [
+    "cart2",
+    "pings",
+    "requests"
+   ],
+   "who": []
+  },
+  "venue": 3,
+  "venueDay": 1,
+  "outstanding": 713369498,
+  "pendingReveal": 0,
+  "endless": false,
+  "garyDay": 14,
+  "promoDay": 14,
+  "fixtures": {
+   "sign": 0.019,
+   "stand": 0.019,
+   "mat0": 0.016,
+   "mat1": 0.017,
+   "mat2": 0.016,
+   "mat3": 0.019,
+   "mat4": 0.016,
+   "mat5": 0.016,
+   "mat6": 0.018,
+   "mat7": 0.017,
+   "mat8": 0.018,
+   "mat9": 0.017,
+   "mat10": 0.015,
+   "mat11": 0.018,
+   "mat12": 0.018,
+   "mat13": 0.018,
+   "mat14": 0.017,
+   "mat15": 0.019
+  },
+  "records": {
+   "cash": 9802821.27,
+   "banked": 1528,
+   "day": 13,
+   "curve": [
+    38228.7,
+    323389.04,
+    730568.85,
+    1359435.57,
+    1977096.77,
+    2954699.67,
+    3906255.38,
+    5060738.01,
+    6367390.7,
+    7181024.23,
+    7833020.36,
+    8453615.47,
+    9049088.87,
+    9802821.27
+   ]
+  },
+  "voiced": [
+   "welcome",
+   "glow",
+   "cart",
+   "garyIntro",
+   "gary",
+   "huddle",
+   "club",
+   "treasure",
+   "rogue",
+   "tiered",
+   "jackpot",
+   "fleet"
+  ],
+  "debuts": [
+   "glow",
+   "gold",
+   "square",
+   "lead",
+   "bouncy",
+   "splitter"
+  ],
+  "mowe": {
+   "tame": true,
+   "lost": 0,
+   "encore": false
+  },
+  "story": [
+   "cold",
+   "mid:0",
+   "promo:1",
+   "mid:1",
+   "promo:2",
+   "mid:2",
+   "promo:3"
+  ],
+  "mods": {
+   "deck": {
+    "last": 1
+   },
+   "tourney": {
+    "seen": 1
+   }
+  },
+  "night": {
+   "minutes": 7,
+   "fromDay": 13,
+   "day": 13,
+   "shifts": 1,
+   "venue": 3,
+   "title": "Stadium Retrieval Captain",
+   "balls": 1528,
+   "cash": 9802821.27,
+   "knockdowns": 14,
+   "falls": 0,
+   "treasures": 0,
+   "rats": [
+    {
+     "name": "Rat1",
+     "color": "#4c9be8",
+     "award": "Fry Lord",
+     "line": "49 served"
+    },
+    {
+     "name": "Rat2",
+     "color": "#f2c94c",
+     "award": "Most Horizontal",
+     "line": "3 times flat"
+    },
+    {
+     "name": "Rat0",
+     "color": "#e8604c",
+     "award": "Banker of the Night",
+     "line": "5 balls banked"
+    },
+    {
+     "name": "Rat3",
+     "color": "#6fcf7c",
+     "award": "Cart Magnet",
+     "line": "13 pings"
+    }
+   ]
+  },
+  "test": true
+ }
+}

@@ -6,7 +6,8 @@ import { CROWD, gateAt, newLap, stepLap, stepSentiment, bump, pingDelta, newWind
   REQ, SECTIONS, reqDue, reqSection, inSection, souvPay, reqCrowd, reqMiss,
   autoCeil, bumpAuto, ROBOT_LINE, STRETCH, stretchDue, reqPaused, stretchSections, stretchPay, stretchCrowd, reqRot } from '../../web/js/stadium.js';
 import { AUTO, newAuto, stepAutopilot, nextMode } from '../../web/js/autopilot.js';
-import { bossLive } from '../../web/js/mowe.js';   // council round 11 §2.7: MOW-E 2.0, the encore (builder 1)
+import { bossLive } from '../../web/js/mowe.js';
+import { LANDMARK, hasLandmark, FIREWORKS, GRAND_SLAM } from '../../web/js/landmarks.js';   // council round 13 #4 (builder 2): Stretch fireworks   // council round 11 §2.7: MOW-E 2.0, the encore (builder 1)
 
 // Council round 11 §2.7: while MOW-E 2.0 is a live boss the crowd doesn't drain; each hit +HIT; a win fills it.
 export const BOSS_CROWD = { HIT: 0.08, WIN: 1 };
@@ -123,14 +124,19 @@ function stretch(crew, st, dt) {
     st.stretchMissed += missed.length;
     if (missed.length) st.s = bump(st.s, -STRETCH.MISS * missed.length);   // no boo: it's a party
     crew.events.push({ t: 'crowd', kind: 'stretchend', missed: missed.join(''), hit: st.stretchHit });
+    if (!missed.length && st.stretch.fw) {                             // council round 13 #4: every section answered, with fireworks
+      st.s = bump(st.s, FIREWORKS.SLAM); crew.stats.grandSlams = (crew.stats.grandSlams ?? 0) + 1;
+      crew.events.push({ t: 'crowd', kind: 'grandslam', text: GRAND_SLAM });
+    }
     st.stretch = null; crew.dirty = true;
     return;
   }
   const busy = !!st.req || bossLive(crew.mower?.kind === 'boss' ? crew.mower : null);
   if (!stretchDue({ left: crew.shiftSecs - crew.shiftT, done: st.stretchDone, busy })) return;
   st.stretchDone = true;
-  const secs = stretchSections(crew.day, crew.venueDay, crew.onlineCount());
-  st.stretch = { secs, left: STRETCH.SECS };
+  const fw = hasLandmark(crew.up, LANDMARK.FIREWORKS);                // council round 13 #4: one more section
+  const secs = stretchSections(crew.day, crew.venueDay, crew.onlineCount(), fw ? FIREWORKS.EXTRA : 0);
+  st.stretch = { secs, left: STRETCH.SECS, fw };
   crew.events.push({ t: 'crowd', kind: 'stretch', secs: secs.map(i => SECTIONS[i].name).join(''), i: [...secs], n: secs.length, left: STRETCH.SECS });
   crew.dirty = true;
 }
@@ -267,6 +273,6 @@ export default {
     ...(Object.keys(st.hands ?? {}).length ? { hands: Object.fromEntries(Object.entries(st.hands).map(([id, h]) => [id, h.relay ? -h.n : h.n])) } : {}),   // round 11: n (negative: relayed)
     ...(st.sv ? { sv: 1 } : {}), ...(st.boos ? { boos: st.boos } : {}),
     ...(st.req ? { req: { i: st.req.i, sec: st.req.sec, left: Math.round(st.req.left * 10) / 10 } } : {}),
-    ...(st.stretch ? { stretch: { i: [...st.stretch.secs], secs: st.stretch.secs.map(i => SECTIONS[i].name).join(''), t: Math.round(st.stretch.left * 10) / 10 } } : {}),   // council round 12 #2c (bvtext.js kpiNoteOf)
+    ...(st.stretch ? { stretch: { ...(st.stretch.fw ? { fw: 1 } : {}), i: [...st.stretch.secs], secs: st.stretch.secs.map(i => SECTIONS[i].name).join(''), t: Math.round(st.stretch.left * 10) / 10 } } : {}),   // council round 12 #2c (bvtext.js kpiNoteOf)
     ...(crew.perks?.autopilot && crew.venue === 3 ? { ceil: Math.round(autoCeil(st.reqMissed) * 100) / 100 } : {}) }),   // council round 11 #5 (board.js: reqLine)
 };

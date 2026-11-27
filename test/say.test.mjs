@@ -16,7 +16,7 @@ test('wordCount: $1,240 and 3/4 are one word; a bare dot is none', () => {
   assert.equal(wordCount('Bank $1,240 by 3/4 time'), 5);
   assert.equal(wordCount('Day 3 · The Muni'), 4);
   assert.equal(wordCount(''), 0);
-  assert.deepEqual(KINDS, ['STAMP', 'PA', 'MEMO', 'ALERT', 'TOAST', 'TIP']);
+  assert.deepEqual(KINDS, ['STAMP', 'ALERT', 'PA', 'MEMO', 'TIP', 'TOAST']);   // council round 13 #2: the centre.js ladder
 });
 
 test('two items never show at once: the second waits for the first, then a 0.3 s gap', () => {
@@ -77,18 +77,20 @@ test('the same key updates in place: visible keeps its slot, queued keeps its pl
   assert.deepEqual(s.m.queued.map(i => i.text), ['rally two']);
 });
 
-test('a TIP waits for 2 s with nothing showing', () => {
+test('round 13: a TIP never queues; it fires only after 2 s of quiet (quietFor), or not at all', () => {
   const s = model();
   s.m.say('TOAST', 'Bought!', { secs: 1.2 });
   s.at(0);
-  s.m.say('TIP', 'Hold A to pour');
+  assert.equal(s.m.say('TIP', 'Hold A to pour'), null, 'something is up: the tip is dropped, not queued');
   s.at(1.2);
-  assert.equal(s.at(2.5), null, 'only 1.3 s of quiet');
-  assert.equal(s.at(3.25)?.kind, 'TIP');
+  s.at(2.5); assert.equal(s.m.quietFor(), false, 'only 1.3 s of quiet');
+  s.at(3.25); assert.equal(s.m.quietFor(), true);
+  s.m.say('TIP', 'Hold A to pour');
+  assert.equal(s.at(3.3)?.kind, 'TIP');
   // and a tip past its 60 s life is dropped
   const s2 = model();
   s2.m.say('PA', 'x', { secs: 70 }); s2.at(0);
-  s2.m.say('TIP', 'old tip');
+  assert.equal(s2.m.say('TIP', 'old tip'), null);
   s2.run(75, 0.5);
   assert.deepEqual(s2.shown.map(i => i.kind), ['PA']);
 });
@@ -127,7 +129,7 @@ test('order: kind first, then first in, first out', () => {
   const s = model();
   s.m.say('TOAST', 't1'); s.m.say('ALERT', 'a1'); s.m.say('MEMO', 'm1', { secs: 1.2 }); s.m.say('ALERT', 'a2', { secs: 1.2 }); s.m.say('PA', 'p1', { secs: 1.2 });
   s.run(12);
-  assert.deepEqual(s.shown.map(i => i.text), ['p1', 'm1', 'a1', 'a2'], 't1 is stale by the time its turn comes');
+  assert.deepEqual(s.shown.map(i => i.text), ['a1', 'a2', 'p1', 'm1'], 't1 is stale by the time its turn comes (round 13: ALERT outranks PA)');
 });
 
 test('every item shows at least 1.2 s; dev warns once on a line over 8 words', () => {

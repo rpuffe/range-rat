@@ -42,6 +42,8 @@ import county from './county.mjs';
 import orbit from './orbit.mjs';
 //
 import nudge from './nudge.mjs';
+import tourney from './tourney.mjs';
+import poach from './poach.mjs';   // council round 13 #4b (builder 2): poach a Site 13 regular (endless)   // council round 13 #1 (builder 2): the Members' Tournament (venue 1), and the Members' Bell
 import greens from './greens.mjs';   // council round 10 #6: on the green (venues 0-1; Tiered on, tiered.mjs's TARGET)   // council round 6 #10: the Muni day-2 suggestions (venue 0)
 
 export const MODULES = [
@@ -58,6 +60,10 @@ export const MODULES = [
   nudge,
   //
   greens,
+  //
+  tourney,
+  //
+  poach,
 ];
 
 export const HOOKS = ['init', 'startShift', 'tick', 'endShift', 'serve', 'ping', 'knockDown', 'input', 'launchMod', 'onRest',

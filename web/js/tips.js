@@ -94,7 +94,9 @@ export function createTipPointer() {
 // runs dry: the dispenser's lamp lights and the nearest able Rat (online, not down, not diving) is re-dealt "Fill the
 // bucket basket!" ('am:basket'). -> that Rat's id, or null (no alarm). `at`: the fill point (layout.js FILL_POINT).
 export function emptyBasketRat(c, stocked, at) {
-  if (!stocked || c?.phase !== 'shift' || (c.basket ?? 0) > 0 || c.lastBucket || c.todo?.some(t => !t.done)) return null;
+  // Council round 13 8.1 (builder 3): an unfinished 'sign' step no longer mutes it (a solo crew that skipped the sign on
+  // day 1 never heard it on day 2); main.js shows it as the checklist's next line.
+  if (!stocked || c?.phase !== 'shift' || (c.basket ?? 0) > 0 || c.lastBucket || c.todo?.some(t => !t.done && t.id !== 'sign')) return null;
   let best = null, bd = Infinity;
   for (const p of c.players ?? []) {
     if (!p.online || p.down > 0 || p.diving) continue;

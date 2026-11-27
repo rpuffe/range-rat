@@ -48,6 +48,8 @@ import orbit from './orbit.js';
 //
 import owner from './owner.js';
 import glasscase from './glasscase.js';   // council round 12 #3d (builder 3): Ball No. 1 in a glass case by the return
+import tourney from './tourney.js';
+import landmarks from './landmarks.js';   // council round 13 #4 (builder 2): the Range landmarks   // council round 13 #1 (builder 2): the Members' Tournament
 import greens from './greens.js';   // council round 10 #6: the landing marker at every venue, ON THE GREEN!   // endless (round 7 #9): crew colours and the statue
 
 export const VIEWS = [
@@ -66,6 +68,10 @@ export const VIEWS = [
   glasscase,
   //
   greens,
+  //
+  tourney,
+  //
+  landmarks,
 ];
 
 // main.js: createViews(ctx) runs the list above (views/registry.js has the runner; tests use it directly).

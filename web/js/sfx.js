@@ -605,6 +605,15 @@ export function whistle() {
   tone(c, { freq: 1568, endFreq: 1760, dur: 0.16, vol: 0.12 });
   tone(c, { freq: 1760, endFreq: 2350, t: 0.2, dur: 0.3, vol: 0.12 });
 }
+// ---- council round 13 (builder 1) ----
+// The shed door slams on a lost fight: a low thud, a sheet-metal clang and a short rattle.
+export function slam() {
+  const c = live();
+  if (!c) return;
+  tone(c, { freq: 90, endFreq: 45, dur: 0.35, vol: 0.3, attack: 0.002 });
+  burst(c, { dur: 0.25, vol: 0.22, type: 'bandpass', f: 1400, fEnd: 700, q: 4, attack: 0.001 });
+  [0.12, 0.2, 0.27].forEach((t, i) => burst(c, { t, dur: 0.05, vol: 0.08 - i * 0.02, type: 'bandpass', f: 2200, q: 6 }));
+}
 // Your nozzle cools after your hit: a hiss and a sputter.
 export function sputter() {
   const c = live();

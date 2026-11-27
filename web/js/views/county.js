@@ -3,11 +3,13 @@
 // server/venues/county.mjs; the numbers are web/js/county.js.
 import * as THREE from 'three';
 import { MAP } from '../map.js';
-import { DRONES, VAN, vanToast, inspectAlert } from '../county.js';
+import { DRONES, VAN, vanToast, inspectAlertAt } from '../county.js';
 import { armAgain } from '../settings.js';
-import { buildPerson, animatePerson } from '../people.js';   // council round 12 #7a: the FHI inspector
+import { buildPerson, animatePerson } from '../people.js';
+import { RIVAL_LOOK } from '../today.js';   // council round 13 #4: Site 13's jacket colour   // council round 12 #7a: the FHI inspector
 
 const Y = MAP.YARDS;
+const UP = new THREE.Vector3(0, 1, 0);
 const mat = (color, o = {}) => new THREE.MeshLambertMaterial({ color, ...o });
 
 function box(w, h, d, m, x, y, z) { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); return o; }
@@ -75,8 +77,8 @@ function zoningVan() {
 
 // Council round 12 #7a: the FHI inspector (a people.js figure in a grey suit, sunglasses, a clipboard) and his patch (a
 // chalk-white ring on the grass). Built once, hidden when he's not on site.
-function inspector() {
-  const p = buildPerson({ seed: 'fhi-inspector', shirt: 0x5b6470, pants: 0x3a4048, hat: false });
+function inspector(shirt = 0x5b6470, seed = 'fhi-inspector') {
+  const p = buildPerson({ seed, shirt, pants: 0x3a4048, hat: false });
   p.root.traverse(o => { if (o.isMesh) o.castShadow = false; });
   const dark = new THREE.MeshBasicMaterial({ color: 0x111317 });
   const glasses = box(0.2, 0.05, 0.03, dark, 0, 0.12, 0.11);
@@ -87,6 +89,16 @@ function inspector() {
   p.root.visible = false;
   return p;
 }
+// Council round 13 #7a (builder 2): a white clipboard-beam over him for his visit (one mesh, additive, built once), so he
+// can be found from the mats. Site 13's inspector on retainer (landmark tier 4) wears their jacket.
+const BEAM_H = 22;
+const beamMesh = () => {
+  const g = new THREE.CylinderGeometry(0.5, 0.9, BEAM_H, 12, 1, true); g.translate(0, BEAM_H / 2, 0);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+  m.renderOrder = 3; m.visible = false; m.frustumCulled = false;
+  return m;
+};
+const NUDGE = { SECS: 2, YAW: 15 * Math.PI / 180 };   // 1P only: the camera eases 15° toward him for 2 s (control stays)
 const ringMesh = () => {
   const m = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
   m.rotation.x = -Math.PI / 2; m.position.y = 0.05; m.renderOrder = 2; m.visible = false;
@@ -132,7 +144,9 @@ export default {
     let vanAt = null, wet = new Set(), hz = false, vanSaid = false;
     const fhi = inspector(); root.add(fhi.root);              // council round 12 #7a
     const patch = ringMesh(); root.add(patch);
-    let ins = null, insTh = 0;
+    const beam = beamMesh(); root.add(beam);                 // council round 13 #7a
+    const site13 = inspector(RIVAL_LOOK.hex, 'site13-inspector'); root.add(site13.root);   // council round 13 #4: the retainer, in Site 13's jacket
+    let ins = null, insTh = 0, solo = false, nudge = -1, nudgeYaw = 0;
     const setKind = (id, k) => { const b = ctx.balls?.()?.get(id); if (b && b.kind !== k) b.kind = k; };
 
     const stand = ctx.venues?.stands?.right ?? null;
@@ -159,6 +173,7 @@ export default {
         // Round 11: the wet list, the van's progress down the kerb.
         hz = !!mine?.hz; vanAt = mine?.van ?? null;
         ins = s?.phase === 'shift' ? mine?.inspect ?? null : null;   // council round 12 #7a: { x, z, r, t, n }
+        solo = (s?.players?.filter?.(p => p.online !== false && !p.helper)?.length ?? 2) <= 1;
         if (ins) { patch.position.x = ins.x; patch.position.z = ins.z; patch.scale.set(ins.r, ins.r, 1); }
         if (s?.phase !== 'shift') vanSaid = false;
         const now = new Set(mine?.wet ?? []);
@@ -172,7 +187,10 @@ export default {
         else if (e.t === 'hazard') setKind(e.id, 'hazard');
         else if (e.t === 'hazwet') setKind(e.id, 'hazwet');
         else if (e.t === 'inspect') {                              // council round 12 #7a: the one centre ALERT, then the feed
-          if (e.phase === 'start') { ctx.say?.('ALERT', inspectAlert, { key: 'inspect' }); ctx.SFX?.horn?.('gary'); ctx.feed?.(`FHI inspector on site: ${e.n ?? 0} hazards in his patch.`, '#ffd36b'); }
+          if (e.phase === 'start') {
+            ctx.say?.('ALERT', inspectAlertAt(e.x, e.z), { key: 'inspect' }); ctx.SFX?.horn?.('gary');   // council round 13 #7a: the ALERT names his place
+            ctx.chevron?.(e.x, e.z, 3);                              // builder 1's screen-edge chevron, toward him
+            if (solo && ctx.me) { nudge = 0; const a = Math.atan2(-(e.x - ctx.me.x), -(e.z - ctx.me.z)); nudgeYaw = Math.sign(Math.atan2(Math.sin(a - (ctx.camera?.rotation?.y ?? 0)), Math.cos(a - (ctx.camera?.rotation?.y ?? 0)))); } ctx.feed?.(`FHI inspector on site: ${e.n ?? 0} hazards in his patch.`, '#ffd36b'); }
           else ctx.feed?.(e.clean ? 'The inspector left impressed. Zoning approves.' : `The inspector noted ${e.noted} hazard${e.noted === 1 ? '' : 's'}. They count double.`, e.clean ? '#9be88a' : undefined);
         }
         else if (e.t === 'hazgone') setKind(e.id, 'range');
@@ -200,16 +218,31 @@ export default {
           e.basket.scale.y = 1 + Math.min(1, (e.n || 0) / DRONES.POCKET);   // the basket fills
           for (const r of e.rotors) r.rotation.y = spin * (e.n ? 60 : 45);
         }
-        fhi.root.visible = patch.visible = root.visible && !!ins;   // council round 12 #7a: he walks a slow loop round his patch
-        if (fhi.root.visible) {
+        const who = ins?.who ? site13 : fhi;                        // council round 13 #4: the retainer's visit is Site 13's man
+        (who === fhi ? site13 : fhi).root.visible = false;
+        who.root.visible = patch.visible = beam.visible = root.visible && !!ins;   // council round 12 #7a: he walks a slow loop round his patch
+        const fhi_ = who;
+        if (fhi_.root.visible) {
           insTh += dt * 1.1 / Math.max(2, ins.r * 0.6);
           const rr = ins.r * 0.6, x = ins.x + Math.cos(insTh) * rr, z = ins.z + Math.sin(insTh) * rr;
-          fhi.root.position.set(x, 0, z); fhi.root.rotation.y = Math.atan2(-Math.sin(insTh), Math.cos(insTh));
-          animatePerson(fhi, dt, { mode: 'walk', speed: 1.1 });
+          fhi_.root.position.set(x, 0, z); fhi_.root.rotation.y = Math.atan2(-Math.sin(insTh), Math.cos(insTh));
+          animatePerson(fhi_, dt, { mode: 'walk', speed: 1.1 });
+          beam.position.set(x, 0, z);
+          const k = Math.max(0.3, Math.min(1, (ins.t ?? 0) / Math.max(1, ins.secs ?? 60)));   // it narrows as his visit runs out
+          beam.scale.set(k, 1, k); beam.material.opacity = 0.22 + 0.14 * (0.5 + 0.5 * Math.sin(t * 3));
           patch.material.opacity = 0.45 + 0.3 * (0.5 + 0.5 * Math.sin(t * 4));
         }
         van.visible = root.visible && vanAt != null;                 // down the kerb, top to bottom, over VAN.SECS
         if (van.visible) { const u = Math.min(1, vanAt / VAN.SECS); van.position.set(MAP.KERB_X - 3, 0, 5 + (Y.zMin - 5) * u); van.rotation.y = 0; }
+      },
+      // Council round 13 #7a: solo, the camera eases toward him for NUDGE.SECS (added after main.js placed it; never
+      // consumes the camera, so the player keeps control and the yaw they steer is untouched).
+      camera(cam, dt) {
+        if (nudge < 0 || !root.visible) return false;
+        nudge += dt;
+        if (nudge >= NUDGE.SECS) { nudge = -1; return false; }
+        cam.rotateOnWorldAxis?.(UP, nudgeYaw * NUDGE.YAW * Math.sin(Math.PI * nudge / NUDGE.SECS));
+        return false;
       },
       // Round 11: next to a hazard ball, say what it needs.
       prompt(btn) {

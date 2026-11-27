@@ -124,3 +124,33 @@ test('council round 12 builder 3: the gold-beam banner, the contract goals, Site
     ['memo', 'Contract: ' + goalText({ k: 'hustle', n: 3, by: 120 }).toLowerCase() + '.']];
   assert.deepEqual(over(lines), []);
 });
+
+// ---- council round 13, builder 1 (MOW-E): the loss path, the crash, the sidestep, the aimed whistle
+test('round 13 builder 1: the new MOW-E lines are 8 words or fewer', async () => {
+  const { BOSS_LINES: L } = await import('../web/js/mowe.js');
+  const { PA_LINES } = await import('../web/js/pa.js');
+  assert.deepEqual(over([['lost', L.lost], ['lostLater', L.lostLater], ['crash', L.crash], ['crashLeft', L.crashLeft], ['huntSolo', L.huntSolo],
+    ['regards', L.regards], ['take', L.whistle('Ⓐ')], ['blow', L.blow('Ⓐ')], ['eve', L.eve], ['rematchEve', L.rematchEve], ['pa.crash', PA_LINES.crash.caption]]), []);
+});
+
+// ---- council round 13, builder 2 (Club and economy): the Tournament, the landmarks, the inspector's place, the poach
+test('round 13 builder 2: the Tournament, landmark, inspector and poach lines are 8 words or fewer', async () => {
+  const T = await import('../web/js/tourney.js');
+  const LM = await import('../web/js/landmarks.js');
+  const { inspectAlertAt } = await import('../web/js/county.js');
+  const { stretchAlert } = await import('../web/js/stadium.js');
+  const O = await import('../web/js/owner.js');
+  assert.deepEqual(over([['flight1', T.FLIGHT_ALERT[0]], ['flight2', T.FLIGHT_ALERT[1]], ['bonus', T.BONUS_ALERT], ['clean', T.CLEAN_LINE],
+    ['claim', T.CLAIM_LINE], ['memo', T.TOURNEY_MEMO], ['carry', T.carryLine(2)], ['bell', LM.BELL_PROMPT], ['bellWait', LM.BELL_WAIT],
+    ['retainer', LM.INSPECTOR_MEMO], ['star', LM.STAR_LINE], ['inspectFar', inspectAlertAt(-40, -90)], ['inspectNear', inspectAlertAt(11.3, -42.2)],
+    ['stretch4', stretchAlert(4)], ['poach', O.POACH_FEED], ['hustle', O.HUSTLE_HINT]]), []);
+});
+
+// ---- council round 13, builder 3 (text and look): the fight's summary, the basket line on a checklist day
+test('round 13 builder 3: the fight summary and the checklist basket line are 8 words or fewer', async () => {
+  const { createFightMute } = await import('../web/js/centrehooks.js');
+  const { MORNING_TEXT } = await import('../web/js/morning.js');
+  const f = createFightMute(), fight = { kind: 'boss', phase: 'hunt' };
+  f.step(fight); for (let i = 0; i < 12; i++) f.refuse(fight);
+  assert.deepEqual(over([['fight', f.step({ kind: 'boss', phase: 'tamed' })], ['basket', '↑ ' + MORNING_TEXT.basket]]), []);
+});

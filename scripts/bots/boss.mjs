@@ -27,11 +27,15 @@ const PERFECT = process.env.PERFECT === '1', REACT = PERFECT ? 0 : 4, AIM_CYCLE 
 // SOFA=1: before the fight each Rat picks up only half the time (a sofa crew swings, chats, shops), so the field holds
 // balls the way a human crew's does (the bot crew otherwise vacuums the near lanes: ~1 resting ball near at the burst).
 const SOFA = process.env.SOFA === '1';
-const REACT_COOL = PERFECT ? 0 : 1, WHISTLE = process.env.WHISTLE ? +process.env.WHISTLE || 90 : 0;
+// Council round 13 #5: WHISTLE=aim|post loads policy/whistle.mjs (take it at the post, carry it, blow it on the densest strip).
+const REACT_COOL = PERFECT ? 0 : 1, WHISTLE = process.env.WHISTLE && process.env.WHISTLE !== '0' ? process.env.WHISTLE : null;
+const WPOL = WHISTLE ? (await import('./policy/whistle.mjs')).default : null;
 const preset = name => { const j = JSON.parse(readFileSync(new URL(`server/presets/${name}.json`, REPO), 'utf8')); return j.save ?? j; };
 
 // The Club day-3 snap: the Club's first-morning preset, two days on (venue day 2 played, so the next morning is day 3).
 export function clubDay3() { const s = preset('club1'); return { ...s, day: s.day + 2, venueDay: 2, pendingReveal: 0, garyDay: s.day + 2 }; }
+// Round 13 #5: the morning of Club day 4 with MOW-E tame (a stand-in for builder 4's club4 preset): pet days.
+export function clubDay4Tame() { try { return preset('club4'); } catch { const s = clubDay3(); return { ...s, day: s.day + 1, venueDay: 3, garyDay: s.day + 9, mowe: { tame: true, lost: 0, encore: false } }; } }   // builder 4's club4 preset when present
 // The Stadium's day 2 (MOW-E already tamed at the Club).
 export function stadiumDay2() { const s = preset('stadium1'); return { ...s, day: s.day + 1, venueDay: 1, pendingReveal: 0, mowe: { tame: true, lost: 0, encore: false } }; }
 
@@ -43,6 +47,8 @@ const ROLES = {
   '1p-cart': { n: 1, roles: ['solo-cart'] },
   '1p-chase': { n: 1, roles: ['hose'] },
   idle: { n: 4, roles: ['idle', 'idle', 'idle', 'idle'] },
+  // round 13 #5: pet days (a tame MOW-E): N Rats doing the day job
+  pick1: { n: 1, roles: ['idle'] }, pick2: { n: 2, roles: ['idle', 'idle'] }, pick3: { n: 3, roles: ['idle', 'idle', 'idle'] }, pick4: { n: 4, roles: ['idle', 'idle', 'idle', 'idle'] },
   'idle-1p': { n: 1, roles: ['idle'] },
 };
 
@@ -58,6 +64,8 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
   const sprintMax = S.sprintSecs(crew.up.shoes ?? 0);
   const fights = [];
   let F = null;
+  const wpol = WPOL ? WPOL({ bot: 'boss', crew, rats, N: P.n, DT, now: () => t, walkTo: (p, x, z) => walkTo(p, { x, z }, DT, true), log: () => {} }, WHISTLE) : null;
+  let wMoved = new Set(), wStarted = false;
 
   function walkTo(p, g, dt, sprint = false, cap = Infinity) {
     if (p.down > 0) return false;
@@ -210,17 +218,14 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
       rats.forEach((p, i) => {
         p.seenAt = t * 1000;
         if (m && fightStep(p, m, DT, i)) return;
-        if (WHISTLE && i === 0 && crew.whistleState() === 1 && crew.shiftT >= crew.shiftSecs - WHISTLE - 30) {   // walk to the post, whistle at T-n
-          if (myCart(p)) crew.leaveCart(p);
-          if ((walkTo(p, MW.WHISTLE.POST, DT, true) || MW.atPost(p)) && crew.shiftT >= crew.shiftSecs - WHISTLE) { crew.input(p, { a: [{ t: 'whistle' }] }); D.whistleAt = Math.round(crew.shiftSecs - crew.shiftT); }
-          return;
-        }
+        if (wMoved.has(p)) return;   // round 13 #5: the whistle policy has this Rat this tick
         if (myCart(p)) crew.leaveCart(p);
         if (p.wand && !(m && MW.bossLive(m))) crew.toggleWand(p);
         if (SOFA && !(m && m.phase !== 'warn' && MW.bossLive(m)) && ((t + i * 0.7) % 4) < 2) return;
         pickJob(p, DT);
       });
       crew.tick(DT);
+      if (wpol && crew.phase === 'shift') { if (!wStarted) { wStarted = true; wpol.shiftStart(); } wMoved = new Set(wpol.step(DT) ?? []); }
       if (F && m && MW.bossFighting(m)) for (const p of rats) if (p.wand && !(p.down > 0)) F.hoseT += DT;   // a hoser's fight time (the cooled-spray share)
       if (process.env.DBG && m && MW.bossLive(m) && Math.round(t * 20) % 20 === 0) { const c = crew.carts[0]; console.log(`DBG t${crew.shiftT.toFixed(0)} ${m.phase} boss(${m.x.toFixed(1)},${m.z.toFixed(1)}) yaw${m.yaw.toFixed(2)} stall${m.stall.toFixed(1)} full${Math.max(0, ...Object.values(m.meter)).toFixed(2)} tgt${m.target ?? '-'} cart(${c.x.toFixed(1)},${c.z.toFixed(1)}) drv${c.driver ? 'Y' : 'n'} cool${((m.cool[c.i] ?? 0) - m.clock).toFixed(1)} rats ` + rats.map(p => `${p.role[0]}(${p.x.toFixed(0)},${p.z.toFixed(0)})${p.wand ? 'w' : ''}${p.down > 0 ? 'X' : ''}`).join(' ')); }
       for (const e of crew.events) {
@@ -245,6 +250,8 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
     }
     const r = crew.report;
     D.income = Math.round(r?.cash ?? crew.stats.cash);
+    D.banked = r?.deposited ?? crew.stats.deposited; D.mowe = r?.mowe ?? null;   // round 13: the pet's share; the report's MOW-E row
+    if (wpol) { Object.assign(D, wpol.shiftEnd(r)); wStarted = false; wMoved = new Set(); }
     D.st = { ...crew.moweSt };
     if (F && F.day === D.day) {
       F.len = F.end != null && F.burst != null ? Math.round(F.end - F.burst) : null;
@@ -264,11 +271,21 @@ export function runBoss({ policy = '4p-roles', seed = 7, where = 'club', days = 
 // ---- CLI ----
 if (import.meta.url === `file:///${process.argv[1].replace(/\\/g, '/')}` || process.argv[1]?.endsWith('boss.mjs')) {
   const [policy = 'all', seedA, where = 'club', daysA] = process.argv.slice(2);
-  if (policy !== 'all') {
+  if (policy === 'pet') {   // round 13 #5: the pet table (WHISTLE=0|post|aim), 1P-4P x seeds, PET_DAYS pet days each
+    const days = +(process.env.PET_DAYS ?? 2), SEEDS = (process.env.SEEDS ?? '7,11,23').split(',').map(Number);
+    for (const pol of (process.env.NS ?? '1,2,3,4').split(',').map(n => 'pick' + n)) {
+      const rows = [];
+      for (const sd of SEEDS) for (const d of runBoss({ policy: pol, seed: sd, days, save: clubDay4Tame() })) rows.push(d);
+      const pet = rows.map(d => d.tameN), wh = rows.map(d => d.whistleN ?? 0), share = rows.map(d => d.tameN / Math.max(1, d.banked));
+      const med = a => { const b = [...a].sort((x, y) => x - y); return b[b.length >> 1]; };
+      const sum = a => a.reduce((x, y) => x + y, 0);
+      console.log(`pet ${pol} WHISTLE=${WHISTLE ?? 0}: pet/shift ${(sum(pet) / rows.length).toFixed(1)} (${Math.min(...pet)}-${Math.max(...pet)}) · whistle share ${(100 * sum(wh) / Math.max(1, sum(pet))).toFixed(0)}% · pet share of banked median ${(100 * med(share)).toFixed(1)}% max ${(100 * Math.max(...share)).toFixed(1)}% · banked/shift ${(sum(rows.map(d => d.banked)) / rows.length).toFixed(0)} · aimN ${rows.map(d => d.aimN ?? '-').join(',')}`);
+    }
+  } else if (policy !== 'all') {
     const res = runBoss({ policy, seed: +(seedA ?? 7), where, days: +(daysA ?? 1) });
     for (const d of res) console.log(JSON.stringify(d));
   } else {
-    const SEEDS = [7, 11, 23];
+    const SEEDS = (process.env.SEEDS ?? '7,11,23').split(',').map(Number);   // round 13: SEEDS=7,11,23,31,41,53 for the 6-seed table
     const fmt = f => f ? `${f.result}${f.len != null ? ' ' + f.len + 's' : ''} hp${f.hp} ate${f.eaten} kd${f.kd} hits${f.hits} rats${Object.keys(f.by).length}/${f.n} stalls${f.stalls} plug${f.plugLen ?? '-'}s drag${f.drag}m cool${(f.coolPct * 100).toFixed(0)}% counts${(f.countPct * 100).toFixed(0)}% share${(f.share * 100).toFixed(1)}%${f.reboots ? ' reboots' + f.reboots : ''}` : 'no fight';
     for (const pol of ['4p-roles', '4p-swarm', '3p', '2p', '1p-cart', '1p-chase']) {
       for (const sd of SEEDS) { const [d] = runBoss({ policy: pol, seed: sd }); console.log(`club   ${pol.padEnd(9)} seed ${sd}: ${fmt(d.fight)} · income $${d.income}`); }

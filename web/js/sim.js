@@ -13,7 +13,8 @@ import { GUTTERS_ROW } from './tiered.js';
 import { DRONES_ROW } from './county.js';
 //
 import { TETHER_ROW } from './orbit.js';
-import { OWNER_ROW } from './owner.js';
+import { OWNER_ROW, POACH_ROW } from './owner.js';
+import { LANDMARK_ROW } from './landmarks.js';   // council round 13 #4a (builder 2's row; builder 4 lists it)
 import { clubOpen, clubDayLabel } from './clubdays.js';   // round 11 (builder "feel"): stagger the Club, one idea a day   // endless (round 7 #9): the Owner's projects
 import { BUILD_ROW, WING_X, builtMats, builtUpper } from './bays.js';   // round 11 (owner): Build more bays
 
@@ -285,6 +286,8 @@ export const SHOP = [
   //
   TETHER_ROW,    // Orbital (5): the orbital tether winch
   OWNER_ROW,     // endless only (round 7 #9): the Owner's projects (`endless: true`)
+  LANDMARK_ROW,  // council round 13 #4a: Range landmarks, one tier per venue from Club day 4 (landmarks.js)
+  POACH_ROW,     // council round 13 #4b: endless, once a day, priced off yesterday (owner.js poachPrice; crew.buyPoach)
   { id: 'ads', title: 'Advertising', minDay: 2, tiers: [
     { name: 'Word of mouth', desc: 'Customers trickle in.' },
     { name: 'A sign by the road', cost: 30, desc: 'Customers hit 25% more balls.' },
@@ -333,6 +336,7 @@ export const priceScale = crewSize => 1 + 0.4 * (Math.max(1, crewSize) - 1);
 export function nextPrice(id, up, crewSize, gearLevel = 0, venue = 0, day = Infinity, endless = false, vday = null) {   // round 11: vday (clubdays.js)
   const item = Object.hasOwn(SHOP_BY_ID, id) ? SHOP_BY_ID[id] : null;
   if (!item || !shopShows(item, venue, day, endless, crewSize, endless ? null : vday)) return null;
+  if (item.repeat === 'day') return null;   // council round 13 #4b: the poach is priced off yesterday's bank (owner.js poachPrice), not a tier
   const lvl = item.personal ? gearLevel : up?.[id] ?? 0;
   const t = item.tiers[lvl + 1];
   if (!t || tierLock(item, lvl, venue, day, endless ? null : vday)) return null;    // maxed out, or not at this venue (or Muni day) yet
@@ -356,6 +360,7 @@ export const sprintSecs = shoes => 1.5 + 1.25 * (shoes ?? 0);   // 1.5 s in loaf
 // What the crew's upgrades add up to.
 export function perks(up = {}) {
   return {
+    landmark: up.landmark ?? 0,   // council round 13 #4a: the Range landmarks tier (landmarks.js landmarkTier)
     helpers: up.helpers ?? 0,
     price: SIM.BALL_PRICE + Math.min(2, up.washer ?? 0),
     washer: up.washer ?? 0,
@@ -465,7 +470,9 @@ export const debutFloat = (kind, told = true) => (told ? 'NEW' : 'NEW: ' + (KIND
 // the Club awning (x ≤ 23.5): the black slab over the top of the view. From the Stadium on (venue ≥ 3, endless too)
 // the row is LATE_XS: past the awning's end, either side of the washer (x 26.1..28.9, its handles), so the deck's
 // corner is ≥ 59° left of a Rat facing the field (outside the 43° half-FOV at 4:3) and the awning is at most a corner.
-export const CLOCK_IN = { X: 18, STEP: 2.4, Z: 4, LATE_FROM: 3, LATE_XS: [24.6, 25.8, 29.4, 30.6, 31.8, 33.0] };
+// Council round 13 #6 (builder 3): LATE_FROM 3 → 1, so the Club and Tiered clock in on the late row too (the Club spawn
+// looked at the covered-bay roof, Tiered at the deck's underside). The Muni keeps the old row (its seam golden holds).
+export const CLOCK_IN = { X: 18, STEP: 2.4, Z: 4, LATE_FROM: 1, LATE_XS: [24.6, 25.8, 29.4, 30.6, 31.8, 33.0] };
 export function clockInSpot(venue = 0, slot = 0, endless = false) {
   const late = endless || (venue ?? 0) >= CLOCK_IN.LATE_FROM, k = (slot | 0) % 6;
   return late ? { x: CLOCK_IN.LATE_XS[k], z: CLOCK_IN.Z } : { x: CLOCK_IN.X + k * CLOCK_IN.STEP, z: CLOCK_IN.Z };
@@ -583,7 +590,7 @@ export const VENUE_RULES = [
 export const revealCards = () => [];
 // Council round 11 8.13 (B #9): the lobby's tagline, one per venue (≤ 8 words); index 6 is endless.
 export const LOBBY_TAGLINE = ['Pick up balls. Bank them. Hit the target.', 'Fry, dive and hose. The members are watching.',
-  'Land crew balls on the greens. Pour.', 'Lap the Ping Track. Keep the crowd happy.', 'Bag the hazards. Sweep the Yards.',
+  'Land crew balls on the greens. Pour.', 'Answer souvenir requests. Keep the crowd happy.', 'Bag the hazards. Sweep the Yards.',
   'Ride the Lift. Bring the sky down.', 'Range Rats LLC. The balls keep coming.'];
 export const lobbyTagline = (venue = 0, endless = false, day = 1) => (endless ? LOBBY_TAGLINE[6] : (venue ?? 0) === 0 && (day ?? 1) <= 1 ? 'Pick up balls. Bank them.' : LOBBY_TAGLINE[Math.max(0, Math.min(5, venue | 0))]);
 export const ONE_YEAR = 1958;

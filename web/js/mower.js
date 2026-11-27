@@ -15,7 +15,7 @@
 // It also plays the boss's sound (sfx.js moweEngine, bossLoop, the beeps, the cough, the gurgle), the red screen-edge
 // pulse when it hunts you, and the MOW-E TAMED stamp (a say.js STAMP item's show / hide).
 import * as THREE from 'three';
-import { MOWER, BOSS, BOSS_LINES, WHISTLE } from './mowe.js';
+import { MOWER, BOSS, BOSS_LINES, WHISTLE, sidestep } from './mowe.js';
 import * as SFX from './sfx.js';
 
 const SMOKE = 0x8a8a8a, BLACK = 0x3a3a3a;   // smoke: the confetti pool's paper, tinted (a few, rising)
@@ -124,13 +124,19 @@ export function createMower({ scene, confetti = null }) {
 
   // The screen edge: a red inset glow when it hunts you (DOM, no draw call).
   let edge = null;
+  const EDGE_ALL = 'inset 0 0 0 6px rgba(230,30,30,.9),inset 0 0 90px 30px rgba(230,30,30,.55)';
   const edgeEl = () => {
     if (edge || typeof document === 'undefined') return edge;
     edge = document.createElement('div'); edge.id = 'mowe-edge';
-    edge.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:30;opacity:0;transition:opacity .15s;box-shadow:inset 0 0 0 6px rgba(230,30,30,.9),inset 0 0 90px 30px rgba(230,30,30,.55)';
+    edge.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:30;opacity:0;transition:opacity .15s;box-shadow:' + EDGE_ALL;
     document.body.appendChild(edge);
     return edge;
   };
+  // Council round 13 #3e: the first hunt of a fight, the red edge pulses only on the side to dodge toward (perpendicular
+  // to its heading, mowe.js sidestep), so the counter reads as "step aside", not "run".
+  let teach = false, taught = false, teachSide = '', lastRev = false, slamT = -1;
+  const RED = { left: 'linear-gradient(to right,rgba(230,30,30,.9),rgba(230,30,30,0) 26%)', right: 'linear-gradient(to left,rgba(230,30,30,.9),rgba(230,30,30,0) 26%)',
+    top: 'linear-gradient(to bottom,rgba(230,30,30,.9),rgba(230,30,30,0) 26%)', bottom: 'linear-gradient(to top,rgba(230,30,30,.9),rgba(230,30,30,0) 26%)' };
 
   // Round 12 #5a: the warn's amber edge, on the side of the screen facing the shed (DOM, no draw call).
   let amber = null, amberSide = '';
@@ -173,7 +179,11 @@ export function createMower({ scene, confetti = null }) {
   add(post, new THREE.BoxGeometry(0.14, 1.3, 0.14), white, 0, 0.65, 0);
   const plate = add(post, new THREE.BoxGeometry(0.62, 0.34, 0.05), blue, 0, 1.38, 0);
   add(plate, new THREE.BoxGeometry(0.4, 0.07, 0.06), white, 0, 0.03, 0);
-  add(post, new THREE.CylinderGeometry(0.05, 0.05, 0.22, 8).rotateZ(Math.PI / 2), mat(0xc9ccd2), 0.12, 1.0, 0.08);
+  const whistleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.22, 8).rotateZ(Math.PI / 2), whistleMat = mat(0xc9ccd2);
+  const postWhistle = add(post, whistleGeo, whistleMat, 0.12, 1.0, 0.08);
+  // Council round 13 #5a: the carried whistle, on a mate's lanyard (one small mesh, shared geometry and material).
+  const carried = new THREE.Mesh(whistleGeo, whistleMat); carried.scale.setScalar(1.6); carried.visible = false; scene.add(carried);
+  let whistleBy = null;
 
   // Sound.
   let engine = null, loop = null, beepT = 0;
@@ -229,13 +239,18 @@ export function createMower({ scene, confetti = null }) {
       hazLanes.visible = boss && snap.phase === 'warn';
       if (amber && !(boss && snap.phase === 'warn')) amber.style.opacity = '0';
       if (boss && snap.phase === 'tamed' && was?.phase !== 'tamed') tamedAt = 0;   // the chevron's clock
-      door.visible = boss && (snap.phase === 'warn' || (snap.phase === 'fled' && snap.out === 'gone'));
+      door.visible = boss && (snap.phase === 'warn' || (snap.phase === 'fled' && !snap.crash));   // round 13 #3a: up while it drives home, then it slams
+      if (boss && snap.phase === 'warn') taught = false;   // round 13 #3e: the sidestep is taught the first hunt of each fight
       ring.visible = boss && snap.phase === 'plug' && !!snap.ring;
       if (ring.visible) { ring.position.set(snap.ring.x, 0.07, snap.ring.z); ringFill(Math.round((snap.plug ?? 0) * T)); }
       scan.visible = boss && snap.phase === 'hunt' && snap.target != null;
       flag.material = tame ? flagWhite : blue; flagMark.visible = !tame;
+      const wasHunted = hunted;
       hunted = boss && snap.phase === 'hunt' && snap.target != null && snap.target === meId;
+      if (hunted && !wasHunted && !taught) teach = true;
+      if (!hunted && teach) { teach = false; taught = true; }
       if (edgeEl() && !hunted) edge.style.opacity = '0';
+      if (edge && hunted !== wasHunted) { edge.style.boxShadow = teach ? 'none' : EDGE_ALL; if (!teach) edge.style.background = 'none'; teachSide = ''; }
       tgt.x = snap.x; tgt.z = snap.z; tgt.yaw = snap.yaw ?? -Math.PI / 2;   // in place: no per-frame allocation
       if (!was || was.kind !== snap.kind) { cur.x = tgt.x; cur.z = tgt.z; cur.yaw = tgt.yaw; }
       // sound: the boss loop through the fight (it stops dead on a win and fades on a loss), the engine while it runs
@@ -254,12 +269,14 @@ export function createMower({ scene, confetti = null }) {
       else if (e.t === 'mower' && e.phase === 'plug') { smoke(18, BLACK, 4); engine?.choke(); }
       else if (e.t === 'mower' && e.phase === 'tamed') engine?.unplug();
       else if (e.t === 'mower' && e.phase === 'pond') SFX.gurgle();
+      else if (e.t === 'mower' && e.phase === 'home' && !e.encore) SFX.slam?.();   // round 13 #3a: the shed door slams
       else if (e.t === 'moweTarget' && e.id != null && e.id === meId) SFX.horn('mower');   // a beep: it's after you
       else if (e.t === 'moweYank') { jerkT = 0.18; SFX.creak?.(e.plug ?? 0, true); }   // round 12 #1c: the lurch
       else if (e.t === 'moweWhistle') SFX.whistle?.();
     },
     // The MOW-E TAMED stamp (say.js STAMP): the bell's stamp's look, its own element (board.js is another builder's).
-    stamp(on) {
+    // Council round 13 #3a: lost: its twin, solid red ("MOW-E WINS"), tilted the other way.
+    stamp(on, text = BOSS_LINES.stamp, lost = false) {
       if (typeof document === 'undefined') return;
       let el = document.getElementById('mowe-stamp');
       if (!el) {
@@ -269,14 +286,20 @@ export function createMower({ scene, confetti = null }) {
           + 'border-radius:.08em;padding:.06em .3em;background:rgba(255,250,235,.85);box-shadow:0 .05em .3em rgba(0,0,0,.35);white-space:nowrap';
         document.body.appendChild(el);
       }
-      el.textContent = BOSS_LINES.stamp;
+      if (on) {
+        el.textContent = text;
+        el.style.color = lost ? '#fff6e6' : '#d0202a'; el.style.background = lost ? 'rgba(196,22,32,.94)' : 'rgba(255,250,235,.85)'; el.style.borderColor = lost ? '#fff6e6' : '#d0202a';
+      }
       el.style.opacity = on ? '1' : '0';
-      if (on) el.animate?.([{ transform: 'translate(-50%,-50%) rotate(-12deg) scale(2.4)', opacity: 0 }, { transform: 'translate(-50%,-50%) rotate(-8deg) scale(0.94)', opacity: 1, offset: 0.55 },
-        { transform: 'translate(-50%,-50%) rotate(-8deg) scale(1)', opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.2,.8,.3,1)' });
+      const r = lost ? 8 : -8;
+      if (on) el.animate?.([{ transform: `translate(-50%,-50%) rotate(${r * 1.5}deg) scale(2.4)`, opacity: 0 }, { transform: `translate(-50%,-50%) rotate(${r}deg) scale(0.94)`, opacity: 1, offset: 0.55 },
+        { transform: `translate(-50%,-50%) rotate(${r}deg) scale(1)`, opacity: 1 }], { duration: 380, easing: 'cubic-bezier(.2,.8,.3,1)' });
+      if (on) el.style.transform = `translate(-50%,-50%) rotate(${r}deg)`;
     },
     get hunted() { return hunted; },
-    // Round 12 #5d: the MOW-E post shows on a pet day (crew snapshot moweWhistle > 0).
-    setPost(on) { postOn = !!on; },
+    // Round 12 #5d: the MOW-E post shows on a pet day (crew snapshot moweWhistle > 0). Round 13 #5a: the whistle hangs on
+    // it while it's there (onPost), or on a mate's lanyard (carrier: their id; you carry yours out of view).
+    setPost(on, onPost = on, carrier = null) { postOn = !!on; postWhistle.visible = !!onPost; whistleBy = carrier; },
     // Is my nozzle cooling (the spray sputters grey)?
     cooling() { return snap?.kind === 'boss' && (snap.meters?.[meId]?.[1] ?? 0) > 0; },
     // Where the scan line points: fn(id) → { x, z } of that Rat (main.js knows where everyone is).
@@ -284,6 +307,9 @@ export function createMower({ scene, confetti = null }) {
     tick(dt, t = 0, ear = null) {
       meterTick(dt, ear);
       if (post.visible !== postOn) post.visible = postOn;
+      { const cp = whistleBy != null ? scanTarget(whistleBy) : null;   // round 13 #5a: a mate's lanyard
+        carried.visible = !!cp;
+        if (cp) { carried.position.set(cp.x, 1.15 + Math.sin(t * 5) * 0.03, cp.z); carried.rotation.y = t; } }
       if (!snap) return;
       if (snap.kind === 'update') { hazMat.opacity = 0.18 + 0.14 * (0.5 + 0.5 * Math.sin(t * 2)); return; }   // round 12 #5a: a slow pulse all morning
       const boss = isBoss();
@@ -336,7 +362,21 @@ export function createMower({ scene, confetti = null }) {
           if (tp) { a[0] = cur.x; a[1] = 1.4; a[2] = cur.z; a[3] = tp.x; a[4] = 1.0; a[5] = tp.z; scanGeo.attributes.position.needsUpdate = true; scanMat.opacity = 0.55 + 0.4 * Math.abs(Math.sin(t * 7)); }
           else scan.visible = false;
         }
+        if (edge && hunted && teach && ear) {   // round 13 #3e: the dodge side only (no per-frame allocation: sideOf's tiny object aside)
+          const v = sidestep(snap, ear), sd = sideOf(ear, ear.x + v.x * 4, ear.z + v.z * 4).side;
+          if (sd !== teachSide) { teachSide = sd; edge.style.background = RED[sd]; }
+        }
         if (edge && hunted) edge.style.opacity = String(0.55 + 0.45 * Math.abs(Math.sin(t * 6)));
+        // Round 13 #3e, the tell: a rev puff (two smoke sprites) just before each 3 s re-aim.
+        if (!!snap.rev !== lastRev) { lastRev = !!snap.rev; if (lastRev) { smoke(2, BLACK, 4); engine?.cough?.(); } }
+        // Round 13 #3a: lost, it drives home with the catcher rattling; the roller door is up, then slams down behind it.
+        if (snap.phase === 'fled') {
+          bag.rotation.z = snap.moving ? Math.sin(t * 45) * 0.12 : 0;
+          if (door.visible) {
+            if (snap.out !== 'gone') { door.scale.y = 0.08; door.position.y = 2.2 - 0.09; slamT = -1; }
+            else { if (slamT < 0) slamT = 0; slamT += dt; const k = Math.min(1, slamT / 0.14); door.scale.y = 0.08 + 0.92 * k; door.position.y = 2.2 - 1.1 * door.scale.y; door.rotation.x = k >= 1 ? Math.sin(t * 60) * 0.04 * Math.max(0, 1 - (slamT - 0.14) / 0.5) : 0; }
+          }
+        } else if (door.scale.y !== 1) { door.scale.y = 1; door.position.y = 1.1; bag.rotation.z = 0; }
         // the build-up's beeps: every 2.0 s at 15 s left, every 0.4 s at the end
         if (snap.phase === 'warn') {
           const u = 1 - Math.max(0, snap.t ?? 0) / BOSS.WARN, gap = 2.0 - 1.6 * u;

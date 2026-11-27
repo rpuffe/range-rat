@@ -20,7 +20,9 @@ export const SCALE = { 1: 0.4, 2: 0.6, 3: 0.8, 4: 1, 5: 1.2, 6: 1.4 };
 export const crewScale = n => SCALE[Math.max(1, Math.min(6, Math.floor(Number(n) || 1)))];
 export const scaled = (n, scale) => Math.max(1, Math.ceil(n * (scale ?? 1) - 1e-9));
 
-const mins = s => { const m = Math.max(1, Math.ceil((s || 0) / 60 - 1e-9)); return m + (m === 1 ? ' minute' : ' minutes'); };
+// Council round 13 8.5 (B #10: "1 more minute" for 1 second): under 60 s reads "under a minute"; "1 minute" is 60-119 s.
+export const mins = s => { if ((s || 0) < 60) return 'under a minute'; const m = Math.floor((s || 0) / 60 + 1e-9); return m + (m === 1 ? ' minute' : ' minutes'); };
+const moreMins = s => ((s || 0) < 60 ? 'under a minute more' : mins(s).replace(' ', ' more '));
 const mmss = s => { const t = Math.max(0, Math.floor(s || 0)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const commas = n => Math.max(0, Math.round(n || 0)).toLocaleString('en-US');
 // kind: 'count' (scaled by the crew) · 'fixed' (a count that doesn't scale) · 'buy' (owning row ≥ tier) ·
@@ -33,7 +35,7 @@ const G = {
   // Playthrough 5 A2: the Muni's Gary goal counts only on a pass with the full huddle (it ticked under a failed verdict).
   huddle: { kind: 'once', gary: true, reward: true, text: () => 'Pass Gary with a huddle', short: () => 'Passed Gary with a huddle' },
   // Playthrough 5 B5: FED as uptime (a count of dogs taught spamming them): working seconds with FED up.
-  fed: { kind: 'secs', n: 180, reward: true, text: n => `Keep the crew fed for ${mins(n)}`, more: n => mins(n).replace(' ', ' more ') + ' fed', short: n => `Fed for ${mins(n)}` },
+  fed: { kind: 'secs', n: 180, reward: true, text: n => `Keep the crew fed for ${mins(n)}`, more: n => moreMins(n) + ' fed', short: n => `Fed for ${mins(n)}` },
   treasures: { kind: 'fixed', n: 2, reward: true, treasure: true, text: n => `Bring up ${n} treasures`, more: n => `${n} more treasure${n === 1 ? '' : 's'}`, short: n => `${n} treasures` },
   seal: { kind: 'once', gary: true, reward: true, text: () => "Earn Gary's Seal: huddle at the return", short: () => "Gary's Seal" },   // council round 11 8.7: it hid the huddle
   targets: { kind: 'count', n: 8, reward: true, text: n => `Land ${n} TARGETs`, more: n => `${n} more TARGET${n === 1 ? '' : 's'}`, short: n => `${n} TARGETs` },
@@ -255,6 +257,12 @@ export function dealGoal(rows) {
   return best;
 }
 
+// Council round 13 8.4 (A #7): a buy goal pays at the Ball Value AFTER the purchase lands (the washer lifts BV), so its
+// ✦ shows that. up: the crew's upgrades; payAt(up'): the reward at the upgrades with this row bought. Open buy rows
+// get r.pay (cardHtml shows it); the rest are unchanged.
+export const buyUp = (up, id) => { const d = G[id]; return d?.kind === 'buy' ? { ...up, [d.row]: Math.max(up?.[d.row] ?? 0, d.tier) } : { ...up }; };
+export const withBuyPay = (rows, up, payAt) => rows.map(r => (r.kind === 'buy' && !r.done && G[r.id]?.reward ? { ...r, pay: payAt(buyUp(up, r.id)) } : r));
+
 // The card as HTML rows for the report and the pause menu's Goals panel: each row with a tick or a count and its
 // reward; today's newly done goals highlighted. rewardNow: what a ✦ goal pays now (rewardFor).
 export function cardHtml(rows, { rewardNow = 0, esc = s => String(s) } = {}) {
@@ -262,5 +270,5 @@ export function cardHtml(rows, { rewardNow = 0, esc = s => String(s) } = {}) {
   return '<ul class="goal-card">' + rows.map(r =>
     '<li class="' + (r.done ? 'done' : 'open') + (r.fresh ? ' fresh' : '') + '"><span class="tick">' + (r.done ? '✓' : '○') + '</span> ' +
     esc(goalLine(r).replace(/ · ✓$/, '')) +
-    (r.reward ? ' <b class="reward">✦ ' + (r.done && !r.fresh ? 'paid' : '+' + money(rewardNow)) + '</b>' : '') + '</li>').join('') + '</ul>';
+    (r.reward ? ' <b class="reward">✦ ' + (r.done && !r.fresh ? 'paid' : '+' + money(r.pay ?? rewardNow)) + '</b>' : '') + '</li>').join('') + '</ul>';
 }

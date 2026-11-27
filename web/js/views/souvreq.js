@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { SECTIONS, SOUV, REQ } from '../stadium.js';
 
-const MAXLIT = 3, ARMS = 96, BITS = 40, PUFF_SECS = 1.6, BEAM_H = 20;
+const MAXLIT = 4, ARMS = 96, BITS = 40, PUFF_SECS = 1.6, BEAM_H = 20;
 
 export function createSouvReq(ctx, parent) {
   const root = new THREE.Group(); root.name = 'souv_req'; parent.add(root);

@@ -17,6 +17,7 @@ export const PA_LINES = {
   // Council round 11 #1 (builder 1): MOW-E Goes Rogue (the build-up), MOW-E 2.0 at the Stadium, and the win's pond.
   rogue: { line: 'Corporate has pushed an update to MOW-E. It has learned your movements. Please stand back.', caption: 'MOW-E updated itself. Please stand back.' },
   rogue2: { line: 'Corporate has pushed MOW-E two point oh. Now with stadium mode.', caption: 'MOW-E 2.0. The crowd is thrilled.' },
+  crash: { line: 'Attention. MOW-E heard about the ceremony. MOW-E two point oh is on its way. Please hold your bunting.', caption: 'MOW-E heard about the ceremony.' },   // council round 13 #3c (builder 1): the Promotion Day crash
   pond: { line: 'MOW-E has been retired to the pond. Corporate thanks it for its service. And you, slightly.', caption: 'MOW-E is in a better place. The pond.' },
   treasure: { line: 'An item has been recovered from the pond. Corporate will be keeping it in a glass case. Corporate keeps everything in a glass case.', caption: 'Recovered from the pond. Now in a case.' },
   huddle: { line: 'Gary from Regional is satisfied. Gary has never been satisfied.', caption: 'Gary is satisfied. Gary is never satisfied.' },

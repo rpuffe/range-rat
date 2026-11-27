@@ -104,8 +104,10 @@ export default {
     // promotion beat puts him on the Lift car's roof for one ride; the epilogue stands him at the return all shift.
     const cameo = createGaryCameo(scene);
     const cameoLift = { x: LIFT.x, z: LIFT.z, carY: 1.5 }, cameoRats = [];
+    let storyUp = false;   // council round 13 #2d (builder 3): his bubble waits for the story card (one centre element)
     const onStory = ev => {
       const d = ev?.detail;
+      if (d) storyUp = d.phase === 'card';
       if (d?.phase !== 'card' || d.index !== 0) return;
       if (d.id === 'promo:5') cameo.ride();
       else if (d.id === 'epilogue') cameo.stand(returnSpot(SIM.STAND));
@@ -228,8 +230,7 @@ export default {
           cameoLift.carY = carY;
           const ps = ctx.crew()?.players ?? [];
           cameoRats.length = 0;
-          cameoRats.push(me);
-          for (const p of ps) if (p.id !== me.id && p.online) cameoRats.push(p);
+          if (!storyUp) { cameoRats.push(me); for (const p of ps) if (p.id !== me.id && p.online) cameoRats.push(p); }
           cameo.tick(dt, { lift: cameoLift, rats: cameoRats, camera: ctx.camera });   // council round 12 9.5: the bubble clamp
         }
         if (ctx.venues) ctx.venues.carY = carY;

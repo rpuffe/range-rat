@@ -7,6 +7,7 @@ import { SLICE, ZONING, DRONES, DISPATCH, strayCount, zoning, droneCount, droneT
 import { RALLY_LINES } from '../../web/js/rally.js';
 import { nearestReturn } from '../../web/js/layout.js';
 import { tubeFeed } from '../../web/js/dive.js';
+import { LANDMARK, hasLandmark, INSPECT2, inspect2Due, INSPECTOR_LABEL, INSPECTOR_MEMO } from '../../web/js/landmarks.js';   // council round 13 #4 (builder 2)
 
 const r2 = v => Math.round(v * 100) / 100;
 const PARK = { x: SIM.STAND.x, z: SIM.STAND.z, stand: true, idle: true };
@@ -179,15 +180,18 @@ function inspection(crew, st, dt) {
     st.kpi = gaugeOf(crew, st); crew.dirty = true;
     return;
   }
-  if (!inspectDue({ left: crew.shiftSecs - crew.shiftT, done: st.insDone })) return;
-  st.insDone = true;
+  const left = crew.shiftSecs - crew.shiftT;
+  // Council round 13 #4 (builder 2): Site 13's inspector on retainer (landmark tier 4): a second visit at T-5:30, 45 s, ×4.
+  const second = hasLandmark(crew.up, LANDMARK.INSPECTOR) && inspect2Due({ left, done: st.ins2Done });
+  if (!second && !inspectDue({ left, done: st.insDone })) return;
+  if (second) st.ins2Done = true; else st.insDone = true;
   const hz = [];
   for (const b of crew.balls.values()) if (b.kind === 'hazard' && !b.sunk) hz.push(b);
   const p = inspectPatch(hz);
-  const secs = inspectSecs(crew.onlineCount());
-  st.ins = { x: p.x, z: p.z, r: p.r, left: secs, secs, bagged: 0, n: 0 };
+  const secs = second ? INSPECT2.SECS : inspectSecs(crew.onlineCount());
+  st.ins = { x: p.x, z: p.z, r: p.r, left: secs, secs, bagged: 0, n: 0, pay: second ? INSPECT2.PAY : INSPECT.PAY, ...(second ? { site13: true } : {}) };
   st.ins.n = inPatchHaz(crew, st.ins);
-  crew.events.push({ t: 'inspect', phase: 'start', x: +p.x.toFixed(1), z: +p.z.toFixed(1), r: p.r, secs, n: st.ins.n });
+  crew.events.push({ t: 'inspect', phase: 'start', x: +p.x.toFixed(1), z: +p.z.toFixed(1), r: p.r, secs, n: st.ins.n, where: inspectWhere(p.x, p.z), ...(second ? { site13: true } : {}) });
   crew.dirty = true;
 }
 
@@ -195,9 +199,11 @@ export default {
   id: 'county',
   venue: 4,
 
-  init() { return { drones: [], strays: 0, z: 0, kpi: 1, said: false, haz: 0, hz: false, vanT: 0, vans: 0, towed: 0, bagged: 0 }; },
+  init(crew, saved) { return { drones: [], strays: 0, z: 0, kpi: 1, said: false, haz: 0, hz: false, vanT: 0, vans: 0, towed: 0, bagged: 0, retained: !!saved?.retained }; },
 
   startShift(crew, st) {
+    st.ins2Done = false;   // council round 13 #4: the retainer's visit; the first morning after buying, the memo note says so
+    if (!st.retained && hasLandmark(crew.up, LANDMARK.INSPECTOR)) { st.retained = true; crew.memoNote ??= INSPECTOR_MEMO; }
     st.z = 0; st.strays = 0; st.kpi = 1; st.zone = null; st.haz = 0; st.hz = false; st.vanT = 0; st.vans = 0; st.towed = 0; st.bagged = 0; st.van = null; st.dealT = Infinity; st.dealLC = false; st.deals = 0;
     st.ins = null; st.insDone = false; st.insNoted = 0; st.noted = new Set(); st.zAdj = 0; st.sweep = {}; st.sweeps = 0;   // council round 12 #7a/#7b
     for (const d of st.drones) { d.x = SIM.STAND.x; d.z = SIM.STAND.z + 1.5; d.y = DRONES.ALT; d.pocket = 0; d.pocketW = 0; d.target = null; }
@@ -248,7 +254,7 @@ export default {
     if (sweep) { st.sweeps = (st.sweeps ?? 0) + 1; crew.stats.sweeps = (crew.stats.sweeps ?? 0) + 1; }
     crew.events.push({ t: 'gone', id: b.id, by: p.id }, { t: 'hazbag', id: b.id, by: p.id, name: p.name, ...(team ? { team: b.sprayBy } : {}), ...(insp ? { insp: true } : {}), ...(sweep ? { sweep: true } : {}) });
     const c0 = crew.stats.cash;
-    crew.bank(1, p.id, null, HAZ.W * (insp ? INSPECT.PAY : 1) * (sweep ? CHAIN.PAY : 1), null, { haz: 1 });
+    crew.bank(1, p.id, null, HAZ.W * (insp ? st.ins.pay ?? INSPECT.PAY : 1) * (sweep ? CHAIN.PAY : 1), null, { haz: 1 });
     crew.stats.hazCash = Math.round(((crew.stats.hazCash ?? 0) + crew.stats.cash - c0) * 100) / 100;
     st.haz = Math.max(0, st.haz - 1); st.kpi = gaugeOf(crew, st);
     crew.dirty = true;
@@ -267,13 +273,15 @@ export default {
   },
 
   kpi: (crew, st) => st.kpi,
+  toSave: (crew, st) => (st.retained ? { retained: 1 } : undefined),   // council round 13 #4: the retainer memo said once
 
   snapshot: (crew, st) => ({
     strays: st.strays, kpi: r2(st.kpi),
     ...(st.zone ? { zone: { x: r2(st.zone.x), z: r2(st.zone.z), r: st.zone.r, left: r2(st.zone.until - (st.t ?? 0)) } } : {}),
     drones: st.drones.map(d => ({ id: d.id, x: r2(d.x), y: r2(d.y), z: r2(d.z), yaw: r2(d.yaw), n: d.pocket })),
     ...(crew.venue === 4 ? { label: zoningLabel(st.kpi, st.haz) } : {}),   // council round 11 #2: the Board's Zoning line (board.js, builder 4)
-    ...(st.ins ? { inspect: { x: r2(st.ins.x), z: r2(st.ins.z), r: st.ins.r, t: r2(st.ins.left), secs: st.ins.secs, n: st.ins.n, where: inspectWhere(st.ins.n) } } : {}),   // council round 12 #7a (bvtext.js kpiNoteOf)
+    ...(st.ins ? { inspect: { x: r2(st.ins.x), z: r2(st.ins.z), r: st.ins.r, t: r2(st.ins.left), secs: st.ins.secs, n: st.ins.n, where: inspectWhere(st.ins.x, st.ins.z), ...(st.ins.site13 ? { who: INSPECTOR_LABEL } : {}) } } : {}),   // council round 13 #7a: where he is; #4: the retainer's label   // council round 12 #7a (bvtext.js kpiNoteOf)
+    ...(st.retained ? { site13: 1 } : {}),   // council round 13 #4: the inspector's on retainer (the view: his jacket)
     ...(st.hz ? { hz: 1, haz: st.haz, wet: wetIds(crew) } : {}), ...(st.van ? { van: r2(VAN.SECS - st.van.left) } : {}), ...(st.vans ? { vans: st.vans, towed: st.towed } : {}),
   }),
 };

@@ -29,7 +29,11 @@ const CSS = `
 #recapcard .next { margin-top: 0.7em; color: #9fd39f; font-weight: 700; text-align: center; }
 #recap-panel { display: flex; flex-direction: column; gap: 0.6em; align-items: center; }
 #recap-panel .sheet { width: min(calc(100vw - 32px), 30em); font-size: 0.85em; }
-#recap-panel .offer { display: block; width: 100%; text-align: left; margin: 0.25em 0; }
+#recap-panel .offer { display: block; width: 100%; text-align: left; margin: 0.15em 0; padding: 0.25em 0.6em; line-height: 1.25; }
+#recap-panel .contracts h3 { margin: 0 0 0.2em; }
+/* council round 13 8.8 (C #13): the three contracts sit first and compact, so 2★ and 3★ are above the fold; a long
+   value ("(missed washer bonus $44,033)") wraps inside its column instead of overflowing it */
+#report-body p > b { min-width: 0; text-align: right; overflow-wrap: anywhere; }
 #recap-panel .offer.on { outline: 2px solid #ffb347; }
 #recap-panel .stars { color: #ffcf5a; letter-spacing: 0.05em; }
 #recap-panel .locker { display: flex; flex-wrap: wrap; gap: 0.4em; justify-content: center; }
@@ -94,12 +98,13 @@ export function createRecap({ link, crew, report, me }) {
       lines.push(k.met ? `Contract met: <b>+${k.stars} ★</b> (${k.total} total).` : `Contract missed: ${esc(goalText(k.goal))}.`);
       if (k.unlocked && COSMETIC_BY_ID[k.unlocked]) lines.push(`<b>Unlocked: ${esc(COSMETIC_BY_ID[k.unlocked].name)}!</b> Wear it below.`);
     }
-    if (lines.length) html += `<div class="sheet">${lines.map(l => `<p>${l}</p>`).join('')}</div>`;
-    // Endless: tomorrow's three contracts (any Rat picks; the last pick stands).
+    // Endless: tomorrow's three contracts (any Rat picks; the last pick stands). Council round 13 8.8: first, so all
+    // three are above the panel's fold.
     if (Array.isArray(c.offers) && c.offers.length) {
-      html += `<div class="sheet"><h3>Tomorrow's contract</h3>` + c.offers.map((o, i) =>
+      html += `<div class="sheet contracts"><h3>Tomorrow's contract</h3>` + c.offers.map((o, i) =>
         `<button type="button" class="offer quiet${(c.pick ?? 0) === i ? ' on' : ''}" id="contract-${i}"><span class="stars">${starText(o.stars)}</span> ${esc(todayName(o.mod) ?? MODS[o.mod?.id]?.name ?? '')} · ${esc(goalText(o.goal))}${(c.pick ?? 0) === i ? ' ✓' : ''}</button>`).join('') + '</div>';
     }
+    if (lines.length) html += `<div class="sheet">${lines.map(l => `<p>${l}</p>`).join('')}</div>`;
     // The stars and the locker (council round 12 #6d: a cosmetic at 3 stars, then every 5; each Rat picks their own hat and vest, the crew one paint).
     const stars = c.stars ?? 0;
     if (c.endless || stars > 0) {

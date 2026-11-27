@@ -1278,3 +1278,108 @@ The full record is `design/round13-mowe.md`; the rules are `web/js/mowe.js` (pur
 - **Spray chains.** A spray wets every hazard within 3 m; 3 bags in 6 s by one Rat is a CLEAN SWEEP (×2 on the third).
 - **Words.** The hazard tip names the button (RT / Click). With one goal left, the tomorrow line names it ("Tomorrow:
   one more good day for the Orbital."). The finished Orbital card reads "NEXT: FIND BALL NO. 1".
+
+## Council round 13 (builder 1): MOW-E's loss is a beat, MOW-E 2.0 crashes Promotion Day, the aimed whistle
+
+- **The loss.** A lost fight gets the TAMED stamp's red twin, **MOW-E WINS** (~2 s), then one centre line: "MOW-E got
+  away. Rematch tomorrow." when tomorrow really is the rematch (`rematchNext`: not the second loss, not the encore, and the
+  card can't be signed or turn into Promotion Day by tomorrow), else "MOW-E got away. For now." MOW-E drives home with
+  the catcher rattling, under the shed's roller door, which slams down behind it. The Board then reads `MOW-E 1 · CREW 0`.
+  A fight the bell beats is settled before the report reads it.
+- **The report** carries a MOW-E row above the review: `MOW-E: got away · kept 26 balls · rematch tomorrow` or
+  `MOW-E: tamed · 18 balls · 4 gold`. **Tomorrow** names MOW-E ahead of Gary: "Tomorrow: MOW-E finishes its update." on
+  the boss eve, "Tomorrow: MOW-E's rematch. Wands at the bell." on the rematch eve. A Promotion Day line still replaces
+  it (the crash is a surprise).
+- **MOW-E 2.0 crashes Promotion Day.** A Stadium Promotion Day with the encore unplayed is the encore's day
+  (`bossDay` → 'encore'). The warn comes at T−4:00 (`BOSS.PROMO_AT`, 180 s of 420) with the PA "MOW-E heard about the
+  ceremony.", the morning's Board reads `PROMOTION DAY · MOW-E 2.0 UPDATE ▓▓░`, and Gary's Stadium mid beat plays that
+  morning if it hasn't. A win pays as the encore and stamps **MOW-E 2.0 TAMED**; a loss ("MOW-E 2.0 left. It took the
+  bunting.") drives off through the left stands and doesn't touch the promotion. `encore` is set either way.
+- **The payout trim.** The fountain's MOW-E balls pay ×1.5 (was ×2), and the catcher holds 24 at 3P+ (30 at 1–2P).
+- **The sidestep.** For a crew of 1–2 the hunt line is "Step aside, then hose its back!". The first hunt of a fight,
+  the hunted Rat's red edge pulses only on the side to dodge toward (perpendicular to its heading, `sidestep`). Before
+  each 3 s re-aim its exhaust gives a two-puff rev (`bossSnap.rev`).
+- **`bossOwnsScreen(mower)`** (warn → stamp) is exported for the one-centre-text arbiter.
+- **The pet: two passes of 12** (30 %, 65 %). **The whistle goes on a lanyard:** Ⓐ at the MOW-E post takes it (one Rat
+  carries it; picking up still works); out in the field, 20 m or more from the nearest return with no ball in reach,
+  Ⓐ blows it. MOW-E drives out from the post and mows a 10 m × 30 m strip through the whistler's spot toward the return (a member's ball in it is fetched as his), up to 30 (14 solo)
+  balls. Once a shift; the position is the server's. The feed says "Pip has the whistle." → "Pip whistled. MOW-E's on
+  his way." → "MOW-E brought 28 home." The memo after the win: "MOW-E sends his regards. Whistle at the post."
+
+## Council round 13 (builder 2): the Members' Tournament, Range landmarks, the inspector's place
+
+- **The Members' Tournament** (`web/js/tourney.js`, `server/venues/tourney.mjs`, `web/js/views/tourney.js`). From Club
+  day 4 (`CLUB_DAY.tourney`), on any Club day that isn't a boss day or Promotion Day, two flights a shift: T-5:00 and
+  T-2:30, each moved up to 20 s clear of a deal (the second lands at T-2:50, clear of Last Call). Each flight, members in
+  navy blazers (one in a Site 13 jacket) tee off from the covered bays by the clubhouse: 2 balls at 1–2P, 3 at 3–4P,
+  4 at 5–6P, at least one either side of centre, 60–140 m out, off the creek; at 3P+ one drops in the pond (a diver's
+  job). Spots are `hash32(day, venueDay, 'm', flight, …)`: no RNG draw. Each ball stands under a navy-and-gold beam
+  that shrinks with its 30 s clock; for the last 6 s the members' caddie cart hums out from the clubhouse, and at 30 s
+  it takes the ball (kazoo, a feed line, no penalty). A Rat picks one up into their hands (outside the pocket; machines,
+  helpers and MOW-E can't take it) and walks it to any return: ×45 Ball Value (the council's ×25 assumed a $70 BV; the
+  bots measure ~$46). Knocked flat, it goes back on the grass on the clock. Every ball of a flight banked: "Clean
+  flight! The members are appalled." and a chime. One centre ALERT a flight; the first Tournament morning's memo note
+  is "Members' Tournament today. Site 13 entered anyway." MOW-E's aimed whistle can fetch one
+  (`crew.mods.signal('member', { id })`).
+- **Range landmarks** (`web/js/landmarks.js`, `web/js/views/landmarks.js`): one crew row, one tier a venue, bought in
+  order, each a visible build that stays: the Members' Bell (Club day 4, $15k base: Ⓐ rings a bonus flight once a shift,
+  T-6:00..T-1:30; later it rings for each venue's peak), the dimpl Tap Wall (Tiered, $200k: every third deck order pours
+  itself, paid as an order, no drink added), Stretch fireworks (Stadium, $5M: one more Stretch section, a rocket per
+  answer, GRAND SLAM +0.10 crowd when all are answered), Site 13's inspector on retainer (County, $20M: a second
+  Inspection Hour at T-5:30, 45 s, ×4), a star named Gary (Orbital, $60M: GARY in stars over the Lift; over the glass
+  case in endless). Prices ×`priceScale` like every crew row.
+- **Poach a Site 13 regular** (endless, `owner.js` `POACH`, `server/venues/poach.mjs`, `crew.buyPoach`): once a day,
+  25 % of yesterday's bank. Today their regulars hit from their own bay (+7 % of the day's customer balls, no crew RNG
+  draw), Site 13's target drops 5 %, and a day you poach and win counts 2 of the "4 of 7".
+- **The inspector's place** (7a): the ALERT names it ("Inspector at the far left Yard!", `inspectAlertAt`), the Board's
+  label is `INSPECTION · FAR LEFT · 0:45` (`inspectWhere(x, z)`), a white clipboard-beam stands over him, a chevron
+  points to him (builder 1's `ctx.chevron`), and solo the camera eases 15° toward him for 2 s (control stays).
+
+## Council round 13 (builder 4): one calls ruler, presets that fail loudly, the fixes pack
+
+- **One calls ruler** (`scripts/bots/calls.mjs`, used by muni, mid, late11 and pt7c-endless). A call is a moment that
+  asks a Rat to go to a specific place, and that costs something if nobody goes: a lit request, a Stretch section, the
+  inspector, a member ball (any event with `call: '<kind>'`), a deck order (one standing job per 30 s), a treasure, Gary's
+  visit, a deal, a boss phase, the whistle ready, a fixture > 50 % dirty, the basket running under 25 % (not the morning's
+  empty basket), fries < 30 %. Repeats of a kind within 8 s count once. It prints calls a minute by venue and crew size,
+  plus "Club d4+", plus `r8` (round 8's kinds, for continuity).
+- **Presets.** `make-presets.mjs` chains muni → mid (FIGHT=55: MOW-E tamed) → late11 (souvenirs, pings by hand). Shift caps
+  (Muni 8, Club 10, Tiered 6, Stadium 6, County 6, Orbital 4) stop a stuck chain with its goal ("stuck at Stadium on
+  requests 0/6 after 6 shifts"), and nothing is written unless every preset is found. New: `club4` (Club day 4, MOW-E
+  tame) and `stadiumPromo` (the Stadium's Promotion Day, the encore unplayed).
+- **Policy hooks** (`scripts/bots/policies.mjs`): `TOURNEY=1`, `WHISTLE=aim`, `BUY=1`, `POACH=1` load
+  `scripts/bots/policy/<name>.mjs`.
+- **Fixes.** "1 more minute" means 60–119 s, and under that "under a minute" (8.5). A buy goal's ✦ shows what it pays
+  after the buy lands (8.4). Next shift / Ready ignores Ⓐ/Space for 1.5 s after a card closes and wants a fresh press; it
+  shows pressed at once, and a double press is one (8.2, 8.3). When Gary heads for the stand, Rats over 40 m away or
+  diving get a 3 s edge chevron and "Huddle! Pip, surface!", and he waits up to 10 s more for a diver (8.6). The Stadium
+  lobby line is "Answer souvenir requests. Keep the crowd happy." (8.7). The endless report shows the three contracts
+  first and compact, and long report values wrap (8.8). The 3★ contract allows one knockdown (8.9). A poached win counts
+  2 of the week (8.10).
+
+## Council round 13 (builder 3): one centre text at the source, spawns that see the venue, the reveal on one clock
+
+- **`web/js/centre.js`: one arbiter, one ladder.** Every centre writer asks it: story card / note / epilogue / end card
+  (0), the stamps and venue ALERTs (1), PA cards (2), the memo (3), tips and the checklist line (4), toasts (5). Only one
+  item draws. A higher priority snaps a lower one out in 150 ms; a PA card or memo resumes after (a PA's caption, no
+  chime or voice again). A PA waits at most 6 s while it could show, then its caption goes to the feed. A tip never
+  queues: it fires only after 2 s of quiet, or later. The outgoing fade finishes before the next item starts, and on a
+  slow page (1 fps) that means two painted frames, not 0.3 s. `say.js` runs on it; the story card is a held priority-0
+  claim, the checklist an idle claim that steps aside for anything, the end card a held claim.
+- **The clutter**: one source's cash pops within 1.5 s merge into one float ("+$51.98 ×7"), at most 2 are up, none
+  while a priority 0–1 item, the hush or a story card holds the centre. Name plates go within 15 m of the return during
+  the hush, the note and the epilogue; Gary's "Where do these go, boss?" waits for the epilogue's cards. The washer's
+  "hopper is empty" line shows only after 30 s empty, with balls out, nothing 0–3 up, and under 1,000 balls banked.
+- **The boss owns the screen**: from the warn to the stamp the basket nag, the refused-customer feed and the helper
+  feed are muted; after it, one line ("3 customers left during the fight."). The plug prompt shows only in the plug
+  phase.
+- **`?debug` `window.__centre`** samples the real DOM (painted frames only) and counts overlap frames and episodes, with
+  both texts logged.
+- **Spawns**: the Club and Tiered clock in on the late row (`CLOCK_IN.LATE_FROM 1`); at venues ≥ 1 the pitch eases
+  −0.2 → −0.28 over the first 1.5 s (added to your own look, so control stays); the Tiered deck's cutaway starts 4 m
+  out from its footprint.
+- **Gary in the Lift on one clock** (`web/js/revealclock.js`): the reveal camera runs on wall-clock seconds since the
+  reveal began, a card can name a camera cue (promo:5's "Gary rides the Lift" waits for the Lift pose, the epilogue's
+  first card for the case, 3 s at most), and the camera waits on the card's end.
+- **8.1 / 8.2**: an unfinished sign step no longer mutes the empty-basket alarm (it is the checklist's next line); the
+  first card of a beat takes no press for 1.2 s (the photo card 1.8 s).

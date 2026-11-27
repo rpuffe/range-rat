@@ -8,8 +8,10 @@ import { FILL_POINT, nearestReturn, atFieldReturn } from '../../web/js/layout.js
 import { inBowl } from '../../web/js/tiered.js';
 
 const { makeClassifier } = await import('./classify.mjs');
-import { snap } from './snap.mjs';
+import { snap, capCheck } from './snap.mjs';
+import { CallTally } from './calls.mjs';   // council round 13 #0e: the shared calls tally
 const N = +(process.argv[2] ?? 4), SEED = +(process.argv[3] ?? 7);
+const calls = new CallTally(N);
 const F = new Set(process.argv.slice(4));
 const GREENS = F.has('greens'), CHAT = F.has('chat'), NOBASKET = F.has('nobasket'), NOHOSE = F.has('nohose'), VERBOSE = F.has('v');
 const MAXDAYS = 14, DT = 0.05;
@@ -235,7 +237,7 @@ function runShift() {
   crew.flush();
   let tSec = 0, at100 = null, at60 = null;
   while (crew.phase === 'shift') {
-    clock.t += 50; crew.tick(DT);
+    clock.t += 50; crew.tick(DT); calls.step(crew, DT);
     rats.forEach(ratStep); CL.step(rats, DT);
     if ((tSec += DT) >= 1) { tSec = 0; shop(); }
     const left = crew.shiftSecs - crew.shiftT;
@@ -258,6 +260,7 @@ function runShift() {
       if (e.t === 'gary' && e.phase === 'warn') garyLog.push(`d${crew.day} warn @${Math.round(crew.shiftT)}`);
     }
   }
+  const callRec = calls.endShift(crew);
   const leftAtBell = crew.report?.left;
   const r = crew.report;
   shop();
@@ -270,12 +273,12 @@ function runShift() {
     quota: r.quota ? (r.quota.hit ? `HIT(${r.quota.clean}/${r.quota.need})` : `miss(${r.quota.clean}/${r.quota.need})`) : '-',
     card: rows.map(x => x.id + (x.done ? '+' : `${x.kind === 'fee' ? '' : ':' + x.have + '/' + x.need}`)).join(' '),
     basket1: S.firstBucket, buckets: S.buckets, nobucket: S.nobucket, wait: S.custwait, refuse: JSON.stringify(S.refuse), fillS: Math.round(S.fillSecs), hoseS: Math.round(S.hoseSecs),
-    feeds: S.feeds, cartTrips: S.cartTrips, green: `${S.onGreen}/${S.greenShots}`, intro: S.intro, gary: S.gary, chats: S.chat, out60: at60, outBell: leftAtBell, goals: S.goals.join(',') };
+    feeds: S.feeds, cartTrips: S.cartTrips, green: `${S.onGreen}/${S.greenShots}`, intro: S.intro, gary: S.gary, chats: S.chat, out60: at60, outBell: leftAtBell, goals: S.goals.join(','), calls: callRec.perMin };
 }
 
 if (GREENS) { greenShot = findGreenShot(); console.log('greenShot', JSON.stringify(greenShot)); }
 const rows = [];
-for (let d = 0; d < MAXDAYS; d++) { const row = runShift(); rows.push(row); if (crew.venue > 0) break; }
+for (let d = 0; d < MAXDAYS; d++) { const row = runShift(); rows.push(row); if (crew.venue > 0) break; capCheck(crew, d + 1); }
 snap(crew, 'end');
 console.log(`== ${N}P seed ${SEED} ${[...F].join(' ')}`);
 let cum = 0;
@@ -286,4 +289,5 @@ console.log('TOMORROW', tomorrow.join(' | '));
 if (VERBOSE) { console.log(log.join('\n')); console.log(dealLog.join('\n')); }
 console.log('first affordable', JSON.stringify(firstAfford));
 console.log(CL.report()); console.log('NOV ' + NOV.join(' | '));
+calls.print();
 console.log('SUMMARY', N + 'P', SEED, [...F].join(' '), 'promoDay', promotedDay, 'venue', crew.venue, 'cashAfter', crew.cash, 'up', JSON.stringify(crew.up));

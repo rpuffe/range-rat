@@ -6,6 +6,7 @@
 // usage: node ladder5.mjs N seed   env: AP=lap|harvest|off  DISP=1|0  PINGR=2 (pings/min by the bay Rat)  ENDLESS=4  V=1
 const REPO = new URL('../../', import.meta.url).href;
 const { snap, startSave } = await import('./snap.mjs');
+const { CallTally } = await import('./calls.mjs');   // council round 13 #0e: the shared calls tally
 const { Crew } = await import(REPO + 'server/crew.mjs');
 const S = await import(REPO + 'web/js/sim.js');
 const { MAP } = await import(REPO + 'web/js/map.js');
@@ -24,6 +25,7 @@ let t = 0;
 const UP = { shoes: 3, hardhat: 1, helpers: 4, ads: 3, washer: 3, cart: 2, shed: 3, amen: 2, pond: 2, gutters: 1, gear: 3, wand: 2, bucket: 1, returns: 2, bays: 1 };
 const START = startSave() ?? (process.env.START ? JSON.parse(process.env.START) : { v: 5, day: 14, venue: 3, venueDay: 0, cash: +(process.env.CASH ?? (N === 1 ? 400000 : 900000)), outstanding: 713366000, reviews: 0, commendations: 6, pendingReveal: 3, up: UP, diveByName: Object.fromEntries(Array.from({ length: N }, (_, i) => ['Rat' + i, 2])) });
 const crew = new Crew('SIMC', START, { now: () => t * 1000, seed: SEED });
+const calls = new CallTally(N);
 const rats = [];
 for (let i = 0; i < N; i++) { const p = crew.join('Rat' + i); crew.connect(p); rats.push(p); }
 const DT = 0.1;
@@ -81,7 +83,7 @@ function runShift() {
   let at90 = null, at60 = null, left60 = null, apSet = false;
   while (crew.phase === 'shift') {
     t += DT; secs += DT;
-    crew.tick(DT);
+    crew.tick(DT); calls.step(crew, DT);
     if (crew.lastBucket && !crew._lbSnap) { crew._lbSnap = true; snap(crew, 'lb'); }
     for (const e of crew.events) {
       if (e.t === 'goal') goalLog.push(`v${v} vd${crew.venueDay} T-${(crew.shiftSecs - crew.shiftT).toFixed(0)} GOAL ${e.id} (${e.need}) +$${Math.round(e.reward).toLocaleString()}  [${GL.doneToast(e.id, e.need, e.reward)}] words ${GL.doneToast(e.id, e.need, e.reward).split(/\s+/).length}`);
@@ -313,6 +315,7 @@ while (shifts < 80) {
   const r = runShift(); if (r.stuck) break;
   shifts++; venueShifts[v0]++;
   const rep = crew.report, q = rep.quota;
+  calls.endShift(crew);
   sessionSecs += r.secs + 40;
   if (v0 >= 3 && v0 <= 5) closeLog.push(`v${v0} vd${crew.venueDay} gauge@1:30 ${r.at90?.g?.toFixed(2) ?? '-'} @1:00 ${r.at60?.g?.toFixed(2) ?? '-'} @bell ${q?.gauge?.toFixed?.(2) ?? '-'} ${q ? (q.hit ? 'HIT' : 'miss') : ''} gaugeOk ${q?.gaugeOk} left@1:00 ${r.left60 ?? '-'} out ${crew.outstanding}`);
   if (v0 === 3) stadLog.push(`vd${crew.venueDay} laps ${stad.laps} autoLaps ${stad.autoLaps} pings ${stad.pings} (auto ${stad.autoPings}) apOn T-${stad.apOn?.toFixed(0) ?? '-'} crowdLaps ${crew.mods.state('stadium')?.laps} autoLapsMod ${crew.mods.state('stadium')?.autoLaps} income $${Math.round(crew.stats.cash).toLocaleString()} carts ${crew.carts.length}`);
@@ -348,5 +351,6 @@ console.log('SKY:'); skyLog.forEach(x => console.log(x));
 console.log('LB:'); lbLog.forEach(x => console.log(x));
 console.log('STORY:'); storyLog.forEach(x => console.log(x)); console.log('ENDLESS:'); endLog.forEach(x => console.log(x));
 console.log('upgrades:', JSON.stringify(crew.up));
+calls.print();
 console.log('CONTRACTS met/picked by tier:', JSON.stringify(tiers), 'by kind:', JSON.stringify(kinds), 'stars', crew.stars, 'first cosmetic on endless day', firstLook ?? '-');
 console.log('SITE13 beat', rivalLog.wins, 'of', rivalLog.days, 'weeks won', rivalLog.weeks, 'acquired', crew.records.rival?.acquired ?? 0, rivalLog.results.join(' '));

@@ -39,6 +39,7 @@ export function paintSign(x, w, h, venue) {
 
 const lambert = (color, extra) => new THREE.MeshLambertMaterial({ color, ...extra });
 export const DECK_CUT = 0.35;   // council round 12, 4a: the Tiered deck floor's opacity while the camera is under it
+export const DECK_NEAR = 4;     // council round 13 #6: the cutaway starts this far out from the deck's footprint
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 
 function textPlane(text, w, h, bg, fg, px, flip) {
@@ -140,7 +141,8 @@ export function createVenues(scene) {
       const deckMat = TEX.mat('wood', 0xa98157, { world: 1.6, emissive: 0x2a2218, transparent: true });
       const floor = box(40, 0.3, 4, deckMat, 0, 2.85, 4);         // floor slab x -20..20, z 2..6, top y 3: decking
       floor.onBeforeRender = (_r, _s, cam) => {
-        const p = cam.position, under = p.y < 2.75 && p.x > -20.5 && p.x < 20.5 && p.z > 1.5 && p.z < 6.5;
+        // council round 13 #6 (builder 3): and within DECK_NEAR m of its footprint (the late rows look past its right end)
+        const p = cam.position, under = p.y < 2.75 && p.x > -20 - DECK_NEAR && p.x < 20 + DECK_NEAR && p.z > 2 - DECK_NEAR && p.z < 6 + DECK_NEAR;
         const o = under ? DECK_CUT : 1;
         if (deckMat.opacity !== o) { deckMat.opacity = o; deckMat.depthWrite = o >= 1; }
       };

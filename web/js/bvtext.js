@@ -7,6 +7,7 @@
 //                unlocked gauges from the Club ("UPKEEP 48%").
 //   The tick   = q / (ceiling − 1): today's target on the same bar ("TARGET 60%").
 import { upkeepCeiling, money, SIM } from './sim.js';
+import { tourneyLine } from './tourney.js';   // council round 13 #1 (builder 2's line; builder 4 shows it)
 
 const clamp01 = v => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
 const c2 = v => Math.round(v * 100) / 100;
@@ -206,7 +207,9 @@ export function kpiNoteOf(mods) {
   const sx = mods?.stadium?.stretch;
   if (sx) return `SEVENTH-INNING STRETCH · ${[...(Array.isArray(sx.secs) ? sx.secs : String(sx.secs ?? ''))].join(' ')} · ${clockOf(sx.t ?? sx.left)}`;
   const ins = mods?.county?.inspect;
-  if (ins) return `INSPECTION · ${ins.where ?? 'YARD ' + ins.yard} · ${clockOf(ins.t ?? ins.left)}`;   // b2: hazards lie short of the kerb, so his patch has a count, not a Yard
+  // council round 13 #7a/#4: "INSPECTION · FAR LEFT · 0:45"; the retainer's visit is "INSPECTOR (EX-SITE 13) · ..."
+  if (ins) return `${ins.who ?? 'INSPECTION'} · ${ins.where ?? 'YARD ' + ins.yard} · ${clockOf(ins.t ?? ins.left)}`;
+  const tl = tourneyLine(mods?.tourney); if (tl) return tl;   // council round 13 #1: MEMBERS' TOURNAMENT · ●●○ · 0:22   // b2: hazards lie short of the kerb, so his patch has a count, not a Yard
   const c = mods?.county?.label; if (c) return String(c);
   const r = mods?.stadium?.req; if (!r) return null;
   if (typeof r === 'string') return r;

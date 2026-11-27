@@ -1719,3 +1719,41 @@ test('round 6 #5: the Gary huddle flag is unchanged by the ring (no hold needed,
   assert.equal(verdictWith((a, b) => { b.x = STAND.x + 20; }, true).huddle, false, 'holding Use away from the stand does not count');
   assert.equal(verdictWith(() => {}, true).huddle, true);
 });
+
+// ---- council round 13 #7b (builder 3): Gary in the Lift, on one clock -------------------------------------------------
+import { newReveal, revealStep, revealStory as revealStoryR, cueReady as cueReadyR, REVEAL_SHOT as RS } from '../web/js/revealclock.js';
+import { createStoryCard as createStoryCard13 } from '../web/js/storycard.js';
+import { MAP as MAP13 } from '../web/js/map.js';
+test('13 #7b: at 1 fps and at 60 fps, "Gary rides the Lift" is up while the camera is within 30 m of the Lift', () => {
+  // round2.js's poses: the player's view at clock-in, the reveal pose (20, 6, 22), the Lift shot (LIFT + (12, ~5, 9)).
+  const FROM = { x: 29.4, z: 4 }, POSE = { x: 20, z: 22 }, SHOT = { x: MAP13.LIFT.x + 12, z: MAP13.LIFT.z + 9 };
+  const lerp = (a, b, k) => ({ x: a.x + (b.x - a.x) * k, z: a.z + (b.z - a.z) * k });
+  for (const fps of [1, 60]) {
+    let t = 0;
+    const r = newReveal(5, 0);
+    const card = createStoryCard13({ sayer: null, now: () => t, tick: 0, cueReady: cue => cueReadyR(r, cue, t), onStory: d => revealStoryR(r, d) });
+    card.add('promo:5');
+    let seen = null, done = false;
+    for (let f = 0; f < 40 * fps && !done; f++) {
+      t = f / fps;
+      const { w, s } = revealStep(r, t);
+      card.step();
+      const cam = lerp(FROM, lerp(POSE, SHOT, s), w);
+      if (card.card?.line?.startsWith('Gary rides the Lift')) seen ??= Math.hypot(cam.x - MAP13.LIFT.x, cam.z - MAP13.LIFT.z);
+      done = !card.up && seen != null;
+    }
+    assert.ok(seen != null, `${fps} fps: card 2 played`);
+    assert.ok(seen <= 30, `${fps} fps: the camera is ${seen.toFixed(1)} m from the Lift during card 2`);
+  }
+});
+test('13 #7b: a cued card waits for its pose, at most CUE_WAIT s; with no reveal it never waits', () => {
+  let t = 0, ready = false;
+  const card = createStoryCard13({ sayer: null, now: () => t, tick: 0, cueReady: () => ready });
+  card.add('promo:5'); card.step();
+  assert.equal(card.card.line, 'I always wanted to see it.');
+  t = 4.05; card.step();
+  assert.equal(card.card, null, 'card 2 waits on the lift cue'); assert.equal(card.waiting, true);
+  t = 4.05 + RS.CUE_WAIT + 0.01; card.step();
+  assert.match(card.card.line, /^Gary rides the Lift/, 'shown after CUE_WAIT whatever');
+  assert.equal(cueReadyR(null, 'lift'), true);
+});

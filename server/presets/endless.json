@@ -1,45 +1,55 @@
 {
  "id": "endless",
  "label": "Endless (Range Rats LLC)",
- "made": "2026-11-26",
+ "made": "2026-11-27",
  "bot": "4P seed 7, morning snap",
  "players": 4,
  "save": {
   "v": 5,
-  "day": 20,
-  "cash": 231830634.1,
+  "day": 19,
+  "cash": 249297904.9,
   "totals": {
-   "picked": 10261,
-   "deposited": 15672,
-   "cash": 259291343.27,
-   "knockdowns": 648,
-   "helped": 2726,
-   "carted": 1016,
-   "swings": 196,
-   "pings": 32,
-   "runOver": 394,
-   "washed": 488.70000000000005,
-   "scrubbed": 14838,
-   "unwashed": 323,
-   "lostPremium": 55099.479999999996,
-   "reviews": 16,
-   "launched": 21537,
-   "filled": 691,
-   "spotless": 6371624.5600000005,
-   "sealCash": 326235.45999999996,
-   "served": 418,
-   "fries": 2779,
-   "dogs": 186,
-   "fedCash": 11161863.77,
-   "dived": 854,
-   "snags": 721,
-   "targets": 147,
-   "beers": 111,
-   "deckOrders": 97,
-   "refused": 27,
-   "orbited": 173,
-   "winched": 71,
-   "debris": 148
+   "picked": 8532,
+   "deposited": 14595,
+   "cash": 273404404.22,
+   "knockdowns": 476,
+   "helped": 2500,
+   "carted": 793,
+   "swings": 159,
+   "pings": 35,
+   "runOver": 267,
+   "washed": 413.4,
+   "scrubbed": 13744,
+   "unwashed": 333,
+   "lostPremium": 61456.259999999995,
+   "reviews": 15,
+   "launched": 20303,
+   "filled": 657,
+   "spotless": 5978945.93,
+   "sealCash": 33035.68,
+   "served": 412,
+   "fries": 2572,
+   "dogs": 182,
+   "fedCash": 13866564.540000001,
+   "dived": 564,
+   "snags": 719,
+   "memberOut": 12,
+   "memberClaimed": 10,
+   "targets": 99,
+   "beers": 120,
+   "deckOrders": 110,
+   "souvenirs": 40,
+   "souvCash": 1414295.94,
+   "reqHit": 6,
+   "refused": 24,
+   "bagged": 46,
+   "hazCash": 6966580.870000001,
+   "sweeps": 4,
+   "inspNoted": 1,
+   "inspClean": 1,
+   "orbited": 172,
+   "winched": 72,
+   "debris": 145
   },
   "up": {
    "gear": 3,
@@ -71,13 +81,12 @@
    "keys",
    "trophy",
    "shades",
-   "duck",
-   "boot"
+   "duck"
   ],
   "commendations": 10,
   "reviews": 0,
-  "pondSunk": 4,
-  "fries": 18,
+  "pondSunk": 20,
+  "fries": 12,
   "goals": {
    "venue": 5,
    "scale": 1,
@@ -87,7 +96,7 @@
     "debris": 60
    },
    "n": {
-    "debris": 70
+    "debris": 83
    },
    "done": [
     "tether",
@@ -106,46 +115,47 @@
   "outstanding": 0,
   "pendingReveal": 0,
   "endless": true,
-  "garyDay": 19,
+  "endlessFresh": true,
+  "garyDay": 18,
   "fixtures": {
-   "sign": 0.019,
-   "stand": 0.019,
-   "mat0": 0.018,
+   "sign": 0.016,
+   "stand": 0.017,
+   "mat0": 0.016,
    "mat1": 0.019,
-   "mat2": 0.018,
-   "mat3": 0.016,
+   "mat2": 0.017,
+   "mat3": 0.018,
    "mat4": 0.017,
-   "mat5": 0.02,
-   "mat6": 0.018,
-   "mat7": 0.016,
-   "mat8": 0.019,
-   "mat9": 0.016,
+   "mat5": 0.021,
+   "mat6": 0.016,
+   "mat7": 0.019,
+   "mat8": 0.016,
+   "mat9": 0.019,
    "mat10": 0.018,
-   "mat11": 0.02,
-   "mat12": 0.02,
-   "mat13": 0.015,
+   "mat11": 0.017,
+   "mat12": 0.019,
+   "mat13": 0.016,
    "mat14": 0.017,
-   "mat15": 0.016
+   "mat15": 0.022
   },
   "records": {
-   "cash": 83580459.18,
-   "banked": 1529,
-   "day": 18,
+   "cash": 88270022.08,
+   "banked": 1550,
+   "day": 17,
    "curve": [
-    5087824.38,
-    11565565.19,
-    17704213.73,
-    25523062.71,
-    32897034.47,
-    41672928.76,
-    50037900.44,
-    58764159.42,
-    66077079.51,
-    73819236.94,
-    80898492.78,
-    81872234.77,
-    82765840.9,
-    83580459.18
+    5153346.83,
+    12441210.53,
+    19016012.77,
+    26811604.19,
+    33918719.21,
+    42829590.69,
+    52707267.39,
+    61889482.86,
+    70744986.42,
+    78459571.11,
+    85486444.48,
+    86499508.02,
+    87417893.56,
+    88270022.08
    ]
   },
   "voiced": [
@@ -160,8 +170,7 @@
    "rogue",
    "tiered",
    "jackpot",
-   "promoday",
-   "stadium",
+   "fleet",
    "rogue2",
    "county",
    "drones",
@@ -180,7 +189,7 @@
   ],
   "mowe": {
    "tame": true,
-   "lost": 2,
+   "lost": 0,
    "encore": true
   },
   "story": [
@@ -191,6 +200,7 @@
    "promo:2",
    "mid:2",
    "promo:3",
+   "mid:3",
    "promo:4",
    "mid:4",
    "promo:5",
@@ -203,26 +213,41 @@
    },
    "orbit": {
     "d": [
-     219,
+     215,
+     217,
+     218,
      220,
      221,
      222,
-     223,
-     224
+     223
     ],
-    "n": 225
+    "n": 224
+   },
+   "tourney": {
+    "seen": 1
    }
+  },
+  "glassCase": {
+   "names": [
+    "Rat0",
+    "Rat1",
+    "Rat2",
+    "Rat3"
+   ],
+   "year": 2026,
+   "from": 18,
+   "lines": []
   },
   "night": {
    "minutes": 40,
-   "fromDay": 14,
-   "day": 19,
+   "fromDay": 13,
+   "day": 18,
    "shifts": 6,
    "venue": 5,
    "title": "Owner",
-   "balls": 8866,
-   "cash": 257152932.51,
-   "knockdowns": 46,
+   "balls": 8682,
+   "cash": 271484005.88,
+   "knockdowns": 61,
    "falls": 0,
    "treasures": 0,
    "rats": [
@@ -230,30 +255,28 @@
      "name": "Rat1",
      "color": "#4c9be8",
      "award": "Fry Lord",
-     "line": "293 served"
+     "line": "285 served"
     },
     {
      "name": "Rat2",
      "color": "#f2c94c",
      "award": "Sweep King",
-     "line": "14 balls picked"
-    },
-    {
-     "name": "Rat3",
-     "color": "#6fcf7c",
-     "award": "Cart Magnet",
-     "line": "26 pings"
+     "line": "17 balls picked"
     },
     {
      "name": "Rat0",
      "color": "#e8604c",
      "award": "Banker of the Night",
-     "line": "81 balls banked"
+     "line": "69 balls banked"
+    },
+    {
+     "name": "Rat3",
+     "color": "#6fcf7c",
+     "award": "Most Horizontal",
+     "line": "2 times flat"
     }
    ]
   },
-  "test": true,
-  "endlessFresh": true
- },
- "note": "Council round 12, 9.1: a true first endless morning (endlessFresh: the epilogue plays, no contract offers, no owners book)."
+  "test": true
+ }
 }

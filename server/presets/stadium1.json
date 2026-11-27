@@ -1,41 +1,43 @@
 {
  "id": "stadium1",
  "label": "The Stadium · day 1",
- "made": "2026-11-26",
+ "made": "2026-11-27",
  "bot": "4P seed 7, morning snap",
  "players": 4,
  "save": {
   "v": 5,
-  "day": 14,
-  "cash": 822952.94,
+  "day": 13,
+  "cash": 581159.44,
   "totals": {
-   "picked": 9651,
-   "deposited": 6806,
-   "cash": 2138410.7600000002,
-   "knockdowns": 602,
-   "helped": 2407,
-   "carted": 1013,
-   "swings": 196,
-   "pings": 6,
-   "runOver": 394,
-   "washed": 488.70000000000005,
-   "scrubbed": 5974,
-   "unwashed": 322,
-   "lostPremium": 25438.489999999998,
-   "reviews": 12,
-   "launched": 12954,
-   "filled": 472,
+   "picked": 7726,
+   "deposited": 5913,
+   "cash": 1920398.34,
+   "knockdowns": 415,
+   "helped": 2113,
+   "carted": 789,
+   "swings": 159,
+   "pings": 9,
+   "runOver": 262,
+   "washed": 413.4,
+   "scrubbed": 5068,
+   "unwashed": 329,
+   "lostPremium": 34526.72,
+   "reviews": 11,
+   "launched": 11719,
+   "filled": 441,
    "spotless": 65.4,
-   "sealCash": 4248.42,
+   "sealCash": 33035.68,
    "served": 197,
-   "fries": 1556,
-   "dogs": 115,
-   "fedCash": 217978.37000000002,
-   "dived": 854,
-   "snags": 377,
-   "targets": 147,
-   "beers": 36,
-   "deckOrders": 36
+   "fries": 1344,
+   "dogs": 112,
+   "fedCash": 216482.6,
+   "dived": 564,
+   "snags": 357,
+   "memberOut": 12,
+   "memberClaimed": 10,
+   "targets": 99,
+   "beers": 49,
+   "deckOrders": 49
   },
   "up": {
    "gear": 3,
@@ -64,58 +66,57 @@
    "keys",
    "trophy",
    "shades",
-   "duck",
-   "boot"
+   "duck"
   ],
-  "commendations": 9,
+  "commendations": 10,
   "reviews": 0,
-  "pondSunk": 0,
+  "pondSunk": 3,
   "fries": 20,
   "venue": 3,
   "venueDay": 0,
-  "outstanding": 713370133,
+  "outstanding": 713371026,
   "pendingReveal": 3,
   "endless": false,
-  "garyDay": 16,
+  "garyDay": 13,
   "fixtures": {
-   "sign": 0.204,
-   "stand": 0.419,
-   "mat0": 0,
-   "mat1": 0,
-   "mat2": 0,
-   "mat3": 0,
-   "mat4": 0,
-   "mat5": 0.396,
-   "mat6": 0.27,
-   "mat7": 0.246,
-   "mat8": 0.192,
-   "mat9": 0.192,
-   "mat10": 0.306,
-   "mat11": 0.306,
-   "mat12": 0.294,
-   "mat13": 0.294,
-   "mat14": 0.282,
-   "mat15": 0.267
+   "sign": 0.011,
+   "stand": 0.206,
+   "mat0": 0.153,
+   "mat1": 0.156,
+   "mat2": 0.114,
+   "mat3": 0.03,
+   "mat4": 0.015,
+   "mat5": 0.201,
+   "mat6": 0.003,
+   "mat7": 0.003,
+   "mat8": 0,
+   "mat9": 0.186,
+   "mat10": 0.138,
+   "mat11": 0,
+   "mat12": 0,
+   "mat13": 0.138,
+   "mat14": 0,
+   "mat15": 0
   },
   "records": {
-   "cash": 847224.1,
-   "banked": 772,
-   "day": 11,
+   "cash": 619168.55,
+   "banked": 637,
+   "day": 10,
    "curve": [
-    11486.39,
-    35372.61,
-    119102.03,
-    160385.36,
-    211039.2,
-    262373.98,
-    313449.86,
-    405189.54,
-    444410.74,
-    481667.61,
-    557854.54,
-    611022.68,
-    725090.78,
-    847224.1
+    7882.86,
+    60419.26,
+    116828.95,
+    158388.27,
+    209332.23,
+    272830.45,
+    347893.38,
+    389473.39,
+    413231.24,
+    477697.21,
+    541597.39,
+    566334.4,
+    600722.8,
+    619168.55
    ]
   },
   "voiced": [
@@ -129,8 +130,7 @@
    "treasure",
    "rogue",
    "tiered",
-   "jackpot",
-   "promoday"
+   "jackpot"
   ],
   "debuts": [
    "glow",
@@ -142,8 +142,9 @@
   ],
   "mowe": {
    "tame": true,
-   "lost": 2,
-   "encore": false
+   "lost": 0,
+   "encore": false,
+   "beat": false
   },
   "story": [
    "cold",
@@ -156,44 +157,47 @@
   "mods": {
    "deck": {
     "last": 1
+   },
+   "tourney": {
+    "seen": 1
    }
   },
   "night": {
-   "minutes": 63,
+   "minutes": 56,
    "fromDay": 5,
-   "day": 13,
-   "shifts": 9,
+   "day": 12,
+   "shifts": 8,
    "venue": 3,
    "title": "Stadium Retrieval Captain",
-   "balls": 4535,
-   "cash": 2126663.06,
-   "knockdowns": 539,
+   "balls": 3642,
+   "cash": 1908650.64,
+   "knockdowns": 352,
    "falls": 0,
-   "treasures": 5,
+   "treasures": 4,
    "rats": [
     {
      "name": "Rat3",
      "color": "#6fcf7c",
-     "award": "Deepest Diver",
-     "line": "837 balls off the bottom"
+     "award": "Most Knockdowns Dealt",
+     "line": "2 Rats flattened"
     },
     {
      "name": "Rat2",
      "color": "#f2c94c",
-     "award": "Most Sprayed",
-     "line": "117 things hosed clean"
+     "award": "Deepest Diver",
+     "line": "38 balls off the bottom"
     },
     {
      "name": "Rat1",
      "color": "#4c9be8",
      "award": "Fry Lord",
-     "line": "128 served"
+     "line": "130 served"
     },
     {
      "name": "Rat0",
      "color": "#e8604c",
-     "award": "Most Knockdowns Dealt",
-     "line": "6 Rats flattened"
+     "award": "Most Sprayed",
+     "line": "3 things hosed clean"
     }
    ]
   },

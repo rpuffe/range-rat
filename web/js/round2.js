@@ -5,7 +5,7 @@
 // main.js hands over a context of the things it owns and calls these hooks.
 
 import * as THREE from 'three';
-import { WASHER_HANDLES, WASHER, atHandle, WASH, VENUE_RULES, money, FIXTURES, SIM, POND, revealCards } from './sim.js';
+import { WASHER_HANDLES, WASHER, atHandle, WASH, VENUE_RULES, money, FIXTURES, SIM, POND, revealCards, BALLS_OUTSTANDING } from './sim.js';
 import { createPA } from './pa.js';
 import { streakLine, rivalLine, rivalWeekLine } from './owner.js';                                         // council round 8 #3: racing yesterday
 import { showPromo, promoPanelHtml, cardHeadline, nextGate } from './promopanel.js';   // council round 10 #1: the goal card (round 7 #10.1: the headline)
@@ -22,7 +22,10 @@ import { sharedConfetti, confettiCount } from './confetti.js';
 import { BANK_SEQ } from './story.js';                                         // council round 11 #4: the note at the huddle
 import { drawNewsreel, NEWSREEL } from './founder.js';                         // council round 11 #7: the jumbotron's newsreel
 import { MAP } from './map.js';                                                 // council round 12 #3c: the Lift's spot
-import { CASE, HUSH, hushWeight } from './caserules.js';                        // council round 12 #3b/#3d: the case, the hush
+import { CASE, HUSH, hushWeight } from './caserules.js';   // council round 12 #3b/#3d: the case, the hush
+import { washerTipOk } from './centrehooks.js';                                // council round 13 #2b: the washer tip's gate
+import { PRI } from './centre.js';
+import { newReveal, revealStep, revealStory as revealStoryOf, cueReady as cueReadyOf } from './revealclock.js';   // council round 13 #7b: one clock
 
 export function setupRound2(ctx) {
   const { scene, camera, $, toast, board, SFX, nameOf, me } = ctx;
@@ -200,7 +203,7 @@ export function setupRound2(ctx) {
         // Council round 11 #4: the end card waits on the finale (the note may hold it); a rejoin into it: at once.
         if (e.phase === 'report' && e.report?.ending) (bank?.done ?? Promise.resolve())
           .then(() => ctx.whenPaIdle?.(END_PA_WAIT)).then(() => showEndCard(e.report));   // council round 12 4c: no PA card under it
-        if (e.phase === 'shift') { endingCard?.remove?.(); endingCard = null; ending.crack(null); bankEnd(); finaleUp = false; }
+        if (e.phase === 'shift') { if (endingCard) ctx.centre?.release('end'); endingCard?.remove?.(); endingCard = null; ending.crack(null); bankEnd(); finaleUp = false; }
         break;
     }
   }
@@ -279,13 +282,9 @@ export function setupRound2(ctx) {
 
   // ---- the venue reveal: a 6 s camera move to the sign and the Board -------------------
   function startReveal(e) {
-    reveal = { t: 0, venue: e.venue, memo: e.memo, title: e.title, flipped: false,
-      from: { pos: camera.position.clone(), quat: camera.quaternion.clone() },
-      // Council round 12 #3c/#3d: the Orbital's reveal ends on Gary in the Lift, the first endless morning's on Gary at
-      // the glass case. shotAt: when the camera starts its move there; endAt: when it starts back (5 s: no shot).
-      // Council round 12 4d (builder 4's hand-off): the Stadium's reveal faces the Board (the newsreel) at once.
-      shot: e.venue === 3 ? 'board' : e.venue === 5 ? 'lift' : e.venue === 6 ? 'case' : null,
-      shotAt: e.venue === 6 ? REVEAL_SHOT.CASE_AT : e.venue === 3 ? 0 : null, endAt: 5 };
+    // Council round 13 #7b: on one clock (revealclock.js): the path runs on wall-clock seconds since this moment.
+    reveal = { ...newReveal(e.venue, now() / 1000), memo: e.memo, title: e.title,
+      from: { pos: camera.position.clone(), quat: camera.quaternion.clone() } };
     SFX.jackpot();
   }
   const REVEAL_POS = new THREE.Vector3(20, 6, 22), REVEAL_LOOK = new THREE.Vector3(18, 2.5, 8);
@@ -293,56 +292,32 @@ export function setupRound2(ctx) {
   // Council round 12 #3c/#3d (builder 3): the reveal's last shot. The Lift: ~15 m off the car on the range's side,
   // looking up at its roof as it climbs (Gary rides it during the beat's card 2). The case: beside the return on the
   // crew's side, Gary and the glass case in one frame. Each holds until its card has played (capped at CAP s).
-  const REVEAL_SHOT = { MOVE: 1.5, CASE_AT: 3, LIFT_WAIT: 14, CAP: 22,
+  const REVEAL_POSE = {
     LIFT_POS: new THREE.Vector3(MAP.LIFT.x + 12, 4, MAP.LIFT.z + 9), LIFT_RISE: 0.6, CASE_OFF: new THREE.Vector3(-5.5, 2.0, -0.6),
     // 4d: the Board (BANK 26, 7.2 at 35°) from the field side, 7 m off at its −x end. A grid search over poses (projected
     // at fov 70, 800 × 600) found this the widest Board (≈ 285 px) with the Stadium jumbotron's three posts (x 20.6,
     // 26, 31.4 at z 14) all outside the middle band (x 250–550); the old pose (20, 6, 22) put its left post at x ≈ 500.
     BOARD_POS: new THREE.Vector3(19, 5.5, 6), BOARD_LOOK: new THREE.Vector3(26, 5.2, 7.2) };
   const shotPos = new THREE.Vector3(), shotLook = new THREE.Vector3(), shotQ = new THREE.Quaternion(), revealPos = new THREE.Vector3();
-  const smooth01 = x => { const u = Math.max(0, Math.min(1, x)); return u * u * (3 - 2 * u); };
   function shotPose(r) {
-    if (r.shot === 'board') { shotPos.copy(REVEAL_SHOT.BOARD_POS); shotLook.copy(REVEAL_SHOT.BOARD_LOOK); }
+    if (r.shot === 'board') { shotPos.copy(REVEAL_POSE.BOARD_POS); shotLook.copy(REVEAL_POSE.BOARD_LOOK); }
     else if (r.shot === 'lift') {
       const carY = venues.parts?.carY ?? 1.5;   // the camera climbs with the car (0.6 m a metre): Gary stays ≥ 50 px tall
-      shotPos.copy(REVEAL_SHOT.LIFT_POS); shotPos.y += REVEAL_SHOT.LIFT_RISE * carY;
+      shotPos.copy(REVEAL_POSE.LIFT_POS); shotPos.y += REVEAL_POSE.LIFT_RISE * carY;
       shotLook.set(MAP.LIFT.x, carY + 2.4, MAP.LIFT.z);   // the car's roof, where Gary stands
     } else {
-      shotPos.set(CASE.x, 0, CASE.z).add(REVEAL_SHOT.CASE_OFF);
+      shotPos.set(CASE.x, 0, CASE.z).add(REVEAL_POSE.CASE_OFF);
       shotLook.set(CASE.x + 0.1, 1.2, CASE.z - 0.95);   // between Gary and the case
     }
     tmpM.lookAt(shotPos, shotLook, camera.up); shotQ.setFromRotationMatrix(tmpM);
   }
-  // The story card's cards drive the shot (storycard.js 'rr-story'): promo:5's first card starts the Lift shot, its
-  // third card (or the beat's end) releases it; the epilogue's second card releases the case shot.
-  function revealStory(d) {
+  const revealStory = d => revealStoryOf(reveal, d);   // round 13 #7b: pure, in revealclock.js
+  function tickReveal() {
     const r = reveal;
-    if (!r?.shot) return;
-    if (r.shot === 'lift' && d.id === 'promo:5') {
-      if (d.phase === 'card' && d.index === 0 && r.shotAt == null) r.shotAt = r.t;
-      if ((d.phase === 'card' && d.index >= 2) || d.phase === 'end') r.endAt = Math.max(r.t, (r.shotAt ?? r.t) + REVEAL_SHOT.MOVE + 1);
-    }
-    // 4d: the Board shot holds while the newsreel card (promo:3's first) is up; the second card releases it.
-    if (r.shot === 'board' && d.id === 'promo:3') r.cardSeen = true;
-    if (r.shot === 'board' && d.id === 'promo:3' && ((d.phase === 'card' && d.index >= 1) || d.phase === 'end')) r.endAt = Math.max(r.t, REVEAL_SHOT.MOVE + 1);
-    if (r.shot === 'case' && d.id === 'epilogue' && ((d.phase === 'card' && d.index >= 1) || d.phase === 'end')) r.endAt = Math.max(r.t, REVEAL_SHOT.CASE_AT + REVEAL_SHOT.MOVE + 3);
-  }
-  function tickReveal(dt) {
-    const r = reveal;
-    r.t += dt;
-    // A shot that is coming holds the reveal past 5 s (capped); a Lift shot whose card never came (seen) ends as before.
-    if (r.shot === 'lift' && r.shotAt == null && r.t >= REVEAL_SHOT.LIFT_WAIT) { r.shot = null; r.endAt = Math.max(5, r.t); }
-    else if (r.shot === 'board' && !r.cardSeen && r.t >= REVEAL_SHOT.LIFT_WAIT) { r.endAt = Math.max(5, r.t); r.cardSeen = true; }   // the beat never came (seen)
-    else if (r.shot && r.endAt === 5) r.endAt = REVEAL_SHOT.CAP;
-    const k = Math.min(1, r.t / 1.2), back = Math.max(0, Math.min(1, (r.t - r.endAt) / 1));
+    const { w, s: sw, done } = revealStep(r, now() / 1000);   // wall-clock: a slow frame jumps, never lags (round 13 #7b)
     tmpM.lookAt(REVEAL_POS, REVEAL_LOOK, camera.up); tmpQ.setFromRotationMatrix(tmpM);
     revealPos.copy(REVEAL_POS);
-    if (r.shot && r.shotAt != null && r.t > r.shotAt) {
-      shotPose(r);
-      const s = smooth01((r.t - r.shotAt) / REVEAL_SHOT.MOVE);
-      tmpQ.slerp(shotQ, s); revealPos.lerp(shotPos, s);
-    }
-    const w = k * (1 - back);
+    if (sw > 0) { shotPose(r); tmpQ.slerp(shotQ, sw); revealPos.lerp(shotPos, sw); }
     camera.position.copy(r.from.pos).lerp(revealPos, w);
     camera.quaternion.copy(r.from.quat).slerp(tmpQ, w);
     if (!r.waterOn && r.t > 1.5) { r.waterOn = true; ctx.terrain?.setVenue(r.venue === 6 ? 5 : r.venue); }   // the water comes back on
@@ -351,7 +326,7 @@ export function setupRound2(ctx) {
       r.memoShown = true;
       if (r.venue !== 6) revealCards(r.venue, r.memo).forEach((text, i) => ctx.showMemo(text, null, i ? 10 : 9));   // round 4: a second card says what is new; venue 6: the PA card says it (playthrough 4 C4)
     }
-    if (r.t >= r.endAt + 1) {
+    if (done) {
       reveal = null;   // council round 12 9.6 (builder 4's hand-off): the late "Day N · venue · you are a…" toast is gone
     }
   }
@@ -426,7 +401,8 @@ export function setupRound2(ctx) {
   function showEndCard(report) {
     const c = crew();
     const players = (report.ledger ?? []).map(l => ({ name: l.name, color: l.color, banked: l.banked, cash: l.cash, knockdowns: l.knockdowns }));
-    endingCard = ending.endCard({ players, ...(report.ending ?? {}) }, () => { endingCard?.remove?.(); endingCard = null; link()?.act({ t: 'start' }); });
+    ctx.centre?.request({ id: 'end', pri: PRI.END, kind: 'END', hold: true });   // round 13 #2a: the end card holds the centre (priority 0)
+    endingCard = ending.endCard({ players, ...(report.ending ?? {}) }, () => { ctx.centre?.release('end'); endingCard?.remove?.(); endingCard = null; link()?.act({ t: 'start' }); });
   }
 
   // ---- per frame ----------------------------------------------------------------------
@@ -448,7 +424,9 @@ export function setupRound2(ctx) {
     else ring.hide();
   }
 
+  let hopperEmptyFor = 0;   // round 13 #2b: shift seconds the washer hopper has sat empty
   function tick(dt, now) {
+    { const c0 = crew(); hopperEmptyFor = c0?.phase === 'shift' && !(c0.washer?.n > 0) ? hopperEmptyFor + dt : 0; }
     lastBucketBanner();
     huddleRing();
     confetti.tick(dt);         // the shared pool: a no-op if something else stepped it this frame
@@ -490,7 +468,7 @@ export function setupRound2(ctx) {
     const shake = ending.tick(dt);
     tickHush();   // council round 12 #3b
     if (shake?.lengthSq() > 0) camera.position.add(shake);
-    if (reveal) tickReveal(dt);
+    if (reveal) tickReveal();
     if (cctv.isOn) {
       if (me.down > 0 || c.phase !== 'shift') cctv.exit();
       else cctv.update(dt, { pad: ctx.pad(), keys: ctx.keys, mouse: { ...mouse }, width: innerWidth, height: innerHeight });
@@ -511,7 +489,11 @@ export function setupRound2(ctx) {
     if (haulOn) return 'Hauling up the bag… ' + Math.min(100, Math.round(haulSecs / 1.5 * 100)) + '%';
     const owed = c.washer?.credit ?? 0, n = c.washer?.n ?? 0;
     // Round 11 (owner: the hopper count "doesn't make a whole lot of sense"): say what the hopper holds, in balls.
-    if (c.up?.washer && c.phase === 'shift') for (const side of ['L', 'R']) if (atHandle(me, side)) return washerPrompt({ cranking: !!cranking, n, owed, btn, pad: ctx.pad(), latched });
+    if (c.up?.washer && c.phase === 'shift') for (const side of ['L', 'R']) if (atHandle(me, side)) {
+      // Council round 13 #2b: the empty-hopper line is a Muni-week tip (centrehooks.js washerTipOk), not a late-venue fixture.
+      if (!n && !cranking && !washerTipOk({ emptyFor: hopperEmptyFor, ballsOut: ctx.balls?.()?.size ?? 0, centreBusy: !!ctx.centreBusy?.(PRI.MEMO), banked: BALLS_OUTSTANDING - (c.outstanding ?? BALLS_OUTSTANDING) })) return null;
+      return washerPrompt({ cranking: !!cranking, n, owed, btn, pad: ctx.pad(), latched });
+    }
     return null;
   }
 
@@ -519,7 +501,7 @@ export function setupRound2(ctx) {
     pa, onEvent, onSnapshot, press, release, unlatch, latched: () => latched, capturing, mouseMove, wheel, toggleCCTV, tick, hudLine, prompt,
     venueParts: venues.parts,   // round 4: what the venue views animate (venues.js parts)
     pumpBegin, pumpEnd, haulBegin, haulEnd, pumpRate: () => (pumpOn ? pumpRateNow : 0.6),
-    get cctvOn() { return cctv.isOn; }, get revealing() { return !!reveal; }, get hushing() { return hushing(); },
+    get cctvOn() { return cctv.isOn; }, get revealing() { return !!reveal; }, cueReady: cue => cueReadyOf(reveal, cue, now() / 1000) /* round 13 #7b: storycard waits on the shot */, get hushing() { return hushing(); },
     setMouseDown(v) { mouse.down = v; if (v) mouse.click = true; },
   };
 }

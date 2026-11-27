@@ -208,3 +208,63 @@ test('review days never write yesterday or the streak', () => {
   assert.equal(crew.phase, 'report');
   assert.equal(crew.records.yesterday, undefined); assert.equal(crew.records.streak, undefined); assert.equal(crew.report.race, undefined);
 });
+
+// ---- council round 13 #4b (builder 2): poach a Site 13 regular --------------------------------------------------------
+import { POACH, poachPrice, poachTarget, rivalBell as rivalBell13, POACH_FEED, HUSTLE_HINT } from '../web/js/owner.js';
+import { Crew as Crew13 } from '../server/crew.mjs';
+import { wordCount as wc13 } from '../web/js/say.js';
+
+test('poach: 25 % of yesterday, endless only, once a day, none without a yesterday', () => {
+  const records = { yesterday: { cash: 60_000_000 } };
+  assert.equal(poachPrice({ endless: true, records, day: 30 }), 15_000_000);
+  assert.equal(poachPrice({ endless: false, records, day: 30 }), null);
+  assert.equal(poachPrice({ endless: true, records: {}, day: 30 }), null, 'endless day 1: no race, no poach');
+  assert.equal(poachPrice({ endless: true, records, day: 30, poachDay: 30 }), null, 'once a day');
+  assert.equal(poachPrice({ endless: true, records, day: 31, poachDay: 30 }), 15_000_000);
+  assert.equal(poachTarget(40_000_000), 38_000_000, '-5 %');
+  assert.ok(wc13(POACH_FEED) <= 8 && wc13(HUSTLE_HINT) <= 8);
+});
+
+test('poach: a poached win counts 2 of the 4 of 7; a poached loss counts nothing', () => {
+  const r0 = { week: 1, wins: 0, days: 0, last: [50], acquired: 0 };
+  assert.equal(rivalBell13(r0, 40, 50, true).rival.wins, POACH.COUNT);
+  assert.equal(rivalBell13(r0, 40, 50, false).rival.wins, 1);
+  assert.equal(rivalBell13(r0, 60, 50, true).rival.wins, 0);
+  assert.equal(rivalBell13(r0, 40, 50, true).result.poached, true);
+  let r = r0;                                          // 2 poached wins = the 4: acquired by day 7
+  for (let d = 0; d < 7; d++) r = rivalBell13(r, 40, d < 2 ? 50 : 30, d < 2).rival;
+  assert.equal(r.acquired, 1);
+});
+
+test('poach in a crew: buy once a day, the target drops 5 %, their bay adds balls, no crew.rng draw', () => {
+  const clock = { t: 1e6 };
+  const crew = new Crew13('PCH', { venue: 5, day: 40, venueDay: 9, endless: true, cash: 1e9, records: { cash: 9e7, yesterday: { cash: 8e7 }, rival: { week: 1, wins: 0, days: 1, last: [8e7, 8e7], acquired: 0 } } }, { seed: 3, now: () => clock.t });
+  const p = crew.join('A'); crew.connect(p); crew.startShift();
+  assert.equal(crew.endless, true);
+  const t0 = crew.rivalT, c0 = crew.cash;
+  assert.equal(crew.buy(p, 'poach'), true);
+  assert.equal(crew.cash, c0 - 2e7);
+  assert.equal(crew.buy(p, 'poach'), false, 'once a day');
+  for (let i = 0; i < 20 * 200; i++) { clock.t += 50; p.seenAt = clock.t; p.movedAt = clock.t; crew.tick(0.05); }
+  assert.ok(t0 > 0); assert.equal(crew.rivalT, poachTarget(t0));
+  assert.ok((crew.stats.poachBalls ?? 0) > 0, 'their regulars hit');
+});
+
+test('poach: the shop reads today\'s price from s.mods.poach (null once bought)', () => {
+  const clock = { t: 1e6 };
+  const crew = new Crew13('PCS', { venue: 5, day: 40, venueDay: 9, endless: true, cash: 1e9, records: { cash: 9e7, yesterday: { cash: 8e7 } } }, { seed: 3, now: () => clock.t });
+  const p = crew.join('A'); crew.connect(p); crew.startShift();
+  assert.equal(crew.snapshot().mods.poach.price, 2e7);
+  crew.buy(p, 'poach');
+  assert.equal(crew.snapshot().mods.poach.price, null);
+});
+
+test('round 13 #4b: the 4th win clinches the week at once (two poached wins by day 2)', () => {
+  let r = { week: 1, wins: 0, days: 0, last: [50], acquired: 0 };
+  const a = rivalBell13(r, 40, 50, true); assert.equal(a.acquired, false); r = a.rival;
+  const b = rivalBell13(r, 40, 50, true); assert.equal(b.acquired, true); assert.equal(b.rival.acquired, 1);
+  assert.equal(b.rival.week, 2); assert.equal(b.rival.days, 0);
+  let c = { week: 1, wins: 0, days: 0, last: [50], acquired: 0 };   // no poach: 3 wins in 7 days is still a lost week
+  for (let d = 0; d < 7; d++) c = rivalBell13(c, 40, d < 3 ? 50 : 30, false).rival;
+  assert.equal(c.acquired, 0); assert.equal(c.week, 2);
+});

@@ -172,30 +172,56 @@ export const BOSS = {
   // The win (council round 12 #5b): the catcher bursts on the spot, every eaten ball a resting MOW-E ball worth ×2
   // within FOUNT_R of the ring (the bell banks leftovers ×1); a gold ball per Rat (at most 5) within GOLD_R of the ring;
   // Corporate's bounty, 10 × BV.
-  PAYX: 2, GOLD: 5, GOLD_R: 6, FOUNT_R: 8, BOUNTY: 10,
+  PAYX: 1.5, GOLD: 5, GOLD_R: 6, FOUNT_R: 8, BOUNTY: 10,   // council round 13 #3d: the fountain ×2 → ×1.5 (BURST_MULT)
+  CATCHER_3P: 24,           // council round 13 #3d: the catcher's cap at 3P+ (4P medians were still 14 % at ×1.5)
+  PROMO_AT: 180 / 420,      // council round 13 #3c: MOW-E 2.0 crashes Promotion Day at T−4:00 (after the ceremony's morning)
+  STANDS_EXIT: { x: -78, z: -70 },   // ...and, lost, drives off through the left stands (it took the bunting)
   LIMP: 6, LIMP_SECS: 8.5, HOME: 5, SINK: 3, AFTER: 30,   // the outros (m/s; the limp speeds up to reach the pond in 8.5 s)
   ENCORE_HP: 1, ENCORE_SPEED: 1.1,
 };
 // The tame pet, at every venue from the morning after the boss. Council round 12 #5d: three passes a shift (20 %, 45 %,
 // 70 %), each to the field's richest spot (a RUN m drive either side of it, gathering ±HALF m, up to CAP a pass), then
 // the nearest return. Plus the whistle: once a shift, Use at the MOW-E post by the return sends a bonus pass now.
-export const TAME = { AT: [0.2, 0.45, 0.7], SPEED: 4, OUT: 7, HOME: 5, HALF: 4, GATHER_X: 1.5, STOP: 2.7, CREEP: 6, BEEP: 1.5,
-  CAP: 25, RUN: 25, BOX: { x0: -60, x1: 60, z0: -180, z1: -10 } };
-export const WHISTLE = { POST: { x: 31.5, z: 1.2 }, R: 2.2 };
+// Council round 13 #5b: two smaller passes (30 %, 65 %) of 12; the whistle is where the pet's value lives.
+export const TAME = { AT: [0.3, 0.65], SPEED: 4, OUT: 7, HOME: 5, HALF: 4, GATHER_X: 1.5, STOP: 2.7, CREEP: 6, BEEP: 1.5,
+  CAP: 12, RUN: 25, BOX: { x0: -60, x1: 60, z0: -180, z1: -10 } };
+// Council round 13 #5a, the whistle on a lanyard: Use at the post takes it (one Rat carries it, like the wand); Use out in
+// the field (MIN_D m or more from the nearest return) blows it, and MOW-E mows a STRIP.W × STRIP.L strip through that spot
+// toward the return, up to CAP balls. Once a shift.
+// Lead's call (round 13): solo, the strip holds CAP_1P (the pet stays <= 8 % of a solo crew's balls); MOW-E sets out from the
+// post (by the return), not the shed, so it can beat a member ball's 30 s clock.
+export const WHISTLE = { POST: { x: 31.5, z: 1.2 }, R: 2.2, CARRY: true, MIN_D: 20, STRIP: { W: 10, L: 30 }, CAP: 30, CAP_1P: 14, MEMBER_AHEAD: 8 };
+export const whistleCap = n => (n | 0) <= 1 ? WHISTLE.CAP_1P : WHISTLE.CAP;
+export const BURST_MULT = BOSS.PAYX;
 
 // The centre lines (each <= 8 words) and the memo's second lines. `btn` is the Use glyph ('Ⓐ', or 'Space').
 export const BOSS_LINES = {
   loose: 'MOW-E is loose! Block it. Hose its back!',
   hunt: 'Now it hunts. Lead it into a cart!',
+  huntSolo: 'Step aside, then hose its back!',   // council round 13 #3e: a crew of 1–2 learns the sidestep
   plug: (btn = 'Ⓐ') => `Pull the plug! Hold ${btn} at its back!`,
   stamp: 'MOW-E TAMED',
+  stamp2: 'MOW-E 2.0 TAMED',                     // #3c: the Promotion Day crash, won
+  lostStamp: 'MOW-E WINS',                       // #3a: the TAMED stamp's twin, red
+  lost: 'MOW-E got away. Rematch tomorrow.',     // #3a: the one line after the loss stamp
+  lostLater: 'MOW-E got away. For now.',         //      ...when tomorrow isn't a Club boss day
+  crash: 'MOW-E heard about the ceremony.',      // #3c: the crash's PA caption (pa.js 'crash')
+  crashLeft: 'MOW-E 2.0 left. It took the bunting.',   // #3c: the crash, lost (promotion still stands)
   prompt: (btn = 'Ⓐ') => `Hold ${btn}: pull the plug`,
   back: 'Get behind it: hose the grille',
   eotm: 'MOW-E is Employee of the Month.',
-  regards: 'MOW-E sends his regards.',
+  regards: 'MOW-E sends his regards. Whistle at the post.',   // #5c
   warranty: "MOW-E's warranty expired. He's yours now.",
   kept: n => `MOW-E kept ${n} balls.`,
-  whistle: (btn = 'Ⓐ') => `${btn}: whistle for MOW-E`,
+  whistle: (btn = 'Ⓐ') => `${btn}: take MOW-E's whistle`,   // #5a: at the post
+  blow: (btn = 'Ⓐ') => `${btn}: whistle MOW-E here`,         // #5a: out in the field, carrying it
+  // #5c, the feed (edge text)
+  took: name => `${name} has the whistle.`,
+  blew: name => `${name} whistled. MOW-E's on his way.`,
+  brought: n => `MOW-E brought ${n} home.`,
+  // #3b, the report's Tomorrow line
+  eve: 'Tomorrow: MOW-E finishes its update.',
+  rematchEve: "Tomorrow: MOW-E's rematch. Wands at the bell.",
 };
 
 const clampN = n => Math.max(1, Math.min(6, Math.floor(Number(n) || 1)));
@@ -207,26 +233,35 @@ export const huntSpeed = n => [4.0, 4.0, 4.2, 4.4, 4.6, 4.8, 5.0][clampN(n)];
 
 // Is today a boss day? 'club' (the fight or its rematch), 'encore' (MOW-E 2.0) or null. st: the save's
 // { tame, lost, encore }. Never in endless, never on Promotion Day (the boss moves to the next eligible day).
+// Council round 13 #3c: a Stadium Promotion Day with the encore unplayed is MOW-E 2.0's crash.
 export function bossDay({ venue, venueDay, endless = false, promo = false, st = null } = {}) {
-  if (!BOSS.ON || endless || promo) return null;
+  if (!BOSS.ON || endless) return null;
   const s = st ?? {};
+  if (promo) return venue === BOSS.STADIUM && venueDay >= BOSS.STADIUM_DAY && !s.encore ? 'encore' : null;   // as the encore: no tame needed (a crew promoted past the Club untamed still meets it)
   if (venue === BOSS.CLUB && venueDay >= BOSS.CLUB_DAY && !s.tame && (s.lost ?? 0) < 2) return 'club';
   if (venue === BOSS.STADIUM && venueDay >= BOSS.STADIUM_DAY && !s.encore) return 'encore';
   return null;
 }
+// When the warn comes (s into the shift): BOSS.AT of it; the crash (Promotion Day) at PROMO_AT, after the ceremony's morning.
+export const bossAt = (shiftSecs, promo = false) => shiftSecs * (promo ? BOSS.PROMO_AT : BOSS.AT);
 // Should the boss start now? (Once a shift: `mower` is today's mower state, if any.)
-export const bossDue = ({ shiftT, shiftSecs, mower = null, ...day }) => !mower && !!bossDay(day) && shiftT >= shiftSecs * BOSS.AT;
+export const bossDue = ({ shiftT, shiftSecs, mower = null, ...day }) => !mower && !!bossDay(day) && shiftT >= bossAt(shiftSecs, !!day.promo);
+// Council round 13 #3c: is today's boss the Promotion Day crash?
+export const isCrash = day => !!day.promo && bossDay(day) === 'encore';
+// Council round 13 #3f: the boss owns the screen from the warn to the stamp (builder 3's centre.js mutes the nags).
+export const bossOwnsScreen = s => bossLive(s);
 
 // The near lanes' serpentine: along -14, back along -24, along -36, back along -24, and round again.
 const WP = (() => { const [a, b, c] = BOSS.LANES, { X0, X1 } = BOSS; return [[X0, a], [X1, a], [X1, b], [X0, b], [X0, c], [X1, c], [X1, b], [X0, b]].map(([x, z]) => ({ x, z })); })();
 export const BOSS_PATH = WP;
 
-export function newBoss({ n = 4, encore = false, lost = 0 } = {}) {
+export function newBoss({ n = 4, encore = false, lost = 0, crash = false } = {}) {
   n = clampN(n);
   const hpMax = Math.max(2, crewHP(n) + (encore ? BOSS.ENCORE_HP : -Math.min(1, lost | 0)));   // the rematch: "it's tired"
   const k = encore ? BOSS.ENCORE_SPEED : 1;
   return {
-    kind: 'boss', encore: !!encore, n, phase: 'warn', t: BOSS.WARN, ph: 0, ft: 0, cap: BOSS.CAP, clock: 0,
+    kind: 'boss', encore: !!encore, crash: !!(encore && crash), lostN: encore ? 0 : lost | 0, n, phase: 'warn', t: BOSS.WARN, ph: 0, ft: 0, cap: BOSS.CAP, clock: 0,
+    catcher: n >= 3 ? BOSS.CATCHER_3P : BOSS.CATCHER,   // council round 13 #3d: 24 at 3P+ (the payout trim)
     hp: hpMax, hpMax, meterSecs: meterSecs(n), speed: BOSS.SPEED * k, hunt: huntSpeed(n) * k, knockR: n === 1 ? BOSS.KNOCK_R_SOLO : BOSS.KNOCK_R,
     x: BOSS.SHED.x, z: BOSS.SHED.z, yaw: Math.atan2(-(WP[0].x - BOSS.SHED.x), -(WP[0].z - BOSS.SHED.z)),
     wp: 0, burst: true, eaten: 0, eatenW: 0, eatT: BOSS.EAT_EVERY, stagger: 0, stall: 0, stallCart: -1, cool: {},
@@ -418,7 +453,7 @@ export function stepBoss(s, dt, ctx = {}) {
     // Round 12 #5b: the pond event (and its PA) is the splash, the moment it reaches the bank.
     if (s.out === 'limp') { if (driveTo(s, pondBank(s), s.limp ?? BOSS.LIMP, dt, 0.4)) { s.out = 'sink'; s.splashT = s.t; out.sunk = true; } }
     else if (s.out === 'sink') { s.moving = false; s.sink = Math.min(1, s.sink + dt / BOSS.SINK); if (s.sink >= 1) { s.out = 'gone'; s.goneT = s.t; } }
-    else if (s.out === 'home' && driveTo(s, BOSS.SHED, BOSS.HOME, dt, 0.8)) { s.out = 'gone'; s.goneT = s.t; out.home = true; }
+    else if (s.out === 'home' && driveTo(s, s.crash ? BOSS.STANDS_EXIT : BOSS.SHED, BOSS.HOME, dt, 0.8)) { s.out = 'gone'; s.goneT = s.t; out.home = true; }   // round 13 #3c: the crash leaves through the stands
     return out;
   }
   // harvest / hunt
@@ -471,7 +506,7 @@ export function stepBoss(s, dt, ctx = {}) {
   // Eat: round 12 #5c, the nearest resting ball within EAT_R, one every EAT_EVERY s (it never banks a backlog).
   // While there's something to eat in reach, the harvest slows to graze (GRAZE): a window to hose it, or block it.
   s.eatT = Math.min(BOSS.EAT_EVERY, (s.eatT ?? BOSS.EAT_EVERY) + dt); s.grazing = false;
-  if (s.eaten < BOSS.CATCHER) {
+  if (s.eaten < (s.catcher ?? BOSS.CATCHER)) {
     const bs = ctx.balls instanceof Map ? ctx.balls.values() : ctx.balls ?? [];
     let best = null, bd = Infinity;
     for (const b of bs) {
@@ -508,17 +543,21 @@ export function bossSnap(s) {
   }
   return { kind: 'boss', encore: s.encore, phase: s.phase, t: s.t, x: s.x, z: s.z, yaw: s.yaw, hp: s.hp, hpMax: s.hpMax, eaten: s.eaten,
     stall: s.stall > 0, hit: s.stagger > 0, open: s.rage <= 0 && s.clock >= (s.allUntil ?? 0), rage: s.rage > 0, target: s.target, plug: s.plug, holders: s.holders, crew: s.crew, ring: s.ring, sink: s.sink, out: s.out,
-    left: Math.max(0, s.cap - s.ft), hits: s.hits, moving: s.moving, final: !!s.final, meters, full: Math.round(full * 100) / 100, yanks: s.yanks ?? 0 };
+    left: Math.max(0, s.cap - s.ft), hits: s.hits, moving: s.moving, final: !!s.final, meters, full: Math.round(full * 100) / 100, yanks: s.yanks ?? 0,
+    crash: !!s.crash, lostN: s.lostN ?? 0, rev: s.phase === 'hunt' && s.rage <= 0 && s.stall <= 0 && s.aimT > 0 && s.aimT <= REV };   // council round 13: the crash, the scoreline, the rev puff
 }
 // Round 12 #5a: the boss morning, from the bell to the warn: the Board's update bar and the near lanes' stripes.
 // shiftT: seconds into the shift. Returns { kind: 'update', pct } until the warn, else null.
-export function updateSnap(day, shiftT, shiftSecs) {
+// Council round 13 #3c: promo (the crash): the bar runs to PROMO_AT and the Board reads PROMOTION DAY · MOW-E 2.0 UPDATE.
+export function updateSnap(day, shiftT, shiftSecs, promo = false) {
   if (!day || !(shiftSecs > 0)) return null;
-  const at = shiftSecs * BOSS.AT;
-  return shiftT < at ? { kind: 'update', pct: Math.max(0, Math.min(1, shiftT / at)) } : null;
+  const at = bossAt(shiftSecs, promo);
+  return shiftT < at ? { kind: 'update', pct: Math.max(0, Math.min(1, shiftT / at)), ...(promo ? { crash: true } : {}) } : null;
 }
 export const updateBoard = u => {
-  const k = Math.max(0, Math.min(1, u?.pct ?? 0)), n = Math.min(4, Math.floor(k * 4 + 0.5));
+  const k = Math.max(0, Math.min(1, u?.pct ?? 0));
+  if (u?.crash) { const n = Math.min(3, Math.floor(k * 3 + 0.5)); return `PROMOTION DAY · MOW-E 2.0 UPDATE ${'▓'.repeat(n)}${'░'.repeat(3 - n)}`; }
+  const n = Math.min(4, Math.floor(k * 4 + 0.5));
   return `MOW-E UPDATE ${'▓'.repeat(n)}${'░'.repeat(4 - n)} ${Math.floor(k * 100)} %`;
 };
 // The Board's banner. The encore's jumbotron is the HP bar.
@@ -531,10 +570,50 @@ export function bossBoard(s) {
     case 'harvest': case 'hunt': return s.encore ? `MOW-E 2.0 VS SITE 12 · ${pips(s.hp, s.hpMax)}` : `MOW-E · ${pips(s.hp, s.hpMax)} · ATE ${s.eaten}`;
     case 'plug': { const n = Math.min(4, Math.floor((s.plug ?? 0) * 4 + 1e-9)); return `PULL! ${'■'.repeat(n)}${'□'.repeat(4 - n)}`; }   // round 12 #1c
     case 'tamed': return after ? `${name} TAMED` : null;
-    case 'fled': return after ? (s.encore ? 'MOW-E 2.0 WINS' : s.final ? 'MOW-E WINS · WARRANTY EXPIRED' : 'MOW-E WINS · REMATCH NEXT CLUB DAY') : null;   // 9.11
+    // 9.11; council round 13 #3a: after the loss the scoreline stays up until the rematch's morning.
+    case 'fled': return after ? (s.encore ? 'MOW-E 2.0 WINS' : s.final ? 'MOW-E WINS · WARRANTY EXPIRED' : 'MOW-E WINS · REMATCH NEXT CLUB DAY') : s.encore || s.final ? null : scoreBoard(s.lostN ?? 1);
     default: return null;
   }
 }
+// Council round 13 #3a: the Board's scoreline after a loss ("MOW-E 1 · CREW 0").
+export const scoreBoard = lost => `MOW-E ${Math.max(1, lost | 0)} · CREW 0`;
+
+// ---- council round 13 #3a/#3b: the loss path, told -----------------------------------------------------------------
+// Will tomorrow be the rematch? A loss that isn't the second (final), not the encore, and a card that can't be signed or
+// turn into Promotion Day by tomorrow (rows: goals.js rowsOf; "near": every goal but the reviews and the live fee done,
+// and the reviews row at most 2 short; then the line hedges with "For now", which is never false).
+export function promoNear(rows) {
+  if (!rows?.length) return false;
+  const r = rows.find(x => x.kind === 'reviews');
+  if (r && !r.done && r.need - r.have > 2) return false;
+  return rows.every(x => x.done || x === r || (x.kind === 'fee' && !(x.need > 0 && x.have < x.need * 0.6)));
+}
+export const rematchNext = ({ encore = false, final = false, rows = null } = {}) => !encore && !final && !promoNear(rows);
+// The one centre line after the loss stamp.
+export const lostLine = ({ encore = false, crash = false, rematch = false } = {}) => encore && crash ? BOSS_LINES.crashLeft : rematch ? BOSS_LINES.lost : BOSS_LINES.lostLater;
+// The stamp: won or lost, the Club fight or MOW-E 2.0.
+export const stampText = ({ won = true, encore = false } = {}) => won ? (encore ? BOSS_LINES.stamp2 : BOSS_LINES.stamp) : encore ? 'MOW-E 2.0 WINS' : BOSS_LINES.lostStamp;
+// The report's MOW-E row (above the goals), from endShift's report.mowe: { won, n, gold } or { won: false, kept, rematch }.
+export function moweRow(r) {
+  if (!r) return null;
+  const name = r.encore ? 'MOW-E 2.0' : 'MOW-E';
+  if (r.won) return `${name}: tamed · ${r.n ?? 0} balls · ${r.gold ?? 0} gold`;
+  return `${name}: got away · kept ${r.kept ?? 0} balls · ${r.encore ? 'took the bunting' : r.rematch ? 'rematch tomorrow' : r.final ? 'warranty expired' : 'for now'}`;
+}
+// #3b: the report's Tomorrow line for MOW-E, ahead of Gary's: the boss eve and the rematch eve. next: bossDay() for
+// tomorrow (its venueDay + 1, promo false: a Promotion Day's line replaces this one at the bell); st: the save's mowe.
+export const moweEve = (next, st) => next === 'club' ? ((st?.lost ?? 0) > 0 ? BOSS_LINES.rematchEve : BOSS_LINES.eve) : null;
+
+// ---- council round 13 #3e: teach the sidestep -----------------------------------------------------------------------
+// Which way to dodge: perpendicular to its heading, toward the side the Rat is already on (+1: its right, i.e. the
+// direction (-fwd.z, fwd.x)... see sidestep()). Returns the world-space unit vector to step along.
+export function sidestep(s, p) {
+  const f = fwd(s), px = -f.z, pz = f.x;   // a perpendicular to the heading
+  const k = px * (p.x - s.x) + pz * (p.z - s.z) >= 0 ? 1 : -1;
+  return { x: px * k, z: pz * k };
+}
+// The re-aim's tell: the rev puff comes REV s before each 3 s re-aim in the hunt.
+export const REV = 0.5;
 
 // ---- the tame pet ---------------------------------------------------------------------------------------------------
 // Which tame pass is due now (0 or 1), or -1. k: the passes already made this shift.
@@ -561,6 +640,25 @@ export function newTame(balls, k = 0, { bonus = false } = {}) {
   const r = tameRun(balls);
   return { kind: 'tame', k, bonus, phase: 'out', lane: r.z, x0: r.x0, x1: r.x1, spot: r.spot, x: BOSS.SHED.x, z: BOSS.SHED.z, yaw: -Math.PI / 2, load: 0, loadW: 0, blocked: false, blockT: 0, beepT: 0, moving: false };
 }
+// Council round 13 #5a: the whistle's strip, STRIP.L long through `at` (the whistler, server-positioned) toward `ret` (the
+// nearest return), STRIP.W wide: a = the far end (MOW-E drives there first), b = the end nearer the return.
+export function whistleStrip(at, ret) {
+  const dx = ret.x - at.x, dz = ret.z - at.z, d = Math.hypot(dx, dz) || 1, ux = dx / d, uz = dz / d, h = WHISTLE.STRIP.L / 2;
+  return { at: { x: at.x, z: at.z }, a: { x: at.x - ux * h, z: at.z - uz * h }, b: { x: at.x + ux * h, z: at.z + uz * h } };
+}
+// Is (x, z) inside the strip (for a test, the bots and builder 2's member balls)?
+export function inStrip(st, p) {
+  const L = Math.hypot(st.b.x - st.a.x, st.b.z - st.a.z) || 1, ux = (st.b.x - st.a.x) / L, uz = (st.b.z - st.a.z) / L;
+  const dx = p.x - st.a.x, dz = p.z - st.a.z, al = dx * ux + dz * uz;
+  return al >= -TAME.GATHER_X && al <= L + TAME.GATHER_X && Math.abs(dx * uz - dz * ux) <= WHISTLE.STRIP.W / 2;
+}
+// May the carrier blow here? MIN_D m or more from the nearest return (ret).
+export const canBlow = (p, ret) => !!p && !!ret && Math.hypot(p.x - ret.x, p.z - ret.z) >= WHISTLE.MIN_D;
+export function newWhistlePass(at, ret, k = 0, n = 4) {
+  const strip = whistleStrip(at, ret);
+  return { kind: 'tame', k, bonus: true, whistle: true, strip, cap: whistleCap(n), phase: 'out', lane: strip.at.z, x0: Math.min(strip.a.x, strip.b.x), x1: Math.max(strip.a.x, strip.b.x),
+    spot: { x: at.x, z: at.z, n: 0 }, x: WHISTLE.POST.x, z: WHISTLE.POST.z, yaw: Math.PI, load: 0, loadW: 0, blocked: false, blockT: 0, beepT: 0, moving: false };
+}
 // One tick of a pass: out of the shed to the lane, along it (gathering every resting ball within ±3 m as it passes),
 // to the nearest owned return (bank them), back to the shed. It never knocks anyone down: it stops short of a Rat
 // or a helper and beeps (after TAME.CREEP s it creeps on past, so a Rat standing still can't park it for ever).
@@ -575,7 +673,28 @@ export function stepTame(s, dt, ctx = {}) {
   if (s.blocked) { s.moving = false; if ((s.beepT -= dt) <= 0) { s.beepT = TAME.BEEP; out.beep = true; } return out; }
   s.beepT = 0;
   const X0 = s.x0 ?? MOWER.X0, X1 = s.x1 ?? MOWER.X1;
-  if (s.phase === 'out') { if (driveTo(s, { x: X0, z: s.lane }, TAME.OUT, dt)) { s.phase = 'mow'; s.yaw = -Math.PI / 2; } }
+  const st = s.strip;   // council round 13 #5a: the whistle's strip, A (the far end) → B (toward the return)
+  if (st && s.phase === 'out') { if (driveTo(s, st.a, TAME.OUT, dt)) s.phase = 'mow'; }
+  else if (st && s.phase === 'mow') {
+    const arrived = driveTo(s, st.b, TAME.SPEED, dt, 0.4);
+    const L = Math.hypot(st.b.x - st.a.x, st.b.z - st.a.z) || 1, ux = (st.b.x - st.a.x) / L, uz = (st.b.z - st.a.z) / L;
+    const prog = (s.x - st.a.x) * ux + (s.z - st.a.z) * uz + TAME.GATHER_X;
+    const weigh = ctx.weigh ?? (() => 1), cap = s.cap ?? WHISTLE.CAP;
+    const bs = ctx.balls instanceof Map ? ctx.balls.values() : ctx.balls ?? [];
+    for (const b of bs) {
+      if (s.load >= cap) break;
+      const dx = b.x - st.a.x, dz = b.z - st.a.z, al = dx * ux + dz * uz;
+      if (al < -TAME.GATHER_X || Math.abs(dx * uz - dz * ux) > WHISTLE.STRIP.W / 2) continue;
+      // Builder 2's member ball: fetched as his (crew.mods.signal) once the mowing is within MEMBER_AHEAD m of it (the
+      // whistler stands on it, and MOW-E stops short of a Rat: the strip covering it is what counts).
+      if (b.member != null) { if (al <= prog + WHISTLE.MEMBER_AHEAD && !b.sunk && !b.carried && !(s.members ??= []).includes(b.id)) { s.members.push(b.id); (out.members ??= []).push(b.id); } continue; }
+      if (al > prog) continue;
+      if (!eatable(b)) continue;
+      out.gathered.push(b.id); s.load++; s.loadW += weigh(b);
+    }
+    if (arrived || s.load >= cap) s.phase = 'home';
+  }
+  else if (s.phase === 'out') { if (driveTo(s, { x: X0, z: s.lane }, TAME.OUT, dt)) { s.phase = 'mow'; s.yaw = -Math.PI / 2; } }
   else if (s.phase === 'mow') {
     driveTo(s, { x: X1, z: s.lane }, TAME.SPEED, dt);
     const weigh = ctx.weigh ?? (() => 1);

@@ -5,6 +5,7 @@
 import { DECK, newDeck, stepDeck, applyServe, afterIncident, paysTab, tabFor, fillOrder, fineFor, landingSpot, hitByFall,
   pourAhead, coldFill } from '../../web/js/deck.js';
 import { UPPER, fellOff } from '../../web/js/customers.js';
+import { LANDMARK, hasLandmark, tapPours } from '../../web/js/landmarks.js';   // council round 13 #4 (builder 2): the Tap Wall
 
 // Council round 10 #3: the drinkers are the upper bays' customers; only the bays in play order and drink.
 const seatsOf = crew => { const s = crew.upperSeats?.(); return s?.length ? s : undefined; };
@@ -45,7 +46,7 @@ export default {
   tick(crew, st, dt) {
     if (!crew.working()) return;
     const r = stepDeck(st.deck, dt, seatsOf(crew));
-    if (r.order) { crew.events.push({ t: 'deckOrder', seat: r.raised.seat, ...(r.raised.round ? { round: true } : {}) }); crew.dirty = true; }
+    if (r.order) { crew.events.push({ t: 'deckOrder', seat: r.raised.seat, ...(r.raised.round ? { round: true } : {}) }); crew.dirty = true; tapWall(crew, st, r.raised); }
     if (r.expired || r.sobered || r.warm) crew.dirty = true;
     if (r.warm) crew.events.push({ t: 'deckWarm', n: r.warm });
     // Round 11: a cold mug on the bar fills an open order at once (credited to whoever poured it).
@@ -74,6 +75,20 @@ export default {
     queue: st.deck.queue?.length ?? 0, cold: st.deck.cold?.length ?? 0 }),
   toSave: (crew, st) => ({ last: st.last }),
 };
+
+// Council round 13 #4: the dimpl Tap Wall (landmark tier 2). Every third order the deck places pours itself: it's paid as
+// a filled order (10 x BV, a round 25 x BV) and closed at once. No drink is added (the wall pours, the lounger doesn't get
+// a second one), so the cook can leave the deck for one order in three.
+function tapWall(crew, st, o) {
+  const d = st.deck;
+  if (!o || !hasLandmark(crew.up, LANDMARK.TAP) || !tapPours(d.norders)) return;
+  if (d.order === o) d.order = d.queue?.length ? d.queue.shift() : null;
+  else { const i = d.queue?.indexOf(o) ?? -1; if (i < 0) return; d.queue.splice(i, 1); }
+  const tab = crew.payCash(tabFor(crew.valueNow().bv, o), null);
+  crew.stats.tapPours = (crew.stats.tapPours ?? 0) + 1;
+  crew.stats.deckOrders = (crew.stats.deckOrders ?? 0) + 1;
+  crew.events.push({ t: 'deckTab', by: null, n: tab, seat: o.seat, order: true, tap: true, ...(o.round ? { round: true } : {}) });
+}
 
 // A paying beer lands: the tab (an order 10 x BV, a round 25 x BV, unordered 5 x BV), the stats, the drink, the event,
 // and a fall if that was one too many. p: the pourer (null if they've left). cold: it came off the bar (round 11).

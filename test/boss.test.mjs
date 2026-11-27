@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BOSS, TAME, BOSS_LINES, crewHP, huntSpeed, bossDay, bossDue, newBoss, stepBoss, hoseBoss, behind, ringOf, inRing,
   bossPayout, bossBoard, bossSnap, bossLive, richest, tameDue, newTame, stepTame, tameBoard, moweSnap, moweBoard, cleanMowe, eatable, MOWER,
-  meterSecs, coolLeft, updateSnap, updateBoard, WHISTLE, atPost, whistleOpen, tameRun } from '../web/js/mowe.js';
+  meterSecs, coolLeft, updateSnap, updateBoard, WHISTLE, atPost, whistleOpen, tameRun,
+  whistleStrip, inStrip, canBlow, newWhistlePass, bossAt, isCrash, bossOwnsScreen, rematchNext, promoNear, lostLine, stampText, moweRow, moweEve, sidestep, scoreBoard, BURST_MULT } from '../web/js/mowe.js';
 import { MAP } from '../web/js/map.js';
 import { WASH } from '../web/js/sim.js';
 import { PA_LINES } from '../web/js/pa.js';
@@ -13,6 +14,7 @@ import { bossSlip } from '../web/js/garyvisit.js';
 import { AWARDS, NIGHT_KEYS, awardsFor } from '../web/js/awards.js';
 import { moweEngineParams, bossTempo, MOWE_ENGINE } from '../web/js/sfx.js';
 import { Crew } from '../server/crew.mjs';
+import { midDue } from '../web/js/story.js';   // round 13 #3c
 
 const step = (s, secs, ctx = {}, dt = 0.05) => { const outs = []; for (let i = 0; i < Math.round(secs / dt); i++) outs.push(stepBoss(s, dt, ctx)); return outs; };
 const fight = (n = 4, o = {}) => { const s = newBoss({ n, ...o }); step(s, BOSS.WARN + 0.01); assert.equal(s.phase, 'harvest'); return s; };
@@ -302,7 +304,7 @@ test('round 12 #5b: the catcher bursts at the ring (MOW-E balls ×2 within 8 m, 
 });
 
 test('a win pays the bounty and a commendation; a loss loses the catcher; two losses tame him', () => {
-  assert.deepEqual(bossPayout({ eaten: 30, eatenW: 33, n: 4 }), { n: 60, w: 66, gold: 4, bounty: BOSS.BOUNTY });
+  assert.deepEqual(bossPayout({ eaten: 30, eatenW: 33, n: 4 }), { n: 45, w: 49.5, gold: 4, bounty: BOSS.BOUNTY }, 'round 13 #3d: ×1.5');
   assert.equal(bossPayout({ eaten: 0, eatenW: 0, n: 9 }).gold, BOSS.GOLD);
   const clock = { t: 1e6 };
   const crew = new Crew('BOSS', { venue: 1, day: 7, venueDay: 2, up: { cart: 1, wand: 1 } }, { shiftSecs: 420, seed: 3, now: () => clock.t });
@@ -350,12 +352,12 @@ test('the bell mid-fight is a loss (never stuck), and a fight on a short shift e
   assert.ok(crew.mower.phase === 'fled');
 });
 
-test('round 12 #5d, the tame pass: three a shift (20 / 45 / 70 %), to the richest spot, ±4 m, at most 25, banks at a return, never knocks', () => {
-  assert.equal(tameDue({ venue: 2, tame: true, shiftT: 83, shiftSecs: 420 }), -1);
-  assert.equal(tameDue({ venue: 2, tame: true, shiftT: 84, shiftSecs: 420 }), 0);
-  assert.equal(tameDue({ venue: 2, tame: true, shiftT: 189, shiftSecs: 420, k: 1 }), 1);
-  assert.equal(tameDue({ venue: 2, tame: true, shiftT: 294, shiftSecs: 420, k: 2 }), 2);
-  assert.equal(tameDue({ venue: 2, tame: true, shiftT: 400, shiftSecs: 420, k: 3 }), -1);
+test('round 13 #5b, the tame pass: two a shift (30 / 65 %), to the richest spot, ±4 m, at most 12, banks at a return, never knocks', () => {
+  assert.equal(tameDue({ venue: 2, tame: true, shiftT: 125, shiftSecs: 420 }), -1);
+  assert.equal(tameDue({ venue: 2, tame: true, shiftT: 126, shiftSecs: 420 }), 0);
+  assert.equal(tameDue({ venue: 2, tame: true, shiftT: 273, shiftSecs: 420, k: 1 }), 1);
+  assert.equal(tameDue({ venue: 2, tame: true, shiftT: 400, shiftSecs: 420, k: 2 }), -1, 'two passes');
+  assert.equal(TAME.CAP, 12);
   assert.equal(tameDue({ venue: 2, tame: false, shiftT: 400, shiftSecs: 420 }), -1, 'untamed: no pet');
   assert.equal(tameDue({ venue: 2, tame: true, endless: true, shiftT: 400, shiftSecs: 420 }), -1);
   // it seeks the richest spot, not the old six lanes; and keeps its drive out of the pond
@@ -400,15 +402,50 @@ test('round 12 #5d, the whistle: once a shift at the MOW-E post, a bonus pass no
   for (const m of crew.mats) m.next = 1e9;
   assert.equal(crew.whistleState(), 1);
   Object.assign(p, { x: 0, z: -20 });
-  assert.equal(crew.moweWhistle(p), false, 'only at the post');
+  assert.equal(crew.moweWhistle(p), false, 'only taken at the post');
+  // round 13 #5a: take it at the post (state 3, carried), then blow it out in the field
   Object.assign(p, WHISTLE.POST);
   crew.input(p, { a: [{ t: 'whistle' }] });
-  assert.equal(crew.mower?.kind, 'tame'); assert.ok(crew.mower.bonus); assert.equal(crew.whistleState(), 2);
-  assert.ok(crew.events.some(e => e.t === 'moweWhistle'));
+  assert.equal(crew.whistleState(), 3); assert.equal(crew.whistleCarrier(), p.id); assert.equal(crew.mower, null, 'taking it sends nobody');
+  assert.ok(crew.events.some(e => e.t === 'moweWhistle' && e.take));
+  const q = crew.join('B'); crew.connect(q); Object.assign(q, { x: 0, z: -60 });
+  assert.equal(crew.moweWhistle(q), false, 'one Rat holds it');
+  Object.assign(p, { x: 27, z: -12 });   // ~14 m from the return
+  assert.equal(crew.moweWhistle(p), false, 'no blow within 20 m of the return');
+  Object.assign(p, { x: 10, z: -40 });
+  crew.input(p, { a: [{ t: 'whistle', x: 999, z: 999 }] });   // the client's x/z is ignored: the server's own position
+  const m = crew.mower;
+  assert.equal(m?.kind, 'tame'); assert.ok(m.bonus && m.whistle); assert.equal(crew.whistleState(), 2);
+  assert.deepEqual(m.strip.at, { x: 10, z: -40 }, 'the whistle is server-positioned');
+  assert.ok(crew.events.some(e => e.t === 'moweWhistle' && e.blow));
   assert.equal(crew.moweWhistle(p), false, 'once a shift');
+  Object.assign(p, WHISTLE.POST); assert.equal(crew.moweWhistle(p), false, 'once a shift (not back on the post to take)');
   // the bonus pass doesn't use up the first scheduled one
-  for (let i = 0; i < 200 * 20 && crew.shiftT < 100; i++) { clock.t += 50; crew.tick(0.05); crew.events = []; }
-  assert.ok(crew.mower.kind === 'tame' && !crew.mower.bonus && crew.mower.k === 0, 'the 20 % pass still comes');
+  for (let i = 0; i < 200 * 20 && crew.shiftT < 140; i++) { clock.t += 50; crew.tick(0.05); crew.events = []; }
+  assert.ok(crew.mower.kind === 'tame' && !crew.mower.bonus && crew.mower.k === 0, 'the 30 % pass still comes');
+});
+
+test('round 13 #5a: the whistle strip: 10 m wide, 30 m long through the spot toward the return, at most 30', () => {
+  const ret = { x: 27, z: 1.8 }, at = { x: 10, z: -60 };
+  const st = whistleStrip(at, ret);
+  assert.ok(Math.abs(Math.hypot(st.b.x - st.a.x, st.b.z - st.a.z) - WHISTLE.STRIP.L) < 1e-9, '30 m long');
+  assert.ok(Math.hypot(st.b.x - ret.x, st.b.z - ret.z) < Math.hypot(st.a.x - ret.x, st.a.z - ret.z), 'b is the end toward the return');
+  assert.ok(Math.abs((st.a.x + st.b.x) / 2 - at.x) < 1e-9 && Math.abs((st.a.z + st.b.z) / 2 - at.z) < 1e-9, 'through the spot');
+  assert.ok(inStrip(st, at) && !inStrip(st, { x: at.x + 8, z: at.z }), '±5 m wide');
+  assert.ok(canBlow({ x: 10, z: -20 }, ret) && !canBlow({ x: 20, z: -10 }, ret), '20 m from the return');
+  // 50 balls along the strip, 6 just outside it: the pass takes 30, all inside
+  const L = 30, ux = (st.b.x - st.a.x) / L, uz = (st.b.z - st.a.z) / L;
+  const balls = Array.from({ length: 50 }, (_, i) => ({ id: i, x: st.a.x + ux * (i * 0.6) + uz * ((i % 5) - 2), z: st.a.z + uz * (i * 0.6) - ux * ((i % 5) - 2), rest: true, kind: 'range' }));
+  for (let i = 0; i < 6; i++) balls.push({ id: 100 + i, x: at.x - uz * 7, z: at.z + ux * 7 + i * 0.1, rest: true, kind: 'range' });
+  const s = newWhistlePass(at, ret);
+  let got = [], bank = null;
+  for (let i = 0; i < 4000 && s.phase !== 'done'; i++) {
+    const o = stepTame(s, 0.05, { balls: balls.filter(b => !b.gone), returnAt: () => ret });
+    for (const id of o.gathered) { balls.find(b => b.id === id).gone = true; got.push(id); }
+    if (o.bank) bank = o.bank;
+  }
+  assert.equal(s.phase, 'done'); assert.equal(got.length, WHISTLE.CAP); assert.ok(got.every(id => id < 100), 'only inside the strip');
+  assert.equal(bank.n, WHISTLE.CAP);
 });
 
 test('in a crew: a tamed MOW-E makes its passes and banks helper balls; no boss and no pet on an untamed later venue', () => {
@@ -421,7 +458,7 @@ test('in a crew: a tamed MOW-E makes its passes and banks helper balls; no boss 
   crew.shiftT = 84;
   let banked = 0;
   for (let i = 0; i < 120 * 20; i++) { clock.t += 50; crew.tick(0.05); for (const e of crew.events) if (e.t === 'moweBank') banked += e.n; crew.events = []; }
-  assert.equal(banked, 20);
+  assert.equal(banked, TAME.CAP, 'round 13 #5b: one pass of 12 by T−1:36');
   const later = new Crew('UNT', { venue: 2, day: 12, venueDay: 3 }, { shiftSecs: 420, seed: 5, now: () => clock.t });
   const q = later.join('A'); later.connect(q);
   later.startShift(); later.shiftT = 300;
@@ -518,4 +555,150 @@ test('9.12: MOW-E smoke is a soft round puff (its own pool), confetti stays pape
   const SFX = await import('../web/js/sfx.js');
   for (const k of ['organ', 'chant', 'creak', 'whistle', 'sputter']) assert.equal(typeof SFX[k], 'function', k);
   SFX.organ(); SFX.chant();   // no audio context in node: a silent no-op
+});
+
+// ---- council round 13, builder 1: the loss path and report, MOW-E 2.0 crashes Promotion Day, the payout trim, the sidestep
+test('round 13 #3a: a loss fires the red stamp, then one line; "Rematch tomorrow" is true for tomorrow\'s bossDay', () => {
+  const clock = { t: 1e6 };
+  const crew = new Crew('LOSS', { venue: 1, day: 7, venueDay: 2 }, { shiftSecs: 420, seed: 3, now: () => clock.t });
+  const p = crew.join('A'); crew.connect(p);
+  crew.startShift(); crew.shiftT = 126; crew.tick(0.05);
+  crew.mower.eaten = 26; crew.events = [];
+  crew.moweLose();
+  const e = crew.events.find(x => x.t === 'mower' && x.phase === 'fled');
+  assert.ok(e.rematch, 'the card is far from done: the rematch is tomorrow');
+  assert.equal(e.line, BOSS_LINES.lost);
+  assert.equal(stampText({ won: false }), 'MOW-E WINS'); assert.equal(stampText({ won: true, encore: true }), 'MOW-E 2.0 TAMED');
+  assert.equal(bossDay({ venue: 1, venueDay: crew.venueDay + 1, st: crew.moweSt }), 'club', 'tomorrow really is the rematch');
+  // the Board: the scoreline once the stamp's banner has had its 30 s
+  const m = crew.mower; m.goneT = 0; m.t = BOSS.AFTER + 1;
+  assert.equal(bossBoard(m), 'MOW-E 1 · CREW 0'); assert.equal(scoreBoard(1), 'MOW-E 1 · CREW 0');
+  // the report's row and the Tomorrow line
+  crew.endShift();
+  const r = crew.report;
+  assert.deepEqual({ won: r.mowe.won, kept: r.mowe.kept, rematch: r.mowe.rematch }, { won: false, kept: 26, rematch: true });
+  assert.equal(moweRow(r.mowe), 'MOW-E: got away · kept 26 balls · rematch tomorrow');
+  if (!crew.promoDay) assert.equal(r.tomorrow, BOSS_LINES.rematchEve);
+  assert.equal(moweRow({ won: true, n: 18, gold: 4 }), 'MOW-E: tamed · 18 balls · 4 gold');
+  // the hedge: a card that could be signed by tomorrow, or the second loss, says "For now"
+  assert.equal(rematchNext({ final: true }), false); assert.equal(rematchNext({ encore: true }), false);
+  const near = [{ kind: 'reviews', need: 3, have: 2, done: false }, { kind: 'fee', need: 100, have: 80, done: false }, { kind: 'count', done: true }];
+  assert.ok(promoNear(near)); assert.equal(rematchNext({ rows: near }), false);
+  assert.ok(!promoNear([{ kind: 'reviews', need: 3, have: 0, done: false }, { kind: 'fee', need: 100, have: 10 }]));
+  assert.equal(lostLine({ rematch: false }), BOSS_LINES.lostLater); assert.equal(lostLine({ encore: true, crash: true }), BOSS_LINES.crashLeft);
+});
+
+test('round 13 #3a: the bell beating the fight still writes the report row', () => {
+  const clock = { t: 1e6 };
+  const crew = new Crew('BELL', { venue: 1, day: 7, venueDay: 2 }, { shiftSecs: 420, seed: 3, now: () => clock.t });
+  crew.join('A'); crew.startShift(); crew.shiftT = 126; crew.tick(0.05);
+  assert.equal(crew.mower?.kind, 'boss');
+  crew.endShift();
+  assert.equal(crew.report.mowe?.won, false); assert.equal(crew.moweSt.lost, 1);
+});
+
+test('round 13 #3b: tomorrowText says MOW-E on the boss eve and the rematch eve', () => {
+  assert.equal(moweEve(bossDay({ venue: 1, venueDay: 3, st: { tame: false, lost: 0 } }), { lost: 0 }), BOSS_LINES.eve);
+  assert.equal(moweEve(bossDay({ venue: 1, venueDay: 4, st: { tame: false, lost: 1 } }), { lost: 1 }), BOSS_LINES.rematchEve);
+  assert.equal(moweEve(bossDay({ venue: 1, venueDay: 4, st: { tame: true } }), { tame: true }), null);
+  // in a crew: the Club day-2 bell
+  const clock = { t: 1e6 };
+  const crew = new Crew('EVE', { venue: 1, day: 6, venueDay: 1 }, { shiftSecs: 420, seed: 3, now: () => clock.t });
+  crew.join('A'); crew.startShift();
+  assert.equal(crew.venueDay, 2); assert.equal(crew.bossToday(), null);
+  crew.endShift();
+  assert.equal(crew.report.tomorrow, BOSS_LINES.eve);
+});
+
+test('round 13 #3c: MOW-E 2.0 crashes a Stadium Promotion Day: encore, warns at 180 s, a loss still promotes and sets encore', () => {
+  const st = { tame: true, encore: false };
+  assert.equal(bossDay({ venue: 3, venueDay: 2, promo: true, st }), 'encore');
+  assert.equal(bossDay({ venue: 3, venueDay: 2, promo: true, st: { ...st, encore: true } }), null, 'one encore');
+  assert.equal(bossDay({ venue: 3, venueDay: 2, promo: true, st: { tame: false } }), 'encore', 'as the encore: an untamed crew meets it too');
+  assert.equal(bossDay({ venue: 1, venueDay: 3, promo: true, st: { tame: false } }), null, 'the Club still skips Promotion Day');
+  assert.ok(isCrash({ venue: 3, venueDay: 2, promo: true, st }));
+  assert.equal(Math.round(bossAt(420, true)), 180); assert.equal(Math.round(bossAt(420)), 126);
+  assert.ok(!bossDue({ venue: 3, venueDay: 2, promo: true, st, shiftT: 179, shiftSecs: 420 }) && bossDue({ venue: 3, venueDay: 2, promo: true, st, shiftT: 180, shiftSecs: 420 }));
+  assert.match(updateBoard(updateSnap('encore', 90, 420, true)), /^PROMOTION DAY · MOW-E 2\.0 UPDATE [▓░]{3}$/);
+  assert.equal(PA_LINES.crash.caption, BOSS_LINES.crash);
+  const clock = { t: 1e6 };
+  const crew = new Crew('CRASH', { venue: 3, day: 21, venueDay: 1, promoDay: 21, mowe: { tame: true } }, { shiftSecs: 420, seed: 3, now: () => clock.t });
+  const p = crew.join('A'); crew.connect(p);
+  crew.startShift();
+  assert.equal(crew.day, 21); assert.equal(crew.bossToday(), 'encore');
+  crew.shiftT = 178; crew.tick(0.05); assert.notEqual(crew.mower?.kind, 'boss', 'not before 180 s');
+  crew.shiftT = 180; crew.events = []; crew.tick(0.05);
+  assert.equal(crew.mower?.kind, 'boss'); assert.ok(crew.mower.crash && crew.mower.encore);
+  assert.ok(crew.events.some(e => e.t === 'pa' && e.id === 'crash'));
+  crew.events = []; crew.moweLose();
+  const e = crew.events.find(x => x.t === 'mower' && x.phase === 'fled');
+  assert.equal(e.line, BOSS_LINES.crashLeft); assert.equal(crew.moweSt.encore, true, 'encore played either way');
+  assert.equal(bossDay({ venue: 3, venueDay: 2, promo: true, st: crew.moweSt }), null);
+  assert.equal(crew.promoDay, crew.day, 'a loss doesn\'t touch Promotion Day: the bell still promotes');
+});
+
+test('round 13 #3c: the crash morning plays Gary\'s Stadium mid beat', () => {
+  assert.equal(midDue({ venue: 3, venueDay: 2, promoDay: true, boss: true }), 'mid:3');
+  assert.equal(midDue({ venue: 3, venueDay: 2, promoDay: true, boss: false }), null, 'a plain Promotion Day: no');
+  assert.equal(midDue({ venue: 1, venueDay: 3, promoDay: true, boss: true }), null);
+});
+
+test('round 13 #3d/#3e/#3f: the burst is ×1.5; the dodge side is perpendicular to the hunt; the boss owns the screen', () => {
+  assert.equal(BOSS.PAYX, 1.5); assert.equal(BURST_MULT, 1.5);
+  assert.equal(newBoss({ n: 2 }).catcher, 30); assert.equal(newBoss({ n: 3 }).catcher, 24, 'the catcher holds 24 at 3P+'); assert.equal(newBoss({ n: 4 }).catcher, 24);
+  { const c = fight(4); c.eaten = 24; assert.deepEqual(stepBoss(c, 0.7, { balls: [{ id: 9, x: c.x + 0.5, z: c.z, rest: true }] }).eaten, [], 'full at 24'); }
+  assert.equal(bossPayout({ eaten: 10, eatenW: 10, n: 1 }).n, 15);
+  const s = fight(1); s.yaw = 0.7;   // forward (-sin, -cos)
+  const f = { x: -Math.sin(s.yaw), z: -Math.cos(s.yaw) };
+  for (const side of [-1, 1]) {
+    const p = { x: s.x + f.x * 5 - f.z * side * 1.5, z: s.z + f.z * 5 + f.x * side * 1.5 };
+    const v = sidestep(s, p);
+    assert.ok(Math.abs(v.x * f.x + v.z * f.z) < 1e-9, 'perpendicular to its heading');
+    assert.ok(Math.abs(Math.hypot(v.x, v.z) - 1) < 1e-9);
+    assert.ok(v.x * (p.x - s.x) + v.z * (p.z - s.z) > 0, 'toward the side the Rat is already on');
+  }
+  assert.ok(bossOwnsScreen(newBoss({ n: 2 })), 'from the warn');
+  const w = fight(2); w.phase = 'tamed'; assert.ok(!bossOwnsScreen(w), 'not after the stamp'); assert.ok(!bossOwnsScreen(null));
+  // the tell: the snapshot's rev flag comes in the last REV s before a re-aim
+  const h = fight(1); h.phase = 'hunt'; h.rage = 0; h.stall = 0; h.aimT = 0.3; assert.equal(bossSnap(h).rev, true); h.aimT = 2; assert.equal(bossSnap(h).rev, false);
+});
+
+test('round 13: every new MOW-E line is 8 words or fewer', () => {
+  const lines = [BOSS_LINES.lost, BOSS_LINES.lostLater, BOSS_LINES.crash, BOSS_LINES.crashLeft, BOSS_LINES.huntSolo, BOSS_LINES.regards, BOSS_LINES.lostStamp, BOSS_LINES.stamp2,
+    BOSS_LINES.whistle('Ⓐ'), BOSS_LINES.blow('Ⓐ'), BOSS_LINES.blow('Space'), BOSS_LINES.eve, BOSS_LINES.rematchEve, PA_LINES.crash.caption,
+    BOSS_LINES.took('Pip'), BOSS_LINES.blew('Pip'), BOSS_LINES.brought(28)];
+  for (const l of lines) assert.ok(wordCount(l) <= SAY.MAX_WORDS, l);
+});
+
+test('round 13 #5a: the aimed strip fetches a member\'s ball (builder 2 banks it), never a ball outside the strip', () => {
+  const ret = { x: 27, z: 1.8 }, at = { x: 10, z: -60 }, s = newWhistlePass(at, ret);
+  const balls = [{ id: 1, x: at.x, z: at.z, rest: true, kind: 'member', member: 0, hands: true }, { id: 2, x: at.x + 9, z: at.z, rest: true, kind: 'member', member: 0, hands: true }];
+  const got = [];
+  for (let i = 0; i < 4000 && s.phase !== 'done'; i++) { const o = stepTame(s, 0.05, { balls, returnAt: () => ret }); got.push(...(o.members ?? [])); }
+  assert.deepEqual(got, [1]);
+});
+
+test('round 13, the lead\'s calls: the solo strip holds 14, the whistle pass sets out from the post, Gary waits for the crash', () => {
+  const ret = { x: 27, z: 1.8 }, at = { x: 10, z: -60 };
+  assert.equal(newWhistlePass(at, ret, 0, 1).cap, WHISTLE.CAP_1P); assert.equal(WHISTLE.CAP_1P, 14); assert.equal(newWhistlePass(at, ret, 0, 2).cap, WHISTLE.CAP);
+  const s = newWhistlePass(at, ret); assert.deepEqual({ x: s.x, z: s.z }, WHISTLE.POST, 'from the post, not the shed');
+  // the crash day: Gary's warn (due at 43 %) waits while the fight is live, then he still inspects before the bell
+  const clock = { t: 1e6 };
+  const crew = new Crew('GCRASH', { venue: 3, day: 21, venueDay: 1, promoDay: 21, mowe: { tame: true } }, { shiftSecs: 420, seed: 3, now: () => clock.t });
+  const p = crew.join('A'); crew.connect(p); p.x = 30; p.z = 8;
+  crew.startShift();
+  assert.ok(crew.garyToday(), 'Gary inspects on Promotion Day');
+  for (const m of crew.mats) m.next = 1e9;
+  let warnAt = null, fightEnd = null, verdict = false;
+  for (let i = 0; i < 430 * 20 && crew.phase === 'shift'; i++) {
+    clock.t += 50; crew.tick(0.05);
+    for (const e of crew.events) {
+      if (e.t === 'gary' && e.phase === 'warn' && warnAt == null) { warnAt = crew.shiftT; assert.ok(!bossLive(crew.mower), 'never during the fight'); }
+      if (e.t === 'mower' && e.boss && (e.phase === 'fled' || e.phase === 'tamed')) fightEnd = crew.shiftT;
+      if (e.t === 'verdict') verdict = true;
+    }
+    crew.events = [];
+  }
+  assert.ok(fightEnd != null && warnAt != null && warnAt >= fightEnd, `the warn (${warnAt}) after the fight (${fightEnd})`);
+  assert.ok(verdict, 'he still inspects before the bell');
 });

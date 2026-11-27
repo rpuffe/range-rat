@@ -14,6 +14,11 @@
 import { createStoryModel, WHO, STORY } from './story.js';
 import { drawSeal } from './pa.js';
 import { drawFounder, PHOTO } from './founder.js';
+import { cardCue, REVEAL_SHOT } from './revealclock.js';   // council round 13 #7b: a card can wait for the reveal camera's cue
+
+// Council round 13 8.2 (builder 3): a double press after a menu or report button skipped the first card unread. The
+// first card of a beat takes no press for FIRST (PHOTO for the 1958 photo card).
+export const CARD_GRACE = { FIRST: 1.2, PHOTO: 1.8 };
 
 const announce = detail => { try { if (typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') window.dispatchEvent(new CustomEvent('rr-story', { detail })); } catch { /* ignore */ } };
 
@@ -61,8 +66,14 @@ function drawClipboard(canvas) {
 }
 
 // sayer: say.js createSay (want/release/visible). keys(): { next, skip } glyph text for the foot (pad or keyboard).
-export function createStoryCard({ sayer, keys = () => ({ next: 'Space', skip: 'Esc' }), now = () => performance.now() / 1000, tick = 100, onChange = null } = {}) {
-  const model = createStoryModel({ now });
+// Round 13: cueReady(cue) → is the reveal camera at that pose (round2.js; default: always); onStory(detail) hears every
+// card and beat end (the 'rr-story' event's twin, for node tests).
+export function createStoryCard({ sayer, keys = () => ({ next: 'Space', skip: 'Esc' }), now = () => performance.now() / 1000, tick = 100, onChange = null, cueReady = () => true, onStory = null } = {}) {
+  // Round 13 #7b: a card waiting on its camera cue freezes the model's clock (its timer and grace don't run) and isn't
+  // drawn, for at most REVEAL_SHOT.CUE_WAIT s.
+  let frozen = 0, holdFrom = null, held = null;
+  const model = createStoryModel({ now: () => (holdFrom ?? now()) - frozen });
+  const announceAll = d => { announce(d); try { onStory?.(d); } catch { /* a listener can't stop the card */ } };
   const doc = typeof document !== 'undefined' ? document : null;
   let el = null, iconEl = null, headEl = null, textEl = null, footEl = null, barEl = null, photoEl = null, photoG = null, shown = null, shownWho = null;
 
@@ -99,11 +110,13 @@ export function createStoryCard({ sayer, keys = () => ({ next: 'Space', skip: 'E
     footEl.innerHTML = `<span>${'●'.repeat(model.index + 1)}${'○'.repeat(n - model.index - 1)}</span><span>${footReady ? `${k.next} next · ${k.skip} skip` : ''}</span>`;
   }
   function render() {
-    const c = model.card, beat = model.beat;
+    const c = holdFrom != null ? shown : model.card, beat = model.beat;
     if (c === shown) { if (c) { bar(); photo(); if (!footReady && model.canPress) foot(); } return; }   // nothing changed (and no class write while idle)
-    if (shownBeat && shownBeat !== beat) announce({ id: shownBeat.id, index: -1, phase: 'end' });
+    if (shownBeat && shownBeat !== beat) announceAll({ id: shownBeat.id, index: -1, phase: 'end' });
     shown = c; shownBeat = beat;
     if (!c) { el?.classList.remove('on'); onChange?.(null); return; }
+    firstAt = model.index === 0 ? now() : -Infinity;   // 8.2: the first card's press grace
+    announceAll({ id: beat.id, index: model.index, phase: 'card' });
     if (!build()) return;
     el.className = 'on ' + c.who.toLowerCase() + (c.style ? ' ' + c.style : '') + (c.photo && photoG ? ' photo' : '') + (c.pos === 'high' ? ' high' : '');   // council round 12 #3b
     icon(c.style === 'note' ? 'NOTE' : c.who);
@@ -112,7 +125,6 @@ export function createStoryCard({ sayer, keys = () => ({ next: 'Space', skip: 'E
     foot();
     bar(); photo();
     onChange?.(c);
-    announce({ id: beat.id, index: model.index, phase: 'card' });
   }
   let shownAt = 0;
   function bar() {
@@ -135,21 +147,35 @@ export function createStoryCard({ sayer, keys = () => ({ next: 'Space', skip: 'E
       model.begin();
     }
     if (model.up) model.tick();
+    cueHold();
     if (!model.up && !model.ready && sayer?.gate !== 'off') sayer?.release?.();
     render();
   }
+  // Round 13 #7b: the card that names a cue waits (hidden, its clock frozen) until the camera is there, CUE_WAIT at most.
+  const cueOk = c => { const cue = cardCue(model.beat?.id, model.index, c); return !cue || cueReady(cue); };
+  function cueHold() {
+    const c = model.up ? model.card : null;
+    if (holdFrom != null) {
+      if (c !== held || cueOk(c) || now() - holdFrom >= REVEAL_SHOT.CUE_WAIT) { frozen += now() - holdFrom; holdFrom = null; held = null; }
+      return;
+    }
+    if (c && c !== shown && !cueOk(c)) { holdFrom = now(); held = c; if (shown) { el?.classList.remove('on'); shown = null; } }
+  }
+  let firstAt = -Infinity;
+  const graceUp = () => now() - firstAt < (shown?.photo ? CARD_GRACE.PHOTO : CARD_GRACE.FIRST);
   function add(id) {
     if (!model.add(id)) return false;
     step();   // granted at once when nothing is up (the cold open and the epilogue go before their PA line)
     return true;
   }
-  function press() { if (!model.up) return false; model.press(); step(); return true; }
-  function skip() { if (!model.up) return false; model.skip(); step(); return true; }
+  function press() { if (!model.up) return false; if (holdFrom == null && !graceUp()) model.press(); step(); return true; }   // 8.2: eaten in the grace
+  function skip() { if (!model.up) return false; if (holdFrom == null && !graceUp()) model.skip(); step(); return true; }
   const iv = tick && typeof setInterval !== 'undefined' ? setInterval(step, tick) : null;
   return {
     add, press, skip, step,
     get up() { return model.up; },
-    get card() { return model.card; },
+    get card() { return holdFrom != null ? null : model.card; },
+    get waiting() { return holdFrom != null; },   // round 13 #7b: a card is waiting on its camera cue
     get beat() { return model.beat; },
     stop: () => iv && clearInterval(iv),
     model,

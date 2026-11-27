@@ -12,6 +12,7 @@ export const CLUB_DAY = {
   pond: 2, pump: 2, treasure: 2, lead: 2, gold: 2,
   creekDive: 3, back: 3, mower: 3,
   bouncy: 4, splitter: 4,
+  tourney: 4,   // council round 13 #1: the Members' Tournament (tourney.js), and the Members' Bell landmark (landmarks.js)
   square: 1,
 };
 export const CLUB = 1;   // the venue index

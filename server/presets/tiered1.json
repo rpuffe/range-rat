@@ -1,38 +1,40 @@
 {
  "id": "tiered1",
  "label": "Tiered · day 1",
- "made": "2026-11-26",
+ "made": "2026-11-27",
  "bot": "4P seed 7, morning snap",
  "players": 4,
  "save": {
   "v": 5,
-  "day": 11,
-  "cash": 27752.03,
+  "day": 10,
+  "cash": 3454.24,
   "totals": {
-   "picked": 7495,
-   "deposited": 4918,
-   "cash": 202968.22999999998,
-   "knockdowns": 411,
-   "helped": 1689,
-   "carted": 835,
+   "picked": 5725,
+   "deposited": 4233,
+   "cash": 181789.63999999998,
+   "knockdowns": 251,
+   "helped": 1475,
+   "carted": 586,
    "swings": 0,
    "pings": 0,
-   "runOver": 257,
-   "washed": 356.8,
-   "scrubbed": 4126,
-   "unwashed": 301,
-   "lostPremium": 7156.87,
-   "reviews": 9,
-   "launched": 9214,
-   "filled": 373,
+   "runOver": 137,
+   "washed": 277.79999999999995,
+   "scrubbed": 3436,
+   "unwashed": 304,
+   "lostPremium": 9088.029999999999,
+   "reviews": 8,
+   "launched": 8103,
+   "filled": 332,
    "spotless": 65.4,
-   "sealCash": 4248.42,
-   "served": 97,
-   "fries": 1014,
+   "sealCash": 3818.8,
+   "served": 92,
+   "fries": 813,
    "dogs": 72,
-   "fedCash": 18919.05,
-   "dived": 445,
-   "snags": 198
+   "fedCash": 18393.690000000002,
+   "dived": 181,
+   "snags": 186,
+   "memberOut": 12,
+   "memberClaimed": 10
   },
   "up": {
    "gear": 3,
@@ -59,57 +61,58 @@
   "lostFound": [
    "keys",
    "trophy",
-   "shades"
+   "shades",
+   "duck"
   ],
   "commendations": 8,
   "reviews": 0,
-  "pondSunk": 32,
+  "pondSunk": 60,
   "fries": 20,
   "venue": 2,
   "venueDay": 0,
-  "outstanding": 1513372021,
+  "outstanding": 1513372706,
   "pendingReveal": 2,
   "endless": false,
-  "garyDay": 12,
+  "garyDay": 10,
   "fixtures": {
-   "sign": 0.059,
-   "stand": 0.233,
-   "mat0": 0.108,
-   "mat1": 0.108,
-   "mat2": 0.225,
-   "mat3": 0.102,
-   "mat4": 0.036,
-   "mat5": 0.093,
-   "mat6": 0,
-   "mat7": 0,
-   "mat8": 0,
-   "mat9": 0,
-   "mat10": 0.237,
-   "mat11": 0.234,
-   "mat12": 0.165,
-   "mat13": 0.174,
-   "mat14": 0.036,
-   "mat15": 0.231
+   "sign": 0.044,
+   "stand": 0.222,
+   "mat0": 0.111,
+   "mat1": 0.078,
+   "mat2": 0.159,
+   "mat3": 0.156,
+   "mat4": 0.093,
+   "mat5": 0.132,
+   "mat6": 0.087,
+   "mat7": 0.135,
+   "mat8": 0.126,
+   "mat9": 0.042,
+   "mat10": 0.051,
+   "mat11": 0.066,
+   "mat12": 0.03,
+   "mat13": 0,
+   "mat14": 0.135,
+   "mat15": 0.222
   },
   "records": {
-   "cash": 41492.93,
-   "banked": 556,
-   "day": 10,
+   "cash": 39778.76,
+   "banked": 439,
+   "day": 8,
    "curve": [
-    672.36,
-    4908.83,
-    7379.18,
-    9115.42,
-    13142.14,
-    18272,
-    20720.75,
-    21874.31,
-    22950.62,
-    25995.8,
-    33160.46,
-    36753.84,
-    37919.22,
-    41492.93
+    562.45,
+    11011.38,
+    16176.6,
+    18183.07,
+    18531.03,
+    22876.98,
+    24634.93,
+    26376.78,
+    27453.74,
+    28478.07,
+    31686.6,
+    33349.43,
+    37845.32,
+    39778.76
    ]
   },
   "voiced": [
@@ -133,8 +136,9 @@
   ],
   "mowe": {
    "tame": true,
-   "lost": 2,
-   "encore": false
+   "lost": 0,
+   "encore": false,
+   "beat": false
   },
   "story": [
    "cold",
@@ -145,44 +149,47 @@
   "mods": {
    "deck": {
     "last": 1
+   },
+   "tourney": {
+    "seen": 1
    }
   },
   "night": {
-   "minutes": 42,
+   "minutes": 35,
    "fromDay": 5,
-   "day": 10,
-   "shifts": 6,
+   "day": 9,
+   "shifts": 5,
    "venue": 2,
    "title": "Experiential Retrieval Lead",
-   "balls": 2647,
-   "cash": 191220.53,
-   "knockdowns": 348,
+   "balls": 1962,
+   "cash": 170041.94,
+   "knockdowns": 188,
    "falls": 0,
-   "treasures": 3,
+   "treasures": 4,
    "rats": [
+    {
+     "name": "Rat1",
+     "color": "#4c9be8",
+     "award": "Fry Lord",
+     "line": "26 served"
+    },
     {
      "name": "Rat3",
      "color": "#6fcf7c",
      "award": "Deepest Diver",
-     "line": "445 balls off the bottom"
+     "line": "181 balls off the bottom"
     },
     {
      "name": "Rat2",
      "color": "#f2c94c",
      "award": "Most Sprayed",
-     "line": "91 things hosed clean"
+     "line": "72 things hosed clean"
     },
     {
      "name": "Rat0",
      "color": "#e8604c",
-     "award": "Bucket Brigade",
-     "line": "36 buckets filled"
-    },
-    {
-     "name": "Rat1",
-     "color": "#4c9be8",
-     "award": "Fry Lord",
-     "line": "40 served"
+     "award": "Showed Up",
+     "line": "Corporate noticed"
     }
    ]
   },

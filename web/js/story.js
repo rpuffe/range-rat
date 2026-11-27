@@ -142,7 +142,8 @@ export const coldDue = ({ day, venue, endless = false, test = false }) => !endle
 // morning. A crew promoted before such a morning comes skips that venue's mid beat (the promotion beats stand alone).
 export function midDue({ venue, venueDay, endless = false, promoDay = false, today = null, reveal = false, lastBucket = false, boss = false }) {
   // Council round 12 9.13: the Stadium's encore (MOW-E 2.0) lets its mid beat play: it ends ~20 s in, the warn is at 111 s.
-  if (endless || reveal || promoDay || today || lastBucket || (boss && venue !== 3) ||   // council round 11: the MOW-E boss owns its day
+  // Council round 13 #3c: the Stadium Promotion Day that MOW-E 2.0 crashes plays it too (the crash warns at 180 s).
+  if (endless || reveal || (promoDay && !(boss && venue === 3)) || today || lastBucket || (boss && venue !== 3) ||   // council round 11: the MOW-E boss owns its day
       !(venueDay >= STORY.MID_FROM)) return null;
   return beatFor('mid', venue)?.id ?? null;
 }

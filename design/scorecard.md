@@ -226,3 +226,26 @@ loop judged only the late game, harder: the boss is a cooldown timer at 4P (hose
 over in 1 s), its payoff happens off-screen; the Stadium crowd only bites at 4P; Ball No. 1's "beam" doesn't exist;
 endless contracts are invisible and the 3★ ones unwinnable; the Stadium deck canopy (the black slab) covers the
 top third of the view. Decision density (5.3) is the weakest number: the late game still runs itself between beats.
+
+## Round 8 (2026-11-27, build 966eace: council rounds 11 + 12 built) · full-game loop, standard split
+
+| Metric | A | B | C | **Avg** | R6 | R1 | Δ vs R6 |
+|---|---|---|---|---|---|---|---|
+| Fun | 7 | 6.5 | 7.5 | **7.0** | 7.0 | 6.0 | 0 |
+| Clarity | 6.5 | 7 | 6.5 | **6.7** | 6.8 | 5.7 | −0.1 |
+| Text load | 7.5 | 8 | 6.5 | **7.3** | 6.2 | 4.0 | +1.1 |
+| Pacing | 7 | 6 | 7 | **6.7** | 6.7 | 5.0 | 0 |
+| Co-op | 6.5 | 7 | 7 | **6.8** | 6.8 | 6.0 | 0 |
+| Meaningful features | 6.5 | 6 | 6.5 | **6.3** | 6.2 | 4.7 | +0.1 |
+| Look & feel | 6.5 | 6.5 | 7.5 | **6.8** | 7.3 | 7.0 | −0.5 |
+| Polish | 6 | 6.5 | 6.5 | **6.3** | 6.7 | 4.7 | −0.4 |
+| One more shift | 7 | 6.5 | 6.5 | **6.7** | 6.7 | 6.0 | 0 |
+| Decision density | 6 | 5 | 6.5 | **5.8** | 5.7 | — | +0.1 |
+| **Overall** | **6.8** | **6.5** | **7.0** | **6.8** | 6.8 | 5.5 | 0 |
+
+**Read:** the late game now leads (C: 7.0, Decision density 6.5 met). The MOW-E boss is "the high point of the
+first hour" (A). The weak middle moved: the Club's fee-only days 4–5 and Tiered are the quietest part of the game
+(Club 0.72 calls a minute at 4P), nothing is worth buying after Club day 3 (cash piles to $250M+), and the Club and
+Tiered spawns look at a roof. Text load holds at 7.3, but the late mornings still leak PA cards, tips and cash pops
+under story cards (C). Look & feel and Polish dip on the roof views and the boss's leftover lines. Whole game at 4P
+(bots): 2 h 08–2 h 37 to the ending; the Club and Tiered are about half of it.

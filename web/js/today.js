@@ -169,7 +169,7 @@ export const LEFT_AT_BELL = { P75: 0, P40: 0, P10: 0 };   // measured (12 endles
 export const GOALS_BY_STARS = {
   1: [{ k: 'cash', f: 0.85 }, { k: 'upright', n: 6 }, { k: 'spotless', n: LEFT_AT_BELL.P75 }],
   2: [{ k: 'cash', f: 1.0 }, { k: 'upright', n: 2 }, { k: 'hustle', n: 2 }],
-  3: [{ k: 'cash', f: 1.1 }, { k: 'upright', n: 0 }, { k: 'hustle', n: 3, by: CONTRACT.HUSTLE_BY }],
+  3: [{ k: 'cash', f: 1.1 }, { k: 'upright', n: 1 }, { k: 'hustle', n: 3, by: CONTRACT.HUSTLE_BY }],   // council round 13 8.9: n 0 -> 1 (C #9: 1 in 16)
 };
 const GOAL_KINDS = ['cash', 'upright', 'spotless', 'hustle'];
 // ctx: { key, day, yesterday (cash), nMats, hustleCap (the Hustle cap tomorrow: 3 with the Owner's Hustle, else 2) }.
@@ -193,7 +193,7 @@ const clockText = s => `T−${Math.floor(s / 60)}:${String(Math.round(s % 60)).p
 export function goalText(goal) {
   if (!goal) return '';
   if (goal.k === 'cash') return 'Bank $' + Math.round(goal.n).toLocaleString('en-US');
-  if (goal.k === 'upright') return goal.n === 0 ? 'Nobody knocked flat' : `At most ${goal.n} knockdowns`;
+  if (goal.k === 'upright') return goal.n === 0 ? 'Nobody knocked flat' : goal.n === 1 ? 'At most 1 knockdown' : `At most ${goal.n} knockdowns`;
   if (goal.k === 'spotless') return goal.n === 0 ? 'Spotless at the bell' : `At most ${goal.n} balls left out`;
   if (goal.k === 'hustle') return goal.by ? `Hit ×${goal.n} Hustle by ${clockText(goal.by)}` : `Reach ×${goal.n} Hustle`;
   return '';

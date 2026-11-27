@@ -151,17 +151,21 @@ export const stretchN = n => STRETCH.N[Math.max(1, Math.min(4, n | 0 || 1)) - 1]
 export const stretchDue = ({ left, done = false, busy = false }) => !done && !busy && left <= STRETCH.AT && left > STRETCH.LATEST;
 export const reqPaused = left => left <= STRETCH.AT + REQ.SECS && left > STRETCH.AT - STRETCH.SECS - STRETCH.PAUSE;
 // The Stretch's sections (indices into SECTIONS, sorted): k adjacent sections on one side, from a hash (no RNG draw).
-export function stretchSections(day, vday, n = 4) {
-  const k = stretchN(n), h = hash32(day | 0, vday | 0, 's');
+// Council round 13 #4 (builder 2): extra = the fireworks landmark's +1 (3 at 1-2P, 4 at 3P+). Four is the whole of one
+// side plus the other side's nearest section (A or D, by the mats): a bundle runner walks the three, a mate takes the one.
+export function stretchSections(day, vday, n = 4, extra = 0) {
+  const k = Math.min(4, stretchN(n) + Math.max(0, extra | 0)), h = hash32(day | 0, vday | 0, 's');
   const side = h & 1 ? 3 : 0, start = k >= 3 ? 0 : (h >>> 3) % (4 - k);   // 3 of 3, or a pair: AB / BC (DE / EF)
-  return Array.from({ length: k }, (_, j) => side + start + j);
+  const out = Array.from({ length: Math.min(3, k) }, (_, j) => side + start + j);
+  if (k >= 4) out.push(3 - side);
+  return out.sort((a, b) => a - b);
 }
 export const stretchPay = n => n * SOUV.W * STRETCH.PAY;
 export const stretchCrowd = n => STRETCH.CROWD + Math.max(0, (n | 0) - 1) * SOUV.CROWD;
 const clockOf = t => { const s = Math.max(0, Math.ceil(t ?? 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 // The jumbotron and the Board (bvtext.js kpiNoteOf): "SEVENTH-INNING STRETCH · A C F · 0:25".
 export const stretchLine = sx => (sx ? `SEVENTH-INNING STRETCH · ${[...(sx.secs ?? '')].join(' ')} · ${clockOf(sx.t ?? sx.left)}` : null);
-export const stretchAlert = k => `Seventh-inning stretch! ${k <= 2 ? 'Two' : 'Three'} sections want balls!`;   // 7 words, the one centre ALERT
+export const stretchAlert = k => `Seventh-inning stretch! ${k <= 2 ? 'Two' : k === 3 ? 'Three' : 'Four'} sections want balls!`;   // 7 words, the one centre ALERT
 
 // 2d. The answered request, on the jumbotron for LEGEND_SECS: "PIP · LEGEND · SECTION C".
 export const LEGEND_SECS = 3;

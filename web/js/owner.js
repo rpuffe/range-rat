@@ -181,17 +181,19 @@ export function rivalPace(target, records, shiftT, shiftSecs) {
 }
 // At an Owners' bell: today's cash against today's target (null target: no race, day 1). Returns
 // { rival: the new records.rival, result: { win, target, cash } | null, acquired: bool (the week was won), newWeek }.
-export function rivalBell(rival, target, dayCash) {
+export function rivalBell(rival, target, dayCash, poached = false) {
   const r = cleanRival(rival) ?? { week: 1, wins: 0, days: 0, last: [], acquired: 0 };
   const cash = Math.max(0, +dayCash || 0);
   const last = [...r.last, cash].slice(-RIVAL.LAST);
   if (!(target > 0)) return { rival: { ...r, last }, result: null, acquired: false, newWeek: false };
   const win = cash > target;
   let { week, wins, days, acquired } = r;
-  days++; if (win) wins++;
+  days++; if (win) wins += poached ? POACH.COUNT : 1;   // council round 13 #4b: a poached win counts twice toward the 4 of 7
   let won = false, newWeek = false;
-  if (days >= RIVAL.WEEK) { won = wins >= RIVAL.WIN; if (won) acquired++; week++; wins = 0; days = 0; newWeek = true; }
-  return { rival: { week, wins, days, last, acquired }, result: { win, target: Math.round(target * 100) / 100, cash: Math.round(cash * 100) / 100 }, acquired: won, newWeek };
+  // Council round 13 #4b (builder 2): the 4th win clinches the week at once (a poaching crew can take Site 13 by its
+  // 4th-5th Owners' day); otherwise the week resolves on its 7th day, as before.
+  if (days >= RIVAL.WEEK || wins >= RIVAL.WIN) { won = wins >= RIVAL.WIN; if (won) acquired++; week++; wins = 0; days = 0; newWeek = true; }
+  return { rival: { week, wins, days, last, acquired }, result: { win, ...(poached ? { poached: true } : {}), target: Math.round(target * 100) / 100, cash: Math.round(cash * 100) / 100 }, acquired: won, newWeek };
 }
 // A saved rival, or undefined.
 export function cleanRival(r) {
@@ -204,3 +206,26 @@ export function cleanRival(r) {
 export const rivalLine = res => (!res ? '' : res.win ? 'Site 13 revised its estimate.' : 'Site 13 sends a fruit basket.');
 // The week so far, for the report's row: "Site 13 this week: 3 of 5 won (4 of 7 acquires)."
 export const rivalWeekLine = rival => (rival ? `Site 13 this week: ${rival.wins} of ${rival.days} won (${RIVAL.WIN} of ${RIVAL.WEEK} acquires).` : '');
+
+// ---- council round 13 #4b (builder 2): poach a Site 13 regular -------------------------------------------------------
+// Endless only, from the first day with a race (a yesterday), once a day. It costs SHARE of yesterday's bank. Today a bay
+// of Site 13's regulars (in their jackets) hits at your range (+EXTRA of the day's customer balls, server/venues/poach.mjs),
+// Site 13's live target drops CUT, and a day you poach AND win counts COUNT of the "4 of 7" toward the acquisition.
+export const POACH = Object.freeze({ SHARE: 0.25, CUT: 0.05, COUNT: 2, EXTRA: 0.07 });
+export const POACH_ROW = {
+  id: 'poach', title: 'Poach a Site 13 regular', endless: true, repeat: 'day', tiers: [
+    { name: 'Nobody poached today', desc: 'Site 13 has regulars. Regulars have prices.' },
+    { name: 'Poach a regular', cost: 0, desc: "A quarter of yesterday's bank. Their regulars hit here today, Site 13's target drops 5 %, and a win today counts double this week." },
+  ],
+};
+// Today's price, or null: not endless, no yesterday (no race yet), or already poached today.
+export function poachPrice({ endless = false, records = null, day = 0, poachDay = null } = {}) {
+  const y = +records?.yesterday?.cash || 0;
+  if (!endless || !(y > 0) || poachDay === day) return null;
+  return Math.round(y * POACH.SHARE * 100) / 100;
+}
+// Site 13's target once you've poached one of theirs.
+export const poachTarget = target => (target > 0 ? Math.round(target * (1 - POACH.CUT) * 100) / 100 : target);
+export const POACH_FEED = 'Site 13 lost a regular. To you.';
+// The report's hint, once, the first time a Hustle (Owner's) contract wins against them (5 words).
+export const HUSTLE_HINT = 'Hustle days beat Site 13.';

@@ -31,3 +31,33 @@ export function createRoller(flush, schedule = (fn, ms) => setTimeout(fn, ms)) {
     get pending() { return { cash, n }; },
   };
 }
+
+// Council round 13 #2b (builder 3): the cash pops leave the centre alone.
+//   - pops from the same source merge within MERGE_SECS into one float: "+$51.98 ×7" (A #11: 7 deep over the Board);
+//   - at most MAX_UP floats on screen (a float lives LIFE s; board.js);
+//   - none while hidden() (a priority 0–1 centre item is up, the hush, the epilogue): the cash is on the HUD already.
+Object.assign(PAYFLOAT, { MERGE_SECS: 1.5, MAX_UP: 2, LIFE: 1.6 });
+// emit({ key, cash, n, k, last }) draws the float (k: pops merged; last: the last pop's event, for its own line).
+export function createPayMerge(emit, { now = () => performance.now() / 1000, schedule = (fn, ms) => setTimeout(fn, ms), hidden = () => false } = {}) {
+  const open = new Map(), ups = [];
+  function fire(key) {
+    const m = open.get(key); open.delete(key);
+    if (!m || hidden()) return;
+    const t = now();
+    while (ups.length && t - ups[0] >= PAYFLOAT.LIFE) ups.shift();
+    if (ups.length >= PAYFLOAT.MAX_UP) return;
+    ups.push(t);
+    emit({ key, cash: Math.round(m.cash * 100) / 100, n: m.n, k: m.k, last: m.last });
+  }
+  return {
+    add(key, cash, n, last = null) {
+      let m = open.get(key);
+      if (!m) { m = { cash: 0, n: 0, k: 0, last: null }; open.set(key, m); schedule(() => fire(key), PAYFLOAT.MERGE_SECS * 1000); }
+      m.cash += Math.max(0, Number(cash) || 0); m.n += Math.max(0, n | 0); m.k++; m.last = last;
+    },
+    get up() { const t = now(); return ups.filter(u => t - u < PAYFLOAT.LIFE).length; },
+    get open() { return open.size; },
+  };
+}
+// The merged float's text: one pop keeps its own line (null: the caller's popupLine); more read "+$51.98 ×7".
+export const mergedLine = (m, money) => (m.k > 1 ? `+${money(m.cash)} ×${m.k}` : null);

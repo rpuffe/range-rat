@@ -54,9 +54,9 @@ test('nextGoal: the first open in card order; the fee only when it is the last o
   card.n.fed = 75;
   let rows = rowsOf(card, { cash: 0, fee: 9000 });
   assert.equal(nextGoal(rows).id, 'fed');
-  assert.equal(moreText(nextGoal(rows)), '2 more minutes fed');
+  assert.equal(moreText(nextGoal(rows)), '1 more minute fed');
   assert.equal(goalLine(nextGoal(rows)), 'Keep the crew fed for 3 minutes · 1:15 / 3:00');
-  assert.equal(strip(rows, 1).next, 'NEXT: 2 MORE MINUTES FED');
+  assert.equal(strip(rows, 1).next, 'NEXT: 1 MORE MINUTE FED');
   assert.equal(strip(rows, 1).label, '0 OF 5 GOALS');
   card.n.fed = 180; card.n.treasures = 2; card.done.push('seal'); card.n.reviews = 3;
   rows = rowsOf(card, { cash: 0, fee: 9000 });

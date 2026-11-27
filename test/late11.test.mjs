@@ -210,6 +210,7 @@ test('MOW-E 2.0 at the Stadium (§2.7): no drain while the boss is live, +0.08 a
 });
 
 // ---- council round 12 #7 (builder 2): Inspection Hour, spray chains, the tip, the card -------------------------------
+import { inspectWhere, inspectAlertAt, inspectHaz, WHERE } from '../web/js/county.js';   // council round 13 #7a (builder 2)
 import { INSPECT, inspectSecs, inspectDue, inspectPatch, zoningInspected, inspectAlert, CHAIN, sweepStep, zoningWith, INSPECT_MEMO } from '../web/js/county.js';
 import { WASH } from '../web/js/sim.js';
 import { tomorrowLine, rowsOf, printCard } from '../web/js/goals.js';
@@ -240,7 +241,8 @@ test('round 12 #7a: County crew: he comes at T-3:30 to the busiest patch; bagged
   assert.ok(ev, 'he came');
   assert.ok(Math.hypot(ev.x - S.x, ev.z - (S.z - 30)) < 3, 'the busiest patch');
   assert.equal(ev.n, 3);
-  assert.equal(crew.snapshot().mods.county.inspect.where, '3 HAZARDS');
+  assert.equal(crew.snapshot().mods.county.inspect.where, inspectWhere(ev.x, ev.z), 'council round 13 #7a: the Board names his place');
+  assert.equal(ev.where, inspectWhere(ev.x, ev.z));
   // bag one in his patch: ×3 pay, +0.04 Zoning
   for (const h of cl) h.wetUntil = crew.custT + 99;
   const k0 = st.kpi, c0 = crew.stats.hazCash ?? 0;
@@ -316,4 +318,15 @@ test('round 12 9.16: the Orbital with every step done names Ball No. 1 (strip an
   const rows = rowsOf(printCard(5, 4), { sky: true, up: { tether: 1 } }).map(r => ({ ...r, done: true }));
   assert.equal(strip(rows, 5).next, 'NEXT: FIND BALL NO. 1');
   assert.equal(tomorrowLine(rows, 5), 'Tomorrow: find Ball No. 1.');
+});
+
+// ---- council round 13 #7a (builder 2): the inspector's place ------------------------------------------------------------
+test('round 13 #7a: inspectWhere names his patch by side and depth; the ALERT is ≤ 8 words', () => {
+  assert.equal(inspectWhere(11.3, -42.2), 'NEAR MIDDLE');
+  assert.equal(inspectAlertAt(11.3, -42.2), 'Inspector at the near middle Yard!');
+  assert.equal(inspectWhere(-40, -90), 'FAR LEFT');
+  assert.equal(inspectWhere(WHERE.SIDE_X + 1, WHERE.NEAR_Z - 1), 'FAR RIGHT');
+  assert.equal(inspectAlertAt(-40, -90), 'Inspector at the far left Yard!');
+  for (const [x, z] of [[-50, -10], [0, -100], [50, -150]]) assert.ok(wordCount(inspectAlertAt(x, z)) <= 7);
+  assert.equal(inspectHaz(1), '1 HAZARD');
 });

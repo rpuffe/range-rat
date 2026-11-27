@@ -1,4 +1,4 @@
-// Council round 11 #3 (builder 4): text load, measured. Replays every morning's events through the client's own
+// Council round 11 #3 (builder 4): text load, measured. (Council round 13: builder 3 owns it; it runs centre.js.) Replays every morning's events through the client's own
 // centre-text queue (say.js createSayModel) and story card (storycard.js createStoryCard, 4 s a card), the way main.js
 // and round2.js wire them, along a 4P ladder: Muni days 1–5 (fresh crew), Club days 1–5 (club1 preset), each later
 // promotion morning (tiered1, stadium1, county1, orbital1) and its next morning, the Last Bucket morning, and endless
@@ -45,7 +45,9 @@ function morning(env, tag) {
   crew.flush();
   for (const p of rats) crew.readyUp(p);
   if (crew.phase !== 'shift') return null;
-  const whole = process.env.FULL === '1' || !!crew.bossToday?.() || (!crew.endless && (crew.venue === 3 || crew.venue === 4));
+  // Council round 13 #2 (builder 3): also the Tournament days (the Club from day 4) and the Last Bucket (the bank, the
+  // note, the epilogue), and the queue is say.js on centre.js: the model and the client run the same arbiter.
+  const whole = process.env.FULL === '1' || !!crew.bossToday?.() || (!crew.endless && (crew.venue === 3 || crew.venue === 4 || (crew.venue === 1 && (crew.venueDay ?? 0) >= 4))) || !!crew.lastBucket || tag.startsWith('lastbucket');
   const WIN = whole ? Math.max(WINDOW, crew.shiftSecs ?? 420) : WINDOW;
   let t = 0;
   const sayer = SAYM.createSayModel({ now: () => t });

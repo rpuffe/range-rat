@@ -117,3 +117,23 @@ export function garyCountdown(gary, stop = { x: 26, z: 10 }, speed = 5) {
   const n = Math.max(1, Math.ceil(eta));
   return 'GARY ' + [3, 2, 1].filter(k => k >= n).join(' · ');
 }
+
+// ---- council round 13 8.6 (builder 4, B #11): a diver missed Gary's huddle and nothing called them up ---------------
+// When the huddle opens (Gary starts his last leg, to the stand), every online Rat over FAR m from the return, or
+// diving, is called: a CHEVRON-second screen-edge chevron toward the return for them, and one feed line for the crew.
+// At the stand he waits up to WAIT s more while a called Rat is still diving (the server, crew.mjs stepGary).
+export const HUDDLE_CALL = Object.freeze({ FAR: 40, CHEVRON: 3, WAIT: 10 });
+// players: [{ id, online, x, z, diving }] -> [{ id, dive }] the Rats to call
+export function huddleCalls(players = [], stand = SIM.STAND, far = HUDDLE_CALL.FAR) {
+  return players.filter(p => p.online !== false && p.online !== 0 && (p.diving || dist(p, stand) > far)).map(p => ({ id: p.id, dive: !!p.diving }));
+}
+// The feed line (≤ 8 words): "Huddle! Pip, surface!" / "Huddle! Pip, back to the return!" / "Huddle! Pip +2, back to the return!"
+export function huddleLine(calls, nameOf = id => id) {
+  if (!calls?.length) return '';
+  const first = calls.find(c => c.dive) ?? calls[0];
+  const who = String(nameOf(first.id) ?? 'Rat') + (calls.length > 1 ? ' +' + (calls.length - 1) : '');
+  return `Huddle! ${who}, ${calls.every(c => c.dive) ? 'surface!' : 'back to the return!'}`;
+}
+// Does Gary hold at the stand? While a Rat is still diving outside the ring, for up to WAIT s (waited: s so far).
+export const huddleHolds = (players = [], waited = 0, stand = SIM.STAND, r = HUDDLE.R) =>
+  waited < HUDDLE_CALL.WAIT && players.some(p => p.online !== false && p.online !== 0 && p.diving && dist(p, stand) >= r);

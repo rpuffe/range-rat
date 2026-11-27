@@ -111,7 +111,7 @@ test('the forced treasure sinks every morning while the treasure goal is open', 
 });
 
 test('Gary returns the next day after a visit that leaves a Gary goal open', () => {
-  const { crew, run } = makeCrew({ venue: 1, venueDay: 1, day: 8, up: { shed: 1 }, garyDay: 8 }, { shiftSecs: 300 });
+  const { crew, run } = makeCrew({ venue: 1, venueDay: 1, day: 8, up: { shed: 1 }, garyDay: 8, mowe: { tame: true } }, { shiftSecs: 300 });   // round 13 (builder 1): tame, so tomorrow isn't MOW-E's eve
   crew.startShift(); quiet(crew);
   assert.equal(crew.garyDay, 8);
   for (const k of Object.keys(crew.fixtures)) crew.fixtures[k] = 1;   // a filthy range: he fails it
@@ -143,7 +143,7 @@ test('a v4 save with 3 stamps is grandfathered; the save is v5 and round-trips',
 });
 
 test('the tomorrow line counts the goals left', () => {
-  const { crew, run } = makeCrew({ day: 12, venue: 1, venueDay: 1, up: { shed: 1 }, garyDay: 99 }, { shiftSecs: 5 });
+  const { crew, run } = makeCrew({ day: 12, venue: 1, venueDay: 1, up: { shed: 1 }, garyDay: 99, mowe: { tame: true } }, { shiftSecs: 5 });   // round 13 (builder 1): tame, so tomorrow isn't MOW-E's eve
   crew.startShift(); quiet(crew);
   run(6);
   assert.equal(crew.phase, 'report');

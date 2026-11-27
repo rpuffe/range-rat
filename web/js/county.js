@@ -163,7 +163,15 @@ export const zoningInspected = (strays, hazards = 0, noted = 0, adj = 0) =>
   Math.max(0, Math.min(1, zoningWith(strays, hazards + noted) + adj));
 // The Board (bvtext.js kpiNoteOf reads mods.county.inspect): "INSPECTION · 4 HAZARDS · 0:45".
 export const inspectAlert = 'Inspection! Bag the hazards by the inspector!';   // 7 words, the one centre ALERT
-export const inspectWhere = n => `${n} HAZARD${n === 1 ? '' : 'S'}`;
+export const inspectHaz = n => `${n} HAZARD${n === 1 ? '' : 'S'}`;   // round 12's Board label (kept for old readers)
+// Council round 13 #7a (builder 2): the inspector has a place. His patch centre, by side (thirds of the field across x) and
+// depth from the mats (NEAR_Z): "FAR LEFT", "NEAR MIDDLE". The ALERT names it; the Board shows it.
+export const WHERE = { SIDE_X: 21, NEAR_Z: -60 };
+export function inspectWhere(x, z) {
+  const side = x < -WHERE.SIDE_X ? 'LEFT' : x > WHERE.SIDE_X ? 'RIGHT' : 'MIDDLE';
+  return `${z >= WHERE.NEAR_Z ? 'NEAR' : 'FAR'} ${side}`;
+}
+export const inspectAlertAt = (x, z) => `Inspector at the ${inspectWhere(x, z).toLowerCase()} Yard!`;   // 6 words
 // The memo flavour after a clean inspection (builder 4's slot; 8 words).
 export const INSPECT_MEMO = "The inspector was impressed. He's from Site 13.";
 
