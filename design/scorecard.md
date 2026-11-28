@@ -334,3 +334,11 @@ The solo "Gary wall" in the ladder is a bot limit. A human passes his Muni, Club
 - Club day 2 runs the Gold Rush straight into Gary's inspection, and the crash day puts the Stretch inside it.
 - Saves restored mid-shift duplicate that shift's cash.
 - The final report shows each Rat's last shift ("0 balls · $0").
+
+### Round 10 hotfix (owner: "hotfix the Highs")
+
+Per council-round14 §4.3, the named Highs only, each with a test (`test/hotfix10.test.mjs`), then one smoke run. No features.
+- **C #1, the ending-rejoin softlock:** a seat that rejoins during the ending report now rebuilds the end card from the welcome's report (`dayend.js endCardOnRejoin`, `round2.js rejoin`), so its Ready is reachable. The smoke run's bank beat now reloads at the end card and checks that the card comes back and that Ready starts endless day 1.
+- **A H1, pay floats in the centre:** the crewmates', the washer's and Gary's check floats now hide while *any* centre item is up (a toast and the checklist line included), not only priority 0–1. A float born then starts hidden. The HUD cash still counts (`centrehooks.js worldTextHidden`).
+- **A H2, Gary's bubble:** his bubble steps aside while a centre item is up, except during a chat, where the bubble is the exchange (`centrehooks.js garyBubbleShown`).
+- **Not in the hotfix:** C #2, the CPU ×6 frame times. That is a perf budget, not a bug, and it needs the real Xbox numbers to set the bar. The Mediums stay on the list.

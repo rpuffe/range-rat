@@ -55,3 +55,6 @@ export function spotlessBonus({ left, launched, reward }) {
 }
 // The report's stamp row (≤ 8 words): "SPOTLESS RANGE! +$1,450" / "Nearly spotless: 3 left. +$580"
 export const spotlessRow = (s, money = v => '$' + v) => (!s ? '' : s.kind === 'spotless' ? `SPOTLESS RANGE! +${money(s.cash)}` : `Nearly spotless: ${s.left} left. +${money(s.cash)}`);
+
+// Hotfix (playtest round 10 C #1): a seat that rejoins during the ending report gets the end card again, so Ready is reachable.
+export const endCardOnRejoin = (phase, report, cardUp) => phase === 'report' && !!report?.ending && !cardUp;

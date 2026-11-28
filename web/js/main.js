@@ -68,7 +68,7 @@ import { garyHello, garyBye } from './story.js';           // round 12: Gary's l
 import { createSay, SAY } from './say.js';                     // council round 7 #3: the one centre-text queue
 import { PRI } from './centre.js';                             // council round 13 #2 (builder 3): the one arbiter's ladder
 import { createCentreWatch } from './centrewatch.js';          // council round 13 #2e: ?debug counts real on-screen overlaps
-import { createFightMute, fightMuted, plateFade } from './centrehooks.js';   // council round 13 #2b/#2c
+import { createFightMute, fightMuted, plateFade, worldTextHidden, garyBubbleShown } from './centrehooks.js';   // council round 13 #2b/#2c
 import { SPAWN_PITCH } from './spawnlook.js';                  // council round 13 #6: the spawn pitch ease
 import { createPayMerge, mergedLine } from './payfloat.js';    // council round 13 #2b: merged pops, at most 2
 import { DECKCAM, CUT_LABEL, cutPlan, skips, cutAt } from './deckcam.js';   // council round 10 #4: the Deck Cam
@@ -666,6 +666,7 @@ function onMsg(m) {
     $('code').textContent = m.code;
     document.body.classList.toggle('test-crew', !!m.s.test);   // round 11: the TEST CREW tag (skip ahead)
     if (crew.phase !== 'report') sayer.open();   // a rejoin: nothing replays (the PA card never re-queues), nothing stays locked
+    r2?.rejoin(report);   // hotfix: a rejoin into the ending report gets its end card back
     if (!m.s.test) recap.welcome(m);   // round 11: a saved crew coming back sees "Previously on Range Rat" (not a skip-ahead test crew: that night was the bots')
     showPhase();
   } else if (m.k === 'tick') {
@@ -908,7 +909,7 @@ function rallyLine(e) {
 // and a driverless cart roll into one "+$1,240 · 31" over the stand every 2 s; other Rats' big banks go to the feed.
 // Council round 13 #2b: no pops while a priority 0–1 centre item, the hush or a story card is up; at most 2 up; one
 // source's pops within 1.5 s merge into "+$51.98 ×7".
-const popsHidden = () => (sayer.centre.up()?.pri ?? 9) <= PRI.ALERT || storyCard.up || !!r2?.hushing;
+const popsHidden = () => worldTextHidden({ centreUp: !!sayer.centre.up(), story: storyCard.up, hushing: !!r2?.hushing });   // hotfix round 10 A H1: any centre item
 const payRoll = createRoller(({ cash, n }) => { if (!popsHidden()) board.floatText(SIM.STAND.x, 2.4, SIM.STAND.z, `+${money(cash)} · ${n}`, '#ffd54a'); });
 // Council round 14 6.5 (A #5, builder 4): your own banks pop by the cash HUD (top left), counting up, and never claim
 // the centre (no own-bank toast, no world float over you). payfloat.js createHudPop; drawn by a short rAF loop that
@@ -2169,7 +2170,7 @@ function frame(now) {
     baysFresh: !!bayLine.fresh,   // round 11 (owner): a just-built bay (bayline.js) gets its one tip
     ...tipCtx(crew, me) });   // owner notes: up, myDive, mats' mud (tips.js)
   board.tick(dt);
-  board.hideFloats(popsHidden());   // round 14 6.6: pay floats gone at once while a priority 0–1 item is up
+  board.hideFloats(popsHidden());   // round 14 6.6, hotfix: pay floats gone at once while any centre item is up
   confetti.tick(dt);        // the shared confetti pool (round 6: the bell's stamp, the huddle)
   mowe.update(crew.mower ?? null, me.id); mowe.setPost(crew.moweWhistle > 0, crew.moweWhistle === 1, crew.moweWhistle === 3 && crew.moweWhistleBy !== me.id ? crew.moweWhistleBy : null);   // round 13 #5a: the whistle on its post, or on a mate's lanyard
   mowe.tick(dt, sceneT, me);   // playtest round 9: this call had slipped into the comment above (MOW-E froze at the origin)
@@ -2209,7 +2210,7 @@ function frame(now) {
     // when a Rat first comes within 8 m.
     if (garySays && !garySays.near && Math.hypot(garyPose.x - me.x, garyPose.z - me.z) < 8) { garySays.near = true; garySays.pop = 0.5; }
     { const k = 2.6 * (1 + 0.25 * Math.sin(Math.PI * Math.min(1, (garySays?.pop ?? 0) / 0.5))); if (garySays?.pop > 0) garySays.pop = Math.max(0, garySays.pop - dt); garyView.bubble.sprite.scale.set(k, k * 64 / 512, 1); }   // textSprite's 2.6 × 64/512
-    garyView.bubble.sprite.visible = !!ch || garyView.bubbleEnd > 0 || !!garySays;
+    garyView.bubble.sprite.visible = garyBubbleShown({ chatting: !!ch, ending: garyView.bubbleEnd > 0, says: !!garySays, centreUp: !!sayer.centre.up() });   // hotfix round 10 A H2
     if (garyView.bubble.sprite.visible) {   // playthrough 5 A7: in chat reach (1-2.5 m) a bubble at 3.15 m sat off the top of the screen
       const d = Math.hypot(garyPose.x - camera.position.x, garyPose.z - camera.position.z);
       garyView.bubble.sprite.position.y = Math.max(2.3, Math.min(3.15, camera.position.y + 0.45 * d));   // ≤ ~29° above level

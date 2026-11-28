@@ -266,17 +266,27 @@ const BEAT = {
       const card = await b.waitFor("!!document.getElementById('endcard') && __smoke.up().some(x => x.id === 'endcard')", 240, 200);
       check('bank', !!card, 'the end card comes up' + (card ? '' : ' ' + await where(b) + ' ' + await b.ev("JSON.stringify({ lb: rr.crew.lastBucket, me: [rr.me.x, rr.me.z].map(Math.round) })").catch(e => e.message)));
       if (!card) return;
+      const cardAt = Date.now();
       await b.ev('rr.releaseAct?.(), true');
-      await sleep(2000); await b.ev('rr.startShift(), true');   // Ready, early
-      const held = await b.ev(`new Promise(res => { const t0 = performance.now(); const iv = setInterval(() => {
-        const up = __smoke.up().some(x => x.id === 'endcard');
-        if (!up || performance.now() - t0 > 9000) { clearInterval(iv); res((performance.now() - t0) / 1000 + 2); } }, 100); })`, 20000);
-      check('bank', held >= 10, `the end card held ${held.toFixed(1)} s with Ready pressed at 2 s (≥ 10)`);
       // a world-space pay float drifting through the centre box is logged, not failed: the gate is text on text
       const ov = await b.ev(`(() => { const all = __centre.log.slice(); const text = all.filter(o => !o.up.some(u => /^payfloat/.test(u)));
         return { n: text.length, floats: all.length - text.length, log: text.slice(0, 3), bank: __bankLog }; })()`);
       if (ov.floats) log('WARN', 'bank', `${ov.floats} pay float(s) crossed the centre box with a centre text`);
       check('bank', ov.n === 0, `no centre text overlaps through the bank (${ov.n}${ov.n ? ': ' + JSON.stringify(ov.log) + ' timeline ' + JSON.stringify(ov.bank) : ''})`);
+      // hotfix (playtest round 10 C #1): a reload at the end card (a Wi-Fi drop, the Xbox app suspended) rejoins the
+      // seat; the end card comes back, and its Ready still ends the report
+      await b.page.send('Page.reload');
+      let back = false;
+      for (let i = 0; i < 300 && !back; i++) { try { back = await b.ev('!!(window.rr && window.rr.crew && window.rr.crew.phase && window.__centre)'); } catch {} if (!back) await sleep(100); }
+      if (back) await b.ev(PAGE_LIB);
+      const again = back && await b.waitFor("!!document.getElementById('endcard') && __smoke.up().some(x => x.id === 'endcard')", 20, 200);
+      check('bank', !!again, 'a rejoin at the end card gets the end card back' + (again ? '' : ' ' + await where(b)));
+      if (!again) return;
+      await b.ev('rr.startShift(), true');   // Ready, early: the server still holds the card its 10 s
+      const on = await b.waitFor("rr.crew.phase === 'shift'", 60, 250);
+      const held = (Date.now() - cardAt) / 1000;
+      check('bank', !!on, `the rejoined seat's Ready starts endless day 1 (${held.toFixed(1)} s after the card)`);
+      check('bank', held >= 10, `the end card held ${held.toFixed(1)} s with an early Ready (≥ 10)`);
     } finally { await b.close(); }
   },
 };

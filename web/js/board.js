@@ -449,7 +449,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
     const map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace;
     const mat = new THREE.SpriteMaterial({ map, depthTest: false, transparent: true });
     const sp = new THREE.Sprite(mat);
-    sp.scale.set(1.6, 0.4, 1); sp.position.set(fx, fy, fz); sp.renderOrder = 11;
+    sp.scale.set(1.6, 0.4, 1); sp.position.set(fx, fy, fz); sp.renderOrder = 11; sp.visible = !floatsHidden;   // hotfix: born hidden while the centre is taken
     scene.add(sp);
     floats.push({ sp, mat, map, y0: fy, t: 0, text: t });
   }
@@ -600,7 +600,7 @@ export function createBoard(scene, { x, z, onCross = null }) {
   // Council round 14 #0d: the live float texts for the ?debug centre counter (centrewatch.js). Debug only: allocates.
   const floatSprites = () => floats.map(f => ({ id: 'payfloat', text: f.text, sprite: f.sp, opacity: f.mat.opacity }));
   // the poach event: SITE 13's line wears a red mark for `secs` (main.js calls it on the 'poach' event)
-  // Council round 14 6.6 (C #7): the floats vanish AT ONCE (no fade) while a priority 0–1 centre item is up, and come
+  // Council round 14 6.6 (C #7), hotfix round 10 A H1: the floats vanish AT ONCE (no fade) while any centre item is up, and come
   // back when it's gone. Per frame from main.js; no allocation.
   let floatsHidden = false;
   const hideFloats = on => { on = !!on; if (on === floatsHidden && !on) return; floatsHidden = on; for (let i = 0; i < floats.length; i++) floats[i].sp.visible = !on; };

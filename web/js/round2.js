@@ -26,6 +26,7 @@ import { CASE, HUSH, hushWeight, starTiltWeight } from './caserules.js';
 import { landmarkTier, LANDMARK, STAR_TILT } from './landmarks.js';   // council round 14 #5c (builder 3): the star in frame   // council round 12 #3b/#3d: the case, the hush
 import { washerTipOk } from './centrehooks.js';                                // council round 13 #2b: the washer tip's gate
 import { PRI } from './centre.js';
+import { endCardOnRejoin } from './dayend.js';   // hotfix: the end card on a rejoin
 import { newReveal, revealStep, revealStory as revealStoryOf, cueReady as cueReadyOf } from './revealclock.js';   // council round 13 #7b: one clock
 
 export function setupRound2(ctx) {
@@ -414,6 +415,9 @@ export function setupRound2(ctx) {
     endingCard = ending.endCard({ players, ...(report.ending ?? {}) }, () => { ctx.centre?.release('end'); endingCard?.remove?.(); endingCard = null; link()?.act({ t: 'start' }); });
   }
 
+  // Hotfix (playtest round 10 C #1): a rejoin into the ending report rebuilds the end card (its Ready).
+  function rejoin(report) { if (endCardOnRejoin(crew()?.phase, report, !!endingCard)) showEndCard(report); }
+
   // ---- per frame ----------------------------------------------------------------------
   // The Last Bucket: one persistent line that says where Ball No. 1 is and who the stand is waiting for.
   let lbKey = '';
@@ -507,7 +511,7 @@ export function setupRound2(ctx) {
   }
 
   return {
-    pa, onEvent, onSnapshot, press, release, unlatch, latched: () => latched, capturing, mouseMove, wheel, toggleCCTV, tick, hudLine, prompt,
+    pa, onEvent, onSnapshot, rejoin, press, release, unlatch, latched: () => latched, capturing, mouseMove, wheel, toggleCCTV, tick, hudLine, prompt,
     venueParts: venues.parts,   // round 4: what the venue views animate (venues.js parts)
     pumpBegin, pumpEnd, haulBegin, haulEnd, pumpRate: () => (pumpOn ? pumpRateNow : 0.6),
     get cctvOn() { return cctv.isOn; }, get revealing() { return !!reveal; }, cueReady: cue => cueReadyOf(reveal, cue, now() / 1000) /* round 13 #7b: storycard waits on the shot */, get hushing() { return hushing(); },

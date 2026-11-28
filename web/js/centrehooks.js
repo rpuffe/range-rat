@@ -34,3 +34,9 @@ export function createFightMute() {
 // the epilogue (C #7). -> the plate's opacity multiplier.
 export const PLATE_R = 15;
 export const plateFade = (x, z, stand, hushing) => (hushing && Math.hypot(x - stand.x, z - stand.z) < PLATE_R ? 0 : 1);
+
+// Hotfix (playtest round 10 A H1/H2): the world text at the return gives way to ANY centre item, not just priority 0–1.
+// The pay floats (crewmates', the washer's, Gary's checks) hide while anything holds the centre; the HUD cash still
+// counts. Gary's bubble hides then too, except in a chat (the bubble is the exchange, and the checklist steps aside).
+export const worldTextHidden = ({ centreUp = false, story = false, hushing = false } = {}) => !!(centreUp || story || hushing);
+export const garyBubbleShown = ({ chatting = false, ending = false, says = false, centreUp = false } = {}) => !!chatting || (!!(ending || says) && !centreUp);
